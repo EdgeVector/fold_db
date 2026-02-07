@@ -26,6 +26,33 @@ fn resolve_folder_path(path: &str) -> PathBuf {
     }
 }
 
+/// Initialize progress tracking for a list of files, returning a FileProgressInfo per file.
+async fn start_file_progress(
+    files: &[std::path::PathBuf],
+    user_id: &str,
+    progress_service: &ProgressService,
+) -> Vec<FileProgressInfo> {
+    let mut infos = Vec::with_capacity(files.len());
+    for file_path in files {
+        let progress_id = uuid::Uuid::new_v4().to_string();
+        let file_name = file_path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("unknown")
+            .to_string();
+
+        progress_service
+            .start_progress(progress_id.clone(), user_id.to_string())
+            .await;
+
+        infos.push(FileProgressInfo {
+            file_name,
+            progress_id,
+        });
+    }
+    infos
+}
+
 /// Request for batch folder ingestion
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BatchFolderRequest {
@@ -536,48 +563,26 @@ pub async fn batch_folder_ingest(
 
     // Create progress tracking for each file
     let progress_service = ProgressService::new(progress_tracker.get_ref().clone());
-    let mut file_progress_ids: Vec<FileProgressInfo> = Vec::new();
+    let file_progress_ids = start_file_progress(&files_to_ingest, &user_id, &progress_service).await;
 
-    for file_path in &files_to_ingest {
-        let progress_id = uuid::Uuid::new_v4().to_string();
-        let file_name = file_path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("unknown")
-            .to_string();
-
-        progress_service
-            .start_progress(progress_id.clone(), user_id.clone())
-            .await;
-
-        file_progress_ids.push(FileProgressInfo {
-            file_name,
-            progress_id,
-        });
-    }
-
-    // Try to create ingestion service
-    let service = match IngestionService::from_env() {
-        Ok(service) => service,
-        Err(e) => {
-            log_feature!(
-                LogFeature::Ingestion,
-                error,
-                "Failed to initialize ingestion service: {}",
-                e
-            );
-            // Mark all progress as failed
-            for info in &file_progress_ids {
-                progress_service
-                    .fail_progress(&info.progress_id, format!("Ingestion service not available: {}", e))
-                    .await;
-            }
-            return HttpResponse::ServiceUnavailable().json(json!({
-                "success": false,
-                "error": format!("Ingestion service not available: {}", e)
-            }));
+    // Validate ingestion service is available before spawning tasks
+    if let Err(e) = IngestionService::from_env() {
+        log_feature!(
+            LogFeature::Ingestion,
+            error,
+            "Failed to initialize ingestion service: {}",
+            e
+        );
+        for info in &file_progress_ids {
+            progress_service
+                .fail_progress(&info.progress_id, format!("Ingestion service not available: {}", e))
+                .await;
         }
-    };
+        return HttpResponse::ServiceUnavailable().json(json!({
+            "success": false,
+            "error": format!("Ingestion service not available: {}", e)
+        }));
+    }
 
     // Get node for processing
     let (user_id_for_task, node_arc) = match require_node(&state).await {
@@ -585,100 +590,38 @@ pub async fn batch_folder_ingest(
         Err(response) => return response,
     };
 
-    // Get the node's public key for mutation generation
-    let node_public_key = {
-        let node_guard = node_arc.lock().await;
-        node_guard.get_node_public_key().to_string()
-    };
-
     let auto_execute = request.auto_execute.unwrap_or(true);
-
-    // Wrap service in Arc for sharing across tasks
-    let service = std::sync::Arc::new(service);
 
     // Spawn background tasks for each file
     for (file_path, file_info) in files_to_ingest.into_iter().zip(file_progress_ids.iter()) {
-        let service = service.clone();
-        let progress_service = progress_service.clone();
         let progress_id = file_info.progress_id.clone();
-        let user_id_clone = user_id_for_task.clone();
+        let progress_tracker_clone = progress_tracker.get_ref().clone();
         let node_arc_clone = node_arc.clone();
-        let source_file_name = file_info.file_name.clone();
-        let pub_key = node_public_key.clone();
+        let user_id_clone = user_id_for_task.clone();
 
         tokio::spawn(async move {
             crate::logging::core::run_with_user(&user_id_clone, async move {
-                log_feature!(
-                    LogFeature::Ingestion,
-                    info,
-                    "Starting ingestion for file: {} with progress_id: {}",
-                    file_path.display(),
-                    progress_id
-                );
+                let progress_service = ProgressService::new(progress_tracker_clone);
 
-                // Read and convert file to JSON
-                let json_data = match smart_folder::read_file_as_json(&file_path) {
-                    Ok(v) => v,
-                    Err(e) => {
-                        progress_service
-                            .fail_progress(&progress_id, e)
-                            .await;
-                        return;
-                    }
-                };
-
-                // Create ingestion request
-                let ingestion_request = IngestionRequest {
-                    data: json_data,
-                    auto_execute: Some(auto_execute),
-                    trust_distance: Some(0),
-                    pub_key: Some(pub_key),
-                    source_file_name: Some(source_file_name),
-                    progress_id: Some(progress_id.clone()),
-                };
-
-                // Acquire lock and process
-                let node_guard = node_arc_clone.lock().await;
-
-                match service
-                    .process_json_with_node_and_progress(
-                        ingestion_request,
-                        &node_guard,
-                        &progress_service,
-                        progress_id.clone(),
-                    )
-                    .await
+                if let Err(e) = process_single_file_via_smart_folder(
+                    &file_path,
+                    &progress_id,
+                    &progress_service,
+                    &node_arc_clone,
+                    auto_execute,
+                )
+                .await
                 {
-                    Ok(response) => {
-                        if response.success {
-                            log_feature!(
-                                LogFeature::Ingestion,
-                                info,
-                                "Successfully ingested file with progress_id: {}",
-                                progress_id
-                            );
-                        } else {
-                            log_feature!(
-                                LogFeature::Ingestion,
-                                error,
-                                "Ingestion failed for progress_id {}: {:?}",
-                                progress_id,
-                                response.errors
-                            );
-                        }
-                    }
-                    Err(e) => {
-                        log_feature!(
-                            LogFeature::Ingestion,
-                            error,
-                            "Ingestion processing failed for progress_id {}: {}",
-                            progress_id,
-                            e
-                        );
-                        progress_service
-                            .fail_progress(&progress_id, format!("Processing failed: {}", e))
-                            .await;
-                    }
+                    log_feature!(
+                        LogFeature::Ingestion,
+                        error,
+                        "Failed to process file {}: {}",
+                        file_path.display(),
+                        e
+                    );
+                    progress_service
+                        .fail_progress(&progress_id, format!("Processing failed: {}", e))
+                        .await;
                 }
             })
             .await
@@ -842,25 +785,7 @@ pub async fn smart_folder_ingest(
 
     // Create progress tracking for each file
     let progress_service = ProgressService::new(progress_tracker.get_ref().clone());
-    let mut file_progress_ids: Vec<FileProgressInfo> = Vec::new();
-
-    for file_path in &files_to_process {
-        let progress_id = uuid::Uuid::new_v4().to_string();
-        let file_name = file_path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("unknown")
-            .to_string();
-
-        progress_service
-            .start_progress(progress_id.clone(), user_id.clone())
-            .await;
-
-        file_progress_ids.push(FileProgressInfo {
-            file_name,
-            progress_id,
-        });
-    }
+    let file_progress_ids = start_file_progress(&files_to_process, &user_id, &progress_service).await;
 
     // Get node for processing
     let (user_id_task, node_arc) = match require_node(&state).await {

@@ -247,70 +247,31 @@ impl IngestionService {
             manager
         };
 
-        // Handle both single objects and arrays of objects
-        let mutations = if let Some(array) = flattened_data.as_array() {
-            // Generate a mutation for each element in the array
-            let total_items = array.len();
-            let mut all_mutations = Vec::new();
-            for (idx, item) in array.iter().enumerate() {
-                let fields_and_values = if let Some(obj) = item.as_object() {
-                    obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
-                } else {
-                    log_feature!(
-                        LogFeature::Ingestion,
-                        warn,
-                        "Array item {} is not an object, skipping",
-                        idx
-                    );
-                    continue;
-                };
+        // Extract common mutation parameters
+        let trust_distance = request
+            .trust_distance
+            .unwrap_or(self.config.default_trust_distance);
+        let pub_key = request.pub_key.clone().ok_or_else(|| {
+            IngestionError::invalid_input("Missing pub_key for mutation generation")
+        })?;
 
-                let keys_and_values = extract_key_values_from_data(
-                    &fields_and_values,
-                    &schema_name,
-                    &schema_manager,
-                )
-                .await?;
-
-                let mutations = self.mutation_generator.generate_mutations(
-                    &schema_name,
-                    &keys_and_values,
-                    &fields_and_values,
-                    &ai_response.mutation_mappers,
-                    request
-                        .trust_distance
-                        .unwrap_or(self.config.default_trust_distance),
-                    request.pub_key.clone().ok_or_else(|| {
-                        IngestionError::invalid_input("Missing pub_key for mutation generation")
-                    })?,
-                    request.source_file_name.clone(),
-                )?;
-
-                all_mutations.extend(mutations);
-
-                // Update progress every 10 items
-                if (idx + 1) % 10 == 0 || idx + 1 == total_items {
-                    let percent_of_step = ((idx + 1) as f32 / total_items as f32 * 15.0) as u8;
-                    let progress_percent = 75 + percent_of_step;
-                    progress_service
-                        .update_progress_with_percentage(
-                            &progress_id,
-                            IngestionStep::GeneratingMutations,
-                            format!("Generating mutations... ({}/{})", idx + 1, total_items),
-                            progress_percent,
-                        )
-                        .await;
-                }
-            }
-
-            all_mutations
+        // Collect items to process — normalize single object to a one-element slice
+        let items: Vec<&serde_json::Map<String, Value>> = if let Some(array) = flattened_data.as_array() {
+            array
+                .iter()
+                .filter_map(|item| item.as_object())
+                .collect()
+        } else if let Some(obj) = flattened_data.as_object() {
+            vec![obj]
         } else {
-            // Handle single object
-            let fields_and_values = if let Some(obj) = flattened_data.as_object() {
-                obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
-            } else {
-                HashMap::new()
-            };
+            vec![]
+        };
+
+        let total_items = items.len();
+        let mut mutations = Vec::new();
+        for (idx, obj) in items.into_iter().enumerate() {
+            let fields_and_values: HashMap<String, Value> =
+                obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
 
             let keys_and_values = extract_key_values_from_data(
                 &fields_and_values,
@@ -319,20 +280,32 @@ impl IngestionService {
             )
             .await?;
 
-            self.mutation_generator.generate_mutations(
+            let item_mutations = self.mutation_generator.generate_mutations(
                 &schema_name,
                 &keys_and_values,
                 &fields_and_values,
                 &ai_response.mutation_mappers,
-                request
-                    .trust_distance
-                    .unwrap_or(self.config.default_trust_distance),
-                request.pub_key.clone().ok_or_else(|| {
-                    IngestionError::invalid_input("Missing pub_key for mutation generation")
-                })?,
+                trust_distance,
+                pub_key.clone(),
                 request.source_file_name.clone(),
-            )?
-        };
+            )?;
+
+            mutations.extend(item_mutations);
+
+            // Update progress every 10 items (only meaningful for arrays)
+            if total_items > 1 && ((idx + 1) % 10 == 0 || idx + 1 == total_items) {
+                let percent_of_step = ((idx + 1) as f32 / total_items as f32 * 15.0) as u8;
+                let progress_percent = 75 + percent_of_step;
+                progress_service
+                    .update_progress_with_percentage(
+                        &progress_id,
+                        IngestionStep::GeneratingMutations,
+                        format!("Generating mutations... ({}/{})", idx + 1, total_items),
+                        progress_percent,
+                    )
+                    .await;
+            }
+        }
 
         log_feature!(
             LogFeature::Ingestion,

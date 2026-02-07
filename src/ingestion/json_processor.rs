@@ -188,43 +188,6 @@ fn flatten_array_elements(value: Value) -> Value {
     }
 }
 
-/// Add file_location metadata to JSON value
-pub fn add_file_location(json: Value, file_path: &std::path::Path) -> Value {
-    match json {
-        Value::Object(mut map) => {
-            // Add file_location directly to the object
-            map.insert(
-                "file_location".to_string(),
-                Value::String(file_path.to_string_lossy().to_string()),
-            );
-            Value::Object(map)
-        }
-        Value::Array(arr) => {
-            // Add file_location to each element in the array
-            let modified_array: Vec<Value> = arr
-                .into_iter()
-                .map(|mut item| {
-                    if let Value::Object(ref mut obj) = item {
-                        obj.insert(
-                            "file_location".to_string(),
-                            Value::String(file_path.to_string_lossy().to_string()),
-                        );
-                    }
-                    item
-                })
-                .collect();
-            Value::Array(modified_array)
-        }
-        other => {
-            // For primitives, wrap in a minimal object with file_location
-            json!({
-                "file_location": file_path.to_string_lossy().to_string(),
-                "value": other
-            })
-        }
-    }
-}
-
 /// Save JSON to a temporary file that persists for testing
 /// Returns the path to the temporary file
 pub fn save_json_to_temp_file(json: &Value) -> std::io::Result<String> {
@@ -366,36 +329,6 @@ mod tests {
 
         let arr = result.as_array().unwrap();
         assert_eq!(arr.len(), 2);
-    }
-
-    #[test]
-    fn test_add_file_location_to_object() {
-        let input = json!({"id": 1, "name": "Alice"});
-        let path = PathBuf::from("/test/file.csv");
-
-        let result = add_file_location(input, &path);
-
-        assert!(result.is_object());
-        let obj = result.as_object().unwrap();
-        assert_eq!(obj["file_location"], "/test/file.csv");
-        assert_eq!(obj["id"], 1);
-    }
-
-    #[test]
-    fn test_add_file_location_to_array() {
-        let input = json!([
-            {"id": 1, "name": "Alice"},
-            {"id": 2, "name": "Bob"}
-        ]);
-        let path = PathBuf::from("/test/file.csv");
-
-        let result = add_file_location(input, &path);
-
-        assert!(result.is_array());
-        let arr = result.as_array().unwrap();
-        assert_eq!(arr.len(), 2);
-        assert_eq!(arr[0]["file_location"], "/test/file.csv");
-        assert_eq!(arr[1]["file_location"], "/test/file.csv");
     }
 
     #[test]
