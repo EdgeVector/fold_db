@@ -120,10 +120,8 @@ async fn test_blogpost_mutation_triggers_transforms() {
     let start = std::time::Instant::now();
 
     while start.elapsed() < timeout {
-        if let Ok(event) = transform_triggered_consumer.try_recv() {
-            if let Event::TransformTriggered(e) = event {
-                triggered_transform_ids.push(e.transform_id);
-            }
+        if let Ok(Event::TransformTriggered(e)) = transform_triggered_consumer.try_recv() {
+            triggered_transform_ids.push(e.transform_id);
         }
         tokio::time::sleep(Duration::from_millis(5)).await;
     }
@@ -155,10 +153,8 @@ async fn test_blogpost_mutation_triggers_transforms() {
     let execution_start = std::time::Instant::now();
 
     while execution_start.elapsed() < execution_timeout {
-        if let Ok(event) = transform_executed_consumer.try_recv() {
-            if let Event::TransformExecuted(e) = event {
-                executed_transform_ids.push(e.transform_id);
-            }
+        if let Ok(Event::TransformExecuted(e)) = transform_executed_consumer.try_recv() {
+            executed_transform_ids.push(e.transform_id);
         }
         tokio::time::sleep(Duration::from_millis(5)).await;
     }
@@ -277,10 +273,8 @@ async fn test_partial_mutation_triggers_subset_of_transforms() {
     let start = std::time::Instant::now();
 
     while start.elapsed() < timeout {
-        if let Ok(event) = transform_triggered_consumer.try_recv() {
-            if let Event::TransformTriggered(e) = event {
-                triggered_transform_ids.push(e.transform_id);
-            }
+        if let Ok(Event::TransformTriggered(e)) = transform_triggered_consumer.try_recv() {
+            triggered_transform_ids.push(e.transform_id);
         }
         tokio::time::sleep(Duration::from_millis(5)).await;
     }
@@ -397,10 +391,8 @@ async fn test_content_mutation_triggers_word_transform() {
     let start = std::time::Instant::now();
 
     while start.elapsed() < timeout {
-        if let Ok(event) = transform_triggered_consumer.try_recv() {
-            if let Event::TransformTriggered(e) = event {
-                triggered_transform_ids.push(e.transform_id);
-            }
+        if let Ok(Event::TransformTriggered(e)) = transform_triggered_consumer.try_recv() {
+            triggered_transform_ids.push(e.transform_id);
         }
         tokio::time::sleep(Duration::from_millis(5)).await;
     }

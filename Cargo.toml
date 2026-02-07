@@ -9,6 +9,7 @@ default = []
 test-utils = []  # Feature flag for test utilities
 ts-bindings = ["ts-rs"]  # Generate TypeScript bindings when enabled
 aws-backend = ["aws-config", "aws-sdk-dynamodb", "aws-sdk-s3", "aws-sdk-sns", "aws-sdk-sqs", "serde_dynamo"]  # AWS backends (DynamoDB, S3, SNS, SQS)
+embedded-assets = [] # Enable embedding of static React assets
 
 [dependencies]
 # Utilities
@@ -122,4 +123,3 @@ lto = "off"
 codegen-units = 16
 debug = false
 panic = "abort"
-

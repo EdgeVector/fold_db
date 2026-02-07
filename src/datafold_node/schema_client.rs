@@ -1,8 +1,9 @@
 use crate::error::{FoldDbError, FoldDbResult};
 use crate::schema::types::Schema;
-use reqwest::StatusCode;
+use reqwest::{StatusCode, Url};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::net::IpAddr;
 
 /// Client for communicating with the schema service
 #[derive(Clone)]
@@ -29,11 +30,15 @@ impl SchemaServiceClient {
     /// Create a new schema service client
     pub fn new(schema_service_url: &str) -> Self {
         // Create client with timeout to prevent hanging
-        let client = reqwest::Client::builder()
+        let mut builder = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(30))
-            .connect_timeout(std::time::Duration::from_secs(10))
-            .build()
-            .unwrap_or_else(|_| reqwest::Client::new());
+            .connect_timeout(std::time::Duration::from_secs(10));
+
+        if is_loopback_url(schema_service_url) {
+            builder = builder.no_proxy();
+        }
+
+        let client = builder.build().unwrap_or_else(|_| reqwest::Client::new());
 
         Self {
             base_url: schema_service_url.to_string(),
@@ -312,6 +317,24 @@ impl SchemaServiceClient {
 
         Ok(())
     }
+}
+
+fn is_loopback_url(url: &str) -> bool {
+    let parsed = match Url::parse(url) {
+        Ok(parsed) => parsed,
+        Err(_) => return false,
+    };
+
+    let host = match parsed.host_str() {
+        Some(host) => host,
+        None => return false,
+    };
+
+    if host.eq_ignore_ascii_case("localhost") {
+        return true;
+    }
+
+    host.parse::<IpAddr>().is_ok_and(|ip| ip.is_loopback())
 }
 
 #[cfg(test)]

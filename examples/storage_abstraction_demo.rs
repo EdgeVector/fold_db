@@ -1,12 +1,12 @@
-///! Storage Abstraction Demonstration
-///!
-///! This example shows how to use the storage abstraction layer (DbOperations)
-///! with different backends: Sled, DynamoDB, and In-Memory.
-///!
-///! Run with:
-///! ```bash
-///! cargo run --example storage_abstraction_demo
-///! ```
+//! Storage Abstraction Demonstration
+//!
+//! This example shows how to use the storage abstraction layer (DbOperations)
+//! with different backends: Sled, DynamoDB, and In-Memory.
+//!
+//! Run with:
+//! ```bash
+//! cargo run --example storage_abstraction_demo
+//! ```
 use fold_db::db_operations::DbOperations;
 use fold_db::storage::{InMemoryNamespacedStore, NamespacedStore};
 use serde::{Deserialize, Serialize};
@@ -54,7 +54,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let keys = db_ops_sled.list_items_with_prefix("users:").await?;
     println!("✅ Keys with prefix 'users:': {:?}", keys);
 
-    println!("✅ Backend: {}", "Sled");
+    println!("✅ Backend: Sled");
     println!();
 
     // ============================================
@@ -100,7 +100,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    println!("✅ Backend: {}", "In-Memory");
+    println!("✅ Backend: In-Memory");
     println!();
 
     // ============================================
@@ -147,12 +147,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔄 Example 4: Same API Across All Backends");
     println!("────────────────────────────────────────────");
 
-    async fn store_and_retrieve<T>(
+    async fn store_and_retrieve(
         db_ops: &DbOperations,
         backend_name: &str,
     ) -> Result<(), Box<dyn std::error::Error>>
-    where
-        T: Serialize + for<'de> Deserialize<'de> + std::fmt::Debug + Clone,
     {
         let user = User {
             id: "demo".to_string(),
@@ -168,9 +166,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // All three backends use the exact same API!
-    store_and_retrieve::<User>(&db_ops_sled, "Sled").await?;
-    store_and_retrieve::<User>(&db_ops_mem, "In-Memory").await?;
-    // store_and_retrieve::<User>(&db_ops_dynamo, "DynamoDB").await?; // Would work too!
+    store_and_retrieve(&db_ops_sled, "Sled").await?;
+    store_and_retrieve(&db_ops_mem, "In-Memory").await?;
+    // store_and_retrieve(&db_ops_dynamo, "DynamoDB").await?; // Would work too!
 
     println!();
     println!("╔════════════════════════════════════════════╗");

@@ -314,10 +314,7 @@ mod tests {
             .unwrap();
 
         let received = consumer.recv().await;
-        match received {
-            Some(Event::MutationRequest(_)) => assert!(true),
-            _ => panic!("Expected MutationRequest event"),
-        }
+        assert!(matches!(received, Some(Event::MutationRequest(_))));
     }
 
     #[tokio::test]

@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 use fold_db::datafold_node::{DataFoldNode, NodeConfig};
-use fold_db::ingestion::mutation_generator::MutationGenerator;
+use fold_db::ingestion::mutation_generator::generate_mutations;
 
 mod common;
 use common::create_test_mutation;
@@ -31,7 +31,6 @@ async fn test_mutation_performance_investigation() {
 async fn _test_mutation_generation_performance() {
     println!("\n--- Phase 1: Mutation Generation Performance ---");
 
-    let generator = MutationGenerator::new();
     let schema_name = "PerformanceTestSchema";
 
     // Prepare sample data (1000 items)
@@ -61,32 +60,27 @@ async fn _test_mutation_generation_performance() {
         all_data.push(fields);
     }
 
-    let mut mappers = HashMap::new();
-    // Assuming simple mapping where fields map to themselves if not specified,
-    // or we can leave empty for default behavior if MutationGenerator supports it.
-    // Correct mapping: JSON field -> Schema field
-    mappers.insert("id".to_string(), "PerformanceTestSchema.id".to_string());
+    let mappers = HashMap::new();
 
     let start = Instant::now();
 
     let mut total_mutations = 0;
     for fields in &all_data {
         let keys_values = HashMap::from([(
-            "id".to_string(),
+            "hash_field".to_string(),
             fields.get("id").unwrap().as_str().unwrap().to_string(),
         )]);
 
-        let mutations = generator
-            .generate_mutations(
-                schema_name,
-                &keys_values,
-                fields,
-                &mappers,
-                0,
-                "test_pub_key".to_string(),
-                None,
-            )
-            .expect("Failed to generate mutations");
+        let mutations = generate_mutations(
+            schema_name,
+            &keys_values,
+            fields,
+            &mappers,
+            0,
+            "test_pub_key".to_string(),
+            None,
+        )
+        .expect("Failed to generate mutations");
 
         total_mutations += mutations.len();
     }

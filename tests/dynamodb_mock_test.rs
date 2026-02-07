@@ -40,6 +40,12 @@ impl MockHttpClient {
     }
 }
 
+impl Default for MockHttpClient {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl HttpClient for MockHttpClient {
     fn http_connector(
         &self,
@@ -104,34 +110,34 @@ fn create_mock_client(mock: MockHttpClient) -> aws_sdk_dynamodb::Client {
 #[tokio::test]
 async fn test_dynamodb_put_mock() {
     let mock = MockHttpClient::new();
-    let client = create_mock_client(mock.clone());
-    let store = DynamoDbKvStore::new(
-        Arc::new(client),
-        "TestTable".to_string(),
-        "user1".to_string(),
-    );
+    let client = Arc::new(create_mock_client(mock.clone()));
 
-    let key = b"test_key";
-    let value = b"test_value";
+    fold_db::logging::core::run_with_user("user1", async {
+        let store = DynamoDbKvStore::new(client.clone(), "TestTable".to_string());
 
-    store.put(key, value.to_vec()).await.expect("put failed");
+        let key = b"test_key";
+        let value = b"test_value";
 
-    // Verify request
-    let request = mock.get_last_request().expect("no request sent");
-    let body_str = std::str::from_utf8(&request.body).expect("invalid utf8");
+        store.put(key, value.to_vec()).await.expect("put failed");
 
-    // DynamoDB uses JSON
-    // We expect a PutItem request
-    // {"TableName":"TestTable","Item":{"PK":{"S":"user1:test_key"},"SK":{"S":"test_key"},"Value":{"S":"test_value"}}}
+        // Verify request
+        let request = mock.get_last_request().expect("no request sent");
+        let body_str = std::str::from_utf8(&request.body).expect("invalid utf8");
 
-    println!("Request body: {}", body_str);
-    // assert!(body_str.contains("PutItem")); // The action is in headers
-    assert!(body_str.contains("TestTable"));
-    // PK should be just "user1"
-    assert!(body_str.contains("\"PK\":{\"S\":\"user1\"}"));
-    // SK should be "test_key"
-    assert!(body_str.contains("\"SK\":{\"S\":\"test_key\"}"));
-    assert!(body_str.contains("test_value"));
+        // DynamoDB uses JSON
+        // We expect a PutItem request
+        // {"TableName":"TestTable","Item":{"PK":{"S":"user1:test_key"},"SK":{"S":"test_key"},"Value":{"S":"test_value"}}}
+
+        println!("Request body: {}", body_str);
+        // assert!(body_str.contains("PutItem")); // The action is in headers
+        assert!(body_str.contains("TestTable"));
+        // PK should be just "user1"
+        assert!(body_str.contains("\"PK\":{\"S\":\"user1\"}"));
+        // SK should be "test_key"
+        assert!(body_str.contains("\"SK\":{\"S\":\"test_key\"}"));
+        assert!(body_str.contains("test_value"));
+    })
+    .await;
 }
 
 #[tokio::test]
@@ -149,88 +155,83 @@ async fn test_dynamodb_get_mock() {
     "#;
 
     let mock = MockHttpClient::new().with_response(200, response_body);
-    let client = create_mock_client(mock.clone());
-    let store = DynamoDbKvStore::new(
-        Arc::new(client),
-        "TestTable".to_string(),
-        "user1".to_string(),
-    );
+    let client = Arc::new(create_mock_client(mock.clone()));
 
-    let key = b"test_key";
-    let result = store.get(key).await.expect("get failed");
+    fold_db::logging::core::run_with_user("user1", async {
+        let store = DynamoDbKvStore::new(client.clone(), "TestTable".to_string());
 
-    assert_eq!(result, Some(b"test_value".to_vec()));
+        let key = b"test_key";
+        let result = store.get(key).await.expect("get failed");
 
-    // Verify request
-    let request = mock.get_last_request().expect("no request sent");
-    let body_str = std::str::from_utf8(&request.body).expect("invalid utf8");
+        assert_eq!(result, Some(b"test_value".to_vec()));
 
-    println!("Request body: {}", body_str);
-    // Note: GetItem body might be empty if using query params, or JSON if using POST
-    // AWS SDK usually uses POST for DynamoDB
-    assert!(body_str.contains("TestTable"));
-    // PK should be just "user1"
-    assert!(body_str.contains("\"PK\":{\"S\":\"user1\"}"));
+        // Verify request
+        let request = mock.get_last_request().expect("no request sent");
+        let body_str = std::str::from_utf8(&request.body).expect("invalid utf8");
+
+        println!("Request body: {}", body_str);
+        // Note: GetItem body might be empty if using query params, or JSON if using POST
+        // AWS SDK usually uses POST for DynamoDB
+        assert!(body_str.contains("TestTable"));
+        // PK should be just "user1"
+        assert!(body_str.contains("\"PK\":{\"S\":\"user1\"}"));
+    })
+    .await;
 }
 
 #[tokio::test]
 async fn test_dynamodb_namespace_isolation_mock() {
     let mock = MockHttpClient::new();
-    let client = create_mock_client(mock.clone());
+    let client = Arc::new(create_mock_client(mock.clone()));
 
-    // Create two stores with different table names (simulating namespaces)
-    let store1 = DynamoDbKvStore::new(
-        Arc::new(client.clone()),
-        "Namespace1".to_string(),
-        "user1".to_string(),
-    );
-    let store2 = DynamoDbKvStore::new(
-        Arc::new(client),
-        "Namespace2".to_string(),
-        "user1".to_string(),
-    );
+    fold_db::logging::core::run_with_user("user1", async {
+        // Create two stores with different table names (simulating namespaces)
+        let store1 = DynamoDbKvStore::new(client.clone(), "Namespace1".to_string());
+        let store2 = DynamoDbKvStore::new(client.clone(), "Namespace2".to_string());
 
-    let key = b"key";
-    let value = b"value";
+        let key = b"key";
+        let value = b"value";
 
-    // Put to store1
-    store1.put(key, value.to_vec()).await.expect("put failed");
-    let req1 = mock.get_last_request().expect("req1 missing");
-    let body1 = std::str::from_utf8(&req1.body).expect("utf8");
-    assert!(body1.contains("Namespace1"));
-    assert!(!body1.contains("Namespace2"));
+        // Put to store1
+        store1.put(key, value.to_vec()).await.expect("put failed");
+        let req1 = mock.get_last_request().expect("req1 missing");
+        let body1 = std::str::from_utf8(&req1.body).expect("utf8");
+        assert!(body1.contains("Namespace1"));
+        assert!(!body1.contains("Namespace2"));
 
-    // Put to store2
-    store2.put(key, value.to_vec()).await.expect("put failed");
-    let req2 = mock.get_last_request().expect("req2 missing");
-    let body2 = std::str::from_utf8(&req2.body).expect("utf8");
-    assert!(body2.contains("Namespace2"));
-    assert!(!body2.contains("Namespace1"));
+        // Put to store2
+        store2.put(key, value.to_vec()).await.expect("put failed");
+        let req2 = mock.get_last_request().expect("req2 missing");
+        let body2 = std::str::from_utf8(&req2.body).expect("utf8");
+        assert!(body2.contains("Namespace2"));
+        assert!(!body2.contains("Namespace1"));
+    })
+    .await;
 }
 
 #[tokio::test]
 async fn test_dynamodb_special_chars_mock() {
     let mock = MockHttpClient::new();
-    let client = create_mock_client(mock.clone());
-    let store = DynamoDbKvStore::new(
-        Arc::new(client),
-        "TestTable".to_string(),
-        "user1".to_string(),
-    );
+    let client = Arc::new(create_mock_client(mock.clone()));
 
-    // Test key with special chars: colon, slash, space, unicode
-    let key = "key:with/special chars_and_🚀".as_bytes();
-    let value = b"value";
+    fold_db::logging::core::run_with_user("user1", async {
+        let store = DynamoDbKvStore::new(client.clone(), "TestTable".to_string());
 
-    store.put(key, value.to_vec()).await.expect("put failed");
+        // Test key with special chars: colon, slash, space, unicode
+        let key = "key:with/special chars_and_🚀".as_bytes();
+        let value = b"value";
 
-    let request = mock.get_last_request().expect("request missing");
-    let body_str = std::str::from_utf8(&request.body).expect("utf8");
+        store.put(key, value.to_vec()).await.expect("put failed");
 
-    // Verify SK contains the special chars (JSON escaped)
-    // "key:with/special chars_and_🚀"
-    assert!(body_str.contains("key:with/special chars_and_"));
-    // Unicode might be escaped or raw depending on serde, but usually raw in UTF-8
-    // We'll check for the prefix to be safe
-    assert!(body_str.contains("key:with/special"));
+        let request = mock.get_last_request().expect("request missing");
+        let body_str = std::str::from_utf8(&request.body).expect("utf8");
+
+        // Verify SK contains the special chars (JSON escaped)
+        // "key:with/special chars_and_🚀"
+        assert!(body_str.contains("key:with/special chars_and_"));
+        // Unicode might be escaped or raw depending on serde, but usually raw in UTF-8
+        // We'll check for the prefix to be safe
+        assert!(body_str.contains("key:with/special"));
+    })
+    .await;
 }

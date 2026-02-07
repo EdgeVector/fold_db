@@ -43,7 +43,7 @@ impl DynamoDbKvStore {
 
     /// Get the partition key to use for this store
     #[cfg(test)]
-    pub fn get_partition_key(&self) -> String {
+    pub fn get_partition_key(&self) -> StorageResult<String> {
         self.get_partition_key_impl()
     }
 
@@ -963,37 +963,34 @@ mod unit_tests {
         let client = create_dummy_client().await;
 
         // Case 1: With user_id
-        let store = DynamoDbKvStore::new(
-            client.clone(),
-            "TestTable".to_string(),
-            "user123".to_string(),
-        );
-
         let key = b"my_key";
-        let pk = store.get_partition_key_with_key(key);
-        let sk = store.make_sort_key_impl(key);
+        crate::logging::core::run_with_user("user123", async {
+            let store = DynamoDbKvStore::new(client.clone(), "TestTable".to_string());
 
-        // PK should now be just user_id (or default)
-        // SK should be the key itself
-        assert_eq!(pk, "user123");
-        assert_eq!(sk, "my_key");
+            let pk = store
+                .get_partition_key_with_key(key)
+                .expect("failed to get partition key");
+            let sk = store.make_sort_key_impl(key);
+
+            // PK should now be just user_id (or default)
+            // SK should be the key itself
+            assert_eq!(pk, "user123");
+            assert_eq!(sk, "my_key");
+        })
+        .await;
 
         // Case 2: Without user_id (default)
-        let store_default = DynamoDbKvStore::new(
-            client.clone(),
-            "TestTable".to_string(),
-            "default".to_string(),
-        );
-
-        let pk_default = store_default.get_partition_key_with_key(key);
-        assert_eq!(pk_default, "default");
+        let store_default = DynamoDbKvStore::new(client.clone(), "TestTable".to_string());
+        let pk_default = store_default
+            .get_partition_key_with_key(key)
+            .expect("failed to get default partition key");
+        assert_eq!(pk_default, "__system__");
     }
 
     #[tokio::test]
     async fn test_native_index_key_parsing() {
         let client = create_dummy_client().await;
-        let store =
-            DynamoDbNativeIndexStore::new(client, "IndexTable".to_string(), "user123".to_string());
+        let store = DynamoDbNativeIndexStore::new(client, "IndexTable".to_string());
 
         // Case 1: Standard feature:term key
         let (feature, term) = store.parse_key(b"word:hello").unwrap();
@@ -1020,20 +1017,20 @@ mod unit_tests {
         let client = create_dummy_client().await;
 
         // Case 1: With user_id
-        let store = DynamoDbNativeIndexStore::new(
-            client.clone(),
-            "IndexTable".to_string(),
-            "user123".to_string(),
-        );
-
-        let pk = store.get_partition_key("word");
-        assert_eq!(pk, "user123:word");
+        crate::logging::core::run_with_user("user123", async {
+            let store = DynamoDbNativeIndexStore::new(client.clone(), "IndexTable".to_string());
+            let pk = store
+                .get_partition_key("word")
+                .expect("failed to get partition key");
+            assert_eq!(pk, "user123:word");
+        })
+        .await;
 
         // Case 2: Without user_id
-        let store_default =
-            DynamoDbNativeIndexStore::new(client, "IndexTable".to_string(), "default".to_string());
-
-        let pk_default = store_default.get_partition_key("email");
-        assert_eq!(pk_default, "default:email");
+        let store_default = DynamoDbNativeIndexStore::new(client, "IndexTable".to_string());
+        let pk_default = store_default
+            .get_partition_key("email")
+            .expect("failed to get default partition key");
+        assert_eq!(pk_default, "__system__:email");
     }
 }

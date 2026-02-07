@@ -36,7 +36,7 @@ impl DynamoDbSchemaStore {
         let table_name = config.tables.schemas.clone();
 
         // Require user_id
-        let user_id = config.user_id.ok_or_else(|| {
+        let _user_id = config.user_id.ok_or_else(|| {
             FoldDbError::Config("Missing user_id for DynamoDbSchemaStore".to_string())
         })?;
 
