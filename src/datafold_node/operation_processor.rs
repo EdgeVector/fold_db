@@ -728,7 +728,7 @@ impl OperationProcessor {
         file_path: &std::path::Path,
         auto_execute: bool,
     ) -> FoldDbResult<crate::ingestion::IngestionResponse> {
-        use crate::ingestion::core::IngestionRequest;
+        use crate::ingestion::IngestionRequest;
         use crate::ingestion::json_processor::convert_file_to_json;
         use crate::ingestion::progress::ProgressService;
         use crate::ingestion::smart_folder;

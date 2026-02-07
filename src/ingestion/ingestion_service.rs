@@ -5,7 +5,7 @@
 
 use crate::datafold_node::DataFoldNode;
 use crate::ingestion::config::AIProvider;
-use crate::ingestion::core::IngestionRequest;
+use crate::ingestion::IngestionRequest;
 use crate::ingestion::mutation_generator::MutationGenerator;
 use crate::ingestion::ollama_service::OllamaService;
 use crate::ingestion::openrouter_service::OpenRouterService;
@@ -17,8 +17,95 @@ use crate::ingestion::{
 use crate::log_feature;
 use crate::logging::features::LogFeature;
 use crate::schema::types::Mutation;
+use crate::schema::SchemaCore;
 use serde_json::Value;
 use std::collections::HashMap;
+use std::sync::Arc;
+
+/// Extract key values from JSON data based on schema key fields.
+/// Looks up the schema in the node's schema manager to find key configuration,
+/// then extracts the corresponding values from the data.
+async fn extract_key_values_from_data(
+    fields_and_values: &HashMap<String, Value>,
+    schema_name: &str,
+    schema_manager: &Arc<SchemaCore>,
+) -> IngestionResult<HashMap<String, String>> {
+    let mut keys_and_values = HashMap::new();
+
+    if let Ok(Some(schema)) = schema_manager.get_schema(schema_name) {
+        if let Some(key_def) = &schema.key {
+            // Extract hash field value if present
+            if let Some(hash_field) = &key_def.hash_field {
+                if let Some(hash_value) = fields_and_values.get(hash_field) {
+                    if let Some(hash_str) = hash_value.as_str() {
+                        keys_and_values.insert("hash_field".to_string(), hash_str.to_string());
+                    } else if let Some(hash_num) = hash_value.as_f64() {
+                        keys_and_values.insert("hash_field".to_string(), hash_num.to_string());
+                    }
+                }
+            }
+
+            // Extract range field value if present
+            if let Some(range_field) = &key_def.range_field {
+                if let Some(range_value) =
+                    extract_nested_field_value(fields_and_values, range_field)
+                {
+                    if let Some(range_str) = range_value.as_str() {
+                        keys_and_values.insert("range_field".to_string(), range_str.to_string());
+                    } else if let Some(range_num) = range_value.as_f64() {
+                        keys_and_values.insert("range_field".to_string(), range_num.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    log_feature!(
+        LogFeature::Ingestion,
+        info,
+        "Extracted key values for schema '{}': {:?}",
+        schema_name,
+        keys_and_values
+    );
+
+    Ok(keys_and_values)
+}
+
+/// Extract nested field value from JSON data using dot notation.
+fn extract_nested_field_value<'a>(
+    fields_and_values: &'a HashMap<String, Value>,
+    field_path: &str,
+) -> Option<&'a Value> {
+    // First try direct field access
+    if let Some(value) = fields_and_values.get(field_path) {
+        return Some(value);
+    }
+
+    // Then try nested field access (e.g., "like.tweetId")
+    if field_path.contains('.') {
+        let parts: Vec<&str> = field_path.split('.').collect();
+        if parts.len() == 2 {
+            if let Some(parent_value) = fields_and_values.get(parts[0]) {
+                if let Some(parent_obj) = parent_value.as_object() {
+                    if let Some(result) = parent_obj.get(parts[1]) {
+                        return Some(result);
+                    }
+                }
+            }
+        }
+    }
+
+    // Try to find the field in nested objects
+    for value in fields_and_values.values() {
+        if let Some(obj) = value.as_object() {
+            if let Some(nested_value) = obj.get(field_path) {
+                return Some(nested_value);
+            }
+        }
+    }
+
+    None
+}
 
 /// AI-powered ingestion service that works with DataFoldNode
 pub struct IngestionService {
@@ -142,6 +229,18 @@ impl IngestionService {
                 "Generating database mutations...".to_string(),
             )
             .await;
+
+        // Get schema manager for key extraction
+        let schema_manager = {
+            let db_guard = node
+                .get_fold_db()
+                .await
+                .map_err(|error| IngestionError::SchemaCreationError(error.to_string()))?;
+            let manager = db_guard.schema_manager.clone();
+            drop(db_guard);
+            manager
+        };
+
         // Handle both single objects and arrays of objects
         let mutations = if let Some(array) = flattened_data.as_array() {
             // Generate a mutation for each element in the array
@@ -160,9 +259,16 @@ impl IngestionService {
                     continue;
                 };
 
+                let keys_and_values = extract_key_values_from_data(
+                    &fields_and_values,
+                    &schema_name,
+                    &schema_manager,
+                )
+                .await?;
+
                 let mutations = self.mutation_generator.generate_mutations(
                     &schema_name,
-                    &HashMap::new(),
+                    &keys_and_values,
                     &fields_and_values,
                     &ai_response.mutation_mappers,
                     request
@@ -200,9 +306,16 @@ impl IngestionService {
                 HashMap::new()
             };
 
+            let keys_and_values = extract_key_values_from_data(
+                &fields_and_values,
+                &schema_name,
+                &schema_manager,
+            )
+            .await?;
+
             self.mutation_generator.generate_mutations(
                 &schema_name,
-                &HashMap::new(),
+                &keys_and_values,
                 &fields_and_values,
                 &ai_response.mutation_mappers,
                 request
@@ -303,11 +416,21 @@ impl IngestionService {
             .await?;
         let new_schema_created = ai_response.new_schemas.is_some();
 
-        // Step 6: Generate mutations
+        // Step 5: Generate mutations
+        // Get schema manager for key extraction
+        let schema_manager = {
+            let db_guard = node
+                .get_fold_db()
+                .await
+                .map_err(|error| IngestionError::SchemaCreationError(error.to_string()))?;
+            let manager = db_guard.schema_manager.clone();
+            drop(db_guard);
+            manager
+        };
+
         // Handle both single objects and arrays of objects
         let mutations = if let Some(array) = flattened_data.as_array() {
             // Generate a mutation for each element in the array
-
             let mut all_mutations = Vec::new();
             for (idx, item) in array.iter().enumerate() {
                 let fields_and_values = if let Some(obj) = item.as_object() {
@@ -322,9 +445,16 @@ impl IngestionService {
                     continue;
                 };
 
+                let keys_and_values = extract_key_values_from_data(
+                    &fields_and_values,
+                    &schema_name,
+                    &schema_manager,
+                )
+                .await?;
+
                 let mutations = self.mutation_generator.generate_mutations(
                     &schema_name,
-                    &HashMap::new(),
+                    &keys_and_values,
                     &fields_and_values,
                     &ai_response.mutation_mappers,
                     request
@@ -348,9 +478,16 @@ impl IngestionService {
                 HashMap::new()
             };
 
+            let keys_and_values = extract_key_values_from_data(
+                &fields_and_values,
+                &schema_name,
+                &schema_manager,
+            )
+            .await?;
+
             self.mutation_generator.generate_mutations(
                 &schema_name,
-                &HashMap::new(),
+                &keys_and_values,
                 &fields_and_values,
                 &ai_response.mutation_mappers,
                 request

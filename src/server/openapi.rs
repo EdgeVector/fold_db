@@ -70,7 +70,7 @@ use utoipa::OpenApi;
             crate::ingestion::config::AIProvider,
             crate::ingestion::config::OpenRouterConfig,
             crate::ingestion::config::OllamaConfig,
-            crate::ingestion::core::IngestionRequest,
+            crate::ingestion::IngestionRequest,
             crate::ingestion::IngestionResponse,
             crate::server::routes::log::LogLevelUpdate,
             crate::server::routes::log::LogConfigResponse,

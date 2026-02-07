@@ -1,7 +1,7 @@
 //! HTTP route handlers for the ingestion API
 
 use crate::ingestion::config::{IngestionConfig, SavedConfig};
-use crate::ingestion::core::IngestionRequest;
+use crate::ingestion::IngestionRequest;
 use crate::ingestion::progress::ProgressService;
 use crate::ingestion::ingestion_service::IngestionService;
 use crate::ingestion::smart_folder;

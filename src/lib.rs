@@ -67,7 +67,7 @@ pub use security::{
 };
 
 // Re-export ingestion types
-pub use ingestion::{IngestionConfig, IngestionCore, IngestionError, IngestionResponse};
+pub use ingestion::{IngestionConfig, IngestionError, IngestionResponse};
 
 // Re-export storage types
 pub use storage::{DatabaseConfig, StorageError};

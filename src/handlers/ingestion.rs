@@ -299,7 +299,7 @@ pub async fn process_json(
     tracker: &ProgressTracker,
     node: &DataFoldNode,
 ) -> HandlerResult<ProcessJsonResponse> {
-    use crate::ingestion::core::IngestionRequest;
+    use crate::ingestion::IngestionRequest;
 
     // Validate data is not empty
     if request.data.is_null() {
