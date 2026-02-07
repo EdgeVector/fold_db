@@ -36,7 +36,6 @@ use utoipa::OpenApi;
         crate::server::routes::log::get_features,
         crate::ingestion::routes::process_json,
         crate::ingestion::routes::get_status,
-        crate::ingestion::routes::health_check,
         crate::ingestion::routes::validate_json,
         crate::ingestion::routes::get_ingestion_config,
         crate::ingestion::routes::save_ingestion_config,

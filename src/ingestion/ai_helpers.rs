@@ -6,6 +6,73 @@ use crate::log_feature;
 use crate::logging::features::LogFeature;
 use serde_json::Value;
 use std::collections::HashMap;
+use std::future::Future;
+use std::time::Duration;
+
+/// Call an async function with retries and exponential backoff.
+///
+/// Logs each attempt and backs off exponentially (1s, 2s, 4s, ...) on failure.
+/// `label` is used in log messages (e.g. "OpenRouter API" or "Ollama API").
+/// `fallback_error` is called if all attempts fail without producing an error.
+pub async fn call_with_retries<F, Fut>(
+    label: &str,
+    max_retries: u32,
+    fallback_error: fn() -> IngestionError,
+    mut call_fn: F,
+) -> IngestionResult<String>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = IngestionResult<String>>,
+{
+    let mut last_error = None;
+
+    for attempt in 1..=max_retries {
+        log_feature!(
+            LogFeature::Ingestion,
+            info,
+            "{} attempt {} of {}",
+            label,
+            attempt,
+            max_retries
+        );
+
+        let start_time = std::time::Instant::now();
+        match call_fn().await {
+            Ok(response) => {
+                let elapsed = start_time.elapsed();
+                log_feature!(
+                    LogFeature::Ingestion,
+                    info,
+                    "{} call successful on attempt {} (took {:.2?})",
+                    label,
+                    attempt,
+                    elapsed
+                );
+                return Ok(response);
+            }
+            Err(e) => {
+                let elapsed = start_time.elapsed();
+                log_feature!(
+                    LogFeature::Ingestion,
+                    warn,
+                    "{} attempt {} failed (took {:.2?}): {}",
+                    label,
+                    attempt,
+                    elapsed,
+                    e
+                );
+                last_error = Some(e);
+
+                if attempt < max_retries {
+                    let delay = Duration::from_secs(2_u64.pow(attempt - 1));
+                    tokio::time::sleep(delay).await;
+                }
+            }
+        }
+    }
+
+    Err(last_error.unwrap_or_else(fallback_error))
+}
 
 /// Pretty-print a JSON value.
 pub fn pretty_json(value: &Value) -> String {
@@ -108,6 +175,9 @@ pub fn analyze_and_build_prompt(sample_json: &Value) -> IngestionResult<String> 
 }
 
 /// Extract JSON from an AI response text that may contain markdown fences or extra text.
+///
+/// Handles both JSON objects (`{...}`) and arrays (`[...]`), with support for
+/// markdown code blocks and surrounding prose.
 pub fn extract_json_from_response(response_text: &str) -> IngestionResult<String> {
     // First try to find a JSON block marker
     let text_to_parse = if let Some(start) = response_text.find("```json") {
@@ -118,10 +188,16 @@ pub fn extract_json_from_response(response_text: &str) -> IngestionResult<String
         } else {
             &response_text[search_start..]
         }
-    } else if let Some(start) = response_text.find('{') {
-        &response_text[start..]
     } else {
-        response_text
+        // Find the first '{' or '[' — whichever comes first
+        let obj_start = response_text.find('{');
+        let arr_start = response_text.find('[');
+        match (obj_start, arr_start) {
+            (Some(o), Some(a)) => &response_text[o.min(a)..],
+            (Some(o), None) => &response_text[o..],
+            (None, Some(a)) => &response_text[a..],
+            (None, None) => response_text,
+        }
     };
 
     // Use serde_json stream deserializer to parse the first valid JSON value
@@ -143,9 +219,21 @@ pub fn extract_json_from_response(response_text: &str) -> IngestionResult<String
         }
     }
 
-    // Fallback: simpler extraction if stream parsing failed
+    // Fallback: try brace-matching for objects
     if let Some(start) = response_text.find('{') {
         if let Some(end) = response_text.rfind('}') {
+            if end > start {
+                let json_candidate = response_text[start..=end].to_string();
+                if serde_json::from_str::<Value>(&json_candidate).is_ok() {
+                    return Ok(json_candidate);
+                }
+            }
+        }
+    }
+
+    // Fallback: try bracket-matching for arrays
+    if let Some(start) = response_text.find('[') {
+        if let Some(end) = response_text.rfind(']') {
             if end > start {
                 let json_candidate = response_text[start..=end].to_string();
                 if serde_json::from_str::<Value>(&json_candidate).is_ok() {

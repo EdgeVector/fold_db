@@ -114,53 +114,13 @@ impl OpenRouterService {
             temperature: Some(0.1),
         };
 
-        let mut last_error = None;
-
-        for attempt in 1..=self.max_retries {
-            log_feature!(
-                LogFeature::Ingestion,
-                info,
-                "OpenRouter API attempt {} of {}",
-                attempt,
-                self.max_retries
-            );
-
-            let start_time = std::time::Instant::now();
-            match self.make_api_request(&request).await {
-                Ok(response) => {
-                    let elapsed = start_time.elapsed();
-                    log_feature!(
-                        LogFeature::Ingestion,
-                        info,
-                        "OpenRouter API call successful on attempt {} (took {:.2?})",
-                        attempt,
-                        elapsed
-                    );
-                    return Ok(response);
-                }
-                Err(e) => {
-                    let elapsed = start_time.elapsed();
-                    log_feature!(
-                        LogFeature::Ingestion,
-                        warn,
-                        "OpenRouter API attempt {} failed (took {:.2?}): {}",
-                        attempt,
-                        elapsed,
-                        e
-                    );
-                    last_error = Some(e);
-
-                    if attempt < self.max_retries {
-                        // Exponential backoff
-                        let delay = Duration::from_secs(2_u64.pow(attempt - 1));
-                        tokio::time::sleep(delay).await;
-                    }
-                }
-            }
-        }
-
-        Err(last_error
-            .unwrap_or_else(|| IngestionError::openrouter_error("All API attempts failed")))
+        super::ai_helpers::call_with_retries(
+            "OpenRouter API",
+            self.max_retries,
+            || IngestionError::openrouter_error("All API attempts failed"),
+            || self.make_api_request(&request),
+        )
+        .await
     }
 
     /// Make a single API request

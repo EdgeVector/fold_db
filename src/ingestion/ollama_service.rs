@@ -81,47 +81,13 @@ impl OllamaService {
             stream: false,
         };
 
-        let mut last_error = None;
-
-        for attempt in 1..=self.max_retries {
-            log_feature!(
-                LogFeature::Ingestion,
-                info,
-                "Ollama API attempt {} of {}",
-                attempt,
-                self.max_retries
-            );
-
-            match self.make_api_request(&request).await {
-                Ok(response) => {
-                    log_feature!(
-                        LogFeature::Ingestion,
-                        info,
-                        "Ollama API call successful on attempt {}",
-                        attempt
-                    );
-                    return Ok(response);
-                }
-                Err(e) => {
-                    log_feature!(
-                        LogFeature::Ingestion,
-                        warn,
-                        "Ollama API attempt {} failed: {}",
-                        attempt,
-                        e
-                    );
-                    last_error = Some(e);
-
-                    if attempt < self.max_retries {
-                        // Exponential backoff
-                        let delay = Duration::from_secs(2_u64.pow(attempt - 1));
-                        tokio::time::sleep(delay).await;
-                    }
-                }
-            }
-        }
-
-        Err(last_error.unwrap_or_else(|| IngestionError::ollama_error("All API attempts failed")))
+        super::ai_helpers::call_with_retries(
+            "Ollama API",
+            self.max_retries,
+            || IngestionError::ollama_error("All API attempts failed"),
+            || self.make_api_request(&request),
+        )
+        .await
     }
 
     /// Make a single API request

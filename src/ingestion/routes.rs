@@ -53,6 +53,66 @@ async fn start_file_progress(
     infos
 }
 
+/// Validate that a path exists and is a directory, returning an error HttpResponse if not.
+fn validate_folder(path: &Path) -> Result<(), HttpResponse> {
+    if !path.exists() {
+        return Err(HttpResponse::BadRequest().json(json!({
+            "success": false,
+            "error": format!("Folder not found: {}", path.display())
+        })));
+    }
+    if !path.is_dir() {
+        return Err(HttpResponse::BadRequest().json(json!({
+            "success": false,
+            "error": format!("Path is not a directory: {}", path.display())
+        })));
+    }
+    Ok(())
+}
+
+/// Spawn background ingestion tasks for a list of files, each tracked by its progress ID.
+fn spawn_file_ingestion_tasks(
+    files_with_progress: impl IntoIterator<Item = (std::path::PathBuf, String)>,
+    progress_tracker: &ProgressTracker,
+    node_arc: &std::sync::Arc<tokio::sync::Mutex<crate::datafold_node::DataFoldNode>>,
+    user_id: &str,
+    auto_execute: bool,
+) {
+    for (file_path, progress_id) in files_with_progress {
+        let progress_tracker_clone = progress_tracker.clone();
+        let node_arc_clone = node_arc.clone();
+        let user_id_clone = user_id.to_string();
+
+        tokio::spawn(async move {
+            crate::logging::core::run_with_user(&user_id_clone, async move {
+                let progress_service = ProgressService::new(progress_tracker_clone);
+
+                if let Err(e) = process_single_file_via_smart_folder(
+                    &file_path,
+                    &progress_id,
+                    &progress_service,
+                    &node_arc_clone,
+                    auto_execute,
+                )
+                .await
+                {
+                    log_feature!(
+                        LogFeature::Ingestion,
+                        error,
+                        "Failed to process file {}: {}",
+                        file_path.display(),
+                        e
+                    );
+                    progress_service
+                        .fail_progress(&progress_id, format!("Processing failed: {}", e))
+                        .await;
+                }
+            })
+            .await
+        });
+    }
+}
+
 /// Request for batch folder ingestion
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BatchFolderRequest {
@@ -263,51 +323,6 @@ pub async fn get_status() -> impl Responder {
     }
 }
 
-/// Health check endpoint for ingestion service
-#[utoipa::path(
-    get,
-    path = "/api/ingestion/health",
-    tag = "ingestion",
-    responses((status = 200, description = "Health OK", body = Value), (status = 503, description = "Health not OK", body = Value))
-)]
-pub async fn health_check() -> impl Responder {
-    match IngestionService::from_env() {
-        Ok(service) => {
-            let status = service.get_status();
-
-            match status {
-                Ok(ingestion_status) => {
-                    let is_healthy = ingestion_status.enabled && ingestion_status.configured;
-
-                    if is_healthy {
-                        HttpResponse::Ok().json(json!({
-                            "status": "healthy",
-                            "service": "ingestion",
-                            "details": ingestion_status
-                        }))
-                    } else {
-                        HttpResponse::ServiceUnavailable().json(json!({
-                            "status": "unhealthy",
-                            "service": "ingestion",
-                            "details": ingestion_status
-                        }))
-                    }
-                }
-                Err(e) => HttpResponse::ServiceUnavailable().json(json!({
-                    "status": "error",
-                    "service": "ingestion",
-                    "error": e.to_string()
-                })),
-            }
-        }
-        Err(e) => HttpResponse::ServiceUnavailable().json(json!({
-            "status": "unavailable",
-            "service": "ingestion",
-            "error": e.to_string()
-        })),
-    }
-}
-
 /// Validate JSON data without processing
 #[utoipa::path(
     post,
@@ -511,19 +526,8 @@ pub async fn batch_folder_ingest(
     // Resolve folder path - support both absolute and relative paths
     let folder_path = resolve_folder_path(&request.folder_path);
 
-    // Validate folder exists
-    if !folder_path.exists() {
-        return HttpResponse::BadRequest().json(json!({
-            "success": false,
-            "error": format!("Folder not found: {}", folder_path.display())
-        }));
-    }
-
-    if !folder_path.is_dir() {
-        return HttpResponse::BadRequest().json(json!({
-            "success": false,
-            "error": format!("Path is not a directory: {}", folder_path.display())
-        }));
+    if let Err(response) = validate_folder(&folder_path) {
+        return response;
     }
 
     // List supported files in the folder
@@ -592,41 +596,16 @@ pub async fn batch_folder_ingest(
 
     let auto_execute = request.auto_execute.unwrap_or(true);
 
-    // Spawn background tasks for each file
-    for (file_path, file_info) in files_to_ingest.into_iter().zip(file_progress_ids.iter()) {
-        let progress_id = file_info.progress_id.clone();
-        let progress_tracker_clone = progress_tracker.get_ref().clone();
-        let node_arc_clone = node_arc.clone();
-        let user_id_clone = user_id_for_task.clone();
-
-        tokio::spawn(async move {
-            crate::logging::core::run_with_user(&user_id_clone, async move {
-                let progress_service = ProgressService::new(progress_tracker_clone);
-
-                if let Err(e) = process_single_file_via_smart_folder(
-                    &file_path,
-                    &progress_id,
-                    &progress_service,
-                    &node_arc_clone,
-                    auto_execute,
-                )
-                .await
-                {
-                    log_feature!(
-                        LogFeature::Ingestion,
-                        error,
-                        "Failed to process file {}: {}",
-                        file_path.display(),
-                        e
-                    );
-                    progress_service
-                        .fail_progress(&progress_id, format!("Processing failed: {}", e))
-                        .await;
-                }
-            })
-            .await
-        });
-    }
+    spawn_file_ingestion_tasks(
+        files_to_ingest
+            .into_iter()
+            .zip(file_progress_ids.iter())
+            .map(|(path, info)| (path, info.progress_id.clone())),
+        progress_tracker.get_ref(),
+        &node_arc,
+        &user_id_for_task,
+        auto_execute,
+    );
 
     // Return immediately with batch info
     HttpResponse::Accepted().json(BatchFolderResponse {
@@ -696,19 +675,8 @@ pub async fn smart_folder_scan(
     // Resolve folder path
     let folder_path = resolve_folder_path(&request.folder_path);
 
-    // Validate folder exists
-    if !folder_path.exists() {
-        return HttpResponse::BadRequest().json(json!({
-            "success": false,
-            "error": format!("Folder not found: {}", folder_path.display())
-        }));
-    }
-
-    if !folder_path.is_dir() {
-        return HttpResponse::BadRequest().json(json!({
-            "success": false,
-            "error": format!("Path is not a directory: {}", folder_path.display())
-        }));
+    if let Err(response) = validate_folder(&folder_path) {
+        return response;
     }
 
     let max_depth = request.max_depth.unwrap_or(5);
@@ -795,42 +763,16 @@ pub async fn smart_folder_ingest(
 
     let auto_execute = request.auto_execute.unwrap_or(true);
 
-    // Spawn background tasks for each file
-    for (i, file_path) in files_to_process.into_iter().enumerate() {
-        let progress_id = file_progress_ids[i].progress_id.clone();
-        let progress_tracker_clone = progress_tracker.get_ref().clone();
-        let node_arc_clone = node_arc.clone();
-        let user_id_clone = user_id_task.clone();
-
-        tokio::spawn(async move {
-            crate::logging::core::run_with_user(&user_id_clone, async move {
-                let progress_service = ProgressService::new(progress_tracker_clone);
-
-                // Process the file using shared read_file_as_json
-                if let Err(e) = process_single_file_via_smart_folder(
-                    &file_path,
-                    &progress_id,
-                    &progress_service,
-                    &node_arc_clone,
-                    auto_execute,
-                )
-                .await
-                {
-                    log_feature!(
-                        LogFeature::Ingestion,
-                        error,
-                        "Failed to process file {}: {}",
-                        file_path.display(),
-                        e
-                    );
-                    progress_service
-                        .fail_progress(&progress_id, format!("Processing failed: {}", e))
-                        .await;
-                }
-            })
-            .await
-        });
-    }
+    spawn_file_ingestion_tasks(
+        files_to_process
+            .into_iter()
+            .enumerate()
+            .map(|(i, path)| (path, file_progress_ids[i].progress_id.clone())),
+        progress_tracker.get_ref(),
+        &node_arc,
+        &user_id_task,
+        auto_execute,
+    );
 
     HttpResponse::Accepted().json(BatchFolderResponse {
         success: true,
@@ -894,16 +836,6 @@ mod tests {
         let req = test::TestRequest::get().uri("/status").to_request();
         let resp = test::call_service(&app, req).await;
         // Should return service unavailable if not configured
-        assert!(resp.status().is_server_error() || resp.status().is_success());
-    }
-
-    #[actix_web::test]
-    async fn test_health_check() {
-        let app =
-            test::init_service(App::new().route("/health", web::get().to(health_check))).await;
-
-        let req = test::TestRequest::get().uri("/health").to_request();
-        let resp = test::call_service(&app, req).await;
         assert!(resp.status().is_server_error() || resp.status().is_success());
     }
 

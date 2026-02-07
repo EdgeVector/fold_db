@@ -213,7 +213,8 @@ pub fn parse_llm_file_recommendations(
     response: &str,
     file_tree: &[String],
 ) -> Result<Vec<FileRecommendation>, String> {
-    let json_str = extract_json_from_response(response)?;
+    let json_str = crate::ingestion::ai_helpers::extract_json_from_response(response)
+        .map_err(|e| e.to_string())?;
 
     let parsed: Vec<FileRecommendation> =
         serde_json::from_str(&json_str).map_err(|e| format!("Failed to parse JSON: {}", e))?;
@@ -227,45 +228,6 @@ pub fn parse_llm_file_recommendations(
         .collect();
 
     Ok(valid_recs)
-}
-
-/// Extract JSON array from LLM response (may have markdown code blocks)
-pub fn extract_json_from_response(response: &str) -> Result<String, String> {
-    let trimmed = response.trim();
-
-    // Check if it starts with [ directly
-    if trimmed.starts_with('[') {
-        if let Some(end) = trimmed.rfind(']') {
-            return Ok(trimmed[..=end].to_string());
-        }
-    }
-
-    // Try to extract from markdown code block
-    if let Some(start) = trimmed.find("```json") {
-        let after_marker = &trimmed[start + 7..];
-        if let Some(end) = after_marker.find("```") {
-            return Ok(after_marker[..end].trim().to_string());
-        }
-    }
-
-    // Try to extract from generic code block
-    if let Some(start) = trimmed.find("```") {
-        let after_marker = &trimmed[start + 3..];
-        let content_start = after_marker.find('\n').unwrap_or(0);
-        let content = &after_marker[content_start..];
-        if let Some(end) = content.find("```") {
-            return Ok(content[..end].trim().to_string());
-        }
-    }
-
-    // Try to find [ and ] anywhere
-    if let Some(start) = trimmed.find('[') {
-        if let Some(end) = trimmed.rfind(']') {
-            return Ok(trimmed[start..=end].to_string());
-        }
-    }
-
-    Err("Could not extract JSON from response".to_string())
 }
 
 // ---- Heuristic fallback ----
@@ -588,14 +550,14 @@ mod tests {
     #[test]
     fn test_extract_json_direct_array() {
         let input = r#"[{"path":"a.json","should_ingest":true,"category":"personal_data","reason":"test"}]"#;
-        let result = extract_json_from_response(input).unwrap();
+        let result = crate::ingestion::ai_helpers::extract_json_from_response(input).unwrap();
         assert!(result.starts_with('['));
     }
 
     #[test]
     fn test_extract_json_from_markdown() {
         let input = "Here is the result:\n```json\n[{\"path\":\"a.json\"}]\n```\nDone.";
-        let result = extract_json_from_response(input).unwrap();
+        let result = crate::ingestion::ai_helpers::extract_json_from_response(input).unwrap();
         assert!(result.starts_with('['));
     }
 
