@@ -168,8 +168,10 @@ generate_openapi() {
 
 install_frontend_deps() {
     cd src/server/static-react
-    if [ ! -d "node_modules" ]; then
+    # Check if node_modules exists AND has a valid vite binary
+    if [ ! -d "node_modules" ] || [ ! -x "node_modules/.bin/vite" ]; then
         echo "Installing frontend dependencies..."
+        rm -rf node_modules  # Clean up any corrupted state
         npm install
         if [ $? -ne 0 ]; then
             echo "Failed to install frontend dependencies. Exiting."

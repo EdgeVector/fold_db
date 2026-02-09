@@ -17,10 +17,10 @@ describe('Footer Component', () => {
     expect(footer).toHaveClass('minimal-footer', 'flex-shrink-0');
   });
 
-  it('displays Datafold branding', () => {
+  it('displays FoldDB branding', () => {
     render(<Footer />);
 
-    expect(screen.getByText(/Datafold/i)).toBeInTheDocument();
+    expect(screen.getByText(/FoldDB/i)).toBeInTheDocument();
   });
 
   it('displays version number', () => {

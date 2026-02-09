@@ -24,10 +24,14 @@ cargo test test_name -- --nocapture      # With output
 
 # Run the HTTP server + frontend (port 9001 backend, port 5173 frontend)
 # IMPORTANT: Always use ./run.sh to start the UI - never start services manually
-./run.sh --local                         # Local mode (Sled storage + global schema service)
-./run.sh                                 # Cloud mode (DynamoDB + global schema service)
+# The script auto-kills existing processes before starting
+./run.sh --local                         # Local Sled + prod schema service (recommended for dev)
+./run.sh --local --dev                   # Local Sled + dev schema service
 ./run.sh --local --local-schema          # Fully offline (local storage + local schema service)
 ./run.sh --local --empty-db              # Local with fresh database
+./run.sh                                 # Cloud mode (DynamoDB + prod schema service)
+./run.sh --dev                           # Cloud mode + dev schema service
+./run.sh --help                          # Show all options
 
 # Frontend (in src/server/static-react/)
 npm install
@@ -130,10 +134,16 @@ log_feature!(LogFeature::HttpServer, info, "Server started on {}", addr);
 
 ## Manual Testing Workflow
 
-1. Run `./run.sh --local --local-schema` (or `./run.sh` for cloud mode)
+1. Run `./run.sh --local` (or `./run.sh --local --dev` for dev schema service)
 2. Navigate to http://localhost:5173 (Vite dev server proxies to backend on 9001)
 3. Login with `test_user` if needed
 4. Press "Reset Database" button, confirm, wait for completion
 5. Go to Ingestion tab → click Twitter → click "Process Data"
 6. Wait for ingestion and background indexing to complete
 7. Go to Native Index Query tab → search for a term
+
+## Schema Service Environments
+
+- **Prod**: `https://axo709qs11.execute-api.us-east-1.amazonaws.com` (default)
+- **Dev**: `https://y0q3m6vk75.execute-api.us-west-2.amazonaws.com` (use `--dev` flag)
+- **Local**: `http://127.0.0.1:9002` (use `--local-schema` flag)

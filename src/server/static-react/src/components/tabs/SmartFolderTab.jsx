@@ -1,6 +1,9 @@
 import { useState, useEffect } from 'react'
 import { ingestionClient } from '../../api/clients'
 
+// Check if running in Tauri
+const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__
+
 function SmartFolderTab({ onResult }) {
   const [folderPath, setFolderPath] = useState('')
   const [isScanning, setIsScanning] = useState(false)
@@ -8,6 +11,27 @@ function SmartFolderTab({ onResult }) {
   const [scanResult, setScanResult] = useState(null)
   const [ingestionStarted, setIngestionStarted] = useState(false)
   const [ingestionStatus, setIngestionStatus] = useState(null)
+
+  // Open native folder picker (Tauri only)
+  const openFolderPicker = async () => {
+    if (!isTauri) return
+
+    try {
+      // Dynamic import to avoid bundling Tauri in web builds
+      const { open } = await import('@tauri-apps/plugin-dialog')
+      const selected = await open({
+        directory: true,
+        multiple: false,
+        title: 'Select folder to scan'
+      })
+
+      if (selected) {
+        setFolderPath(selected)
+      }
+    } catch (error) {
+      console.error('Failed to open folder picker:', error)
+    }
+  }
 
   useEffect(() => {
     fetchIngestionStatus()
@@ -127,6 +151,16 @@ function SmartFolderTab({ onResult }) {
               className="input-terminal flex-1"
               disabled={isScanning}
             />
+            {isTauri && (
+              <button
+                onClick={openFolderPicker}
+                disabled={isScanning}
+                className="btn-terminal px-4 py-2"
+                title="Browse folders"
+              >
+                📁
+              </button>
+            )}
             <button
               onClick={handleScan}
               disabled={isScanning || !folderPath.trim()}

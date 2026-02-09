@@ -196,7 +196,7 @@ export function AppContent() {
           <div style={{
             width: '24px',
             height: '24px',
-            border: '2px solid #e5e5e5',
+            border: '2px solid #d4d4d4',
             borderTopColor: '#111',
             borderRadius: '50%',
             animation: 'spin 0.8s linear infinite',
@@ -215,7 +215,7 @@ export function AppContent() {
       height: '100vh',
       display: 'flex',
       flexDirection: 'column',
-      background: '#fafafa',
+      background: '#ffffff',
       overflow: 'hidden'
     }}>
       <Header onSettingsClick={() => setIsSettingsOpen(true)} />
@@ -230,12 +230,12 @@ export function AppContent() {
           />
 
           <main style={{ flex: 1, overflowY: 'auto' }}>
-            <div style={{ maxWidth: '900px', margin: '0 auto', padding: '48px 40px' }}>
+            <div style={{ maxWidth: '1100px', margin: '0 auto', padding: '20px 32px 40px' }}>
             {/* Schema Loading/Error States */}
             {schemasError && (
               <div style={{
-                marginBottom: '24px',
-                padding: '16px 20px',
+                marginBottom: '16px',
+                padding: '12px 16px',
                 background: '#fff',
                 border: '1px solid #fecaca',
                 borderLeftWidth: '3px',
@@ -249,8 +249,8 @@ export function AppContent() {
 
             {schemasLoading && (
               <div style={{
-                marginBottom: '24px',
-                padding: '16px 20px',
+                marginBottom: '16px',
+                padding: '12px 16px',
                 background: '#fff',
                 border: '1px solid #e5e5e5'
               }}>
@@ -266,29 +266,23 @@ export function AppContent() {
               textTransform: 'uppercase',
               letterSpacing: '2px',
               color: '#999',
-              marginBottom: '24px'
+              marginBottom: '12px'
             }}>
               {activeTab.replace('-', ' ')}
             </div>
 
             {/* Tab Content */}
-            <div style={{
-              background: '#fff',
-              border: '1px solid #e5e5e5',
-              padding: '32px'
-            }}>
-              {renderActiveTab()}
-            </div>
+            {renderActiveTab()}
 
             {/* Results */}
             {results && (
-              <div style={{ marginTop: '48px' }}>
+              <div style={{ marginTop: '24px' }}>
                 <div style={{
                   fontSize: '11px',
                   textTransform: 'uppercase',
                   letterSpacing: '2px',
                   color: '#999',
-                  marginBottom: '24px'
+                  marginBottom: '12px'
                 }}>
                   Results
                 </div>

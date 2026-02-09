@@ -9,7 +9,7 @@
 @layer base {
   :root {
     /* Minimal color palette */
-    --minimal-bg: #fafafa;
+    --minimal-bg: #ffffff;
     --minimal-bg-white: #ffffff;
     --minimal-border: #e5e5e5;
     --minimal-border-dark: #d4d4d4;
@@ -45,7 +45,7 @@
   body {
     background-color: var(--minimal-bg);
     color: var(--minimal-text);
-    font-family: 'Inter', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    font-family: "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     font-size: 15px;
@@ -60,59 +60,102 @@
 
 @layer components {
   /* Reset rounded corners for minimal look - subtle rounding allowed */
-  * {
+  *:not(input[type="checkbox"]):not(input[type="radio"]) {
     border-radius: 0 !important;
   }
 
   /* Override all dark backgrounds */
-  .bg-terminal, .bg-terminal-light, .bg-terminal-lighter,
-  .bg-gray-900, .bg-gray-800, .bg-gray-700 {
+  .bg-terminal,
+  .bg-terminal-light,
+  .bg-terminal-lighter,
+  .bg-gray-900,
+  .bg-gray-800,
+  .bg-gray-700 {
     background-color: var(--minimal-bg) !important;
   }
 
   /* Force light backgrounds */
-  .bg-white, .bg-gray-50, .bg-gray-100 {
+  .bg-white,
+  .bg-gray-50,
+  .bg-gray-100 {
     background-color: var(--minimal-bg-white) !important;
   }
 
   /* Text color overrides */
-  .text-terminal, .text-terminal-green, .text-terminal-cyan,
-  .text-gray-100, .text-gray-200, .text-gray-300 {
+  .text-terminal,
+  .text-terminal-green,
+  .text-terminal-cyan,
+  .text-gray-100,
+  .text-gray-200,
+  .text-gray-300 {
     color: var(--minimal-text) !important;
   }
 
-  .text-terminal-dim, .text-gray-400, .text-gray-500 {
+  .text-terminal-dim,
+  .text-gray-400,
+  .text-gray-500 {
     color: var(--minimal-text-secondary) !important;
   }
 
   /* Border overrides */
-  .border-terminal, .border-gray-700, .border-gray-600 {
+  .border-terminal,
+  .border-gray-700,
+  .border-gray-600 {
     border-color: var(--minimal-border) !important;
   }
 
   /* Remove all glows and shadows */
-  .glow-green, .glow-blue, .glow-red,
+  .glow-green,
+  .glow-blue,
+  .glow-red,
   [class*="shadow"] {
     text-shadow: none !important;
     box-shadow: none !important;
   }
 
   /* Input styling */
-  input, textarea, select {
+  input:not([type="checkbox"]):not([type="radio"]),
+  textarea,
+  select {
     background-color: var(--minimal-bg-white) !important;
     color: var(--minimal-text) !important;
     border: 1px solid var(--minimal-border) !important;
-    font-family: 'Inter', 'Helvetica Neue', Helvetica, Arial, sans-serif !important;
-    padding: 12px 16px !important;
+    font-family:
+      "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif !important;
+    padding: 10px 14px !important;
     font-size: 14px !important;
     transition: border-color 0.2s ease !important;
   }
 
-  input::placeholder, textarea::placeholder {
+  /* Checkbox and radio styling */
+  input[type="checkbox"],
+  input[type="radio"] {
+    appearance: auto !important;
+    -webkit-appearance: auto !important;
+    width: 16px !important;
+    height: 16px !important;
+    accent-color: var(--minimal-text) !important;
+    cursor: pointer !important;
+    border: 1px solid var(--minimal-border-dark) !important;
+    background-color: var(--minimal-bg-white) !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    flex-shrink: 0 !important;
+  }
+
+  input[type="checkbox"]:checked,
+  input[type="radio"]:checked {
+    accent-color: var(--minimal-text) !important;
+  }
+
+  input::placeholder,
+  textarea::placeholder {
     color: var(--minimal-text-tertiary) !important;
   }
 
-  input:focus, textarea:focus, select:focus {
+  input:focus,
+  textarea:focus,
+  select:focus {
     border-color: var(--minimal-text) !important;
     outline: none !important;
     box-shadow: none !important;
@@ -122,7 +165,7 @@
   .minimal-header {
     background: var(--minimal-bg-white);
     border-bottom: 1px solid var(--minimal-border);
-    padding: 20px 40px;
+    padding: 12px 32px;
   }
 
   .minimal-logo {
@@ -141,7 +184,7 @@
   .minimal-nav {
     display: flex;
     align-items: center;
-    gap: 32px;
+    gap: 24px;
   }
 
   .minimal-nav-item {
@@ -183,7 +226,7 @@
     background: var(--minimal-text);
     color: var(--minimal-bg-white);
     border: none;
-    padding: 12px 32px;
+    padding: 10px 24px;
     font-size: 14px;
     font-weight: 500;
     cursor: pointer;
@@ -199,7 +242,7 @@
     background: transparent;
     color: var(--minimal-text);
     border: 1px solid var(--minimal-border);
-    padding: 11px 31px;
+    padding: 9px 23px;
   }
 
   .btn-minimal-secondary:hover {
@@ -208,18 +251,21 @@
   }
 
   /* Override terminal buttons */
-  .btn-terminal, .btn-terminal-primary, .btn-terminal-danger {
+  .btn-terminal,
+  .btn-terminal-primary,
+  .btn-terminal-danger {
     background: var(--minimal-bg-white) !important;
     color: var(--minimal-text) !important;
     border: 1px solid var(--minimal-border) !important;
-    font-family: 'Inter', sans-serif !important;
+    font-family: "Inter", sans-serif !important;
     font-weight: 500 !important;
-    padding: 10px 20px !important;
+    padding: 8px 16px !important;
     transition: all 0.2s ease !important;
     box-shadow: none !important;
   }
 
-  .btn-terminal:hover, .btn-terminal-primary:hover {
+  .btn-terminal:hover,
+  .btn-terminal-primary:hover {
     border-color: var(--minimal-text) !important;
     background: var(--minimal-bg-white) !important;
   }
@@ -245,28 +291,31 @@
     color: var(--minimal-bg-white) !important;
   }
 
-  /* Minimal cards */
-  .card-terminal, .card-minimal {
+  /* Minimal cards - no border to avoid box-in-box */
+  .card-terminal,
+  .card-minimal {
     background: var(--minimal-bg-white) !important;
-    border: 1px solid var(--minimal-border) !important;
+    border: none !important;
     box-shadow: none !important;
   }
 
-  .card-terminal-header, .card-minimal-header {
+  .card-terminal-header,
+  .card-minimal-header {
     background: var(--minimal-bg-white) !important;
     border-bottom: 1px solid var(--minimal-border) !important;
-    padding: 20px 24px !important;
+    padding: 12px 0 !important;
   }
 
-  .card-terminal-body, .card-minimal-body {
-    padding: 24px !important;
+  .card-terminal-body,
+  .card-minimal-body {
+    padding: 16px 0 !important;
   }
 
   /* Minimal tabs - override terminal tabs */
   .terminal-tabs {
     background: var(--minimal-bg-white) !important;
     border-bottom: 1px solid var(--minimal-border) !important;
-    padding: 0 40px !important;
+    padding: 0 32px !important;
     display: flex !important;
     align-items: center !important;
     gap: 0 !important;
@@ -274,10 +323,10 @@
 
   .terminal-tab {
     color: var(--minimal-text-secondary) !important;
-    font-family: 'Inter', sans-serif !important;
+    font-family: "Inter", sans-serif !important;
     font-size: 14px !important;
     font-weight: 400 !important;
-    padding: 16px 24px !important;
+    padding: 10px 16px !important;
     border-bottom: 2px solid transparent !important;
     background: transparent !important;
     transition: all 0.2s ease !important;
@@ -304,55 +353,63 @@
 
   /* Minimal section titles */
   .minimal-section-title {
-    font-size: 11px;
+    font-size: 13px;
     text-transform: uppercase;
-    letter-spacing: 2px;
-    color: var(--minimal-text-tertiary);
-    margin-bottom: 24px;
+    letter-spacing: 1.5px;
+    color: var(--minimal-text-secondary);
+    font-weight: 500;
+    margin-bottom: 12px;
   }
 
   /* Minimal textarea */
-  .textarea-terminal, .minimal-textarea {
+  .textarea-terminal,
+  .minimal-textarea {
     background: var(--minimal-bg-white) !important;
     border: 1px solid var(--minimal-border) !important;
     color: var(--minimal-text) !important;
-    font-family: 'SF Mono', Monaco, monospace !important;
+    font-family: "SF Mono", Monaco, monospace !important;
     font-size: 14px !important;
-    padding: 20px !important;
-    min-height: 120px !important;
+    padding: 14px !important;
+    min-height: 100px !important;
     line-height: 1.6 !important;
   }
 
-  .textarea-terminal:focus, .minimal-textarea:focus {
+  .textarea-terminal:focus,
+  .minimal-textarea:focus {
     border-color: var(--minimal-text) !important;
     box-shadow: none !important;
   }
 
   /* Minimal select */
-  .select-terminal, .minimal-select {
+  .select-terminal,
+  .minimal-select {
     background: var(--minimal-bg-white) !important;
     border: 1px solid var(--minimal-border) !important;
     color: var(--minimal-text) !important;
-    font-family: 'Inter', sans-serif !important;
-    padding: 12px 16px !important;
+    font-family: "Inter", sans-serif !important;
+    padding: 10px 14px !important;
     font-size: 14px !important;
   }
 
   /* Minimal input */
-  .input-terminal, .minimal-input {
+  .input-terminal,
+  .minimal-input {
     background: var(--minimal-bg-white) !important;
     border: 1px solid var(--minimal-border) !important;
     color: var(--minimal-text) !important;
-    font-family: 'Inter', sans-serif !important;
+    font-family: "Inter", sans-serif !important;
   }
 
   /* Minimal badges */
-  .badge-terminal, .badge-terminal-success, .badge-terminal-error,
-  .badge-terminal-warning, .badge-terminal-info {
+  .badge-terminal,
+  .badge-terminal-success,
+  .badge-terminal-error,
+  .badge-terminal-warning,
+  .badge-terminal-info {
     background: transparent !important;
     border: 1px solid var(--minimal-border) !important;
     color: var(--minimal-text-secondary) !important;
-    font-family: 'Inter', sans-serif !important;
+    font-family: "Inter", sans-serif !important;
     font-size: 12px !important;
     font-weight: 500 !important;
     padding: 4px 12px !important;
@@ -369,10 +426,11 @@
   }
 
   /* Minimal results/output */
-  .code-block, .terminal-output {
+  .code-block,
+  .terminal-output {
     background: var(--minimal-bg-white) !important;
     border: 1px solid var(--minimal-border) !important;
-    font-family: 'SF Mono', Monaco, monospace !important;
+    font-family: "SF Mono", Monaco, monospace !important;
     font-size: 13px !important;
     color: var(--minimal-text-secondary) !important;
   }
@@ -418,17 +476,18 @@
 
   /* Minimal table */
   .table-terminal {
-    font-family: 'Inter', sans-serif !important;
+    font-family: "Inter", sans-serif !important;
   }
 
   .table-terminal th {
     background: var(--minimal-bg) !important;
-    color: var(--minimal-text-tertiary) !important;
-    font-weight: 500 !important;
+    color: var(--minimal-text-secondary) !important;
+    font-weight: 600 !important;
     font-size: 11px !important;
     text-transform: uppercase !important;
     letter-spacing: 1px !important;
-    border-bottom: 1px solid var(--minimal-border) !important;
+    border-bottom: 2px solid var(--minimal-border-dark) !important;
+    padding: 8px 8px !important;
   }
 
   .table-terminal td {
@@ -444,7 +503,7 @@
   .minimal-footer {
     background: var(--minimal-bg-white);
     border-top: 1px solid var(--minimal-border);
-    padding: 16px 40px;
+    padding: 10px 32px;
     color: var(--minimal-text-tertiary);
     font-size: 13px;
   }
@@ -456,36 +515,84 @@
   }
 
   /* JSON syntax colors - minimal */
-  .json-key { color: var(--minimal-text) !important; }
-  .json-string { color: var(--minimal-text-secondary) !important; }
-  .json-number { color: var(--minimal-text) !important; }
-  .json-boolean { color: var(--minimal-text-secondary) !important; }
-  .json-null { color: var(--minimal-text-tertiary) !important; }
+  .json-key {
+    color: var(--minimal-text) !important;
+  }
+  .json-string {
+    color: var(--minimal-text-secondary) !important;
+  }
+  .json-number {
+    color: var(--minimal-text) !important;
+  }
+  .json-boolean {
+    color: var(--minimal-text-secondary) !important;
+  }
+  .json-null {
+    color: var(--minimal-text-tertiary) !important;
+  }
 
   /* Status colors */
-  .output-success, .text-terminal-green { color: var(--minimal-success) !important; }
-  .output-error, .text-terminal-red { color: var(--minimal-error) !important; }
-  .output-warning, .text-terminal-yellow { color: var(--minimal-warning) !important; }
-  .output-info, .text-terminal-blue { color: var(--minimal-text) !important; }
+  .output-success,
+  .text-terminal-green {
+    color: var(--minimal-success) !important;
+  }
+  .output-error,
+  .text-terminal-red {
+    color: var(--minimal-error) !important;
+  }
+  .output-warning,
+  .text-terminal-yellow {
+    color: var(--minimal-warning) !important;
+  }
+  .output-info,
+  .text-terminal-blue {
+    color: var(--minimal-text) !important;
+  }
 }
 
 @layer utilities {
   /* Override terminal utility classes */
-  .bg-terminal { background-color: var(--minimal-bg) !important; }
-  .bg-terminal-light { background-color: var(--minimal-bg) !important; }
-  .bg-terminal-lighter { background-color: var(--minimal-bg-white) !important; }
-  .border-terminal { border-color: var(--minimal-border) !important; }
-  .text-terminal { color: var(--minimal-text) !important; }
-  .text-terminal-dim { color: var(--minimal-text-secondary) !important; }
-  .text-terminal-green { color: var(--minimal-text) !important; }
-  .text-terminal-blue { color: var(--minimal-text) !important; }
-  .text-terminal-cyan { color: var(--minimal-text) !important; }
-  .text-terminal-yellow { color: var(--minimal-warning) !important; }
-  .text-terminal-red { color: var(--minimal-error) !important; }
-  .text-terminal-purple { color: var(--minimal-text-secondary) !important; }
+  .bg-terminal {
+    background-color: var(--minimal-bg) !important;
+  }
+  .bg-terminal-light {
+    background-color: var(--minimal-bg) !important;
+  }
+  .bg-terminal-lighter {
+    background-color: var(--minimal-bg-white) !important;
+  }
+  .border-terminal {
+    border-color: var(--minimal-border) !important;
+  }
+  .text-terminal {
+    color: var(--minimal-text) !important;
+  }
+  .text-terminal-dim {
+    color: var(--minimal-text-secondary) !important;
+  }
+  .text-terminal-green {
+    color: var(--minimal-text) !important;
+  }
+  .text-terminal-blue {
+    color: var(--minimal-text) !important;
+  }
+  .text-terminal-cyan {
+    color: var(--minimal-text) !important;
+  }
+  .text-terminal-yellow {
+    color: var(--minimal-warning) !important;
+  }
+  .text-terminal-red {
+    color: var(--minimal-error) !important;
+  }
+  .text-terminal-purple {
+    color: var(--minimal-text-secondary) !important;
+  }
 
   /* Remove all glow effects */
-  .glow-green, .glow-blue, .glow-red {
+  .glow-green,
+  .glow-blue,
+  .glow-red {
     text-shadow: none !important;
   }
 }

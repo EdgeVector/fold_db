@@ -167,7 +167,7 @@ export default function NativeIndexTab({ onResult }) {
           <button
             onClick={handleSearch}
             disabled={isSearching || !term.trim()}
-            className={`px-4 py-2 rounded text-sm ${isSearching || !term.trim() ? 'bg-gray-300 text-gray-600' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
+            className={`px-6 py-2 text-sm font-medium ${isSearching || !term.trim() ? 'bg-gray-100 text-gray-400 border border-gray-200 cursor-not-allowed' : 'bg-gray-900 text-white border border-gray-900 hover:bg-gray-700'}`}
           >
             {isSearching ? 'Searching...' : 'Search'}
           </button>
@@ -197,13 +197,13 @@ export default function NativeIndexTab({ onResult }) {
         <div className="overflow-auto max-h-[450px]">
           <table className="min-w-full text-left text-xs">
             <thead>
-              <tr className="text-gray-500">
-                <th className="px-2 py-1">Hash</th>
-                <th className="px-2 py-1">Range</th>
-                <th className="px-2 py-1">Schema</th>
-                <th className="px-2 py-1">Field</th>
-                <th className="px-2 py-1">Value</th>
-                <th className="px-2 py-1"></th>
+              <tr className="bg-gray-50">
+                <th className="px-2 py-2 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide border-b-2 border-gray-300">Hash</th>
+                <th className="px-2 py-2 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide border-b-2 border-gray-300">Range</th>
+                <th className="px-2 py-2 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide border-b-2 border-gray-300">Schema</th>
+                <th className="px-2 py-2 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide border-b-2 border-gray-300">Field</th>
+                <th className="px-2 py-2 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide border-b-2 border-gray-300">Value</th>
+                <th className="px-2 py-2 border-b-2 border-gray-300"></th>
               </tr>
             </thead>
             <tbody>

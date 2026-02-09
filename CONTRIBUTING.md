@@ -50,21 +50,26 @@ npm test
 ### Running Locally
 
 ```bash
-# Cloud mode (requires AWS credentials and internet)
-./run.sh
-
-# Local mode with Sled storage
+# Local mode with Sled storage + prod schema service (recommended)
 ./run.sh --local
+
+# Local mode with dev schema service
+./run.sh --local --dev
 
 # Fully offline development (local storage + local schema service)
 ./run.sh --local --local-schema
 
 # Local mode with fresh empty database
-./run.sh --local --local-schema --empty-db
+./run.sh --local --empty-db
+
+# Cloud mode (requires AWS credentials)
+./run.sh
 
 # Show all options
 ./run.sh --help
 ```
+
+The script automatically kills any existing processes before starting.
 
 ## Code Style
 

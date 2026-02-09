@@ -702,6 +702,11 @@ impl OperationProcessor {
                         return Err(FoldDbError::Io(e));
                     }
                 }
+                // Recreate the empty data directory so subsequent operations can use it
+                if let Err(e) = std::fs::create_dir_all(&db_path) {
+                    log::error!("Failed to recreate database folder: {}", e);
+                    return Err(FoldDbError::Io(e));
+                }
             }
         }
 

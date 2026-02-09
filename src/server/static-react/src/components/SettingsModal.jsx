@@ -204,10 +204,7 @@ function SettingsModal({ isOpen, onClose }) {
       if (response.success && response.data) {
         if (response.data.job_id) {
           const jobId = response.data.job_id
-          setResetResult({ 
-            type: 'info', 
-            message: 'Resetting database...'
-          })
+          // Don't set resetResult here - the isResetting state already shows the spinner
           
           // Poll for job completion
           const pollInterval = setInterval(async () => {
@@ -215,15 +212,15 @@ function SettingsModal({ isOpen, onClose }) {
               const progressResponse = await ingestionClient.getJobProgress(jobId)
               if (progressResponse.success && progressResponse.data) {
                 const progressData = progressResponse.data
-                if (progressData.status === 'completed') {
+                if (progressData.is_complete) {
                   clearInterval(pollInterval)
                   setResetResult({ type: 'success', message: 'Database reset complete. Reloading...' })
                   setTimeout(() => {
                     window.location.reload()
                   }, 1000)
-                } else if (progressData.status === 'failed') {
+                } else if (progressData.is_failed) {
                   clearInterval(pollInterval)
-                  setResetResult({ type: 'error', message: progressData.error || 'Reset failed' })
+                  setResetResult({ type: 'error', message: progressData.error_message || 'Reset failed' })
                   setIsResetting(false)
                 }
               }

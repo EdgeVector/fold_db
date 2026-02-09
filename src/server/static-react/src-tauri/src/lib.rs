@@ -1,6 +1,8 @@
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use fold_db::datafold_node::{DataFoldNode, start_embedded_server, EmbeddedServerHandle, load_node_config};
+use fold_db::datafold_node::DataFoldNode;
+use fold_db::load_node_config;
+use fold_db::server::{start_embedded_server, EmbeddedServerHandle};
 use tauri::{Manager, State};
 use serde::{Serialize, Deserialize};
 
@@ -76,6 +78,7 @@ fn get_app_version() -> String {
 pub fn run() {
   tauri::Builder::default()
     .plugin(tauri_plugin_shell::init())
+    .plugin(tauri_plugin_dialog::init())
     .invoke_handler(tauri::generate_handler![
       get_server_status,
       open_data_directory,

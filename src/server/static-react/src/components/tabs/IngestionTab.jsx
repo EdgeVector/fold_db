@@ -669,31 +669,31 @@ The key to success lies in understanding not just the technical aspects, but als
           <div className="flex gap-2">
             <button
               onClick={() => loadSampleData('blogposts')}
-              className="btn-terminal text-xs py-1 px-2 text-terminal-green border-terminal-green"
+              className="btn-terminal text-xs py-1 px-3"
             >
               Blog Posts (100)
             </button>
             <button
               onClick={() => loadSampleData('twitter')}
-              className="btn-terminal text-xs py-1 px-2 text-terminal-blue border-terminal-blue"
+              className="btn-terminal text-xs py-1 px-3"
             >
               Twitter
             </button>
             <button
               onClick={() => loadSampleData('instagram')}
-              className="btn-terminal text-xs py-1 px-2 text-terminal-pink border-terminal-pink"
+              className="btn-terminal text-xs py-1 px-3"
             >
               Instagram
             </button>
             <button
               onClick={() => loadSampleData('linkedin')}
-              className="btn-terminal text-xs py-1 px-2 text-terminal-purple border-terminal-purple"
+              className="btn-terminal text-xs py-1 px-3"
             >
               LinkedIn
             </button>
             <button
               onClick={() => loadSampleData('tiktok')}
-              className="btn-terminal text-xs py-1 px-2 text-terminal-cyan border-terminal-cyan"
+              className="btn-terminal text-xs py-1 px-3"
             >
               TikTok
             </button>

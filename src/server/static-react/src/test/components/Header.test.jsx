@@ -13,8 +13,8 @@ describe('Header Component', () => {
       preloadedState: defaultPreloadedState
     })
 
-    // Header shows "datafold"
-    expect(screen.getByText(/datafold/i)).toBeInTheDocument()
+    // Header shows "FoldDB"
+    expect(screen.getByText(/FoldDB/i)).toBeInTheDocument()
   })
 
   it('has minimal header styling', () => {

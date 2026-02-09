@@ -162,7 +162,7 @@ function QueryPreview({
         <div className="space-y-3">
           {/* Schema */}
           <div>
-            <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">
+            <label className="block text-xs font-medium text-gray-500 mb-1">
               Schema
             </label>
             <div className="inline-flex items-center px-2 py-1 rounded-md bg-blue-100 text-blue-800 text-sm font-medium">
@@ -172,7 +172,7 @@ function QueryPreview({
 
           {/* Fields with Values */}
           <div>
-            <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">
+            <label className="block text-xs font-medium text-gray-500 mb-1">
               Fields ({formattedQuery?.fields ? formattedQuery.fields.length : 0})
             </label>
             <div className="flex flex-wrap gap-1">
@@ -202,7 +202,7 @@ function QueryPreview({
           {((formattedQuery.filters && Array.isArray(formattedQuery.filters) && formattedQuery.filters.length > 0) ||
             (formattedQuery.filters && !Array.isArray(formattedQuery.filters) && Object.keys(formattedQuery.filters).length > 0)) && (
             <div>
-              <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">
+              <label className="block text-xs font-medium text-gray-500 mb-1">
                 Filters
               </label>
               <div className="space-y-2">
@@ -243,7 +243,7 @@ function QueryPreview({
           {/* OrderBy */}
           {formattedQuery.orderBy && (
             <div>
-              <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">
+              <label className="block text-xs font-medium text-gray-500 mb-1">
                 OrderBy
               </label>
               <div className="bg-purple-50 rounded-md p-3">
@@ -257,7 +257,7 @@ function QueryPreview({
           {/* Range Key (for range schemas) */}
           {formattedQuery.rangeKey && (
             <div>
-              <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">
+              <label className="block text-xs font-medium text-gray-500 mb-1">
                 RangeKey
               </label>
               <div className="bg-indigo-50 rounded-md p-3">

@@ -17,7 +17,7 @@ function Header({ onSettingsClick }) {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-6">
           <a href="/" className="minimal-logo">
-            datafold
+            FoldDB
           </a>
           <HeaderProgress />
         </div>
@@ -29,7 +29,7 @@ function Header({ onSettingsClick }) {
           {isAuthenticated && (
             <div className="flex items-center gap-4">
               <span className="text-sm" style={{ color: '#666' }}>
-                {user?.id}
+                {user?.id?.length > 12 ? `${user.id.slice(0, 8)}…` : user?.id}
               </span>
               <button
                 onClick={handleLogout}

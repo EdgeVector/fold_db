@@ -1,5 +1,5 @@
 /**
- * UI Constants for Datafold React Application
+ * UI Constants for FoldDB React Application
  * Extracted from hardcoded values per Section 2.1.12
  * Part of TASK-005: Constants Extraction and Configuration Centralization
  *
@@ -18,10 +18,13 @@ export const DEFAULT_TABS = [
   { id: "file-upload", label: "File Upload", icon: "📄", group: "main" },
   { id: "llm-query", label: "AI Query", icon: "🤖", group: "main" },
   // Developer/Advanced features
+  { id: "schemas", label: "Schema", icon: "📋", group: "advanced" },
+  { id: "query", label: "Query", icon: "🔍", group: "advanced" },
+  { id: "mutation", label: "Mutation", icon: "✏️", group: "advanced" },
   { id: "ingestion", label: "JSON Ingestion", icon: "📥", group: "advanced" },
   {
     id: "native-index",
-    label: "Native Index Query",
+    label: "Native Index",
     icon: "🧭",
     group: "advanced",
   },

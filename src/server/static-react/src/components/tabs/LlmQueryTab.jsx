@@ -3,9 +3,10 @@
  * 
  * A simplified chat-style interface where the AI automatically loops through
  * queries until it finds data or determines it doesn't exist.
+ * Uses minimal design system consistent with the rest of FoldDB.
  */
 
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useCallback, useRef, useEffect } from 'react';
 import { llmQueryClient } from '../../api/clients/llmQueryClient';
 import { useAppSelector, useAppDispatch } from '../../store/hooks';
 import {
@@ -179,7 +180,7 @@ function LlmQueryTab({ onResult }) {
     } finally {
       dispatch(setIsProcessing(false));
     }
-  }, [inputText, sessionId, canAskFollowup, isProcessing, addToLog, onResult, dispatch]);
+  }, [inputText, sessionId, canAskFollowup, isProcessing, showResults, addToLog, onResult, dispatch]);
 
   /**
    * Start a new conversation
@@ -189,22 +190,38 @@ function LlmQueryTab({ onResult }) {
   }, [dispatch]);
 
   return (
-    <div className="flex flex-col bg-white rounded-lg shadow">
+    <div style={{ display: 'flex', flexDirection: 'column' }}>
       {/* Header */}
-      <div className="p-4 border-b border-gray-200 flex justify-between items-center">
+      <div style={{
+        padding: '12px 16px',
+        borderBottom: '1px solid #e5e5e5',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center'
+      }}>
         <div>
-          <h2 className="text-xl font-bold text-gray-900">
-            🤖 AI Data Assistant
+          <h2 style={{ fontSize: '16px', fontWeight: 500, color: '#111', margin: 0 }}>
+            AI Query
           </h2>
-          <p className="text-sm text-gray-600">
-            Ask questions in plain English - I'll find your data
+          <p style={{ color: '#999', fontSize: '13px', margin: '4px 0 0' }}>
+            Ask questions in plain English — the AI will find your data
           </p>
         </div>
         {conversationLog.length > 0 && (
           <button
             onClick={handleNewConversation}
             disabled={isProcessing}
-            className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors text-sm"
+            style={{
+              padding: '8px 16px',
+              background: isProcessing ? '#e5e5e5' : '#fff',
+              color: isProcessing ? '#999' : '#111',
+              border: '1px solid #e5e5e5',
+              fontSize: '13px',
+              cursor: isProcessing ? 'not-allowed' : 'pointer',
+              transition: 'border-color 0.2s'
+            }}
+            onMouseOver={(e) => !isProcessing && (e.target.style.borderColor = '#111')}
+            onMouseOut={(e) => !isProcessing && (e.target.style.borderColor = '#e5e5e5')}
           >
             New Conversation
           </button>
@@ -212,72 +229,113 @@ function LlmQueryTab({ onResult }) {
       </div>
 
       {/* Conversation Log */}
-      <div className="overflow-y-auto bg-gray-50 p-4 space-y-3" style={{ maxHeight: '60vh', minHeight: '400px' }}>
+      <div style={{
+        overflowY: 'auto',
+        background: '#fafafa',
+        padding: '16px',
+        maxHeight: '60vh',
+        minHeight: '300px'
+      }}>
         {conversationLog.length === 0 ? (
-          <div className="text-center text-gray-500 mt-20">
-            <div className="text-6xl mb-4">🤖</div>
-            <p className="text-lg mb-2">Start a conversation</p>
-            <p className="text-sm">
+          <div style={{ textAlign: 'center', color: '#999', marginTop: '60px' }}>
+            <div style={{ fontSize: '48px', marginBottom: '16px', opacity: 0.5 }}>→</div>
+            <p style={{ fontSize: '15px', marginBottom: '8px' }}>Start a conversation</p>
+            <p style={{ fontSize: '13px', color: '#bbb' }}>
               Try: "What schemas are available?" or "Find tweets mentioning rust" or "Search for blog posts about AI"
             </p>
           </div>
         ) : (
           conversationLog.map((entry, idx) => (
-            <div key={idx}>
+            <div key={idx} style={{ marginBottom: '12px' }}>
               {entry.type === 'user' && (
-                <div className="flex justify-end">
-                  <div className="bg-blue-600 text-white rounded-lg px-4 py-2 max-w-3xl">
-                    <p className="text-sm font-semibold mb-1">You</p>
-                    <p className="whitespace-pre-wrap">{entry.content}</p>
+                <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                  <div style={{
+                    background: '#111',
+                    color: '#fff',
+                    padding: '10px 16px',
+                    maxWidth: '600px'
+                  }}>
+                    <p style={{ fontSize: '11px', fontWeight: 500, marginBottom: '4px', opacity: 0.7 }}>You</p>
+                    <p style={{ whiteSpace: 'pre-wrap', margin: 0, fontSize: '14px' }}>{entry.content}</p>
                   </div>
                 </div>
               )}
               
               {entry.type === 'system' && (
-                <div className="flex justify-start">
-                  <div className="bg-white border border-gray-200 rounded-lg px-4 py-2 max-w-3xl">
-                    <p className="text-sm font-semibold text-gray-700 mb-1">AI Assistant</p>
-                    <p className="text-gray-900 whitespace-pre-wrap">{entry.content}</p>
+                <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
+                  <div style={{
+                    background: '#fff',
+                    border: '1px solid #e5e5e5',
+                    padding: '10px 16px',
+                    maxWidth: '600px'
+                  }}>
+                    <p style={{ fontSize: '11px', fontWeight: 500, color: '#999', marginBottom: '4px' }}>AI Assistant</p>
+                    <p style={{ color: '#111', whiteSpace: 'pre-wrap', margin: 0, fontSize: '14px' }}>{entry.content}</p>
                   </div>
                 </div>
               )}
               
               {entry.type === 'results' && entry.data && (
-                <div className="bg-green-50 border border-green-200 rounded-lg p-4 max-w-full">
-                  <div className="flex justify-between items-center mb-2">
-                    <p className="text-sm font-semibold text-green-800">📊 Results ({entry.data.length})</p>
+                <div style={{
+                  background: '#fff',
+                  border: '1px solid #e5e5e5',
+                  borderLeftWidth: '3px',
+                  borderLeftColor: '#22c55e',
+                  padding: '16px',
+                  maxWidth: '100%'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                    <p style={{ fontSize: '13px', fontWeight: 500, color: '#111', margin: 0 }}>
+                      Results ({entry.data.length})
+                    </p>
                     <button
                       onClick={() => {
                         const newShowResults = !showResults;
                         dispatch(setShowResults(newShowResults));
-                        // Show/hide the results section based on toggle
                         if (newShowResults) {
-                          // Find the results data from conversation log
                           const resultsEntry = conversationLog.find(log => log.type === 'results');
                           if (resultsEntry && resultsEntry.data) {
                             onResult({ success: true, data: resultsEntry.data });
                           }
                         } else {
-                          // Hide the results section
                           onResult(null);
                         }
                       }}
-                      className="text-sm text-green-700 hover:text-green-900 underline"
+                      style={{
+                        fontSize: '13px',
+                        color: '#666',
+                        background: 'transparent',
+                        border: 'none',
+                        cursor: 'pointer',
+                        textDecoration: 'underline'
+                      }}
                     >
                       {showResults ? 'Hide Details' : 'Show Details'}
                     </button>
                   </div>
                   {showResults && (
                     <>
-                      <div className="bg-white rounded p-3 mb-2">
-                        <p className="text-gray-900 whitespace-pre-wrap mb-3">{entry.content}</p>
+                      <div style={{ background: '#fafafa', padding: '12px', marginBottom: '8px' }}>
+                        <p style={{ color: '#111', whiteSpace: 'pre-wrap', marginBottom: '12px', fontSize: '14px' }}>{entry.content}</p>
                       </div>
-                      <details className="mt-2">
-                        <summary className="cursor-pointer text-sm text-green-700 hover:text-green-900">
+                      <details style={{ marginTop: '8px' }}>
+                        <summary style={{
+                          cursor: 'pointer',
+                          fontSize: '13px',
+                          color: '#666'
+                        }}>
                           View raw data ({entry.data.length} records)
                         </summary>
-                        <div className="mt-2 max-h-64 overflow-auto">
-                          <pre className="text-xs bg-gray-900 text-green-400 p-3 rounded">
+                        <div style={{ marginTop: '8px', maxHeight: '256px', overflowY: 'auto' }}>
+                          <pre style={{
+                            fontSize: '12px',
+                            background: '#111',
+                            color: '#22c55e',
+                            padding: '12px',
+                            fontFamily: "'SF Mono', Monaco, monospace",
+                            whiteSpace: 'pre-wrap',
+                            margin: 0
+                          }}>
                             {JSON.stringify(entry.data, null, 2)}
                           </pre>
                         </div>
@@ -293,8 +351,12 @@ function LlmQueryTab({ onResult }) {
       </div>
 
       {/* Input Box */}
-      <form onSubmit={handleSubmit} className="border-t border-gray-200 p-4 bg-white">
-        <div className="flex gap-2">
+      <form onSubmit={handleSubmit} style={{
+        borderTop: '1px solid #e5e5e5',
+        padding: '12px 16px',
+        background: '#fff'
+      }}>
+        <div style={{ display: 'flex', gap: '8px' }}>
           <input
             type="text"
             value={inputText}
@@ -305,20 +367,46 @@ function LlmQueryTab({ onResult }) {
                 : "Ask anything (e.g., 'Find tweets about rust', 'What schemas exist?')..."
             }
             disabled={isProcessing}
-            className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100"
+            style={{
+              flex: 1,
+              padding: '12px 16px',
+              border: '1px solid #e5e5e5',
+              background: isProcessing ? '#fafafa' : '#fff',
+              fontSize: '14px',
+              color: '#111',
+              outline: 'none',
+              transition: 'border-color 0.2s'
+            }}
+            onFocus={(e) => e.target.style.borderColor = '#111'}
+            onBlur={(e) => e.target.style.borderColor = '#e5e5e5'}
             autoFocus
           />
           <button
             type="submit"
             disabled={!inputText.trim() || isProcessing}
-            className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors font-semibold"
+            style={{
+              padding: '12px 24px',
+              background: (!inputText.trim() || isProcessing) ? '#e5e5e5' : '#111',
+              color: (!inputText.trim() || isProcessing) ? '#999' : '#fff',
+              border: 'none',
+              fontSize: '14px',
+              fontWeight: 500,
+              cursor: (!inputText.trim() || isProcessing) ? 'not-allowed' : 'pointer',
+              transition: 'background 0.2s'
+            }}
+            onMouseOver={(e) => {
+              if (inputText.trim() && !isProcessing) e.target.style.background = '#333';
+            }}
+            onMouseOut={(e) => {
+              if (inputText.trim() && !isProcessing) e.target.style.background = '#111';
+            }}
           >
-            {isProcessing ? '⏳ Processing...' : 'Send'}
+            {isProcessing ? 'Processing…' : 'Send'}
           </button>
         </div>
         {isProcessing && (
-          <p className="text-center text-sm text-gray-500 mt-2">
-            AI is analyzing and searching...
+          <p style={{ textAlign: 'center', fontSize: '13px', color: '#999', marginTop: '8px' }}>
+            AI is analyzing and searching…
           </p>
         )}
       </form>
@@ -327,4 +415,3 @@ function LlmQueryTab({ onResult }) {
 }
 
 export default LlmQueryTab;
-

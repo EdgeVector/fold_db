@@ -174,13 +174,13 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-2">
               {isExpanded ? (
-                <ChevronDownIcon className="icon icon-sm text-gray-400 transition-transform duration-200" />
+                <ChevronDownIcon className="w-4 h-4 text-gray-400 transition-transform duration-200" />
               ) : (
-                <ChevronRightIcon className="icon icon-sm text-gray-400 transition-transform duration-200" />
+                <ChevronRightIcon className="w-4 h-4 text-gray-400 transition-transform duration-200" />
               )}
               <h3 className="font-medium text-gray-900">{getDisplayName(schema)}</h3>
               {schema.descriptive_name && schema.descriptive_name !== schema.name && (
-                <span className="text-xs text-gray-500">({schema.name})</span>
+                <span className="text-xs text-gray-500" title={schema.name}>({schema.name.length > 12 ? schema.name.slice(0, 8) + '…' : schema.name})</span>
               )}
               <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStateColor(state)}`}>
                 {state}
@@ -203,7 +203,7 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
                   - blocked → approved (once approved, cannot be unloaded) */}
               {state.toLowerCase() === 'available' && (
                 <button
-                  className="group inline-flex items-center px-2 py-1 text-xs font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+                  className="inline-flex items-center px-3 py-1 text-xs font-medium border border-gray-300 text-gray-700 bg-white hover:border-gray-900 hover:text-gray-900 transition-colors"
                   onClick={(e) => {
                     console.log('🟠 Button clicked: Approve for schema:', schema.name)
                     e.stopPropagation()
@@ -215,7 +215,7 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
               )}
               {state.toLowerCase() === 'approved' && (
                 <button
-                  className="group inline-flex items-center px-2 py-1 text-xs font-medium rounded-md text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+                  className="inline-flex items-center px-3 py-1 text-xs font-medium border border-gray-300 text-gray-500 bg-white hover:border-red-400 hover:text-red-600 transition-colors"
                   onClick={(e) => {
                     e.stopPropagation()
                     blockSchema(schema.name)
@@ -226,7 +226,7 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
               )}
               {state.toLowerCase() === 'blocked' && (
                 <button
-                  className="group inline-flex items-center px-2 py-1 text-xs font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+                  className="inline-flex items-center px-3 py-1 text-xs font-medium border border-gray-300 text-gray-700 bg-white hover:border-gray-900 hover:text-gray-900 transition-colors"
                   onClick={(e) => {
                     e.stopPropagation()
                     approveSchema(schema.name)

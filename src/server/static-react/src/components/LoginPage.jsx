@@ -42,10 +42,10 @@ export default function LoginPage() {
             color: '#111',
             marginBottom: '8px'
           }}>
-            SoverignDB
+            FoldDB
           </h1>
           <p style={{ color: '#999', fontSize: '14px' }}>
-            Personal data sovereignty
+            Your data, your rules
           </p>
         </div>
 
