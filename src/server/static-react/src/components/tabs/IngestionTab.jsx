@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { ingestionClient } from '../../api/clients'
+import { useIngestionStatus } from '../../hooks/useIngestionStatus'
 import { generateBlogPosts } from '../../data/sampleBlogPosts'
 import { twitterSamples, instagramSamples, linkedinSamples, tiktokSamples } from '../../data/sampleSocialPosts'
 
@@ -7,22 +8,7 @@ function IngestionTab({ onResult }) {
   const [jsonData, setJsonData] = useState('')
   const [autoExecute, setAutoExecute] = useState(true)
   const [isLoading, setIsLoading] = useState(false)
-  const [ingestionStatus, setIngestionStatus] = useState(null)
-
-  useEffect(() => {
-    fetchIngestionStatus()
-  }, [])
-
-  const fetchIngestionStatus = async () => {
-    try {
-      const response = await ingestionClient.getStatus()
-      if (response.success) {
-        setIngestionStatus(response.data)
-      }
-    } catch (error) {
-      console.error('Failed to fetch ingestion status:', error)
-    }
-  }
+  const { ingestionStatus } = useIngestionStatus()
 
   const processIngestion = async () => {
     setIsLoading(true)

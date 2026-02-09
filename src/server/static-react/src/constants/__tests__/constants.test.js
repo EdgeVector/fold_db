@@ -13,8 +13,6 @@ import {
   ERROR_MESSAGES,
   SCHEMA_STATES,
   DEFAULT_TAB,
-  Constants,
-  CONSTANTS_METADATA,
 } from "../index";
 
 describe("Constants Integration Tests", () => {
@@ -82,35 +80,6 @@ describe("Constants Integration Tests", () => {
       expect(SCHEMA_STATES.APPROVED).toBe("approved");
       expect(SCHEMA_STATES.AVAILABLE).toBe("available");
       expect(SCHEMA_STATES.BLOCKED).toBe("blocked");
-    });
-  });
-
-  describe("Namespaced Constants", () => {
-    test("Constants namespace should provide organized access", () => {
-      expect(Constants).toBeDefined();
-      expect(Constants.Config).toBeDefined();
-      expect(Constants.Validation).toBeDefined();
-      // Styles namespace removed - styling now in CSS
-      expect(Constants.Errors).toBeDefined();
-      expect(Constants.Schema).toBeDefined();
-    });
-
-    test("Namespaced constants should match direct exports", () => {
-      expect(Constants.Config.APP_CONFIG).toEqual(APP_CONFIG);
-      expect(Constants.Validation.VALIDATION_RULES).toEqual(VALIDATION_RULES);
-      // Styles assertion removed - styling now in CSS
-      expect(Constants.Errors.ERROR_CODES).toEqual(ERROR_CODES);
-    });
-  });
-
-  describe("Constants Metadata", () => {
-    test("CONSTANTS_METADATA should provide system information", () => {
-      expect(CONSTANTS_METADATA).toBeDefined();
-      expect(CONSTANTS_METADATA.VERSION).toBe("1.0.0");
-      expect(CONSTANTS_METADATA.CATEGORIES).toContain("Configuration");
-      expect(CONSTANTS_METADATA.CATEGORIES).toContain("Validation");
-      expect(CONSTANTS_METADATA.CATEGORIES).toContain("Styling");
-      expect(CONSTANTS_METADATA.MIGRATION_STATUS).toBeDefined();
     });
   });
 

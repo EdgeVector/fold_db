@@ -12,6 +12,7 @@ import {
 } from '../../store/schemaSlice'
 import schemaClient from '../../api/clients/schemaClient'
 import TopologyDisplay from '../schema/TopologyDisplay'
+import { SCHEMA_BADGE_COLORS } from '../../constants/ui'
 
 function SchemaTab({ onResult, onSchemaUpdated }) {
   // Redux state and dispatch - TASK-003: Use Redux instead of props
@@ -68,16 +69,8 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
 
 
   const getStateColor = (state) => {
-    switch (state?.toLowerCase()) {
-      case 'approved':
-        return 'bg-green-100 text-green-800'
-      case 'available':
-        return 'bg-blue-100 text-blue-800'
-      case 'blocked':
-        return 'bg-red-100 text-red-800'
-      default:
-        return 'bg-gray-100 text-gray-800'
-    }
+    const key = state?.toLowerCase()
+    return SCHEMA_BADGE_COLORS[key] || 'minimal-badge'
   }
 
   const approveSchema = async (schemaName) => {

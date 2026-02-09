@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { ingestionClient } from '../../api/clients'
+import { useIngestionStatus } from '../../hooks/useIngestionStatus'
 
 // Check if running in Tauri
 const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__
@@ -10,7 +11,7 @@ function SmartFolderTab({ onResult }) {
   const [isIngesting, setIsIngesting] = useState(false)
   const [scanResult, setScanResult] = useState(null)
   const [ingestionStarted, setIngestionStarted] = useState(false)
-  const [ingestionStatus, setIngestionStatus] = useState(null)
+  const { ingestionStatus } = useIngestionStatus()
 
   // Open native folder picker (Tauri only)
   const openFolderPicker = async () => {
@@ -30,21 +31,6 @@ function SmartFolderTab({ onResult }) {
       }
     } catch (error) {
       console.error('Failed to open folder picker:', error)
-    }
-  }
-
-  useEffect(() => {
-    fetchIngestionStatus()
-  }, [])
-
-  const fetchIngestionStatus = async () => {
-    try {
-      const response = await ingestionClient.getStatus()
-      if (response.success) {
-        setIngestionStatus(response.data)
-      }
-    } catch (error) {
-      console.error('Failed to fetch ingestion status:', error)
     }
   }
 

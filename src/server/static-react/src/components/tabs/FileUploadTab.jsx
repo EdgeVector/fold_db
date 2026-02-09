@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { ingestionClient } from '../../api/clients'
+import { useIngestionStatus } from '../../hooks/useIngestionStatus'
 
 function FileUploadTab({ onResult }) {
   const [isDragging, setIsDragging] = useState(false)
@@ -8,7 +8,7 @@ function FileUploadTab({ onResult }) {
   const [trustDistance, setTrustDistance] = useState(0)
   const [pubKey, setPubKey] = useState('default')
   const [isUploading, setIsUploading] = useState(false)
-  const [ingestionStatus, setIngestionStatus] = useState(null)
+  const { ingestionStatus } = useIngestionStatus()
   const [uploadMode, setUploadMode] = useState('upload') // 'upload', 's3-path', 'batch-folder'
   const [s3FilePath, setS3FilePath] = useState('')
   const [folderPath, setFolderPath] = useState('sample_data')
@@ -17,25 +17,12 @@ function FileUploadTab({ onResult }) {
   const pollIntervalRef = useRef(null)
 
   useEffect(() => {
-    fetchIngestionStatus()
     return () => {
       if (pollIntervalRef.current) {
         clearInterval(pollIntervalRef.current)
       }
     }
   }, [])
-
-  const fetchIngestionStatus = async () => {
-    try {
-      const response = await ingestionClient.getStatus()
-      if (response.success) {
-        setIngestionStatus(response.data)
-      }
-    } catch (error) {
-      console.error('Failed to fetch ingestion status:', error)
-    }
-  }
-
   const pollFileProgress = useCallback(async (progressIds) => {
     const progresses = {}
     let allComplete = true

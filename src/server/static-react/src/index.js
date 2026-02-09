@@ -7,7 +7,6 @@ export { default as LogSidebar } from "./components/LogSidebar";
 export { default as Header } from "./components/Header";
 export { default as Footer } from "./components/Footer";
 export { default as LoginPage } from "./components/LoginPage";
-export { default as LoginModal } from "./components/LoginModal";
 export { default as StructuredResults } from "./components/StructuredResults";
 export { default as StatusSection } from "./components/StatusSection";
 
