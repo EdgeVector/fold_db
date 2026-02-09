@@ -14,23 +14,23 @@ function ResultsSection({ results }) {
   }
 
   return (
-    <div className="card-terminal mt-6">
-      <div className="card-terminal-header">
+    <div className="minimal-card mt-6">
+      <div className="minimal-card-header">
         <div className="flex items-center gap-3">
-          <span className={`${isError ? 'text-terminal-red' : 'text-terminal-green'}`}>
+          <span className={`${isError ? 'text-error' : 'text-success'}`}>
             {isError ? '✖' : '✔'}
           </span>
-          <span className={`font-medium ${isError ? 'text-terminal-red' : 'text-terminal-green'}`}>
+          <span className={`font-medium ${isError ? 'text-error' : 'text-success'}`}>
             {isError ? 'ERROR' : 'OUTPUT'}
           </span>
-          <span className="text-xs text-terminal-dim">
+          <span className="text-xs text-secondary">
             [{typeof results === 'string' ? 'text' : structured ? 'structured' : 'json'}]
           </span>
           {results.status && (
-            <span className={`badge-terminal ${
+            <span className={`minimal-badge ${
               results.status >= 400
-                ? 'badge-terminal-error'
-                : 'badge-terminal-success'
+                ? 'minimal-badge-error'
+                : 'minimal-badge-success'
             }`}>
               status: {results.status}
             </span>
@@ -39,25 +39,25 @@ function ResultsSection({ results }) {
         {!isError && typeof results !== 'string' && (
           <button
             type="button"
-            className="btn-terminal text-xs py-1 px-3"
+            className="minimal-btn-secondary minimal-btn-sm"
             onClick={() => setStructured((v) => !v)}
           >
-            {structured ? '$ view --json' : '$ view --structured'}
+            {structured ? 'view json' : 'view structured'}
           </button>
         )}
       </div>
       
-      <div className="card-terminal-body">
+      <div className="minimal-card-body">
         {isError && (
-          <div className="mb-4 p-4 bg-terminal border-l-4 border-terminal-red rounded">
+          <div className="minimal-error-block mb-4">
             <div className="flex items-start gap-3">
-              <span className="text-terminal-red text-lg">!</span>
+              <span className="text-error text-lg">!</span>
               <div>
-                <h4 className="text-sm font-medium text-terminal-red mb-1">
+                <h4 className="text-sm font-medium text-error mb-1">
                   Execution Failed
                 </h4>
-                <p className="text-sm text-terminal-dim">
-                  <span className="text-terminal-red">→</span> {results.error || 'An unknown error occurred'}
+                <p className="text-sm text-secondary">
+                  <span className="text-error">→</span> {results.error || 'An unknown error occurred'}
                 </p>
               </div>
             </div>
@@ -65,19 +65,19 @@ function ResultsSection({ results }) {
         )}
         
         {structured && !isError && typeof results !== 'string' ? (
-          <div className="rounded bg-terminal border border-terminal overflow-auto max-h-[500px] p-4">
+          <div className="overflow-auto max-h-[500px] p-4 border border-solid" style={{ borderColor: 'var(--color-border)' }}>
             <StructuredResults results={results} />
           </div>
         ) : (
-          <div className={`code-block overflow-auto max-h-[500px]`}>
-            <div className="code-block-header">
+          <div className="minimal-minimal-code-block overflow-auto max-h-[500px]">
+            <div className="minimal-code-header">
               <span>{isError ? 'error.log' : 'output.json'}</span>
-              <span className="text-terminal-dim">
+              <span className="text-tertiary">
                 {new Date().toLocaleTimeString()}
               </span>
             </div>
-            <div className="code-block-body">
-              <pre className={`terminal-output ${isError ? 'output-error' : 'output-success'}`}>
+            <div className="minimal-code-body">
+              <pre className={`${isError ? 'text-error' : 'text-success'}`}>
                 {typeof results === 'string'
                   ? results
                   : JSON.stringify(hasData ? results.data : results, null, 2)

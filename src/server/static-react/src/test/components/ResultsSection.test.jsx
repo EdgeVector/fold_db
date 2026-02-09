@@ -125,13 +125,13 @@ describe('ResultsSection Component', () => {
 
     render(<ResultsSection results={hr} />);
     // Hash-range structure starts in structured view, button shows option to view JSON
-    const toggleButton = screen.getByRole('button', { name: /view --json/i });
+    const toggleButton = screen.getByRole('button', { name: /view json/i });
     expect(toggleButton).toBeInTheDocument();
     
     // Click to switch view to JSON
     fireEvent.click(toggleButton);
     // After toggle, should show option to view structured
-    expect(screen.getByRole('button', { name: /view --structured/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /view structured/i })).toBeInTheDocument();
   });
 
   it('displays results without data property correctly', () => {
@@ -202,6 +202,6 @@ describe('ResultsSection Component', () => {
     
     // Check the container uses terminal classes
     const outputTitle = screen.getByText('OUTPUT');
-    expect(outputTitle.closest('.card-terminal')).toBeInTheDocument();
+    expect(outputTitle.closest('.minimal-card')).toBeInTheDocument();
   });
 });

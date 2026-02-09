@@ -43,12 +43,6 @@ export {
 } from "./validation.js";
 
 // ============================================================================
-// STYLING EXPORTS
-// ============================================================================
-
-export { COMPONENT_STYLES } from "./styling";
-
-// ============================================================================
 // TESTING EXPORTS
 // ============================================================================
 
@@ -229,12 +223,6 @@ export const Constants = {
     VALIDATION_RULES: _VALIDATION_RULES || {},
     VALIDATION_PATTERNS: _VALIDATION_PATTERNS || {},
     VALIDATION_MESSAGES: _VALIDATION_MESSAGES || {},
-  },
-
-  Styles: {
-    PRIMARY_COLOR: PRIMARY_COLOR,
-    STATUS_SUCCESS: STATUS_SUCCESS,
-    STATUS_ERROR: STATUS_ERROR,
   },
 
   // Schema namespace (SCHEMA-002 compliance)

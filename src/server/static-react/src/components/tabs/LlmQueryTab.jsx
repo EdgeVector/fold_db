@@ -190,20 +190,12 @@ function LlmQueryTab({ onResult }) {
   }, [dispatch]);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column' }}>
+    <div className="chat-container">
       {/* Header */}
-      <div style={{
-        padding: '12px 16px',
-        borderBottom: '1px solid #e5e5e5',
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center'
-      }}>
+      <div className="chat-header">
         <div>
-          <h2 style={{ fontSize: '16px', fontWeight: 500, color: '#111', margin: 0 }}>
-            AI Query
-          </h2>
-          <p style={{ color: '#999', fontSize: '13px', margin: '4px 0 0' }}>
+          <h2 className="chat-title">AI Query</h2>
+          <p className="chat-subtitle">
             Ask questions in plain English — the AI will find your data
           </p>
         </div>
@@ -211,17 +203,7 @@ function LlmQueryTab({ onResult }) {
           <button
             onClick={handleNewConversation}
             disabled={isProcessing}
-            style={{
-              padding: '8px 16px',
-              background: isProcessing ? '#e5e5e5' : '#fff',
-              color: isProcessing ? '#999' : '#111',
-              border: '1px solid #e5e5e5',
-              fontSize: '13px',
-              cursor: isProcessing ? 'not-allowed' : 'pointer',
-              transition: 'border-color 0.2s'
-            }}
-            onMouseOver={(e) => !isProcessing && (e.target.style.borderColor = '#111')}
-            onMouseOut={(e) => !isProcessing && (e.target.style.borderColor = '#e5e5e5')}
+            className="minimal-btn-secondary text-sm"
           >
             New Conversation
           </button>
@@ -229,63 +211,40 @@ function LlmQueryTab({ onResult }) {
       </div>
 
       {/* Conversation Log */}
-      <div style={{
-        overflowY: 'auto',
-        background: '#fafafa',
-        padding: '16px',
-        maxHeight: '60vh',
-        minHeight: '300px'
-      }}>
+      <div className="chat-messages">
         {conversationLog.length === 0 ? (
-          <div style={{ textAlign: 'center', color: '#999', marginTop: '60px' }}>
-            <div style={{ fontSize: '48px', marginBottom: '16px', opacity: 0.5 }}>→</div>
-            <p style={{ fontSize: '15px', marginBottom: '8px' }}>Start a conversation</p>
-            <p style={{ fontSize: '13px', color: '#bbb' }}>
+          <div className="chat-empty">
+            <div className="chat-empty-icon">→</div>
+            <p className="text-[15px] mb-2">Start a conversation</p>
+            <p className="text-[13px] text-tertiary">
               Try: "What schemas are available?" or "Find tweets mentioning rust" or "Search for blog posts about AI"
             </p>
           </div>
         ) : (
           conversationLog.map((entry, idx) => (
-            <div key={idx} style={{ marginBottom: '12px' }}>
+            <div key={idx} className="mb-3">
               {entry.type === 'user' && (
-                <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                  <div style={{
-                    background: '#111',
-                    color: '#fff',
-                    padding: '10px 16px',
-                    maxWidth: '600px'
-                  }}>
-                    <p style={{ fontSize: '11px', fontWeight: 500, marginBottom: '4px', opacity: 0.7 }}>You</p>
-                    <p style={{ whiteSpace: 'pre-wrap', margin: 0, fontSize: '14px' }}>{entry.content}</p>
+                <div className="flex justify-end">
+                  <div className="chat-bubble-user">
+                    <p className="chat-bubble-label opacity-70">You</p>
+                    <p className="chat-bubble-text">{entry.content}</p>
                   </div>
                 </div>
               )}
               
               {entry.type === 'system' && (
-                <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
-                  <div style={{
-                    background: '#fff',
-                    border: '1px solid #e5e5e5',
-                    padding: '10px 16px',
-                    maxWidth: '600px'
-                  }}>
-                    <p style={{ fontSize: '11px', fontWeight: 500, color: '#999', marginBottom: '4px' }}>AI Assistant</p>
-                    <p style={{ color: '#111', whiteSpace: 'pre-wrap', margin: 0, fontSize: '14px' }}>{entry.content}</p>
+                <div className="flex justify-start">
+                  <div className="chat-bubble-system">
+                    <p className="chat-bubble-label text-tertiary">AI Assistant</p>
+                    <p className="chat-bubble-text text-primary">{entry.content}</p>
                   </div>
                 </div>
               )}
               
               {entry.type === 'results' && entry.data && (
-                <div style={{
-                  background: '#fff',
-                  border: '1px solid #e5e5e5',
-                  borderLeftWidth: '3px',
-                  borderLeftColor: '#22c55e',
-                  padding: '16px',
-                  maxWidth: '100%'
-                }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                    <p style={{ fontSize: '13px', fontWeight: 500, color: '#111', margin: 0 }}>
+                <div className="chat-bubble-results">
+                  <div className="flex justify-between items-center mb-2">
+                    <p className="text-[13px] font-medium text-primary m-0">
                       Results ({entry.data.length})
                     </p>
                     <button
@@ -301,41 +260,22 @@ function LlmQueryTab({ onResult }) {
                           onResult(null);
                         }
                       }}
-                      style={{
-                        fontSize: '13px',
-                        color: '#666',
-                        background: 'transparent',
-                        border: 'none',
-                        cursor: 'pointer',
-                        textDecoration: 'underline'
-                      }}
+                      className="chat-link-btn"
                     >
                       {showResults ? 'Hide Details' : 'Show Details'}
                     </button>
                   </div>
                   {showResults && (
                     <>
-                      <div style={{ background: '#fafafa', padding: '12px', marginBottom: '8px' }}>
-                        <p style={{ color: '#111', whiteSpace: 'pre-wrap', marginBottom: '12px', fontSize: '14px' }}>{entry.content}</p>
+                      <div className="bg-[#fafafa] p-3 mb-2">
+                        <p className="text-primary whitespace-pre-wrap mb-3 text-sm">{entry.content}</p>
                       </div>
-                      <details style={{ marginTop: '8px' }}>
-                        <summary style={{
-                          cursor: 'pointer',
-                          fontSize: '13px',
-                          color: '#666'
-                        }}>
+                      <details className="mt-2">
+                        <summary className="cursor-pointer text-[13px] text-secondary">
                           View raw data ({entry.data.length} records)
                         </summary>
-                        <div style={{ marginTop: '8px', maxHeight: '256px', overflowY: 'auto' }}>
-                          <pre style={{
-                            fontSize: '12px',
-                            background: '#111',
-                            color: '#22c55e',
-                            padding: '12px',
-                            fontFamily: "'SF Mono', Monaco, monospace",
-                            whiteSpace: 'pre-wrap',
-                            margin: 0
-                          }}>
+                        <div className="mt-2 max-h-64 overflow-y-auto">
+                          <pre className="chat-raw-data">
                             {JSON.stringify(entry.data, null, 2)}
                           </pre>
                         </div>
@@ -351,12 +291,8 @@ function LlmQueryTab({ onResult }) {
       </div>
 
       {/* Input Box */}
-      <form onSubmit={handleSubmit} style={{
-        borderTop: '1px solid #e5e5e5',
-        padding: '12px 16px',
-        background: '#fff'
-      }}>
-        <div style={{ display: 'flex', gap: '8px' }}>
+      <form onSubmit={handleSubmit} className="chat-input-form">
+        <div className="flex gap-2">
           <input
             type="text"
             value={inputText}
@@ -367,45 +303,19 @@ function LlmQueryTab({ onResult }) {
                 : "Ask anything (e.g., 'Find tweets about rust', 'What schemas exist?')..."
             }
             disabled={isProcessing}
-            style={{
-              flex: 1,
-              padding: '12px 16px',
-              border: '1px solid #e5e5e5',
-              background: isProcessing ? '#fafafa' : '#fff',
-              fontSize: '14px',
-              color: '#111',
-              outline: 'none',
-              transition: 'border-color 0.2s'
-            }}
-            onFocus={(e) => e.target.style.borderColor = '#111'}
-            onBlur={(e) => e.target.style.borderColor = '#e5e5e5'}
+            className="chat-input"
             autoFocus
           />
           <button
             type="submit"
             disabled={!inputText.trim() || isProcessing}
-            style={{
-              padding: '12px 24px',
-              background: (!inputText.trim() || isProcessing) ? '#e5e5e5' : '#111',
-              color: (!inputText.trim() || isProcessing) ? '#999' : '#fff',
-              border: 'none',
-              fontSize: '14px',
-              fontWeight: 500,
-              cursor: (!inputText.trim() || isProcessing) ? 'not-allowed' : 'pointer',
-              transition: 'background 0.2s'
-            }}
-            onMouseOver={(e) => {
-              if (inputText.trim() && !isProcessing) e.target.style.background = '#333';
-            }}
-            onMouseOut={(e) => {
-              if (inputText.trim() && !isProcessing) e.target.style.background = '#111';
-            }}
+            className="chat-send-btn"
           >
             {isProcessing ? 'Processing…' : 'Send'}
           </button>
         </div>
         {isProcessing && (
-          <p style={{ textAlign: 'center', fontSize: '13px', color: '#999', marginTop: '8px' }}>
+          <p className="text-center text-[13px] text-tertiary mt-2">
             AI is analyzing and searching…
           </p>
         )}

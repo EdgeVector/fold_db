@@ -15,34 +15,34 @@ function LogSidebar() {
   const getLevelColor = (level) => {
     switch (level?.toUpperCase()) {
       case 'ERROR':
-        return '#ef4444'
+        return 'text-error'
       case 'WARN':
       case 'WARNING':
-        return '#f59e0b'
+        return 'text-warning'
       case 'INFO':
-        return '#666'
+        return 'text-secondary'
       case 'DEBUG':
-        return '#999'
+        return 'text-tertiary'
       default:
-        return '#999'
+        return 'text-tertiary'
     }
   }
 
   const formatLogEntry = (entry) => {
     if (typeof entry === 'string') {
-      return <span style={{ color: '#999' }}>{entry}</span>
+      return <span className="text-tertiary">{entry}</span>
     }
 
-    const levelColor = getLevelColor(entry.level)
+    const levelClass = getLevelColor(entry.level)
     const time = entry.timestamp
       ? new Date(entry.timestamp).toLocaleTimeString('en-US', { hour12: false })
       : ''
 
     return (
       <>
-        <span style={{ color: '#999' }}>{time}</span>
-        <span style={{ color: levelColor, marginLeft: '8px' }}>[{entry.level}]</span>
-        <span style={{ color: '#666', marginLeft: '4px' }}>{entry.message}</span>
+        <span className="text-tertiary">{time}</span>
+        <span className={`${levelClass} ml-2`}>[{entry.level}]</span>
+        <span className="text-secondary ml-1">{entry.message}</span>
       </>
     )
   }
@@ -156,30 +156,13 @@ function LogSidebar() {
 
   if (isCollapsed) {
     return (
-      <aside style={{
-        width: '40px',
-        background: '#fff',
-        borderLeft: '1px solid #e5e5e5',
-        display: 'flex',
-        flexDirection: 'column',
-        flexShrink: 0
-      }}>
+      <aside className="log-sidebar-collapsed">
         <button
           onClick={() => setIsCollapsed(false)}
-          style={{
-            width: '100%',
-            height: '100%',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: '#999',
-            background: 'transparent',
-            border: 'none',
-            cursor: 'pointer'
-          }}
+          className="log-sidebar-toggle"
           title="Expand logs"
         >
-          <svg style={{ width: '16px', height: '16px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
           </svg>
         </button>
@@ -188,72 +171,26 @@ function LogSidebar() {
   }
 
   return (
-    <aside style={{
-      width: '320px',
-      background: '#fff',
-      borderLeft: '1px solid #e5e5e5',
-      display: 'flex',
-      flexDirection: 'column',
-      flexShrink: 0,
-      height: '100%',
-      overflow: 'hidden'
-    }}>
+    <aside className="log-sidebar">
       {/* Header */}
-      <div style={{
-        padding: '12px 16px',
-        borderBottom: '1px solid #e5e5e5',
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        flexShrink: 0
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span style={{ fontSize: '14px', fontWeight: 500, color: '#111' }}>Logs</span>
-          <span style={{
-            fontSize: '11px',
-            color: '#999',
-            padding: '2px 8px',
-            background: '#f5f5f5',
-            border: '1px solid #e5e5e5'
-          }}>{logs.length}</span>
+      <div className="log-sidebar-header">
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-medium text-primary">Logs</span>
+          <span className="log-sidebar-count">{logs.length}</span>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <button
-            onClick={handleClear}
-            style={{
-              fontSize: '12px',
-              color: '#999',
-              background: 'transparent',
-              border: 'none',
-              cursor: 'pointer'
-            }}
-          >
+        <div className="flex items-center gap-3">
+          <button onClick={handleClear} className="log-sidebar-action">
             clear
           </button>
-          <button
-            onClick={handleCopy}
-            style={{
-              fontSize: '12px',
-              color: '#999',
-              background: 'transparent',
-              border: 'none',
-              cursor: 'pointer'
-            }}
-          >
+          <button onClick={handleCopy} className="log-sidebar-action">
             copy
           </button>
           <button
             onClick={() => setIsCollapsed(true)}
-            style={{
-              color: '#999',
-              background: 'transparent',
-              border: 'none',
-              cursor: 'pointer',
-              padding: '4px'
-            }}
+            className="log-sidebar-action p-1"
             title="Collapse"
           >
-            <svg style={{ width: '16px', height: '16px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
             </svg>
           </button>
@@ -261,30 +198,14 @@ function LogSidebar() {
       </div>
 
       {/* Log content - fixed height with internal scroll */}
-      <div
-        ref={logContainerRef}
-        style={{
-          flex: 1,
-          overflowY: 'auto',
-          padding: '12px',
-          fontSize: '12px',
-          fontFamily: "'SF Mono', Monaco, monospace",
-          lineHeight: 1.6
-        }}
-      >
+      <div ref={logContainerRef} className="log-sidebar-content">
         {logs.length === 0 ? (
-          <div style={{ color: '#999', textAlign: 'center', padding: '32px 0' }}>
+          <div className="text-tertiary text-center py-8">
             No logs yet
           </div>
         ) : (
           logs.map((entry, idx) => (
-            <div
-              key={entry.id || idx}
-              style={{
-                padding: '4px 0',
-                borderBottom: '1px solid #f5f5f5'
-              }}
-            >
+            <div key={entry.id || idx} className="log-entry">
               {formatLogEntry(entry)}
             </div>
           ))
@@ -292,23 +213,9 @@ function LogSidebar() {
       </div>
 
       {/* Status bar */}
-      <div style={{
-        padding: '8px 16px',
-        borderTop: '1px solid #e5e5e5',
-        fontSize: '11px',
-        color: '#999',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        flexShrink: 0
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <span style={{
-            width: '6px',
-            height: '6px',
-            background: '#22c55e',
-            borderRadius: '50%'
-          }}></span>
+      <div className="log-sidebar-status">
+        <div className="flex items-center gap-1.5">
+          <span className="log-status-dot"></span>
           <span>streaming</span>
         </div>
         <span>{logs.length} entries</span>

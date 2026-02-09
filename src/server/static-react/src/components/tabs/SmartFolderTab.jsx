@@ -118,27 +118,27 @@ function SmartFolderTab({ onResult }) {
     <div className="space-y-4">
       {/* Status Bar */}
       {ingestionStatus && (
-        <div className="card-terminal p-3 border-l-4 border-terminal-green">
+        <div className="minimal-card p-3 border-l-4 border-green-500">
           <div className="flex items-center gap-4 text-sm">
-            <span className={`badge-terminal ${
+            <span className={`minimal-badge ${
               ingestionStatus.enabled && ingestionStatus.configured
-                ? 'badge-terminal-success'
-                : 'badge-terminal-error'
+                ? 'minimal-badge-success'
+                : 'minimal-badge-error'
             }`}>
               {ingestionStatus.enabled && ingestionStatus.configured ? 'Ready' : 'Not Configured'}
             </span>
-            <span className="text-terminal-dim">{ingestionStatus.provider} · {ingestionStatus.model}</span>
+            <span className="text-secondary">{ingestionStatus.provider} · {ingestionStatus.model}</span>
           </div>
         </div>
       )}
 
       {/* Phase 1: Scan Input */}
       {!scanResult && !ingestionStarted && (
-        <div className="card-terminal p-4">
-          <h3 className="text-terminal-green font-medium mb-3">
-            <span className="text-terminal-dim">$</span> Smart Folder Scan
+        <div className="minimal-card p-4">
+          <h3 className="text-success font-medium mb-3">
+            <span className="text-secondary">$</span> Smart Folder Scan
           </h3>
-          <p className="text-sm text-terminal-dim mb-4">
+          <p className="text-sm text-secondary mb-4">
             Enter a folder path to scan for files. The AI will analyze the contents and recommend files for ingestion.
           </p>
           <div className="flex gap-3">
@@ -148,14 +148,14 @@ function SmartFolderTab({ onResult }) {
               onChange={(e) => setFolderPath(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') handleScan() }}
               placeholder="/path/to/your/folder"
-              className="input-terminal flex-1"
+              className="minimal-input flex-1"
               disabled={isScanning}
             />
             {isTauri && (
               <button
                 onClick={openFolderPicker}
                 disabled={isScanning}
-                className="btn-terminal px-4 py-2"
+                className="minimal-btn-secondary px-4 py-2"
                 title="Browse folders"
               >
                 📁
@@ -164,15 +164,15 @@ function SmartFolderTab({ onResult }) {
             <button
               onClick={handleScan}
               disabled={isScanning || !folderPath.trim()}
-              className={`btn-terminal px-6 py-2 font-medium ${
+              className={`minimal-btn-secondary px-6 py-2 font-medium ${
                 isScanning || !folderPath.trim()
                   ? 'opacity-50 cursor-not-allowed'
-                  : 'btn-terminal-primary'
+                  : 'minimal-btn'
               }`}
             >
               {isScanning ? (
                 <>
-                  <span className="spinner-terminal"></span>
+                  <span className="minimal-spinner"></span>
                   <span>Scanning...</span>
                 </>
               ) : (
@@ -190,22 +190,22 @@ function SmartFolderTab({ onResult }) {
       {scanResult && !ingestionStarted && (
         <>
           {/* Summary */}
-          <div className="card-terminal p-4 border-l-4 border-terminal-cyan">
-            <h3 className="text-terminal-cyan font-medium mb-2">
+          <div className="minimal-card p-4 border-l-4 border-blue-300">
+            <h3 className="text-info font-medium mb-2">
               Scan Results
             </h3>
             <div className="flex items-center gap-6 text-sm">
-              <span className="text-terminal-green">
+              <span className="text-success">
                 {scanResult.recommended_files.length} files to ingest
               </span>
-              <span className="text-terminal-dim">
+              <span className="text-secondary">
                 {scanResult.skipped_files.length} skipped
               </span>
-              <span className="text-terminal-dim">
+              <span className="text-secondary">
                 {scanResult.total_files} total scanned
               </span>
               {estimatedCost && (
-                <span className="text-terminal-dim">
+                <span className="text-secondary">
                   Est. cost: ~${estimatedCost}
                 </span>
               )}
@@ -215,7 +215,7 @@ function SmartFolderTab({ onResult }) {
             {Object.keys(scanResult.summary).length > 0 && (
               <div className="flex gap-3 mt-3 flex-wrap">
                 {Object.entries(scanResult.summary).map(([category, count]) => (
-                  <span key={category} className="badge-terminal text-xs">
+                  <span key={category} className="minimal-badge text-xs">
                     {category}: {count}
                   </span>
                 ))}
@@ -224,32 +224,32 @@ function SmartFolderTab({ onResult }) {
           </div>
 
           {/* File List */}
-          <div className="card-terminal p-4">
-            <h4 className="text-terminal-green text-sm font-medium mb-3">
-              <span className="text-terminal-dim">$</span> Recommended Files
+          <div className="minimal-card p-4">
+            <h4 className="text-success text-sm font-medium mb-3">
+              <span className="text-secondary">$</span> Recommended Files
             </h4>
             <div className="space-y-1 max-h-64 overflow-y-auto">
               {scanResult.recommended_files.map((file, i) => (
-                <div key={i} className="flex items-center gap-3 text-sm py-1 border-b border-terminal/10 last:border-0">
-                  <span className="text-terminal-green text-xs">+</span>
-                  <span className="text-terminal font-mono text-xs flex-1 truncate">{file.path}</span>
-                  <span className="badge-terminal text-xs">{file.category}</span>
-                  <span className="text-terminal-dim text-xs">{file.reason}</span>
+                <div key={i} className="flex items-center gap-3 text-sm py-1 border-b border-gray-200/10 last:border-0">
+                  <span className="text-success text-xs">+</span>
+                  <span className="text-primary font-mono text-xs flex-1 truncate">{file.path}</span>
+                  <span className="minimal-badge text-xs">{file.category}</span>
+                  <span className="text-secondary text-xs">{file.reason}</span>
                 </div>
               ))}
             </div>
 
             {scanResult.skipped_files.length > 0 && (
               <>
-                <h4 className="text-terminal-dim text-sm font-medium mt-4 mb-2">
+                <h4 className="text-secondary text-sm font-medium mt-4 mb-2">
                   Skipped Files
                 </h4>
                 <div className="space-y-1 max-h-32 overflow-y-auto">
                   {scanResult.skipped_files.map((file, i) => (
-                    <div key={i} className="flex items-center gap-3 text-sm py-1 border-b border-terminal/10 last:border-0">
-                      <span className="text-terminal-dim text-xs">-</span>
-                      <span className="text-terminal-dim font-mono text-xs flex-1 truncate">{file.path}</span>
-                      <span className="text-terminal-dim text-xs">{file.reason}</span>
+                    <div key={i} className="flex items-center gap-3 text-sm py-1 border-b border-gray-200/10 last:border-0">
+                      <span className="text-secondary text-xs">-</span>
+                      <span className="text-secondary font-mono text-xs flex-1 truncate">{file.path}</span>
+                      <span className="text-secondary text-xs">{file.reason}</span>
                     </div>
                   ))}
                 </div>
@@ -258,11 +258,11 @@ function SmartFolderTab({ onResult }) {
           </div>
 
           {/* Action Buttons */}
-          <div className="card-terminal p-4">
+          <div className="minimal-card p-4">
             <div className="flex items-center justify-between">
               <button
                 onClick={handleBack}
-                className="btn-terminal px-4 py-2 text-terminal-dim"
+                className="minimal-btn-secondary px-4 py-2 text-secondary"
                 disabled={isIngesting}
               >
                 ← Back
@@ -270,15 +270,15 @@ function SmartFolderTab({ onResult }) {
               <button
                 onClick={handleIngest}
                 disabled={isIngesting || scanResult.recommended_files.length === 0}
-                className={`btn-terminal px-6 py-2.5 font-medium ${
+                className={`minimal-btn-secondary px-6 py-2.5 font-medium ${
                   isIngesting || scanResult.recommended_files.length === 0
                     ? 'opacity-50 cursor-not-allowed'
-                    : 'btn-terminal-primary'
+                    : 'minimal-btn'
                 }`}
               >
                 {isIngesting ? (
                   <>
-                    <span className="spinner-terminal"></span>
+                    <span className="minimal-spinner"></span>
                     <span>Starting...</span>
                   </>
                 ) : (
@@ -295,16 +295,16 @@ function SmartFolderTab({ onResult }) {
 
       {/* Phase 3: Ingestion Started */}
       {ingestionStarted && (
-        <div className="card-terminal p-4 border-l-4 border-terminal-green">
-          <h3 className="text-terminal-green font-medium mb-2">
+        <div className="minimal-card p-4 border-l-4 border-green-500">
+          <h3 className="text-success font-medium mb-2">
             Ingestion Started
           </h3>
-          <p className="text-sm text-terminal-dim mb-3">
+          <p className="text-sm text-secondary mb-3">
             {scanResult.recommended_files.length} files queued for ingestion. Track progress in the header above.
           </p>
           <button
             onClick={handleBack}
-            className="btn-terminal px-4 py-2 text-terminal-dim"
+            className="minimal-btn-secondary px-4 py-2 text-secondary"
           >
             ← Scan Another Folder
           </button>
@@ -312,9 +312,9 @@ function SmartFolderTab({ onResult }) {
       )}
 
       {/* Info Panel */}
-      <div className="card-terminal p-3 border-l-4 border-terminal-cyan">
-        <div className="flex items-start gap-2 text-xs text-terminal-dim">
-          <span className="text-terminal-cyan font-bold">[i]</span>
+      <div className="minimal-card p-3 border-l-4 border-blue-300">
+        <div className="flex items-start gap-2 text-xs text-secondary">
+          <span className="text-info font-bold">[i]</span>
           <span>
             Smart Folder scans a directory, identifies supported file types, and recommends files for AI-powered ingestion.
             Each file is processed individually with schema generation and data mapping. Progress is tracked in the header.

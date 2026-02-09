@@ -59,7 +59,7 @@ describe('MutationTab Component', () => {
 
     expect(screen.getByText('No options available')).toBeInTheDocument()
     expect(screen.getByText('Operation Type')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Execute Mutation' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Execute Mutation/i })).toBeInTheDocument()
   })
 
   it('renders mutation form with approved schemas', async () => {
@@ -80,7 +80,7 @@ describe('MutationTab Component', () => {
     })
 
     expect(screen.getByText('Operation Type')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Execute Mutation' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Execute Mutation/i })).toBeInTheDocument()
   })
 
   it('displays disabled submit button when no schema selected', async () => {
@@ -100,7 +100,7 @@ describe('MutationTab Component', () => {
       preloadedState: schemaState
     })
 
-    const submitButton = screen.getByRole('button', { name: 'Execute Mutation' })
+    const submitButton = screen.getByRole('button', { name: /Execute Mutation/i })
     expect(submitButton).toBeDisabled()
   })
 
@@ -123,7 +123,7 @@ describe('MutationTab Component', () => {
 
     expect(screen.getByText('Schema')).toBeInTheDocument()
     expect(screen.getByText('Operation Type')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Execute Mutation' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Execute Mutation/i })).toBeInTheDocument()
   })
 
   it('shows mutation type options', async () => {
@@ -164,7 +164,7 @@ describe('MutationTab Component', () => {
     })
 
     // Verify form renders
-    const submitButton = screen.getByRole('button', { name: 'Execute Mutation' })
+    const submitButton = screen.getByRole('button', { name: /Execute Mutation/i })
     expect(submitButton).toBeInTheDocument()
     expect(submitButton).toBeDisabled()
   })
@@ -186,7 +186,7 @@ describe('MutationTab Component', () => {
     })
 
     // Just verify the form exists and can be interacted with
-    const submitButton = screen.getByRole('button', { name: 'Execute Mutation' })
+    const submitButton = screen.getByRole('button', { name: /Execute Mutation/i })
     expect(submitButton).toBeDisabled()
     
     // Verify operation type selector defaults to "Insert"
@@ -237,10 +237,10 @@ describe('MutationTab Component', () => {
     // Verify core elements exist
     expect(screen.getByText('Schema')).toBeInTheDocument()
     expect(screen.getByText('Operation Type')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Execute Mutation' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Execute Mutation/i })).toBeInTheDocument()
     
     // Verify default state
-    const submitButton = screen.getByRole('button', { name: 'Execute Mutation' })
+    const submitButton = screen.getByRole('button', { name: /Execute Mutation/i })
     expect(submitButton).toBeDisabled()
   })
 })

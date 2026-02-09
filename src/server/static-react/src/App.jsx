@@ -170,24 +170,10 @@ export function AppContent() {
   // Show loading spinner while restoring session or checking auth
   if (isAuthLoading) {
     return (
-      <div style={{
-        height: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        background: '#fafafa'
-      }}>
-        <div style={{ textAlign: 'center' }}>
-          <div style={{
-            width: '24px',
-            height: '24px',
-            border: '2px solid #d4d4d4',
-            borderTopColor: '#111',
-            borderRadius: '50%',
-            animation: 'spin 0.8s linear infinite',
-            margin: '0 auto 16px'
-          }}></div>
-          <p style={{ color: '#666', fontSize: '14px' }}>
+      <div className="minimal-loading-page">
+        <div className="text-center">
+          <div className="minimal-spinner"></div>
+          <p className="text-secondary text-sm">
             Loading...
           </p>
         </div>
@@ -196,63 +182,35 @@ export function AppContent() {
   }
 
   return (
-    <div style={{
-      height: '100vh',
-      display: 'flex',
-      flexDirection: 'column',
-      background: '#ffffff',
-      overflow: 'hidden'
-    }}>
+    <div className="minimal-shell">
       <Header onSettingsClick={() => setIsSettingsOpen(true)} />
       <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
 
-      <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div className="minimal-shell-body">
+        <div className="minimal-shell-content">
           {/* Tab Navigation - fixed at top */}
           <TabNavigation
             activeTab={activeTab}
             onTabChange={handleTabChange}
           />
 
-          <main style={{ flex: 1, overflowY: 'auto', background: '#fafafa' }}>
-            <div style={{ maxWidth: '1100px', margin: '0 auto', padding: '20px 32px 40px', background: '#fff', minHeight: '100%' }}>
+          <main className="minimal-main">
+            <div className="minimal-main-inner">
             {/* Schema Loading/Error States */}
             {schemasError && (
-              <div style={{
-                marginBottom: '16px',
-                padding: '12px 16px',
-                background: '#fff',
-                border: '1px solid #fecaca',
-                borderLeftWidth: '3px',
-                borderLeftColor: '#ef4444'
-              }}>
-                <p style={{ color: '#ef4444', fontSize: '14px', margin: 0 }}>
-                  {schemasError}
-                </p>
+              <div className="minimal-error-banner">
+                <p>{schemasError}</p>
               </div>
             )}
 
             {schemasLoading && (
-              <div style={{
-                marginBottom: '16px',
-                padding: '12px 16px',
-                background: '#fff',
-                border: '1px solid #e5e5e5'
-              }}>
-                <p style={{ color: '#666', fontSize: '14px', margin: 0 }}>
-                  Loading schemas...
-                </p>
+              <div className="minimal-loading-banner">
+                <p>Loading schemas...</p>
               </div>
             )}
 
             {/* Section Title */}
-            <div style={{
-              fontSize: '11px',
-              textTransform: 'uppercase',
-              letterSpacing: '2px',
-              color: '#999',
-              marginBottom: '12px'
-            }}>
+            <div className="minimal-section-title">
               {activeTab.replace('-', ' ')}
             </div>
 
@@ -261,14 +219,8 @@ export function AppContent() {
 
             {/* Results */}
             {results && (
-              <div style={{ marginTop: '24px' }}>
-                <div style={{
-                  fontSize: '11px',
-                  textTransform: 'uppercase',
-                  letterSpacing: '2px',
-                  color: '#999',
-                  marginBottom: '12px'
-                }}>
+              <div className="mt-6">
+                <div className="minimal-section-title">
                   Results
                 </div>
                 <ResultsSection results={results} />

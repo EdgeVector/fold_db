@@ -115,7 +115,7 @@ function QueryActions({
           type="button"
           onClick={handleClear}
           disabled={disabled}
-          className={`btn-terminal px-4 py-2 text-sm font-medium ${
+          className={`minimal-btn-secondary px-4 py-2 text-sm font-medium ${
             disabled ? 'opacity-50 cursor-not-allowed' : ''
           }`}
         >
@@ -129,12 +129,12 @@ function QueryActions({
           type="button"
           onClick={handleValidate}
           disabled={disabled}
-          className={`btn-terminal px-4 py-2 text-sm font-medium ${
-            disabled ? 'opacity-50 cursor-not-allowed' : 'btn-terminal-primary'
+          className={`minimal-btn-secondary px-4 py-2 text-sm font-medium ${
+            disabled ? 'opacity-50 cursor-not-allowed' : 'minimal-btn'
           }`}
         >
           {loadingAction === 'validate' && (
-            <span className="spinner-terminal"></span>
+            <span className="minimal-spinner"></span>
           )}
           {BUTTON_TEXT.validateQuery || 'Validate'}
         </button>
@@ -146,12 +146,12 @@ function QueryActions({
           type="button"
           onClick={handleSave}
           disabled={disabled || isSaving}
-          className={`btn-terminal px-4 py-2 text-sm font-medium ${
+          className={`minimal-btn-secondary px-4 py-2 text-sm font-medium ${
             disabled || isSaving ? 'opacity-50 cursor-not-allowed' : ''
           }`}
         >
           {(loadingAction === 'save' || isSaving) && (
-            <span className="spinner-terminal"></span>
+            <span className="minimal-spinner"></span>
           )}
           {BUTTON_TEXT.saveQuery || 'Save Query'}
         </button>
@@ -162,12 +162,12 @@ function QueryActions({
         type="button"
         onClick={handleExecute}
         disabled={disabled || isExecuting}
-        className={`btn-terminal px-6 py-2 text-sm font-medium ${
-          disabled || isExecuting ? 'opacity-50 cursor-not-allowed' : 'btn-terminal-primary'
+        className={`minimal-btn-secondary px-6 py-2 text-sm font-medium ${
+          disabled || isExecuting ? 'opacity-50 cursor-not-allowed' : 'minimal-btn'
         }`}
       >
         {(loadingAction === 'execute' || isExecuting) && (
-          <span className="spinner-terminal"></span>
+          <span className="minimal-spinner"></span>
         )}
         {(loadingAction === 'execute' || isExecuting)
           ? 'Executing...'

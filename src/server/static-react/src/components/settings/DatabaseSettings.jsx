@@ -166,20 +166,20 @@ function DatabaseSettings({ configSaveStatus, setConfigSaveStatus, onClose }) {
     content: (
       <div className="space-y-4">
         <div className="mb-4">
-          <h4 className="text-md font-semibold text-terminal-green mb-2"># Database Storage Backend</h4>
-          <p className="text-sm text-terminal-dim mb-4">
+          <h4 className="text-md font-semibold text-success mb-2"># Database Storage Backend</h4>
+          <p className="text-sm text-secondary mb-4">
             Choose the storage backend for your database. Changes require a server restart.
           </p>
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-terminal-dim mb-2">
+          <label className="block text-sm font-medium text-secondary mb-2">
             --storage-type
           </label>
           <select
             value={dbType}
             onChange={(e) => setDbType(e.target.value)}
-            className="w-full p-2 border border-terminal bg-terminal text-terminal text-sm"
+            className="w-full p-2 border border-gray-200 bg-white text-primary text-sm"
           >
             <option value="local">Local (Sled)</option>
             <option value="dynamodb">DynamoDB</option>
@@ -189,7 +189,7 @@ function DatabaseSettings({ configSaveStatus, setConfigSaveStatus, onClose }) {
 
         {dbType === 'local' ? (
           <div>
-            <label className="block text-sm font-medium text-terminal-dim mb-1">
+            <label className="block text-sm font-medium text-secondary mb-1">
               --path
             </label>
             <input
@@ -197,16 +197,16 @@ function DatabaseSettings({ configSaveStatus, setConfigSaveStatus, onClose }) {
               value={dbPath}
               onChange={(e) => setDbPath(e.target.value)}
               placeholder="data"
-              className="w-full p-2 border border-terminal bg-terminal text-terminal text-sm"
+              className="w-full p-2 border border-gray-200 bg-white text-primary text-sm"
             />
-            <p className="text-xs text-terminal-dim mt-1">
+            <p className="text-xs text-secondary mt-1">
               Local filesystem path where the database will be stored
             </p>
           </div>
         ) : dbType === 'dynamodb' ? (
           <div className="space-y-3">
             <div>
-              <label className="block text-sm font-medium text-terminal-dim mb-1">
+              <label className="block text-sm font-medium text-secondary mb-1">
                 Table Name <span className="text-red-500">*</span>
               </label>
               <input
@@ -214,14 +214,14 @@ function DatabaseSettings({ configSaveStatus, setConfigSaveStatus, onClose }) {
                 value={dynamoTableName}
                 onChange={(e) => setDynamoTableName(e.target.value)}
                 placeholder="DataFoldStorage"
-                className="w-full p-2 border border-terminal text-sm"
+                className="w-full p-2 border border-gray-200 text-sm"
               />
-              <p className="text-xs text-terminal-dim mt-1">
+              <p className="text-xs text-secondary mt-1">
                 Base table name (namespaces will be appended automatically)
               </p>
             </div>
             <div>
-              <label className="block text-sm font-medium text-terminal-dim mb-1">
+              <label className="block text-sm font-medium text-secondary mb-1">
                 AWS Region <span className="text-red-500">*</span>
               </label>
               <input
@@ -229,14 +229,14 @@ function DatabaseSettings({ configSaveStatus, setConfigSaveStatus, onClose }) {
                 value={dynamoRegion}
                 onChange={(e) => setDynamoRegion(e.target.value)}
                 placeholder="us-west-2"
-                className="w-full p-2 border border-terminal text-sm"
+                className="w-full p-2 border border-gray-200 text-sm"
               />
-              <p className="text-xs text-terminal-dim mt-1">
+              <p className="text-xs text-secondary mt-1">
                 AWS region where your DynamoDB tables are located
               </p>
             </div>
             <div>
-              <label className="block text-sm font-medium text-terminal-dim mb-1">
+              <label className="block text-sm font-medium text-secondary mb-1">
                 User ID (Optional)
               </label>
               <input
@@ -244,14 +244,14 @@ function DatabaseSettings({ configSaveStatus, setConfigSaveStatus, onClose }) {
                 value={dynamoUserId}
                 onChange={(e) => setDynamoUserId(e.target.value)}
                 placeholder="Leave empty for single-tenant"
-                className="w-full p-2 border border-terminal text-sm"
+                className="w-full p-2 border border-gray-200 text-sm"
               />
-              <p className="text-xs text-terminal-dim mt-1">
+              <p className="text-xs text-secondary mt-1">
                 User ID for multi-tenant isolation (uses partition key)
               </p>
             </div>
-            <div className="p-3 card-terminal border border-terminal-yellow ">
-              <p className="text-xs text-terminal-yellow">
+            <div className="p-3 minimal-card border border-yellow-400 ">
+              <p className="text-xs text-warning">
                 <strong>Note:</strong> Ensure your AWS credentials are configured (via environment variables, IAM role, or AWS CLI). 
                 The DynamoDB tables will be created automatically if they don't exist.
               </p>
@@ -260,7 +260,7 @@ function DatabaseSettings({ configSaveStatus, setConfigSaveStatus, onClose }) {
         ) : (
           <div className="space-y-3">
             <div>
-              <label className="block text-sm font-medium text-terminal-dim mb-1">
+              <label className="block text-sm font-medium text-secondary mb-1">
                 S3 Bucket <span className="text-red-500">*</span>
               </label>
               <input
@@ -268,14 +268,14 @@ function DatabaseSettings({ configSaveStatus, setConfigSaveStatus, onClose }) {
                 value={s3Bucket}
                 onChange={(e) => setS3Bucket(e.target.value)}
                 placeholder="my-datafold-bucket"
-                className="w-full p-2 border border-terminal text-sm"
+                className="w-full p-2 border border-gray-200 text-sm"
               />
-              <p className="text-xs text-terminal-dim mt-1">
+              <p className="text-xs text-secondary mt-1">
                 S3 bucket name where the database will be stored
               </p>
             </div>
             <div>
-              <label className="block text-sm font-medium text-terminal-dim mb-1">
+              <label className="block text-sm font-medium text-secondary mb-1">
                 AWS Region <span className="text-red-500">*</span>
               </label>
               <input
@@ -283,14 +283,14 @@ function DatabaseSettings({ configSaveStatus, setConfigSaveStatus, onClose }) {
                 value={s3Region}
                 onChange={(e) => setS3Region(e.target.value)}
                 placeholder="us-east-1"
-                className="w-full p-2 border border-terminal text-sm"
+                className="w-full p-2 border border-gray-200 text-sm"
               />
-              <p className="text-xs text-terminal-dim mt-1">
+              <p className="text-xs text-secondary mt-1">
                 AWS region where your S3 bucket is located
               </p>
             </div>
             <div>
-              <label className="block text-sm font-medium text-terminal-dim mb-1">
+              <label className="block text-sm font-medium text-secondary mb-1">
                 S3 Prefix (Optional)
               </label>
               <input
@@ -298,14 +298,14 @@ function DatabaseSettings({ configSaveStatus, setConfigSaveStatus, onClose }) {
                 value={s3Prefix}
                 onChange={(e) => setS3Prefix(e.target.value)}
                 placeholder="folddb"
-                className="w-full p-2 border border-terminal text-sm"
+                className="w-full p-2 border border-gray-200 text-sm"
               />
-              <p className="text-xs text-terminal-dim mt-1">
+              <p className="text-xs text-secondary mt-1">
                 Prefix/path within the bucket (defaults to "folddb")
               </p>
             </div>
             <div>
-              <label className="block text-sm font-medium text-terminal-dim mb-1">
+              <label className="block text-sm font-medium text-secondary mb-1">
                 Local Cache Path
               </label>
               <input
@@ -313,14 +313,14 @@ function DatabaseSettings({ configSaveStatus, setConfigSaveStatus, onClose }) {
                 value={s3LocalPath}
                 onChange={(e) => setS3LocalPath(e.target.value)}
                 placeholder="/tmp/folddb-data"
-                className="w-full p-2 border border-terminal text-sm"
+                className="w-full p-2 border border-gray-200 text-sm"
               />
-              <p className="text-xs text-terminal-dim mt-1">
+              <p className="text-xs text-secondary mt-1">
                 Local filesystem path for caching S3 data (defaults to /tmp/folddb-data)
               </p>
             </div>
-            <div className="p-3 card-terminal border border-terminal-yellow ">
-              <p className="text-xs text-terminal-yellow">
+            <div className="p-3 minimal-card border border-yellow-400 ">
+              <p className="text-xs text-warning">
                 <strong>Note:</strong> Ensure your AWS credentials are configured (via environment variables, IAM role, or AWS CLI). 
                 The database will be synced to/from S3 on startup and shutdown.
               </p>
@@ -329,12 +329,12 @@ function DatabaseSettings({ configSaveStatus, setConfigSaveStatus, onClose }) {
         )}
 
         {/* Danger Zone - Reset Database */}
-        <div className="mt-8 pt-6 border-t border-terminal-red">
+        <div className="mt-8 pt-6 border-t border-red-500">
           <div className="flex items-center gap-2 mb-3">
             <TrashIcon className="w-5 h-5 text-red-500" />
-            <h4 className="text-md font-semibold text-terminal-red">Danger Zone</h4>
+            <h4 className="text-md font-semibold text-error">Danger Zone</h4>
           </div>
-          <p className="text-sm text-terminal-dim mb-4">
+          <p className="text-sm text-secondary mb-4">
             Permanently delete all data and restart the database. This action cannot be undone.
           </p>
           
@@ -347,7 +347,7 @@ function DatabaseSettings({ configSaveStatus, setConfigSaveStatus, onClose }) {
               Reset Database
             </button>
           ) : (
-            <div className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-terminal-cyan border border-terminal-cyan">
+            <div className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-info border border-blue-300">
               <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
@@ -359,10 +359,10 @@ function DatabaseSettings({ configSaveStatus, setConfigSaveStatus, onClose }) {
           {resetResult && (
             <div className={`mt-4 p-3 text-sm ${
               resetResult.type === 'success'
-                ? 'text-terminal-green border border-terminal-green'
+                ? 'text-success border border-green-500'
                 : resetResult.type === 'info'
-                  ? 'text-terminal-cyan border border-terminal-cyan'
-                  : 'card-terminal text-terminal-red border border-terminal-red'
+                  ? 'text-info border border-blue-300'
+                  : 'minimal-card text-error border border-red-500'
               }`}>
               {resetResult.type === 'info' && (
                 <svg className="inline-block animate-spin h-4 w-4 mr-2" viewBox="0 0 24 24">
@@ -378,8 +378,8 @@ function DatabaseSettings({ configSaveStatus, setConfigSaveStatus, onClose }) {
         {configSaveStatus && (
           <div className={`p-3  ${
             configSaveStatus.success 
-              ? 'text-terminal-green border border-terminal-green' 
-              : 'card-terminal text-terminal-red border border-terminal-red'
+              ? 'text-success border border-green-500' 
+              : 'minimal-card text-error border border-red-500'
           }`}>
             <span className="text-sm font-medium">
               {configSaveStatus.success ? '✓' : '✗'} {configSaveStatus.message}

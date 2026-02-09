@@ -22,7 +22,7 @@ describe('TabNavigation', () => {
 
     // Check for tab labels as they appear in DEFAULT_TABS
     DEFAULT_TABS.forEach(tab => {
-      expect(screen.getByRole('button', { name: new RegExp(`${tab.label} tab`, 'i') })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: `${tab.label} tab` })).toBeInTheDocument()
     })
   })
 
@@ -39,7 +39,7 @@ describe('TabNavigation', () => {
     render(<TabNavigation {...defaultProps} />)
 
     // Advanced group tab
-    expect(screen.getByText('Native Index Query')).toBeInTheDocument()
+    expect(screen.getByText('Native Index')).toBeInTheDocument()
   })
 
   it('renders separator between main and advanced tabs', () => {

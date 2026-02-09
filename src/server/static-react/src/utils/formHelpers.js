@@ -1,13 +1,11 @@
 /**
  * Form Utilities - Consolidated Form Helper Functions
  * TASK-008: Duplicate Code Detection and Elimination
- * 
+ *
  * This module consolidates common form-related utilities that were
  * duplicated across multiple form components, providing a single
  * source of truth for form field generation, styling, and validation.
  */
-
-import { COMPONENT_STYLES } from '../constants/styling.js';
 
 /**
  * Generates a consistent field ID for form fields
@@ -35,13 +33,15 @@ export function hasFieldError(error) {
  * @param {string} [options.additionalClasses=''] - Additional CSS classes
  * @returns {string} Combined CSS classes
  */
-export function generateInputStyles({ hasError, disabled, additionalClasses = '' }) {
-  const baseStyles = COMPONENT_STYLES.input.base;
-  const stateStyles = hasError 
-    ? COMPONENT_STYLES.input.error 
-    : COMPONENT_STYLES.input.success;
-  const disabledStyles = disabled ? 'bg-gray-100 cursor-not-allowed' : '';
-  
+export function generateInputStyles({
+  hasError,
+  disabled,
+  additionalClasses = "",
+}) {
+  const baseStyles = "minimal-input";
+  const stateStyles = hasError ? "border-red-500" : "";
+  const disabledStyles = disabled ? "opacity-50 cursor-not-allowed" : "";
+
   return `${baseStyles} ${stateStyles} ${disabledStyles} ${additionalClasses}`.trim();
 }
 
@@ -54,11 +54,17 @@ export function generateInputStyles({ hasError, disabled, additionalClasses = ''
  * @param {string} [options.additionalClasses=''] - Additional CSS classes
  * @returns {string} Combined CSS classes
  */
-export function generateSelectStyles({ hasError, disabled, loading, additionalClasses = '' }) {
-  const baseStyles = COMPONENT_STYLES.select.base;
-  const errorStyles = hasError ? 'border-red-300 focus:ring-red-500 focus:border-red-500' : '';
-  const disabledStyles = (disabled || loading) ? COMPONENT_STYLES.select.disabled : '';
-  
+export function generateSelectStyles({
+  hasError,
+  disabled,
+  loading,
+  additionalClasses = "",
+}) {
+  const baseStyles = "minimal-select";
+  const errorStyles = hasError ? "border-red-500" : "";
+  const disabledStyles =
+    disabled || loading ? "opacity-50 cursor-not-allowed" : "";
+
   return `${baseStyles} ${errorStyles} ${disabledStyles} ${additionalClasses}`.trim();
 }
 
@@ -72,15 +78,15 @@ export function generateSelectStyles({ hasError, disabled, loading, additionalCl
  */
 export function generateAriaAttributes({ fieldId, hasError, hasHelp }) {
   const attributes = {
-    'aria-invalid': hasError
+    "aria-invalid": hasError,
   };
-  
+
   if (hasError) {
-    attributes['aria-describedby'] = `${fieldId}-error`;
+    attributes["aria-describedby"] = `${fieldId}-error`;
   } else if (hasHelp) {
-    attributes['aria-describedby'] = `${fieldId}-help`;
+    attributes["aria-describedby"] = `${fieldId}-help`;
   }
-  
+
   return attributes;
 }
 
@@ -92,7 +98,7 @@ export function generateAriaAttributes({ fieldId, hasError, hasHelp }) {
  */
 export function createDebouncedValidation(validationFn, delay) {
   let timeoutId;
-  
+
   return (...args) => {
     clearTimeout(timeoutId);
     timeoutId = setTimeout(() => {
@@ -108,22 +114,26 @@ export function createDebouncedValidation(validationFn, delay) {
  * @param {Function} transform - Optional value transformation function
  * @returns {Object} State management object
  */
-export function createFieldValueManager(externalValue, onChange, _transform = (val) => val) {
+export function createFieldValueManager(
+  externalValue,
+  onChange,
+  _transform = (val) => val,
+) {
   // This would typically be used within a component with useState/useEffect
   // Providing the pattern for consistent implementation
   return {
     // Pattern for components to implement:
     // const [internalValue, setInternalValue] = useState(transform(externalValue));
-    // 
+    //
     // useEffect(() => {
     //   setInternalValue(transform(externalValue));
     // }, [externalValue]);
-    // 
+    //
     // const handleChange = (newValue) => {
     //   setInternalValue(newValue);
     //   onChange(transform(newValue));
     // };
-    pattern: 'Use useState and useEffect with transform function'
+    pattern: "Use useState and useEffect with transform function",
   };
 }
 
@@ -131,7 +141,7 @@ export function createFieldValueManager(externalValue, onChange, _transform = (v
  * Common field props interface for consistent field component APIs
  * @typedef {Object} CommonFieldProps
  * @property {string} name - Field name for form handling
- * @property {string} label - Field label text  
+ * @property {string} label - Field label text
  * @property {*} value - Current field value
  * @property {function} onChange - Change handler (value) => void
  * @property {boolean} [required=false] - Whether field is required
@@ -148,8 +158,8 @@ export function createFieldValueManager(externalValue, onChange, _transform = (v
  * @returns {boolean} True if props conform to interface
  */
 export function validateFieldProps(props) {
-  const required = ['name', 'label', 'value', 'onChange'];
-  return required.every(prop => prop in props);
+  const required = ["name", "label", "value", "onChange"];
+  return required.every((prop) => prop in props);
 }
 
 /**
@@ -159,18 +169,21 @@ export function validateFieldProps(props) {
  * @param {string} [options.color='primary'] - Spinner color
  * @returns {string} Spinner HTML class string
  */
-export function getLoadingSpinnerClasses({ size = 'sm', color = 'primary' } = {}) {
+export function getLoadingSpinnerClasses({
+  size = "sm",
+  color = "primary",
+} = {}) {
   const sizeClasses = {
-    sm: 'h-3 w-3',
-    md: 'h-4 w-4', 
-    lg: 'h-5 w-5'
+    sm: "h-3 w-3",
+    md: "h-4 w-4",
+    lg: "h-5 w-5",
   };
-  
+
   const colorClasses = {
-    primary: 'border-primary border-t-transparent',
-    gray: 'border-gray-400 border-t-transparent',
-    white: 'border-white border-t-transparent'
+    primary: "border-primary border-t-transparent",
+    gray: "border-gray-400 border-t-transparent",
+    white: "border-white border-t-transparent",
   };
-  
+
   return `animate-spin ${sizeClasses[size]} border-2 ${colorClasses[color]} rounded-full`;
 }

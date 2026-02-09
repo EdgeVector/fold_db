@@ -4,7 +4,6 @@
  * Part of TASK-002: Component Extraction and Modularization
  */
 
-import { COMPONENT_STYLES } from '../../constants/styling.js';
 
 /**
  * @typedef {Object} FieldWrapperProps
@@ -40,11 +39,11 @@ function FieldWrapper({
       {/* Label */}
       <label 
         htmlFor={fieldId}
-        className="block text-sm font-medium text-gray-700"
+        className="minimal-label"
       >
         {label}
         {required && (
-          <span className="ml-1 text-red-500" aria-label="required">
+          <span className="ml-1 text-error" aria-label="required">
             *
           </span>
         )}
@@ -58,7 +57,7 @@ function FieldWrapper({
       {/* Error Message */}
       {hasError && (
         <p 
-          className="text-sm text-red-600"
+          className="text-sm text-error"
           role="alert"
           aria-live="polite"
         >
@@ -68,7 +67,7 @@ function FieldWrapper({
 
       {/* Help Text */}
       {helpText && !hasError && (
-        <p className="text-xs text-gray-500">
+        <p className="text-xs text-secondary">
           {helpText}
         </p>
       )}

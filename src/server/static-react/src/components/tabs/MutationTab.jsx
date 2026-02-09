@@ -180,10 +180,10 @@ function MutationTab({ onResult }) {
         <div className="flex justify-end pt-4">
           <button
             type="submit"
-            className={`btn-terminal px-6 py-2.5 font-medium ${
+            className={`minimal-btn-secondary px-6 py-2.5 font-medium ${
               isMutationDisabled
                 ? 'opacity-50 cursor-not-allowed'
-                : 'btn-terminal-primary'
+                : 'minimal-btn'
             }`}
             disabled={isMutationDisabled}
           >

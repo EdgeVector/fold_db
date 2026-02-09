@@ -78,55 +78,55 @@ function IngestionTab({ onResult }) {
     <div className="space-y-4">
       {/* Status Bar */}
       {ingestionStatus && (
-        <div className="card-terminal p-3 border-l-4 border-terminal-green">
+        <div className="minimal-card p-3 border-l-4" style={{ borderLeftColor: ingestionStatus.enabled && ingestionStatus.configured ? 'var(--color-success)' : 'var(--color-error)' }}>
           <div className="flex items-center gap-4 text-sm">
-            <span className={`badge-terminal ${
+            <span className={`minimal-badge ${
               ingestionStatus.enabled && ingestionStatus.configured 
-                ? 'badge-terminal-success' 
-                : 'badge-terminal-error'
+                ? 'minimal-badge-success' 
+                : 'minimal-badge-error'
             }`}>
               {ingestionStatus.enabled && ingestionStatus.configured ? 'Ready' : 'Not Configured'}
             </span>
-            <span className="text-terminal-dim">{ingestionStatus.provider} · {ingestionStatus.model}</span>
-            <span className="text-xs text-terminal-dim">Configure AI settings using the Settings button in the header</span>
+            <span className="text-secondary">{ingestionStatus.provider} · {ingestionStatus.model}</span>
+            <span className="text-xs text-secondary">Configure AI settings using the Settings button in the header</span>
           </div>
         </div>
       )}
 
 
-      <div className="card-terminal p-4">
+      <div className="minimal-card p-4">
         <div className="flex items-center justify-between mb-3">
-          <h3 className="text-terminal-green font-medium">
-            <span className="text-terminal-dim">$</span> JSON Data
+          <h3 className="text-primary font-medium">
+            JSON Data
           </h3>
           <div className="flex gap-2">
             <button
               onClick={() => loadSampleData('blogposts')}
-              className="btn-terminal text-xs py-1 px-3"
+              className="minimal-btn-secondary minimal-btn-sm"
             >
               Blog Posts (100)
             </button>
             <button
               onClick={() => loadSampleData('twitter')}
-              className="btn-terminal text-xs py-1 px-3"
+              className="minimal-btn-secondary minimal-btn-sm"
             >
               Twitter
             </button>
             <button
               onClick={() => loadSampleData('instagram')}
-              className="btn-terminal text-xs py-1 px-3"
+              className="minimal-btn-secondary minimal-btn-sm"
             >
               Instagram
             </button>
             <button
               onClick={() => loadSampleData('linkedin')}
-              className="btn-terminal text-xs py-1 px-3"
+              className="minimal-btn-secondary minimal-btn-sm"
             >
               LinkedIn
             </button>
             <button
               onClick={() => loadSampleData('tiktok')}
-              className="btn-terminal text-xs py-1 px-3"
+              className="minimal-btn-secondary minimal-btn-sm"
             >
               TikTok
             </button>
@@ -138,12 +138,12 @@ function IngestionTab({ onResult }) {
           value={jsonData}
           onChange={(e) => setJsonData(e.target.value)}
           placeholder="Enter your JSON data here or load a sample..."
-          className="textarea-terminal w-full h-64"
+          className="minimal-textarea w-full h-64"
         />
       </div>
 
       {/* Process Button */}
-      <div className="card-terminal p-4">
+      <div className="minimal-card p-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
             <label className="flex items-center gap-2 text-sm cursor-pointer">
@@ -151,25 +151,24 @@ function IngestionTab({ onResult }) {
                 type="checkbox"
                 checked={autoExecute}
                 onChange={(e) => setAutoExecute(e.target.checked)}
-                className="w-4 h-4 accent-terminal-green bg-terminal border-terminal"
               />
-              <span className="text-terminal">Auto-execute mutations</span>
+              <span className="text-primary">Auto-execute mutations</span>
             </label>
-            <span className="text-xs text-terminal-dim">AI will analyze and automatically map data to schemas</span>
+            <span className="text-xs text-secondary">AI will analyze and automatically map data to schemas</span>
           </div>
           
           <button
             onClick={processIngestion}
             disabled={isLoading || !jsonData.trim()}
-            className={`btn-terminal px-6 py-2.5 font-medium ${
+            className={`minimal-btn px-6 py-2.5 font-medium ${
               isLoading || !jsonData.trim()
                 ? 'opacity-50 cursor-not-allowed'
-                : 'btn-terminal-primary'
+                : ''
             }`}
           >
             {isLoading ? (
               <>
-                <span className="spinner-terminal"></span>
+                <span className="minimal-spinner inline-block w-4 h-4 border-width-1"></span>
                 <span>Processing...</span>
               </>
             ) : (

@@ -78,10 +78,10 @@ export const MUTATION_TYPE_API_MAP = {
 
 // Schema Badge Colors
 export const SCHEMA_BADGE_COLORS = {
-  approved: "bg-green-100 text-green-800",
-  available: "bg-blue-100 text-blue-800",
-  blocked: "bg-red-100 text-red-800",
-  pending: "bg-yellow-100 text-yellow-800",
+  approved: "minimal-badge minimal-badge-success",
+  available: "minimal-badge minimal-badge-info",
+  blocked: "minimal-badge minimal-badge-error",
+  pending: "minimal-badge minimal-badge-warning",
 };
 
 // Authentication Indicators

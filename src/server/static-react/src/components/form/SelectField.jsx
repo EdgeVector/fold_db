@@ -7,7 +7,6 @@
 
 import FieldWrapper from './FieldWrapper.jsx';
 import { UI_STATES } from '../../constants/ui.js';
-import { COMPONENT_STYLES } from '../../constants/styling.js';
 import { useSearchableSelect } from '../../hooks/useSearchableSelect.js';
 import { generateFieldId } from '../../utils/formHelpers.js';
 import {
@@ -86,7 +85,7 @@ function SelectField({
   if (loading) {
     return (
       <FieldWrapper label={label} name={name} required={required} error={error} helpText={helpText} className={className}>
-        <div className={`${COMPONENT_STYLES.select.disabled} flex items-center`}>
+        <div className="minimal-select opacity-50 cursor-not-allowed flex items-center">
           <div className="animate-spin h-4 w-4 border-2 border-gray-400 border-t-transparent rounded-full mr-2"></div>
           {UI_STATES.loading}
         </div>
@@ -98,7 +97,7 @@ function SelectField({
   if (!hasOptions) {
     return (
       <FieldWrapper label={label} name={name} required={required} error={error} helpText={helpText} className={className}>
-        <div className={COMPONENT_STYLES.select.disabled}>{emptyMessage}</div>
+        <div className="minimal-select opacity-50 cursor-not-allowed">{emptyMessage}</div>
       </FieldWrapper>
     );
   }
@@ -116,7 +115,7 @@ function SelectField({
             value={state.searchTerm}
             onChange={handleSearchChange}
             onFocus={() => searchableSelect.actions.openDropdown()}
-            className={`${COMPONENT_STYLES.input.base} ${hasError ? COMPONENT_STYLES.input.error : ''}`}
+            className={`minimal-input ${hasError ? 'border-red-500' : ''}`}
           />
           {state.isOpen && state.filteredOptions.length > 0 && (
             <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-auto">
@@ -151,7 +150,7 @@ function SelectField({
 
   // Render standard select
   const groupedOptions = groupOptions(options);
-  const selectStyles = getSelectStyles(COMPONENT_STYLES, hasError, disabled, loading);
+  const selectStyles = getSelectStyles(null, hasError, disabled, loading);
   const ariaAttributes = createAriaAttributes(fieldId, hasError, helpText);
 
   return (

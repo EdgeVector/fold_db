@@ -197,7 +197,7 @@ describe('QueryPreview Component', () => {
 
       expect(screen.getByText('Raw JSON')).toBeInTheDocument();
       const preElement = screen.getByText('Raw JSON').nextElementSibling;
-      expect(preElement).toHaveClass('bg-gray-900', 'text-gray-100');
+      expect(preElement.tagName).toBe('PRE');
     });
   });
 

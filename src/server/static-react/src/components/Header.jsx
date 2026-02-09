@@ -28,15 +28,12 @@ function Header({ onSettingsClick }) {
           </div>
           {isAuthenticated && (
             <div className="flex items-center gap-4">
-              <span className="text-sm" style={{ color: '#666' }}>
+              <span className="minimal-user-id text-sm">
                 {user?.id?.length > 12 ? `${user.id.slice(0, 8)}…` : user?.id}
               </span>
               <button
                 onClick={handleLogout}
-                className="text-sm transition-colors"
-                style={{ color: '#999' }}
-                onMouseOver={(e) => e.target.style.color = '#111'}
-                onMouseOut={(e) => e.target.style.color = '#999'}
+                className="minimal-header-link text-sm"
               >
                 logout
               </button>
@@ -44,8 +41,7 @@ function Header({ onSettingsClick }) {
           )}
           <button
             onClick={onSettingsClick}
-            className="btn-minimal-secondary text-sm"
-            style={{ padding: '8px 16px' }}
+            className="minimal-btn-secondary text-sm"
             title="Settings"
           >
             Settings

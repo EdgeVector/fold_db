@@ -78,11 +78,11 @@ function HeaderProgress() {
     const opsQueued = indexingStatus?.operations_queued || 0
     const opsInProgress = indexingStatus?.operations_in_progress || 0
     indicators.push(
-      <div key="indexing" className="flex items-center gap-2 px-3 py-1.5 bg-terminal rounded border border-terminal-lighter">
+      <div key="indexing" className="minimal-progress-pill">
         {/* Animated spinner */}
-        <div className="w-2 h-2 rounded-full animate-pulse bg-terminal-purple" />
+        <div className="minimal-progress-dot minimal-progress-dot-purple" />
         {/* Status text */}
-        <span className="text-xs font-mono text-terminal-purple">
+        <span className="text-xs font-mono text-secondary">
           indexing {opsInProgress > 0 ? `(${opsInProgress})` : ''}{opsQueued > 0 ? ` +${opsQueued}` : ''}
         </span>
       </div>
@@ -112,28 +112,32 @@ function HeaderProgress() {
     const isReset = primaryJob?.job_type === 'database_reset'
     const isJobIndexing = primaryJob?.job_type === 'indexing'
 
+    const dotClass = isReset
+      ? 'minimal-progress-dot-error'
+      : isJobIndexing
+        ? 'minimal-progress-dot-purple'
+        : 'minimal-progress-dot-info'
+
+    const textClass = isReset
+      ? 'text-error'
+      : isJobIndexing
+        ? 'text-secondary'
+        : 'text-info'
+
     indicators.push(
-      <div key="jobs" className="flex items-center gap-2 px-3 py-1.5 bg-terminal rounded border border-terminal-lighter">
+      <div key="jobs" className="minimal-progress-pill">
         {/* Animated spinner */}
-        <div className={`w-2 h-2 rounded-full animate-pulse ${
-          isReset ? 'bg-terminal-red' : 
-          isJobIndexing ? 'bg-terminal-purple' : 
-          'bg-terminal-cyan'
-        }`} />
+        <div className={`minimal-progress-dot ${dotClass}`} />
         
         {/* Status text */}
-        <span className={`text-xs font-mono ${
-          isReset ? 'text-terminal-red' : 
-          isJobIndexing ? 'text-terminal-purple' : 
-          'text-terminal-cyan'
-        }`}>
+        <span className={`text-xs font-mono ${textClass}`}>
           {statusText}
         </span>
 
-        {/* Mini progress bar - black */}
-        <div className="w-16 h-1.5 bg-gray-400 rounded-full overflow-hidden">
+        {/* Mini progress bar */}
+        <div className="minimal-progress-bar">
           <div
-            className="h-full transition-all duration-300 rounded-full bg-black"
+            className="minimal-progress-fill"
             style={{ width: `${avgProgress}%` }}
           />
         </div>

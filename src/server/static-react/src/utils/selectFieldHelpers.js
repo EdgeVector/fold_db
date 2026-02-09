@@ -1,12 +1,12 @@
 /**
  * SelectField Helper Utilities
  * TASK-009: Additional Simplification - SelectField complexity reduction
- * 
+ *
  * Extracted from SelectField.jsx to reduce component complexity and improve reusability.
  * These utilities handle option grouping, filtering, and configuration processing.
  */
 
-import { isValueEmpty } from './rangeSchemaHelpers.js';
+import { isValueEmpty } from "./rangeSchemaHelpers.js";
 
 /**
  * Groups options by their group property
@@ -15,7 +15,7 @@ import { isValueEmpty } from './rangeSchemaHelpers.js';
  */
 export function groupOptions(options = []) {
   return options.reduce((groups, option) => {
-    const group = option.group || 'default';
+    const group = option.group || "default";
     if (!groups[group]) {
       groups[group] = [];
     }
@@ -30,13 +30,14 @@ export function groupOptions(options = []) {
  * @param {string} searchTerm - Search term to filter by
  * @returns {Array} Filtered options
  */
-export function filterOptions(options = [], searchTerm = '') {
+export function filterOptions(options = [], searchTerm = "") {
   if (isValueEmpty(searchTerm)) return options;
-  
+
   const lowerSearchTerm = searchTerm.toLowerCase();
-  return options.filter(option => 
-    option.label.toLowerCase().includes(lowerSearchTerm) ||
-    option.value.toLowerCase().includes(lowerSearchTerm)
+  return options.filter(
+    (option) =>
+      option.label.toLowerCase().includes(lowerSearchTerm) ||
+      option.value.toLowerCase().includes(lowerSearchTerm),
   );
 }
 
@@ -47,14 +48,14 @@ export function filterOptions(options = [], searchTerm = '') {
  */
 export function processSelectConfig(config = {}) {
   return {
-    placeholder: 'Select an option...',
-    emptyMessage: 'No options available',
+    placeholder: "Select an option...",
+    emptyMessage: "No options available",
     searchable: false,
     required: false,
     disabled: false,
     loading: false,
     showConfirmation: false,
-    ...config
+    ...config,
   };
 }
 
@@ -66,20 +67,24 @@ export function processSelectConfig(config = {}) {
  * @param {boolean} loading - Whether field is loading
  * @returns {string} CSS classes string
  */
-export function getSelectStyles(styles, hasError = false, disabled = false, loading = false) {
-  let classes = styles.select?.base || '';
-  
+export function getSelectStyles(
+  _styles,
+  hasError = false,
+  disabled = false,
+  loading = false,
+) {
+  let classes = "minimal-select";
+
   if (hasError) {
-    classes += ' border-red-300 focus:ring-red-500 focus:border-red-500';
+    classes += " border-red-500";
   }
-  
+
   if (disabled || loading) {
-    classes += ` ${styles.select?.disabled || ''}`;
+    classes += " opacity-50 cursor-not-allowed";
   }
-  
+
   return classes;
 }
-
 
 /**
  * Creates ARIA attributes for select field accessibility
@@ -88,17 +93,17 @@ export function getSelectStyles(styles, hasError = false, disabled = false, load
  * @param {string} helpText - Help text content
  * @returns {Object} ARIA attributes object
  */
-export function createAriaAttributes(fieldId, hasError = false, helpText = '') {
+export function createAriaAttributes(fieldId, hasError = false, helpText = "") {
   const attributes = {
-    'aria-invalid': hasError
+    "aria-invalid": hasError,
   };
-  
+
   if (hasError) {
-    attributes['aria-describedby'] = `${fieldId}-error`;
+    attributes["aria-describedby"] = `${fieldId}-error`;
   } else if (helpText) {
-    attributes['aria-describedby'] = `${fieldId}-help`;
+    attributes["aria-describedby"] = `${fieldId}-help`;
   }
-  
+
   return attributes;
 }
 
@@ -109,11 +114,12 @@ export function createAriaAttributes(fieldId, hasError = false, helpText = '') {
  */
 export function validateOptions(options) {
   if (!Array.isArray(options)) return false;
-  
-  return options.every(option => 
-    option && 
-    typeof option === 'object' && 
-    typeof option.value !== 'undefined' && 
-    typeof option.label === 'string'
+
+  return options.every(
+    (option) =>
+      option &&
+      typeof option === "object" &&
+      typeof option.value !== "undefined" &&
+      typeof option.label === "string",
   );
 }
