@@ -248,7 +248,7 @@ function FileUploadTab({ onResult }) {
     <div className="space-y-4">
       {/* Status Bar */}
       {ingestionStatus && (
-        <div className="minimal-card p-3 border-l-4 border-green-500">
+        <div className="minimal-card minimal-card-accent-success p-3">
           <div className="flex items-center gap-4 text-sm">
             <span className={`minimal-badge ${
               ingestionStatus.enabled && ingestionStatus.configured 
@@ -265,7 +265,7 @@ function FileUploadTab({ onResult }) {
 
       {/* Uploading Indicator */}
       {isUploading && uploadMode !== 'batch-folder' && (
-        <div className="minimal-card p-4 border-l-4 border-gray-200-blue">
+        <div className="minimal-card minimal-card-accent-info p-4">
           <div className="flex items-center gap-3">
             <span className="minimal-spinner"></span>
             <span className="text-info font-medium">$ processing file...<span className="cursor"></span></span>
@@ -275,7 +275,7 @@ function FileUploadTab({ onResult }) {
 
       {/* Batch Processing Indicator */}
       {isUploading && uploadMode === 'batch-folder' && (
-        <div className="minimal-card p-4 border-l-4 border-gray-200-blue">
+        <div className="minimal-card minimal-card-accent-info p-4">
           <div className="flex items-center gap-3">
             <span className="minimal-spinner"></span>
             <span className="text-info font-medium">
@@ -422,8 +422,8 @@ function FileUploadTab({ onResult }) {
           <div
             className={`border-2 border-dashed p-12 text-center transition-colors ${
               isDragging
-                ? 'border-green-500 bg-gray-50'
-                : 'border-gray-200 bg-white hover:border-green-500'
+                ? 'border-current bg-gray-50'
+                : 'border-gray-200 bg-white hover:border-current'
             }`}
             onDragEnter={handleDragEnter}
             onDragOver={handleDragOver}
@@ -536,7 +536,7 @@ function FileUploadTab({ onResult }) {
       </div>
 
       {/* Info Panel */}
-      <div className="minimal-card p-4 border-l-4 border-blue-300">
+      <div className="minimal-card minimal-card-accent-info p-4">
         <div className="flex items-start gap-3">
           <span className="text-info">[i]</span>
           <div className="text-sm text-secondary">

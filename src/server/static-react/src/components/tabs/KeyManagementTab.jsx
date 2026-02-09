@@ -50,7 +50,6 @@ function KeyManagementTab({ onResult: _onResult }) {
             });
             
             if (isValid) {
-                console.log('Private key validation successful');
             }
         } catch (error) {
             setPrivateKeyValidation({
@@ -82,7 +81,7 @@ function KeyManagementTab({ onResult: _onResult }) {
             </h2>
 
             {/* Current System Public Key Display */}
-            <div className="minimal-card border-l-4 border-gray-200-blue p-4 mb-6">
+            <div className="minimal-card minimal-card-accent-info p-4 mb-6">
                 <div className="flex items-start">
                     <ShieldCheckIcon className="h-5 w-5 text-info mr-2 flex-shrink-0 mt-0.5" />
                     <div className="text-sm text-primary flex-1">
@@ -96,11 +95,11 @@ function KeyManagementTab({ onResult: _onResult }) {
                                         type="text"
                                         value={systemPublicKey && systemPublicKey !== 'null' ? systemPublicKey : ''}
                                         readOnly
-                                        className="flex-1 px-2 py-1 border border-gray-200 bg-white text-xs font-mono text-primary"
+                                        className="flex-1 px-2 py-1 minimal-input text-xs font-mono"
                                     />
                                     <button
                                         onClick={() => copyToClipboard(systemPublicKey, 'system')}
-                                        className="px-2 py-1 border border-l-0 border-gray-200 bg-gray-50 hover:bg-gray-50 focus:outline-none"
+                                        className="px-2 py-1 minimal-input border-l-0 bg-gray-50 focus:outline-none"
                                     >
                                         {copiedField === 'system' ? (
                                             <CheckIcon className="h-3 w-3 text-success" />
@@ -125,7 +124,7 @@ function KeyManagementTab({ onResult: _onResult }) {
 
             {/* Current Private Key Display */}
             {isAuthenticated && privateKeyBase64 && (
-                <div className="minimal-card border-l-4 border-green-500 p-4 mb-6">
+                <div className="minimal-card minimal-card-accent-success p-4 mb-6">
                     <div className="flex items-start">
                         <KeyIcon className="h-5 w-5 text-success mr-2 flex-shrink-0 mt-0.5" />
                         <div className="text-sm text-primary flex-1">
@@ -137,13 +136,13 @@ function KeyManagementTab({ onResult: _onResult }) {
                                     <textarea
                                         value={privateKeyBase64}
                                         readOnly
-                                        className="flex-1 px-3 py-2 border border-gray-200 bg-white text-xs font-mono resize-none text-primary"
+                                        className="flex-1 px-3 py-2 minimal-input text-xs font-mono resize-none"
                                         rows={3}
                                         placeholder="Private key will appear here..."
                                     />
                                     <button
                                         onClick={() => copyToClipboard(privateKeyBase64, 'private')}
-                                        className="px-3 py-2 border border-l-0 border-gray-200 bg-gray-50 hover:bg-gray-50 focus:outline-none"
+                                        className="px-3 py-2 minimal-input border-l-0 bg-gray-50 focus:outline-none"
                                         title="Copy private key"
                                     >
                                         {copiedField === 'private' ? (
@@ -162,7 +161,7 @@ function KeyManagementTab({ onResult: _onResult }) {
 
             {/* Private Key Input Section - Only show if not authenticated */}
             {systemPublicKey && !isAuthenticated && !privateKeyBase64 && (
-                <div className="minimal-card border-l-4 border-yellow-400 p-4 mb-6">
+                <div className="minimal-card minimal-card-accent-warning p-4 mb-6">
                     <div className="flex items-start">
                         <KeyIcon className="h-5 w-5 text-warning mr-2 flex-shrink-0 mt-0.5" />
                         <div className="text-sm text-primary flex-1">
@@ -172,7 +171,7 @@ function KeyManagementTab({ onResult: _onResult }) {
                             {!showPrivateKeyInput ? (
                                 <button
                                     onClick={() => setShowPrivateKeyInput(true)}
-                                    className="mt-3 minimal-btn-secondary border-yellow-400 text-warning"
+                                    className="mt-3 minimal-btn-secondary text-warning"
                                 >
                                     <KeyIcon className="h-4 w-4 mr-1" />
                                     Import Private Key
@@ -196,8 +195,8 @@ function KeyManagementTab({ onResult: _onResult }) {
                                     {privateKeyValidation && (
                                         <div className={`p-2 text-xs ${
                                             privateKeyValidation.valid 
-                                                ? 'border-l-4 border-green-500 text-success'
-                                                : 'border-l-4 border-red-500 text-error'
+                                                ? 'minimal-card-accent-success text-success'
+                                                : 'minimal-card-accent-error text-error'
                                         }`}>
                                             {privateKeyValidation.valid ? (
                                                 <div className="flex items-center">
@@ -229,7 +228,7 @@ function KeyManagementTab({ onResult: _onResult }) {
                                         </button>
                                     </div>
                                     
-                                    <div className="minimal-card border-l-4 border-red-500 p-2">
+                                    <div className="minimal-card minimal-card-accent-error p-2">
                                         <div className="flex">
                                             <ExclamationTriangleIcon className="h-4 w-4 text-error mr-1 flex-shrink-0" />
                                             <div className="text-xs text-secondary">

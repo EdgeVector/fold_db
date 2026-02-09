@@ -49,8 +49,6 @@ export function SchemaServiceConfigProvider({ children }) {
       localStorage.setItem(STORAGE_KEY, envId)
       // Reset the schema client to pick up new configuration
       resetSchemaClient()
-      console.log(`Schema service environment changed to: ${envConfig.name} (${envConfig.baseUrl || 'same origin'})`)
-      console.log('🔄 Schema client has been reset - next request will use new endpoint')
     }
   }
 

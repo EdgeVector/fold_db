@@ -102,7 +102,6 @@ function QueryTab({ onResult }) {
    */
   const handleValidateQuery = useCallback(async (queryData) => {
     // Future enhancement: add query validation endpoint
-    console.log('Validating query:', queryData);
   }, []);
 
   /**
@@ -116,7 +115,6 @@ function QueryTab({ onResult }) {
 
     try {
       // Future enhancement: implement save query API endpoint
-      console.log('Saving query:', queryData);
       
       // For now, just store in localStorage as a demo
       const savedQueries = JSON.parse(localStorage.getItem('savedQueries') || '[]');
@@ -129,7 +127,6 @@ function QueryTab({ onResult }) {
       savedQueries.push(newQuery);
       localStorage.setItem('savedQueries', JSON.stringify(savedQueries));
       
-      console.log('Query saved successfully');
     } catch (error) {
       console.error('Failed to save query:', error);
     }

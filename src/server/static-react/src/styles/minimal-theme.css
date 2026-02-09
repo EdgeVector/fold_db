@@ -526,6 +526,79 @@
     margin: 0;
   }
 
+  /* ---------- Card Accent Variants ---------- */
+
+  .minimal-card-accent-success {
+    border-left: 4px solid var(--color-success);
+  }
+
+  .minimal-card-accent-info {
+    border-left: 4px solid var(--color-info);
+  }
+
+  .minimal-card-accent-error {
+    border-left: 4px solid var(--color-error);
+  }
+
+  .minimal-card-accent-warning {
+    border-left: 4px solid var(--color-warning);
+  }
+
+  .minimal-card-accent-purple {
+    border-left: 4px solid var(--color-purple);
+  }
+
+  /* ---------- Colored Sections ---------- */
+
+  .minimal-section-purple {
+    padding: 12px;
+    background: #faf5ff;
+    border: 1px solid #e9d5ff;
+    border-radius: 6px;
+  }
+
+  .minimal-section-purple-text { color: #581c87; }
+  .minimal-section-purple-muted { color: #7c3aed; }
+
+  .minimal-section-info {
+    padding: 12px;
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    border-radius: 6px;
+  }
+
+  .minimal-section-info-text { color: #1e3a5f; }
+  .minimal-section-info-muted { color: #2563eb; }
+
+  .minimal-section-success {
+    padding: 12px;
+    background: #f0fdf4;
+    border: 1px solid #bbf7d0;
+    border-radius: 6px;
+  }
+
+  .minimal-section-error {
+    padding: 12px;
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    border-radius: 6px;
+  }
+
+  /* ---------- List Items ---------- */
+
+  .minimal-list-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 14px;
+    padding: 4px 0;
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .minimal-list-item:last-child {
+    border-bottom: none;
+  }
+
   .minimal-error-block {
     margin-bottom: 16px;
     padding: 16px;

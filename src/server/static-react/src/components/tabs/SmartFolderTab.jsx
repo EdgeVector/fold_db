@@ -104,7 +104,7 @@ function SmartFolderTab({ onResult }) {
     <div className="space-y-4">
       {/* Status Bar */}
       {ingestionStatus && (
-        <div className="minimal-card p-3 border-l-4 border-green-500">
+        <div className="minimal-card minimal-card-accent-success p-3">
           <div className="flex items-center gap-4 text-sm">
             <span className={`minimal-badge ${
               ingestionStatus.enabled && ingestionStatus.configured
@@ -176,7 +176,7 @@ function SmartFolderTab({ onResult }) {
       {scanResult && !ingestionStarted && (
         <>
           {/* Summary */}
-          <div className="minimal-card p-4 border-l-4 border-blue-300">
+          <div className="minimal-card minimal-card-accent-info p-4">
             <h3 className="text-info font-medium mb-2">
               Scan Results
             </h3>
@@ -216,7 +216,7 @@ function SmartFolderTab({ onResult }) {
             </h4>
             <div className="space-y-1 max-h-64 overflow-y-auto">
               {scanResult.recommended_files.map((file, i) => (
-                <div key={i} className="flex items-center gap-3 text-sm py-1 border-b border-gray-200/10 last:border-0">
+                <div key={i} className="minimal-list-item text-sm">
                   <span className="text-success text-xs">+</span>
                   <span className="text-primary font-mono text-xs flex-1 truncate">{file.path}</span>
                   <span className="minimal-badge text-xs">{file.category}</span>
@@ -232,7 +232,7 @@ function SmartFolderTab({ onResult }) {
                 </h4>
                 <div className="space-y-1 max-h-32 overflow-y-auto">
                   {scanResult.skipped_files.map((file, i) => (
-                    <div key={i} className="flex items-center gap-3 text-sm py-1 border-b border-gray-200/10 last:border-0">
+                    <div key={i} className="minimal-list-item text-sm">
                       <span className="text-secondary text-xs">-</span>
                       <span className="text-secondary font-mono text-xs flex-1 truncate">{file.path}</span>
                       <span className="text-secondary text-xs">{file.reason}</span>
@@ -281,7 +281,7 @@ function SmartFolderTab({ onResult }) {
 
       {/* Phase 3: Ingestion Started */}
       {ingestionStarted && (
-        <div className="minimal-card p-4 border-l-4 border-green-500">
+        <div className="minimal-card minimal-card-accent-success p-4">
           <h3 className="text-success font-medium mb-2">
             Ingestion Started
           </h3>
@@ -298,7 +298,7 @@ function SmartFolderTab({ onResult }) {
       )}
 
       {/* Info Panel */}
-      <div className="minimal-card p-3 border-l-4 border-blue-300">
+      <div className="minimal-card minimal-card-accent-info p-3">
         <div className="flex items-start gap-2 text-xs text-secondary">
           <span className="text-info font-bold">[i]</span>
           <span>

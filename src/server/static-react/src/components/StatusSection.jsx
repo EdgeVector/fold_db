@@ -86,24 +86,24 @@ function StatusSection() {
       return (
         <div 
           key={job.id} 
-          className="p-3 rounded-lg border border-gray-200 bg-gray-50 mb-3 opacity-75"
+          className="minimal-card p-3 mb-3 opacity-75"
         >
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <CheckCircleIcon className="w-5 h-5 text-gray-400" />
-              <span className="font-medium text-gray-500">
+              <CheckCircleIcon className="w-5 h-5 text-tertiary" />
+              <span className="font-medium text-secondary">
                 {jobLabel}
               </span>
-              <span className="text-xs text-gray-400 bg-gray-200 px-2 py-0.5 rounded-full">
+              <span className="minimal-badge text-xs">
                 Complete
               </span>
             </div>
-            <div className="flex items-center gap-1 text-xs text-gray-400">
+            <div className="flex items-center gap-1 text-xs text-tertiary">
               <ClockIcon className="w-3 h-3" />
               <span>{new Date(job.started_at).toLocaleTimeString()}</span>
             </div>
           </div>
-          <div className="text-xs text-gray-400 mt-1">
+          <div className="text-xs text-tertiary mt-1">
             {job.status_message || 'Completed successfully'}
           </div>
         </div>
@@ -115,25 +115,25 @@ function StatusSection() {
       return (
         <div 
           key={job.id} 
-          className="p-4 rounded-lg border-2 border-red-200 bg-red-50 mb-3"
+          className="minimal-section-error p-4 mb-3"
         >
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
-              <XCircleIcon className="w-5 h-5 text-red-500" />
-              <span className="font-medium text-red-800">
+              <XCircleIcon className="w-5 h-5 text-error" />
+              <span className="font-medium text-error">
                 {jobLabel}
               </span>
-              <span className="text-xs text-red-600 bg-red-100 px-2 py-0.5 rounded-full">
+              <span className="minimal-badge minimal-badge-error text-xs">
                 Failed
               </span>
             </div>
-            <div className="flex items-center gap-1 text-xs text-gray-500">
+            <div className="flex items-center gap-1 text-xs text-secondary">
               <ClockIcon className="w-3 h-3" />
               <span>{new Date(job.started_at).toLocaleTimeString()}</span>
             </div>
           </div>
           {job.error_message && (
-            <div className="text-xs text-red-600 mt-2">
+            <div className="text-xs text-error mt-2">
               Error: {job.error_message}
             </div>
           )}
@@ -145,7 +145,7 @@ function StatusSection() {
     const cardColor = isDatabaseReset ? 'red' : isIndexing ? 'purple' : 'blue'
     const bgColor = `bg-${cardColor}-50`
     const borderColor = `border-${cardColor}-200`
-    const textColor = isIndexing ? 'text-purple-800' : isDatabaseReset ? 'text-red-800' : 'text-blue-800'
+    const textColor = isIndexing ? 'minimal-section-purple-text' : isDatabaseReset ? 'text-error' : 'minimal-section-info-text'
 
     return (
       <div
@@ -154,7 +154,7 @@ function StatusSection() {
       >
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2">
-            <ArrowPathIcon className="w-5 h-5 text-blue-500 animate-spin" />
+            <ArrowPathIcon className="w-5 h-5 text-info animate-spin" />
             <span className={`font-medium ${textColor}`}>
               {jobLabel}
             </span>
@@ -162,7 +162,7 @@ function StatusSection() {
               In Progress
             </span>
           </div>
-          <div className="flex items-center gap-1 text-xs text-gray-500">
+          <div className="flex items-center gap-1 text-xs text-secondary">
             <ClockIcon className="w-3 h-3" />
             <span>{new Date(job.started_at).toLocaleTimeString()}</span>
           </div>
@@ -170,11 +170,11 @@ function StatusSection() {
 
         {/* Progress bar - black bar showing percentage */}
         <div className="mb-2">
-          <div className="flex justify-between text-xs text-gray-600 mb-1">
+          <div className="flex justify-between text-xs text-secondary mb-1">
             <span>{job.status_message || 'Processing...'}</span>
             <span className="font-medium">{job.progress_percentage || 0}%</span>
           </div>
-          <div className="w-full bg-gray-300 rounded-full h-3">
+          <div className="w-full bg-gray-200 rounded-full h-3">
             <div
               className="h-3 rounded-full transition-all duration-300 bg-black"
               style={{ width: `${job.progress_percentage || 0}%` }}
@@ -190,17 +190,17 @@ function StatusSection() {
 
     return (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-        <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+        <div className="minimal-modal p-6">
           <div className="flex items-center gap-3 mb-4">
-            <TrashIcon className="w-6 h-6 text-red-500" />
-            <h3 className="text-lg font-semibold text-gray-900">Reset Database</h3>
+            <TrashIcon className="w-6 h-6 text-error" />
+            <h3 className="text-lg font-semibold text-primary">Reset Database</h3>
           </div>
 
           <div className="mb-6">
-            <p className="text-gray-700 mb-2">
+            <p className="text-primary mb-2">
               This will permanently delete all data and restart the node:
             </p>
-            <ul className="list-disc list-inside text-sm text-gray-600 space-y-1">
+            <ul className="list-disc list-inside text-sm text-secondary space-y-1">
               <li>All schemas will be removed</li>
               <li>All stored data will be deleted</li>
               <li>Network connections will be reset</li>
@@ -211,7 +211,7 @@ function StatusSection() {
           <div className="flex gap-3 justify-end">
             <button
               onClick={() => setShowConfirmDialog(false)}
-              className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors"
+              className="minimal-btn-secondary"
               disabled={isResetting}
             >
               Cancel
@@ -219,7 +219,7 @@ function StatusSection() {
             <button
               onClick={handleResetDatabase}
               disabled={isResetting}
-              className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="minimal-btn-danger disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isResetting ? 'Resetting...' : 'Reset Database'}
             </button>
@@ -237,16 +237,16 @@ function StatusSection() {
 
   return (
     <>
-      <div className="bg-white rounded-lg shadow-sm p-4 mb-6">
+      <div className="minimal-card p-4 mb-6">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
-            <CheckCircleIcon className="w-5 h-5 text-green-500" />
-            <h2 className="text-lg font-semibold text-gray-900">System Status</h2>
+            <CheckCircleIcon className="w-5 h-5 text-success" />
+            <h2 className="text-lg font-semibold text-primary">System Status</h2>
           </div>
 
           <button
             onClick={() => setShowConfirmDialog(true)}
-            className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-red-600 border border-red-200 rounded-md hover:bg-red-50 hover:border-red-300 transition-colors"
+            className="minimal-btn-danger minimal-btn-sm"
             disabled={isResetting}
           >
             <TrashIcon className="w-4 h-4" />
@@ -256,25 +256,25 @@ function StatusSection() {
 
         {/* Job Progress Section */}
         {isLoadingJobs ? (
-          <div className="p-4 rounded-lg border-2 border-gray-200 bg-gray-50 flex items-center justify-center">
-            <ArrowPathIcon className="w-5 h-5 text-gray-400 animate-spin mr-2" />
-            <span className="text-gray-500">Loading status...</span>
+          <div className="minimal-card p-4 flex items-center justify-center">
+            <ArrowPathIcon className="w-5 h-5 text-tertiary animate-spin mr-2" />
+            <span className="text-secondary">Loading status...</span>
           </div>
         ) : displayJobs.length > 0 ? (
           displayJobs.map(job => renderJobCard(job))
         ) : (
-          <div className="p-4 rounded-lg border-2 border-green-200 bg-green-50">
+          <div className="minimal-section-success p-4">
             <div className="flex items-center gap-2">
-              <CheckCircleIcon className="w-5 h-5 text-green-500" />
-              <span className="text-green-800 font-medium">No active jobs</span>
+              <CheckCircleIcon className="w-5 h-5 text-success" />
+              <span className="text-success font-medium">No active jobs</span>
             </div>
           </div>
         )}
 
         {resetResult && (
           <div className={`mt-3 p-3 rounded-md text-sm ${resetResult.type === 'success'
-              ? 'bg-green-50 text-green-800 border border-green-200'
-              : 'bg-red-50 text-red-800 border border-red-200'
+              ? 'minimal-section-success text-success'
+              : 'minimal-section-error text-error'
             }`}>
             {resetResult.message}
           </div>

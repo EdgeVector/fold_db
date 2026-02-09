@@ -45,8 +45,8 @@ describe('StatusSection Component', () => {
     render(<StatusSection />)
     
     const heading = screen.getByText('System Status')
-    const container = heading.closest('.bg-white')
-    expect(container).toHaveClass('bg-white', 'rounded-lg', 'shadow-sm', 'p-4', 'mb-6')
+    const container = heading.closest('.minimal-card')
+    expect(container).toHaveClass('minimal-card', 'p-4', 'mb-6')
   })
 
   it('displays check circle icon', () => {
@@ -56,7 +56,7 @@ describe('StatusSection Component', () => {
     const heading = screen.getByText('System Status')
     const icon = heading.parentElement.querySelector('svg')
     expect(icon).toBeInTheDocument()
-    expect(icon).toHaveClass('w-5', 'h-5', 'text-green-500')
+    expect(icon).toHaveClass('w-5', 'h-5', 'text-success')
   })
 
   it('has proper layout structure', () => {
@@ -139,7 +139,7 @@ describe('StatusSection Component', () => {
       
       const resetButton = screen.getByRole('button', { name: /reset database/i })
       expect(resetButton).toBeInTheDocument()
-      expect(resetButton).toHaveClass('text-red-600', 'border-red-200')
+      expect(resetButton).toHaveClass('minimal-btn-danger', 'minimal-btn-sm')
     })
 
     it('shows confirmation dialog when reset button is clicked', () => {
@@ -266,7 +266,7 @@ describe('StatusSection Component', () => {
       fireEvent.click(resetButton)
       
       const confirmButton = screen.getAllByRole('button', { name: /reset database/i })[1] // Get the modal button
-      expect(confirmButton).toHaveClass('bg-red-600', 'text-white', 'hover:bg-red-700')
+      expect(confirmButton).toHaveClass('minimal-btn-danger')
     })
 
     it('includes trash icon in reset button', () => {

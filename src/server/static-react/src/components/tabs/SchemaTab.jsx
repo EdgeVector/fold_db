@@ -24,7 +24,6 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
 
   // Fetch schemas when component mounts
   useEffect(() => {
-    console.log('🟢 SchemaTab: Fetching schemas on mount')
     dispatch(fetchSchemas({ forceRefresh: true }))
   }, [dispatch])
 
@@ -32,7 +31,6 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
   const getDisplayName = (schema) => schema.descriptive_name || schema.name
 
   // Debug logging
-  console.log('🟢 SchemaTab: Current schemas from Redux:', schemas.map(s => ({ name: s.name, state: s.state })))
 
 
 
@@ -74,23 +72,17 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
   }
 
   const approveSchema = async (schemaName) => {
-    console.log('🟡 SchemaTab: Starting approveSchema for:', schemaName)
     try {
       // Use Redux action instead of direct API call
       const result = await dispatch(approveSchemaAction({ schemaName }))
-      console.log('🟡 SchemaTab: approveSchema result:', result)
       
       if (approveSchemaAction.fulfilled.match(result)) {
-        console.log('🟡 SchemaTab: approveSchema fulfilled, calling callbacks')
         
         // Extract backfill hash if present
         const backfillHash = result.payload?.backfillHash
-        console.log('🔄 Backfill hash:', backfillHash)
         
         // Refetch schemas from backend to get updated states
-        console.log('🔄 Refetching schemas from backend after approval...')
         await dispatch(fetchSchemas({ forceRefresh: true }))
-        console.log('✅ Refetch complete - backend state should be reflected')
         
         if (onResult) {
           const message = backfillHash 
@@ -102,7 +94,6 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
           onSchemaUpdated()
         }
       } else {
-        console.log('🔴 SchemaTab: approveSchema rejected:', result.payload)
         const errorMessage = typeof result.payload === 'string' 
           ? result.payload 
           : result.payload?.error || `Failed to approve schema: ${schemaName}`
@@ -123,12 +114,9 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
       const result = await dispatch(blockSchemaAction({ schemaName }))
       
       if (blockSchemaAction.fulfilled.match(result)) {
-        console.log('🟡 SchemaTab: blockSchema fulfilled, calling callbacks')
         
         // Refetch schemas from backend to get updated states
-        console.log('🔄 Refetching schemas from backend after blocking...')
         await dispatch(fetchSchemas({ forceRefresh: true }))
-        console.log('✅ Refetch complete - backend state should be reflected')
         
         if (onResult) {
           onResult({ success: true, message: `Schema ${schemaName} blocked successfully` })
@@ -198,7 +186,6 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
                 <button
                   className="inline-flex items-center px-3 py-1 text-xs font-medium border border-gray-300 text-gray-700 bg-white hover:border-gray-900 hover:text-gray-900 transition-colors"
                   onClick={(e) => {
-                    console.log('🟠 Button clicked: Approve for schema:', schema.name)
                     e.stopPropagation()
                     approveSchema(schema.name)
                   }}
