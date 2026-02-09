@@ -11,7 +11,6 @@ import {
   BUTTON_TEXT,
   UI_STATES
 } from '../../constants/ui.js';
-import { COMPONENT_STYLES } from '../../constants/styling.js';
 
 /**
  * @typedef {Object} QueryActionsProps
@@ -116,13 +115,9 @@ function QueryActions({
           type="button"
           onClick={handleClear}
           disabled={disabled}
-          className={`
-            inline-flex items-center px-4 py-2 border text-sm font-medium
-            ${disabled
-              ? 'border-gray-200 text-gray-400 cursor-not-allowed bg-white'
-              : 'border-gray-300 text-gray-700 bg-white hover:border-gray-900 hover:text-gray-900'
-            }
-          `}
+          className={`btn-terminal px-4 py-2 text-sm font-medium ${
+            disabled ? 'opacity-50 cursor-not-allowed' : ''
+          }`}
         >
           {BUTTON_TEXT.clearQuery || 'Clear Query'}
         </button>
@@ -134,19 +129,12 @@ function QueryActions({
           type="button"
           onClick={handleValidate}
           disabled={disabled}
-          className={`
-            inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium
-            ${disabled
-              ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-              : 'bg-blue-600 text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500'
-            }
-          `}
+          className={`btn-terminal px-4 py-2 text-sm font-medium ${
+            disabled ? 'opacity-50 cursor-not-allowed' : 'btn-terminal-primary'
+          }`}
         >
           {loadingAction === 'validate' && (
-            <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-            </svg>
+            <span className="spinner-terminal"></span>
           )}
           {BUTTON_TEXT.validateQuery || 'Validate'}
         </button>
@@ -158,19 +146,12 @@ function QueryActions({
           type="button"
           onClick={handleSave}
           disabled={disabled || isSaving}
-          className={`
-            inline-flex items-center px-4 py-2 border text-sm font-medium
-            ${disabled || isSaving
-              ? 'border-gray-200 text-gray-400 cursor-not-allowed bg-white'
-              : 'border-gray-300 text-gray-700 bg-white hover:border-gray-900 hover:text-gray-900'
-            }
-          `}
+          className={`btn-terminal px-4 py-2 text-sm font-medium ${
+            disabled || isSaving ? 'opacity-50 cursor-not-allowed' : ''
+          }`}
         >
           {(loadingAction === 'save' || isSaving) && (
-            <svg className="animate-spin -ml-1 mr-2 h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-            </svg>
+            <span className="spinner-terminal"></span>
           )}
           {BUTTON_TEXT.saveQuery || 'Save Query'}
         </button>
@@ -181,23 +162,16 @@ function QueryActions({
         type="button"
         onClick={handleExecute}
         disabled={disabled || isExecuting}
-        className={`
-          inline-flex items-center px-4 py-2 border text-sm font-medium
-          ${disabled || isExecuting
-            ? 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed'
-            : 'border-gray-900 bg-gray-900 text-white hover:bg-gray-700'
-          }
-        `}
+        className={`btn-terminal px-6 py-2 text-sm font-medium ${
+          disabled || isExecuting ? 'opacity-50 cursor-not-allowed' : 'btn-terminal-primary'
+        }`}
       >
         {(loadingAction === 'execute' || isExecuting) && (
-          <svg className="animate-spin -ml-1 mr-2 h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-          </svg>
+          <span className="spinner-terminal"></span>
         )}
         {(loadingAction === 'execute' || isExecuting)
           ? 'Executing...'
-          : (BUTTON_TEXT.executeQuery || 'Execute Query')}
+          : (BUTTON_TEXT.executeQuery || '→ Execute Query')}
       </button>
     </div>
   );

@@ -26,58 +26,45 @@ import { injectStore } from './api/core/client'
 // Inject store into ApiClient to handle circular dependency safely
 injectStore(store)
 
-export function AppContent() {
-  // Initialize activeTab from URL hash if present, otherwise use DEFAULT_TAB
-  const getInitialTab = () => {
-    if (typeof window !== 'undefined' && window.location.hash) {
-      const hash = window.location.hash.slice(1); // Remove '#'
-      // Map common hash values to tab IDs
-      if (hash === 'schemas' || hash === 'schema') return 'schemas';
-      if (hash === 'query') return 'query';
-      if (hash === 'mutation') return 'mutation';
-      if (hash === 'ingestion') return 'ingestion';
-      if (hash === 'file-upload') return 'file-upload';
-      if (hash === 'native-index') return 'native-index';
-      if (hash === 'llm-query' || hash === 'ai-query') return 'llm-query';
-      if (hash === 'smart-folder') return 'smart-folder';
-    }
-    return DEFAULT_TAB;
-  };
+// Single lookup for URL hash → tab ID (prevents duplication)
+const HASH_TO_TAB = {
+  schemas: 'schemas', schema: 'schemas',
+  query: 'query', mutation: 'mutation',
+  ingestion: 'ingestion', 'file-upload': 'file-upload',
+  'native-index': 'native-index',
+  'llm-query': 'llm-query', 'ai-query': 'llm-query',
+  'smart-folder': 'smart-folder',
+}
 
-  const [activeTab, setActiveTab] = useState(getInitialTab())
+function resolveTabFromHash() {
+  if (typeof window !== 'undefined' && window.location.hash) {
+    return HASH_TO_TAB[window.location.hash.slice(1)] || null
+  }
+  return null
+}
+
+export function AppContent() {
+  const [activeTab, setActiveTab] = useState(() => resolveTabFromHash() || DEFAULT_TAB)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [results, setResults] = useState(null)
-
-
 
   // Sync activeTab with URL hash changes
   useEffect(() => {
     const handleHashChange = () => {
-      const hash = window.location.hash.slice(1);
-      if (hash && hash !== activeTab) {
-        // Map hash to tab ID
-        if (hash === 'schemas' || hash === 'schema') setActiveTab('schemas');
-        else if (hash === 'query') setActiveTab('query');
-        else if (hash === 'mutation') setActiveTab('mutation');
-        else if (hash === 'ingestion') setActiveTab('ingestion');
-        else if (hash === 'file-upload') setActiveTab('file-upload');
-        else if (hash === 'native-index') setActiveTab('native-index');
-        else if (hash === 'llm-query' || hash === 'ai-query') setActiveTab('llm-query');
-        else if (hash === 'smart-folder') setActiveTab('smart-folder');
+      const tab = resolveTabFromHash()
+      if (tab && tab !== activeTab) {
+        setActiveTab(tab)
       }
-    };
+    }
 
-    window.addEventListener('hashchange', handleHashChange);
-    // Check initial hash
-    handleHashChange();
-
-    return () => window.removeEventListener('hashchange', handleHashChange);
-  }, [activeTab]);
+    window.addEventListener('hashchange', handleHashChange)
+    handleHashChange()
+    return () => window.removeEventListener('hashchange', handleHashChange)
+  }, [activeTab])
 
   // Redux state and dispatch
   const dispatch = useAppDispatch()
-  const authState = useAppSelector(state => state.auth)
-  const { isAuthenticated, systemPublicKey: _systemPublicKey, systemKeyId: _systemKeyId, isLoading: _isLoading, error: _error } = authState
+  const { isAuthenticated, isLoading: isAuthLoading } = useAppSelector(state => state.auth)
 
   // Restore session on mount FIRST - this must run before other effects
   // If no saved credentials, auto-authenticate using the node's public key
@@ -118,8 +105,6 @@ export function AppContent() {
   // Use the new useApprovedSchemas hook (TASK-001)
   // Only fetch schemas when authenticated
   const {
-    approvedSchemas: _approvedSchemas,
-    allSchemas: _allSchemas,
     isLoading: schemasLoading,
     error: schemasError,
     refetch: refetchSchemas
@@ -178,12 +163,12 @@ export function AppContent() {
   }
 
   // Show login page if not authenticated
-  if (!isAuthenticated && !_isLoading) {
+  if (!isAuthenticated && !isAuthLoading) {
     return <LoginPage />;
   }
 
   // Show loading spinner while restoring session or checking auth
-  if (_isLoading) {
+  if (isAuthLoading) {
     return (
       <div style={{
         height: '100vh',
@@ -229,8 +214,8 @@ export function AppContent() {
             onTabChange={handleTabChange}
           />
 
-          <main style={{ flex: 1, overflowY: 'auto' }}>
-            <div style={{ maxWidth: '1100px', margin: '0 auto', padding: '20px 32px 40px' }}>
+          <main style={{ flex: 1, overflowY: 'auto', background: '#fafafa' }}>
+            <div style={{ maxWidth: '1100px', margin: '0 auto', padding: '20px 32px 40px', background: '#fff', minHeight: '100%' }}>
             {/* Schema Loading/Error States */}
             {schemasError && (
               <div style={{

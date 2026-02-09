@@ -59,18 +59,11 @@
 }
 
 @layer components {
-  /* Reset rounded corners for minimal look - subtle rounding allowed */
-  *:not(input[type="checkbox"]):not(input[type="radio"]) {
-    border-radius: 0 !important;
-  }
 
-  /* Override all dark backgrounds */
+  /* Override terminal dark backgrounds */
   .bg-terminal,
   .bg-terminal-light,
-  .bg-terminal-lighter,
-  .bg-gray-900,
-  .bg-gray-800,
-  .bg-gray-700 {
+  .bg-terminal-lighter {
     background-color: var(--minimal-bg) !important;
   }
 
@@ -84,33 +77,24 @@
   /* Text color overrides */
   .text-terminal,
   .text-terminal-green,
-  .text-terminal-cyan,
-  .text-gray-100,
-  .text-gray-200,
-  .text-gray-300 {
+  .text-terminal-cyan {
     color: var(--minimal-text) !important;
   }
 
-  .text-terminal-dim,
-  .text-gray-400,
-  .text-gray-500 {
+  .text-terminal-dim {
     color: var(--minimal-text-secondary) !important;
   }
 
   /* Border overrides */
-  .border-terminal,
-  .border-gray-700,
-  .border-gray-600 {
+  .border-terminal {
     border-color: var(--minimal-border) !important;
   }
 
-  /* Remove all glows and shadows */
+  /* Remove terminal glow effects */
   .glow-green,
   .glow-blue,
-  .glow-red,
-  [class*="shadow"] {
+  .glow-red {
     text-shadow: none !important;
-    box-shadow: none !important;
   }
 
   /* Input styling */

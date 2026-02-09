@@ -167,9 +167,9 @@ export default function NativeIndexTab({ onResult }) {
           <button
             onClick={handleSearch}
             disabled={isSearching || !term.trim()}
-            className={`px-6 py-2 text-sm font-medium ${isSearching || !term.trim() ? 'bg-gray-100 text-gray-400 border border-gray-200 cursor-not-allowed' : 'bg-gray-900 text-white border border-gray-900 hover:bg-gray-700'}`}
+            className={`btn-terminal px-6 py-2 text-sm font-medium ${isSearching || !term.trim() ? 'opacity-50 cursor-not-allowed' : 'btn-terminal-primary'}`}
           >
-            {isSearching ? 'Searching...' : 'Search'}
+            {isSearching ? 'Searching...' : '→ Search'}
           </button>
         </div>
       </div>

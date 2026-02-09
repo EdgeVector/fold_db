@@ -140,18 +140,20 @@ async fn start_datafold_server(port: u16) -> Result<EmbeddedServerHandle, String
         .ok_or_else(|| "Could not determine home directory".to_string())?
         .join(".datafold")
         .join("data");
-    
+
     // Create the directory if it doesn't exist
     std::fs::create_dir_all(&data_dir)
         .map_err(|e| format!("Failed to create data directory: {}", e))?;
-    
+
     log::info!("Using data directory: {:?}", data_dir);
-    
+
     // Load node configuration
     let mut config = load_node_config(None, None)
         .map_err(|e| format!("Failed to load config: {}", e))?;
-    config.storage_path = data_dir;
-    
+
+    // Set the database path via DatabaseConfig
+    config.database = fold_db::DatabaseConfig::Local { path: data_dir };
+
     // Set schema service URL - use a default or environment variable
     // For the native app, we'll use a local schema service if available
     // or allow it to run without one
@@ -161,15 +163,15 @@ async fn start_datafold_server(port: u16) -> Result<EmbeddedServerHandle, String
         // Use mock for now - schemas can be added manually
         config.schema_service_url = Some("mock://local".to_string());
     }
-    
-    // Create the node
-    let node = DataFoldNode::new(config)
+
+    // Create the node (async)
+    let node = DataFoldNode::new(config).await
         .map_err(|e| format!("Failed to create node: {}", e))?;
-    
+
     // Start the embedded server
     let handle = start_embedded_server(node, port).await
         .map_err(|e| format!("Failed to start server: {}", e))?;
-    
+
     Ok(handle)
 }
 

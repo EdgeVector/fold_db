@@ -275,7 +275,7 @@ function QueryPreview({
             <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">
               Raw JSON
             </label>
-            <pre className="bg-gray-900 text-gray-100 text-xs p-3 rounded-md overflow-x-auto">
+            <pre style={{ background: '#1a1a1a', color: '#e5e5e5' }} className="text-xs p-3 overflow-x-auto">
               {JSON.stringify(query, null, 2)}
             </pre>
           </div>

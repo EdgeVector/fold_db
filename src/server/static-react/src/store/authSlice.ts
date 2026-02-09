@@ -32,14 +32,12 @@ const initialState: KeyAuthenticationState = {
 };
 
 // Async thunk for initializing system key on startup
-// Async thunk for initializing system key on startup
 export const initializeSystemKey = createAsyncThunk(
   "auth/initializeSystemKey",
   async (_, { rejectWithValue }) => {
     try {
       // Fetch the private key directly from the node
       const response = await getNodePrivateKey();
-      console.log("initializeSystemKey thunk response:", response);
 
       if (response.success && response.data && response.data.private_key) {
         // Convert base64 private key to bytes for key derivation
@@ -88,11 +86,9 @@ export const validatePrivateKey = createAsyncThunk(
 
     try {
       // Convert base64 private key to bytes
-      console.log("🔑 Converting private key from base64...");
       const privateKeyBytes = base64ToBytes(privateKeyBase64);
 
       // Generate public key from private key
-      console.log("🔑 Generating public key from private key...");
       const derivedPublicKeyBytes = await ed.getPublicKeyAsync(privateKeyBytes);
       const derivedPublicKeyBase64 = btoa(
         String.fromCharCode(...derivedPublicKeyBytes),
@@ -100,11 +96,6 @@ export const validatePrivateKey = createAsyncThunk(
 
       // Check if derived public key matches system public key
       const matches = derivedPublicKeyBase64 === systemPublicKey;
-      console.log("🔑 Key comparison:", {
-        derived: derivedPublicKeyBase64,
-        system: systemPublicKey,
-        matches,
-      });
 
       if (matches) {
         return {
@@ -185,7 +176,6 @@ export const fetchNodePrivateKey = createAsyncThunk(
   async (_, { rejectWithValue }) => {
     try {
       const response = await getNodePrivateKey();
-      console.log("fetchNodePrivateKey thunk response:", response);
 
       if (response.success && response.data && response.data.private_key) {
         return {
@@ -278,7 +268,6 @@ const authSlice = createSlice({
         state.error = null;
       })
       .addCase(initializeSystemKey.fulfilled, (state, action) => {
-        console.log("initializeSystemKey.fulfilled", action.payload);
         state.isLoading = false;
         state.systemPublicKey = action.payload.systemPublicKey;
         state.systemKeyId = action.payload.systemKeyId;
