@@ -15,14 +15,14 @@ name = "datafold_app_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
-tauri-build = { version = "2.5.1", features = [] }
+tauri-build = { version = "2.5.5", features = [] }
 
 [dependencies]
 # DataFold core library (local dependency)
 fold_db = { path = "../../../../" }
 
 # Tauri dependencies
-tauri = { version = "2.9.2", features = [] }
+tauri = { version = "2.10.2", features = [] }
 tauri-plugin-log = "2.0.0"
 tauri-plugin-shell = "2.0.0"
 tauri-plugin-dialog = "2"
