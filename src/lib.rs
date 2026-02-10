@@ -27,6 +27,7 @@
 pub mod atom;
 pub mod config_utils;
 pub mod constants;
+pub mod crypto;
 pub mod datafold_node;
 pub mod db_operations;
 pub mod error;

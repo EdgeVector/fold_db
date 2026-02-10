@@ -41,6 +41,9 @@ pub enum StorageError {
 
     #[error("Configuration error: {0}")]
     ConfigurationError(String),
+
+    #[error("Encryption error: {0}")]
+    EncryptionError(String),
 }
 
 pub type StorageResult<T> = Result<T, StorageError>;

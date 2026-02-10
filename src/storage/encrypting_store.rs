@@ -1,0 +1,276 @@
+use super::error::{StorageError, StorageResult};
+use super::traits::{ExecutionModel, FlushBehavior, KvStore};
+use crate::crypto::CryptoProvider;
+use async_trait::async_trait;
+use std::sync::Arc;
+
+/// A decorator that transparently encrypts values on write and decrypts on read.
+///
+/// This wraps any `KvStore` implementation, inserting an encryption layer
+/// between the `TypedKvStore` serialization boundary and the actual backend.
+///
+/// ```text
+/// TypedKvStore (JSON bytes)
+///       ↓
+/// EncryptingKvStore (encrypt → ciphertext bytes)
+///       ↓
+/// DynamoDbKvStore / SledKvStore (stores ciphertext)
+/// ```
+///
+/// Keys are NOT encrypted — only values. This preserves indexing and scan_prefix.
+///
+/// During migration (dual-read mode), decryption failures on data that lacks
+/// the envelope version prefix fall back to returning the raw bytes, allowing
+/// gradual migration of plaintext data.
+pub struct EncryptingKvStore {
+    inner: Arc<dyn KvStore>,
+    crypto: Arc<dyn CryptoProvider>,
+    /// When true, if decryption fails, assume data is plaintext and return as-is.
+    /// This enables gradual migration from unencrypted to encrypted storage.
+    migration_mode: bool,
+}
+
+impl EncryptingKvStore {
+    /// Create a new encrypting store wrapping the given inner store.
+    ///
+    /// - `migration_mode`: When `true`, failed decryption returns raw bytes
+    ///   (assumes plaintext pre-migration data).
+    pub fn new(
+        inner: Arc<dyn KvStore>,
+        crypto: Arc<dyn CryptoProvider>,
+        migration_mode: bool,
+    ) -> Self {
+        Self {
+            inner,
+            crypto,
+            migration_mode,
+        }
+    }
+
+    /// Attempt to decrypt, falling back to plaintext if in migration mode.
+    async fn decrypt_or_passthrough(&self, data: Vec<u8>) -> StorageResult<Vec<u8>> {
+        match self.crypto.decrypt(&data).await {
+            Ok(plaintext) => Ok(plaintext),
+            Err(e) => {
+                if self.migration_mode {
+                    // Assume this is pre-migration plaintext data
+                    log::debug!(
+                        "Decryption failed in migration mode, returning raw data: {}",
+                        e
+                    );
+                    Ok(data)
+                } else {
+                    Err(StorageError::EncryptionError(e.to_string()))
+                }
+            }
+        }
+    }
+}
+
+#[async_trait]
+impl KvStore for EncryptingKvStore {
+    async fn get(&self, key: &[u8]) -> StorageResult<Option<Vec<u8>>> {
+        match self.inner.get(key).await? {
+            Some(ciphertext) => {
+                let plaintext = self.decrypt_or_passthrough(ciphertext).await?;
+                Ok(Some(plaintext))
+            }
+            None => Ok(None),
+        }
+    }
+
+    async fn put(&self, key: &[u8], value: Vec<u8>) -> StorageResult<()> {
+        let ciphertext = self
+            .crypto
+            .encrypt(&value)
+            .await
+            .map_err(|e| StorageError::EncryptionError(e.to_string()))?;
+        self.inner.put(key, ciphertext).await
+    }
+
+    async fn delete(&self, key: &[u8]) -> StorageResult<bool> {
+        self.inner.delete(key).await
+    }
+
+    async fn exists(&self, key: &[u8]) -> StorageResult<bool> {
+        self.inner.exists(key).await
+    }
+
+    async fn scan_prefix(&self, prefix: &[u8]) -> StorageResult<Vec<(Vec<u8>, Vec<u8>)>> {
+        let results = self.inner.scan_prefix(prefix).await?;
+        let mut decrypted_results = Vec::with_capacity(results.len());
+
+        for (key, ciphertext) in results {
+            let plaintext = self.decrypt_or_passthrough(ciphertext).await?;
+            decrypted_results.push((key, plaintext));
+        }
+
+        Ok(decrypted_results)
+    }
+
+    async fn batch_put(&self, items: Vec<(Vec<u8>, Vec<u8>)>) -> StorageResult<()> {
+        let mut encrypted_items = Vec::with_capacity(items.len());
+
+        for (key, value) in items {
+            let ciphertext = self
+                .crypto
+                .encrypt(&value)
+                .await
+                .map_err(|e| StorageError::EncryptionError(e.to_string()))?;
+            encrypted_items.push((key, ciphertext));
+        }
+
+        self.inner.batch_put(encrypted_items).await
+    }
+
+    async fn batch_delete(&self, keys: Vec<Vec<u8>>) -> StorageResult<()> {
+        self.inner.batch_delete(keys).await
+    }
+
+    async fn flush(&self) -> StorageResult<()> {
+        self.inner.flush().await
+    }
+
+    fn backend_name(&self) -> &'static str {
+        "encrypting"
+    }
+
+    fn execution_model(&self) -> ExecutionModel {
+        self.inner.execution_model()
+    }
+
+    fn flush_behavior(&self) -> FlushBehavior {
+        self.inner.flush_behavior()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::crypto::provider::{LocalCryptoProvider, NoOpCryptoProvider};
+    use crate::storage::inmemory_backend::InMemoryNamespacedStore;
+    use crate::storage::traits::NamespacedStore;
+
+    /// Helper to get a fresh in-memory KvStore
+    async fn memory_store() -> Arc<dyn KvStore> {
+        let ns = InMemoryNamespacedStore::new();
+        ns.open_namespace("test").await.unwrap()
+    }
+
+    #[tokio::test]
+    async fn test_noop_passthrough() {
+        let inner = memory_store().await;
+        let provider = Arc::new(NoOpCryptoProvider);
+        let store = EncryptingKvStore::new(inner, provider, false);
+
+        let key = b"atom:123";
+        let value = b"{\"name\": \"test\"}".to_vec();
+
+        store.put(key, value.clone()).await.unwrap();
+        let retrieved = store.get(key).await.unwrap().unwrap();
+        assert_eq!(retrieved, value);
+    }
+
+    #[tokio::test]
+    async fn test_encrypted_roundtrip() {
+        let inner = memory_store().await;
+        let provider = Arc::new(LocalCryptoProvider::from_key([0x42u8; 32]));
+        let store = EncryptingKvStore::new(inner.clone(), provider, false);
+
+        let key = b"atom:456";
+        let value = b"{\"content\": \"sensitive\"}".to_vec();
+
+        store.put(key, value.clone()).await.unwrap();
+
+        // Verify the raw data in the inner store is encrypted (not plaintext)
+        let raw = inner.get(key).await.unwrap().unwrap();
+        assert_ne!(raw, value, "Raw data should be encrypted");
+
+        // But reading through the encrypting store gives us plaintext
+        let retrieved = store.get(key).await.unwrap().unwrap();
+        assert_eq!(retrieved, value);
+    }
+
+    #[tokio::test]
+    async fn test_batch_roundtrip() {
+        let inner = memory_store().await;
+        let provider = Arc::new(LocalCryptoProvider::from_key([0x42u8; 32]));
+        let store = EncryptingKvStore::new(inner, provider, false);
+
+        let items: Vec<(Vec<u8>, Vec<u8>)> = vec![
+            (b"k1".to_vec(), b"value1".to_vec()),
+            (b"k2".to_vec(), b"value2".to_vec()),
+            (b"k3".to_vec(), b"value3".to_vec()),
+        ];
+
+        store.batch_put(items.clone()).await.unwrap();
+
+        for (key, value) in &items {
+            let retrieved = store.get(key).await.unwrap().unwrap();
+            assert_eq!(&retrieved, value);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_scan_prefix_decrypts() {
+        let inner = memory_store().await;
+        let provider = Arc::new(LocalCryptoProvider::from_key([0x42u8; 32]));
+        let store = EncryptingKvStore::new(inner, provider, false);
+
+        store.put(b"atom:a", b"val_a".to_vec()).await.unwrap();
+        store.put(b"atom:b", b"val_b".to_vec()).await.unwrap();
+        store.put(b"other:c", b"val_c".to_vec()).await.unwrap();
+
+        let results = store.scan_prefix(b"atom:").await.unwrap();
+        assert_eq!(results.len(), 2);
+
+        for (_, value) in &results {
+            assert!(value == b"val_a" || value == b"val_b");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_migration_mode_plaintext_fallback() {
+        let inner = memory_store().await;
+        let provider = Arc::new(LocalCryptoProvider::from_key([0x42u8; 32]));
+
+        // Write plaintext data directly to inner store (simulating pre-migration)
+        let key = b"legacy:atom";
+        let plaintext = b"{\"old\": \"data\"}".to_vec();
+        inner.put(key, plaintext.clone()).await.unwrap();
+
+        // Read with migration_mode=true — should succeed with plaintext fallback
+        let store = EncryptingKvStore::new(inner.clone(), provider, true);
+        let retrieved = store.get(key).await.unwrap().unwrap();
+        assert_eq!(retrieved, plaintext);
+    }
+
+    #[tokio::test]
+    async fn test_strict_mode_rejects_plaintext() {
+        let inner = memory_store().await;
+        let provider = Arc::new(LocalCryptoProvider::from_key([0x42u8; 32]));
+
+        // Write plaintext data directly to inner store
+        let key = b"legacy:atom";
+        let plaintext = b"{\"old\": \"data\"}".to_vec();
+        inner.put(key, plaintext).await.unwrap();
+
+        // Read with migration_mode=false — should fail
+        let store = EncryptingKvStore::new(inner, provider, false);
+        let result = store.get(key).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_delete_passthrough() {
+        let inner = memory_store().await;
+        let provider = Arc::new(NoOpCryptoProvider);
+        let store = EncryptingKvStore::new(inner, provider, false);
+
+        store.put(b"k", b"v".to_vec()).await.unwrap();
+        assert!(store.exists(b"k").await.unwrap());
+
+        store.delete(b"k").await.unwrap();
+        assert!(!store.exists(b"k").await.unwrap());
+    }
+}
