@@ -1,7 +1,5 @@
 import { useState } from 'react'
 import { ingestionClient } from '../../api/clients'
-import { useIngestionStatus } from '../../hooks/useIngestionStatus'
-import IngestionStatusBar from '../shared/IngestionStatusBar'
 
 // Check if running in Tauri
 const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__
@@ -12,7 +10,7 @@ function SmartFolderTab({ onResult }) {
   const [isIngesting, setIsIngesting] = useState(false)
   const [scanResult, setScanResult] = useState(null)
   const [ingestionStarted, setIngestionStarted] = useState(false)
-  const { ingestionStatus } = useIngestionStatus()
+
 
   // Open native folder picker (Tauri only)
   const openFolderPicker = async () => {
@@ -104,7 +102,6 @@ function SmartFolderTab({ onResult }) {
   return (
     <div className="space-y-4">
       {/* Status Bar */}
-      <IngestionStatusBar ingestionStatus={ingestionStatus} />
 
       {/* Phase 1: Scan Input */}
       {!scanResult && !ingestionStarted && (

@@ -1,7 +1,5 @@
 import { useState } from 'react'
 import { ingestionClient } from '../../api/clients'
-import { useIngestionStatus } from '../../hooks/useIngestionStatus'
-import IngestionStatusBar from '../shared/IngestionStatusBar'
 import { generateBlogPosts } from '../../data/sampleBlogPosts'
 import { twitterSamples, instagramSamples, linkedinSamples, tiktokSamples } from '../../data/sampleSocialPosts'
 
@@ -9,7 +7,6 @@ function IngestionTab({ onResult }) {
   const [jsonData, setJsonData] = useState('')
   const [autoExecute, setAutoExecute] = useState(true)
   const [isLoading, setIsLoading] = useState(false)
-  const { ingestionStatus } = useIngestionStatus()
 
   const processIngestion = async () => {
     setIsLoading(true)
@@ -63,9 +60,6 @@ function IngestionTab({ onResult }) {
 
   return (
     <div className="space-y-4">
-      {/* Status Bar */}
-      <IngestionStatusBar ingestionStatus={ingestionStatus} showConfigHint />
-
 
       <div className="minimal-card p-4">
         <div className="flex items-center justify-between mb-3">

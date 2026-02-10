@@ -1,6 +1,4 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { useIngestionStatus } from '../../hooks/useIngestionStatus'
-import IngestionStatusBar from '../shared/IngestionStatusBar'
 
 function FileUploadTab({ onResult }) {
   const [isDragging, setIsDragging] = useState(false)
@@ -9,7 +7,7 @@ function FileUploadTab({ onResult }) {
   const [trustDistance, setTrustDistance] = useState(0)
   const [pubKey, setPubKey] = useState('default')
   const [isUploading, setIsUploading] = useState(false)
-  const { ingestionStatus } = useIngestionStatus()
+
   const [uploadMode, setUploadMode] = useState('upload') // 'upload', 's3-path', 'batch-folder'
   const [s3FilePath, setS3FilePath] = useState('')
   const [folderPath, setFolderPath] = useState('sample_data')
@@ -248,7 +246,6 @@ function FileUploadTab({ onResult }) {
   return (
     <div className="space-y-4">
       {/* Status Bar */}
-      <IngestionStatusBar ingestionStatus={ingestionStatus} showConfigHint />
 
       {/* Uploading Indicator */}
       {isUploading && uploadMode !== 'batch-folder' && (
