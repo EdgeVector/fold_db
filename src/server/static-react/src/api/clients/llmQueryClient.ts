@@ -6,6 +6,7 @@
 import { createApiClient } from '../core/client';
 import { API_TIMEOUTS, API_RETRIES } from '../../constants/api';
 
+// LLM client needs custom timeout for AI processing
 const client = createApiClient({
   timeout: API_TIMEOUTS.AI_PROCESSING,
   retries: API_RETRIES.LIMITED

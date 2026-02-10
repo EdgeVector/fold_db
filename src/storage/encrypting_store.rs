@@ -2,7 +2,13 @@ use super::error::{StorageError, StorageResult};
 use super::traits::{ExecutionModel, FlushBehavior, KvStore};
 use crate::crypto::CryptoProvider;
 use async_trait::async_trait;
+use base64::{engine::general_purpose::STANDARD as B64, Engine};
 use std::sync::Arc;
+
+/// Prefix marker for encrypted values.
+/// On write: `ENC:` + base64(ciphertext) → valid UTF-8 string for DynamoDB `S` attributes.
+/// On read: detect prefix → strip → base64-decode → decrypt.
+const ENCRYPTED_PREFIX: &str = "ENC:";
 
 /// A decorator that transparently encrypts values on write and decrypts on read.
 ///
@@ -12,16 +18,18 @@ use std::sync::Arc;
 /// ```text
 /// TypedKvStore (JSON bytes)
 ///       ↓
-/// EncryptingKvStore (encrypt → ciphertext bytes)
+/// EncryptingKvStore (encrypt → base64 + prefix → valid UTF-8 string)
 ///       ↓
-/// DynamoDbKvStore / SledKvStore (stores ciphertext)
+/// DynamoDbKvStore / SledKvStore (stores as DynamoDB S attribute)
 /// ```
 ///
 /// Keys are NOT encrypted — only values. This preserves indexing and scan_prefix.
 ///
-/// During migration (dual-read mode), decryption failures on data that lacks
-/// the envelope version prefix fall back to returning the raw bytes, allowing
-/// gradual migration of plaintext data.
+/// Encrypted values are stored as `ENC:<base64(ciphertext)>` so they remain valid
+/// UTF-8 strings and survive DynamoDB's `S` attribute type, which requires UTF-8.
+///
+/// During migration (dual-read mode), values without the `ENC:` prefix are
+/// treated as pre-migration plaintext and returned as-is.
 pub struct EncryptingKvStore {
     inner: Arc<dyn KvStore>,
     crypto: Arc<dyn CryptoProvider>,
@@ -47,22 +55,36 @@ impl EncryptingKvStore {
         }
     }
 
-    /// Attempt to decrypt, falling back to plaintext if in migration mode.
+    /// Encode ciphertext bytes into a UTF-8-safe string with the `ENC:` prefix.
+    fn encode_ciphertext(ciphertext: &[u8]) -> Vec<u8> {
+        let encoded = format!("{}{}", ENCRYPTED_PREFIX, B64.encode(ciphertext));
+        encoded.into_bytes()
+    }
+
+    /// Attempt to decrypt stored data. If data has the `ENC:` prefix, decode and
+    /// decrypt. Otherwise fall back to plaintext if in migration mode.
     async fn decrypt_or_passthrough(&self, data: Vec<u8>) -> StorageResult<Vec<u8>> {
-        match self.crypto.decrypt(&data).await {
-            Ok(plaintext) => Ok(plaintext),
-            Err(e) => {
-                if self.migration_mode {
-                    // Assume this is pre-migration plaintext data
-                    log::debug!(
-                        "Decryption failed in migration mode, returning raw data: {}",
-                        e
-                    );
-                    Ok(data)
-                } else {
-                    Err(StorageError::EncryptionError(e.to_string()))
-                }
-            }
+        // Check for the ENC: prefix
+        if data.starts_with(ENCRYPTED_PREFIX.as_bytes()) {
+            let b64_part = &data[ENCRYPTED_PREFIX.len()..];
+            let ciphertext = B64.decode(b64_part).map_err(|e| {
+                StorageError::EncryptionError(format!("Base64 decode failed: {}", e))
+            })?;
+            return self
+                .crypto
+                .decrypt(&ciphertext)
+                .await
+                .map_err(|e| StorageError::EncryptionError(e.to_string()));
+        }
+
+        // No ENC: prefix — this is either plaintext or raw binary
+        if self.migration_mode {
+            log::debug!("No ENC: prefix in migration mode, returning raw data as plaintext");
+            Ok(data)
+        } else {
+            Err(StorageError::EncryptionError(
+                "Data is not encrypted (missing ENC: prefix) and migration mode is off".to_string(),
+            ))
         }
     }
 }
@@ -71,8 +93,8 @@ impl EncryptingKvStore {
 impl KvStore for EncryptingKvStore {
     async fn get(&self, key: &[u8]) -> StorageResult<Option<Vec<u8>>> {
         match self.inner.get(key).await? {
-            Some(ciphertext) => {
-                let plaintext = self.decrypt_or_passthrough(ciphertext).await?;
+            Some(stored) => {
+                let plaintext = self.decrypt_or_passthrough(stored).await?;
                 Ok(Some(plaintext))
             }
             None => Ok(None),
@@ -85,7 +107,8 @@ impl KvStore for EncryptingKvStore {
             .encrypt(&value)
             .await
             .map_err(|e| StorageError::EncryptionError(e.to_string()))?;
-        self.inner.put(key, ciphertext).await
+        let encoded = Self::encode_ciphertext(&ciphertext);
+        self.inner.put(key, encoded).await
     }
 
     async fn delete(&self, key: &[u8]) -> StorageResult<bool> {
@@ -100,8 +123,8 @@ impl KvStore for EncryptingKvStore {
         let results = self.inner.scan_prefix(prefix).await?;
         let mut decrypted_results = Vec::with_capacity(results.len());
 
-        for (key, ciphertext) in results {
-            let plaintext = self.decrypt_or_passthrough(ciphertext).await?;
+        for (key, stored) in results {
+            let plaintext = self.decrypt_or_passthrough(stored).await?;
             decrypted_results.push((key, plaintext));
         }
 
@@ -117,7 +140,7 @@ impl KvStore for EncryptingKvStore {
                 .encrypt(&value)
                 .await
                 .map_err(|e| StorageError::EncryptionError(e.to_string()))?;
-            encrypted_items.push((key, ciphertext));
+            encrypted_items.push((key, Self::encode_ciphertext(&ciphertext)));
         }
 
         self.inner.batch_put(encrypted_items).await

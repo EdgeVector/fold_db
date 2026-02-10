@@ -20,11 +20,6 @@ import { initializeSystemKey, fetchNodePrivateKey, restoreSession } from './stor
 import LoginPage from './components/LoginPage'
 import { useEffect } from 'react'
 import { DEFAULT_TAB } from './constants'
-import { store } from './store/store'
-import { injectStore } from './api/core/client'
-
-// Inject store into ApiClient to handle circular dependency safely
-injectStore(store)
 
 // Single lookup for URL hash → tab ID (prevents duplication)
 const HASH_TO_TAB = {

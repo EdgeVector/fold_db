@@ -4,7 +4,7 @@
  * Handles authentication, key management, and cryptographic operations
  */
 
-import { ApiClient, createApiClient } from "../core/client";
+import { ApiClient, getSharedClient } from "../core/client";
 import { API_ENDPOINTS } from "../endpoints";
 import {
   API_TIMEOUTS,
@@ -49,13 +49,7 @@ export class UnifiedSecurityClient implements SecurityApiClient {
   private readonly client: ApiClient;
 
   constructor(client?: ApiClient) {
-    this.client =
-      client ||
-      createApiClient({
-        enableCache: true, // Cache public keys and verification results
-        enableLogging: true,
-        enableMetrics: true,
-      });
+    this.client = client || getSharedClient();
   }
 
   /**

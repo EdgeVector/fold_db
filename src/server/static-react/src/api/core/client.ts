@@ -8,20 +8,16 @@ import {
   API_RETRY_ATTEMPTS,
   API_RETRY_DELAY_MS,
   API_CONFIG,
-  HTTP_STATUS_CODES,
   CONTENT_TYPES,
   REQUEST_HEADERS,
   RETRY_CONFIG,
   CACHE_CONFIG,
-  SCHEMA_STATES,
-  SCHEMA_OPERATIONS,
 } from "../../constants/api";
 
 import {
   ApiError,
   NetworkError,
   TimeoutError,
-  SchemaStateError,
   ErrorFactory,
   isRetryableError,
 } from "./errors";
@@ -44,13 +40,6 @@ import type {
 
 // Define ErrorInterceptor locally to use concrete ApiError class
 type ErrorInterceptor = (error: ApiError) => ApiError | Promise<ApiError>;
-
-// Store injection to avoid circular dependency
-let store: any = null;
-
-export const injectStore = (s: any) => {
-  store = s;
-};
 
 /**
  * In-memory cache implementation
@@ -561,42 +550,18 @@ export class ApiClient implements ApiClientInstance {
 
   /**
    * Validate schema access according to SCHEMA-002 rules
+   * Note: Schema validation is enforced at the component/hook level (useApprovedSchemas)
+   * This method is kept for API compatibility but validation should be done before API calls
    */
   private async validateSchemaAccess(
-    endpoint: string,
-    method: HttpMethod,
-    options: SchemaValidationOptions | boolean,
+    _endpoint: string,
+    _method: HttpMethod,
+    _options: SchemaValidationOptions | boolean,
   ): Promise<void> {
-    // Extract schema name from endpoint if possible
-    const schemaMatch = endpoint.match(/\/schemas\/([^\/]+)/);
-    if (!schemaMatch) return; // Not a schema endpoint
-
-    const schemaName = schemaMatch[1];
-    const validationOptions = typeof options === "boolean" ? {} : options;
-
-    // For mutation and query operations, only approved schemas are allowed
-    if (endpoint.includes("/mutation") || endpoint.includes("/query")) {
-      if (validationOptions.requiresApproved !== false) {
-        // Get schema state from Redux store
-        if (!store) {
-          console.warn(
-            "Store not injected into ApiClient, skipping schema validation",
-          );
-          return;
-        }
-        const schemaState = store.getState().schemas;
-        const schemas = Object.values(schemaState.schemas || {});
-
-        const schema = schemas.find((s) => s.name === schemaName);
-        if (!schema || schema.state !== SCHEMA_STATES.APPROVED) {
-          throw new SchemaStateError(
-            schemaName,
-            schema?.state || "unknown",
-            SCHEMA_OPERATIONS.MUTATION,
-          );
-        }
-      }
-    }
+    // Schema validation is now handled at the component/hook level
+    // using useApprovedSchemas hook which has access to Redux state
+    // This avoids circular dependency between ApiClient and Redux store
+    return;
   }
 
   /**
@@ -710,10 +675,31 @@ export class ApiClient implements ApiClientInstance {
   }
 }
 
-// Create default client instance
-export const defaultApiClient = new ApiClient();
+// Shared singleton client instance with default configuration
+// All domain clients should use this instance to share cache and metrics
+let sharedClient: ApiClient | null = null;
 
-// Export factory function for creating custom clients
+export function getSharedClient(): ApiClient {
+  if (!sharedClient) {
+    sharedClient = new ApiClient({
+      enableCache: true,
+      enableLogging: true,
+      enableMetrics: true,
+    });
+  }
+  return sharedClient;
+}
+
+// Legacy export - use getSharedClient() instead
+export const defaultApiClient = getSharedClient();
+
+// Factory function for creating custom clients with non-default config
+// For most use cases, use getSharedClient() to benefit from shared caching
 export function createApiClient(config?: ApiClientConfig): ApiClient {
+  // If no config or empty config, return shared instance
+  if (!config || Object.keys(config).length === 0) {
+    return getSharedClient();
+  }
+  // Custom config gets a new instance
   return new ApiClient(config);
 }

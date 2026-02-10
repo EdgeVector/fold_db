@@ -1,4 +1,4 @@
-import { ApiClient, createApiClient } from '../core/client';
+import { ApiClient, getSharedClient } from '../core/client';
 import { API_ENDPOINTS } from '../endpoints';
 import type { EnhancedApiResponse } from '../core/types';
 
@@ -14,7 +14,7 @@ export class NativeIndexClient {
   private readonly client: ApiClient;
 
   constructor(client?: ApiClient) {
-    this.client = client || createApiClient({ enableCache: true, enableLogging: true });
+    this.client = client || getSharedClient();
   }
 
   async search(term: string): Promise<EnhancedApiResponse<NativeIndexResult[]>> {

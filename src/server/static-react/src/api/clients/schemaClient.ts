@@ -4,7 +4,7 @@
  * Implements SCHEMA-002 compliance at the API layer
  */
 
-import { ApiClient, createApiClient } from '../core/client';
+import { ApiClient, getSharedClient } from '../core/client';
 import { API_ENDPOINTS } from '../endpoints';
 import { SCHEMA_STATES, SCHEMA_OPERATIONS, API_TIMEOUTS, API_RETRIES, API_CACHE_TTL, CACHE_KEYS } from '../../constants/api';
 import type { EnhancedApiResponse, SchemaApiClient } from '../core/types';
@@ -80,11 +80,7 @@ export class UnifiedSchemaClient {
   private readonly client: ApiClient;
 
   constructor(client?: ApiClient) {
-    this.client = client || createApiClient({
-      enableCache: true,
-      enableLogging: true,
-      enableMetrics: true
-    });
+    this.client = client || getSharedClient();
   }
 
   /**

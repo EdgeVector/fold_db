@@ -4,7 +4,7 @@
  * Part of API-STD-1 TASK-003 implementation
  */
 
-import { ApiClient, createApiClient } from "../core/client";
+import { ApiClient, getSharedClient } from "../core/client";
 import { API_ENDPOINTS } from "../endpoints";
 import type { EnhancedApiResponse } from "../core/types";
 // Import generated types from Rust - u64 fields are exported as numbers via #[ts(type = "number")]
@@ -69,13 +69,7 @@ export class UnifiedTransformClient {
   private readonly client: ApiClient;
 
   constructor(client?: ApiClient) {
-    this.client =
-      client ||
-      createApiClient({
-        enableCache: true, // Cache transform data for performance
-        enableLogging: true,
-        enableMetrics: true,
-      });
+    this.client = client || getSharedClient();
   }
 
   /**
