@@ -21,6 +21,7 @@ use crate::log_feature;
 /// - Storage operations (DbOperations)
 /// - Progress tracking (ProgressStore)
 /// - Connection pooling and configuration
+/// - Encryption at rest (via EncryptingNamespacedStore decorator)
 pub async fn create_fold_db(config: &DatabaseConfig) -> FoldDbResult<Arc<Mutex<FoldDB>>> {
     match config {
         DatabaseConfig::Local { path } => {
@@ -97,17 +98,54 @@ pub async fn create_fold_db(config: &DatabaseConfig) -> FoldDbResult<Arc<Mutex<F
                 FoldDbError::Config("Missing user_id for Cloud config".to_string())
             })?;
 
-            let db_ops = Arc::new(
-                DbOperations::from_cloud_flexible(
+            // Build the base namespaced store
+            let base_store: Arc<dyn crate::storage::traits::NamespacedStore> =
+                Arc::new(crate::storage::CloudNamespacedStore::new(
                     client.clone(),
                     resolver,
                     cloud_config.auto_create,
-                    user_id.clone(),
-                )
-                .await
-                .map_err(|e| {
-                    FoldDbError::Config(format!("Failed to initialize DynamoDB backend: {}", e))
-                })?,
+                ));
+
+            // Wrap with encryption if KMS is configured
+            let namespaced_store = if let Ok(kms_key_id) = std::env::var("KMS_KEY_ID") {
+                log_feature!(
+                    LogFeature::Database,
+                    info,
+                    "Encryption at rest enabled (KMS key: {}...)",
+                    &kms_key_id[..kms_key_id.len().min(8)]
+                );
+
+                let kms_client = aws_sdk_kms::Client::new(&aws_config);
+                let crypto = Arc::new(
+                    crate::crypto::KmsCryptoProvider::from_env(
+                        kms_client,
+                        client.clone(),
+                        user_id.clone(),
+                    )
+                    .map_err(|e| {
+                        FoldDbError::Config(format!("Failed to init KMS crypto: {}", e))
+                    })?,
+                );
+
+                let enc_store = crate::storage::EncryptingNamespacedStore::new(
+                    base_store, crypto, true, // migration_mode: tolerate plaintext reads
+                );
+                Arc::new(enc_store) as Arc<dyn crate::storage::traits::NamespacedStore>
+            } else {
+                log_feature!(
+                    LogFeature::Database,
+                    info,
+                    "Encryption at rest disabled (KMS_KEY_ID not set)"
+                );
+                base_store
+            };
+
+            let db_ops = Arc::new(
+                DbOperations::from_namespaced_store(namespaced_store)
+                    .await
+                    .map_err(|e| {
+                        FoldDbError::Config(format!("Failed to initialize DynamoDB backend: {}", e))
+                    })?,
             );
 
             // Generate path string for compatibility
