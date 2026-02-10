@@ -174,7 +174,7 @@ function StatusSection() {
           </div>
           <div className="w-full bg-surface-secondary rounded-full h-3">
             <div
-              className="h-3 rounded-full transition-all duration-300 bg-black"
+              className="h-3 rounded-full transition-all duration-300 bg-primary"
               style={{ width: `${job.progress_percentage || 0}%` }}
             />
           </div>
