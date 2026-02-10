@@ -79,7 +79,7 @@ function AiConfigSettings({ configSaveStatus, setConfigSaveStatus, onClose }) {
                   <option value="mistral">Mistral (7B)</option>
                   <option value="deepseek-coder-v2">DeepSeek Coder V2</option>
                 </select>
-                <p className="text-xs text-secondary mt-1">Pull model: <code className="text-info">ollama pull {ollamaModel}</code></p>
+                <p className="text-xs text-secondary mt-1">Pull model: <code className="text-blue-600">ollama pull {ollamaModel}</code></p>
               </>
             )}
           </div>
@@ -87,7 +87,7 @@ function AiConfigSettings({ configSaveStatus, setConfigSaveStatus, onClose }) {
 
         {aiProvider === 'OpenRouter' && (
           <div>
-            <label className="label">API Key <span className="text-xs text-secondary">(<a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer" className="text-info hover:underline">get key</a>)</span></label>
+            <label className="label">API Key <span className="text-xs text-secondary">(<a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">get key</a>)</span></label>
             <input type="password" value={openrouterApiKey} onChange={(e) => setOpenrouterApiKey(e.target.value)} placeholder="sk-or-..." className="input" />
           </div>
         )}
@@ -112,7 +112,7 @@ function AiConfigSettings({ configSaveStatus, setConfigSaveStatus, onClose }) {
         </div>
 
         {configSaveStatus && (
-          <div className={`p-3 card ${configSaveStatus.success ? 'card-success text-success' : 'card-error text-error'}`}>
+          <div className={`p-3 card ${configSaveStatus.success ? 'card-success text-green-600' : 'card-error text-red-600'}`}>
             <span className="text-sm font-medium">{configSaveStatus.success ? '✓' : '✗'} {configSaveStatus.message}</span>
           </div>
         )}

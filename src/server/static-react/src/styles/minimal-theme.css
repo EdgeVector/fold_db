@@ -27,7 +27,7 @@
     @apply btn bg-transparent text-secondary border border-border hover:border-primary hover:text-primary;
   }
   .btn-danger {
-    @apply btn bg-error text-white border-none hover:bg-red-600;
+    @apply btn bg-red-600 text-white border-none hover:bg-red-700;
   }
   .btn-sm {
     @apply px-3 py-1.5 text-xs;
@@ -78,16 +78,16 @@
     @apply px-2 py-0.5 text-xs font-mono border;
   }
   .badge-info {
-    @apply bg-blue-50 text-info border-blue-200;
+    @apply bg-blue-50 text-blue-700 border-blue-200;
   }
   .badge-success {
-    @apply bg-green-50 text-success border-green-200;
+    @apply bg-green-50 text-green-700 border-green-200;
   }
   .badge-warning {
-    @apply bg-yellow-50 text-warning border-yellow-200;
+    @apply bg-yellow-50 text-amber-700 border-yellow-200;
   }
   .badge-error {
-    @apply bg-red-50 text-error border-red-200;
+    @apply bg-red-50 text-red-700 border-red-200;
   }
   .badge-neutral {
     @apply bg-surface-secondary text-secondary border-border;
@@ -98,16 +98,16 @@
     @apply w-2 h-2 rounded-full;
   }
   .status-dot-success {
-    @apply bg-success;
+    @apply bg-green-600;
   }
   .status-dot-error {
-    @apply bg-error;
+    @apply bg-red-600;
   }
   .status-dot-warning {
-    @apply bg-warning;
+    @apply bg-amber-600;
   }
   .status-dot-info {
-    @apply bg-info;
+    @apply bg-blue-600;
   }
 
   /* Spinner */

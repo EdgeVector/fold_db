@@ -17,7 +17,7 @@ function BatchFolderMode({ folderPath, setFolderPath, batchProgress, fileProgres
           {Object.entries(fileProgresses).map(([id, progress]) => (
             <div key={id} className="flex items-center gap-3 text-sm">
               <span className={`w-2 h-2 rounded-full ${
-                progress.is_failed ? 'bg-error' : progress.is_complete ? 'bg-success' : 'bg-warning animate-pulse'
+                progress.is_failed ? 'bg-red-600' : progress.is_complete ? 'bg-green-600' : 'bg-amber-600 animate-pulse'
               }`} />
               <span className="font-mono text-xs truncate flex-1">{progress.file_name}</span>
               <span className="text-secondary text-xs">{progress.progress_percentage}%</span>

@@ -109,7 +109,7 @@ function FileUploadTab({ onResult }) {
   return (
     <div className="p-6 space-y-4">
       {isUploading && (
-        <div className="flex items-center gap-3 text-info">
+        <div className="flex items-center gap-3 text-blue-600">
           <span className="spinner" />
           <span>Processing file...</span>
         </div>

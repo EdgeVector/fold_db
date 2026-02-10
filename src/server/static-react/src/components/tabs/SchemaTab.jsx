@@ -194,7 +194,7 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
               )}
               {state.toLowerCase() === 'approved' && (
                 <button
-                  className="btn-secondary btn-sm hover:border-error hover:text-error"
+                  className="btn-secondary btn-sm hover:border-red-300 hover:text-red-600"
                   onClick={(e) => { e.stopPropagation(); blockSchema(schema.name) }}
                 >
                   Block
@@ -217,8 +217,8 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
             {/* Range Schema Information */}
             {rangeSchemaInfo && (
               <div className="card card-info mb-4 p-3">
-                <h4 className="text-sm font-medium text-info mb-2">Range Schema Information</h4>
-                <div className="space-y-1 text-xs text-info">
+                <h4 className="text-sm font-medium text-blue-600 mb-2">Range Schema Information</h4>
+                <div className="space-y-1 text-xs text-blue-600">
                   <p><strong>Range Key:</strong> {rangeSchemaInfo.rangeKey}</p>
                   <p><strong>Total Fields:</strong> {rangeSchemaInfo.totalFields}</p>
                   <p><strong>Range Fields:</strong> {rangeSchemaInfo.rangeFields.length}</p>
@@ -230,8 +230,8 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
             {/* HashRange Schema Information */}
             {hashRangeSchemaInfo && (
               <div className="card card-info mb-4 p-3">
-                <h4 className="text-sm font-medium text-info mb-2">HashRange Schema Information</h4>
-                <div className="space-y-1 text-xs text-info">
+                <h4 className="text-sm font-medium text-blue-600 mb-2">HashRange Schema Information</h4>
+                <div className="space-y-1 text-xs text-blue-600">
                   <p><strong>Hash Field:</strong> {hashRangeSchemaInfo.hashField}</p>
                   <p><strong>Range Field:</strong> {hashRangeSchemaInfo.rangeField}</p>
                   <p><strong>Total Fields:</strong> {hashRangeSchemaInfo.totalFields}</p>

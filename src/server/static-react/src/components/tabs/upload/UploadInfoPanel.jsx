@@ -6,9 +6,9 @@ function UploadInfoPanel({ uploadMode }) {
   return (
     <div className="card card-info p-4">
       <div className="flex items-start gap-3">
-        <span className="text-info">[i]</span>
+        <span className="text-blue-600">[i]</span>
         <div className="text-sm text-secondary">
-          <p className="font-medium mb-1 text-info">How it works</p>
+          <p className="font-medium mb-1 text-blue-600">How it works</p>
           <ol className="list-decimal list-inside space-y-1">
             {uploadMode === 'batch-folder' ? (
               <>

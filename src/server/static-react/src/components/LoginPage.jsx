@@ -47,7 +47,7 @@ export default function LoginPage() {
           </div>
 
           {error && (
-            <div className="mb-6 p-3 card card-error text-error text-sm">{error}</div>
+            <div className="mb-6 p-3 card card-error text-red-600 text-sm">{error}</div>
           )}
 
           <button type="submit" disabled={isLoading} className="btn-primary w-full btn-lg">

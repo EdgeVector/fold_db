@@ -79,9 +79,9 @@ function KeyManagementTab({ onResult: _onResult }) {
             {/* Current System Public Key Display */}
             <div className="card card-info p-4">
                 <div className="flex items-start">
-                    <ShieldCheckIcon className="h-5 w-5 text-info mr-2 flex-shrink-0 mt-0.5" />
+                    <ShieldCheckIcon className="h-5 w-5 text-blue-600 mr-2 flex-shrink-0 mt-0.5" />
                     <div className="text-sm text-primary flex-1">
-                        <p className="font-medium text-info">Current System Public Key</p>
+                        <p className="font-medium text-blue-600">Current System Public Key</p>
                         {isLoading ? (
                             <p className="text-secondary">Loading...</p>
                         ) : systemPublicKey ? (
@@ -98,9 +98,9 @@ function KeyManagementTab({ onResult: _onResult }) {
                                         className="px-2 py-1 border border-border border-l-0 bg-surface-secondary focus:outline-none cursor-pointer hover:bg-surface transition-colors"
                                     >
                                         {copiedField === 'system' ? (
-                                            <CheckIcon className="h-3 w-3 text-success" />
+                                            <CheckIcon className="h-3 w-3 text-green-600" />
                                         ) : (
-                                            <ClipboardIcon className="h-3 w-3 text-info" />
+                                            <ClipboardIcon className="h-3 w-3 text-blue-600" />
                                         )}
                                     </button>
                                 </div>
@@ -108,7 +108,7 @@ function KeyManagementTab({ onResult: _onResult }) {
                                     <p className="text-xs text-secondary mt-1">Key ID: {systemKeyId}</p>
                                 )}
                                 {isAuthenticated && (
-                                    <p className="text-xs text-success mt-1">🔓 Authenticated - Private key loaded!</p>
+                                    <p className="text-xs text-green-600 mt-1">🔓 Authenticated - Private key loaded!</p>
                                 )}
                             </div>
                         ) : (
@@ -122,9 +122,9 @@ function KeyManagementTab({ onResult: _onResult }) {
             {isAuthenticated && privateKeyBase64 && (
                 <div className="card card-success p-4 ">
                     <div className="flex items-start">
-                        <KeyIcon className="h-5 w-5 text-success mr-2 flex-shrink-0 mt-0.5" />
+                        <KeyIcon className="h-5 w-5 text-green-600 mr-2 flex-shrink-0 mt-0.5" />
                         <div className="text-sm text-primary flex-1">
-                            <p className="font-medium text-success">Current Private Key (Auto-loaded)</p>
+                            <p className="font-medium text-green-600">Current Private Key (Auto-loaded)</p>
                             <p className="mt-1 text-secondary">Your private key has been automatically loaded from the backend node.</p>
                             
                             <div className="mt-3">
@@ -142,13 +142,13 @@ function KeyManagementTab({ onResult: _onResult }) {
                                         title="Copy private key"
                                     >
                                         {copiedField === 'private' ? (
-                                            <CheckIcon className="h-3 w-3 text-success" />
+                                            <CheckIcon className="h-3 w-3 text-green-600" />
                                         ) : (
-                                            <ClipboardIcon className="h-3 w-3 text-success" />
+                                            <ClipboardIcon className="h-3 w-3 text-green-600" />
                                         )}
                                     </button>
                                 </div>
-                                <p className="text-xs text-success mt-1">🔓 Authenticated - Private key loaded from node!</p>
+                                <p className="text-xs text-green-600 mt-1">🔓 Authenticated - Private key loaded from node!</p>
                             </div>
                         </div>
                     </div>
@@ -159,15 +159,15 @@ function KeyManagementTab({ onResult: _onResult }) {
             {systemPublicKey && !isAuthenticated && !privateKeyBase64 && (
                 <div className="card card-warning p-4 ">
                     <div className="flex items-start">
-                        <KeyIcon className="h-5 w-5 text-warning mr-2 flex-shrink-0 mt-0.5" />
+                        <KeyIcon className="h-5 w-5 text-amber-600 mr-2 flex-shrink-0 mt-0.5" />
                         <div className="text-sm text-primary flex-1">
-                            <p className="font-medium text-warning">Import Private Key</p>
+                            <p className="font-medium text-amber-600">Import Private Key</p>
                             <p className="mt-1 text-secondary">You have a registered public key but no local private key. Enter your private key to restore access.</p>
                             
                             {!showPrivateKeyInput ? (
                                 <button
                                     onClick={() => setShowPrivateKeyInput(true)}
-                                    className="btn-secondary mt-3 flex items-center text-warning"
+                                    className="btn-secondary mt-3 flex items-center text-amber-600"
                                 >
                                     <KeyIcon className="h-4 w-4 mr-1" />
                                     Import Private Key
@@ -190,16 +190,16 @@ function KeyManagementTab({ onResult: _onResult }) {
                                     {/* Validation Status */}
                                     {privateKeyValidation && (
                                         <div className={`card p-2 text-xs ${
-                                            privateKeyValidation.valid ? 'card-success text-success' : 'card-error text-error'
+                                            privateKeyValidation.valid ? 'card-success text-green-600' : 'card-error text-red-600'
                                         }`}>
                                             {privateKeyValidation.valid ? (
                                                 <div className="flex items-center">
-                                                    <CheckIcon className="h-4 w-4 text-success mr-1" />
+                                                    <CheckIcon className="h-4 w-4 text-green-600 mr-1" />
                                                     <span>Private key matches system public key!</span>
                                                 </div>
                                             ) : (
                                                 <div className="flex items-center">
-                                                    <ExclamationTriangleIcon className="h-4 w-4 text-error mr-1" />
+                                                    <ExclamationTriangleIcon className="h-4 w-4 text-red-600 mr-1" />
                                                     <span>{privateKeyValidation.error}</span>
                                                 </div>
                                             )}
@@ -224,9 +224,9 @@ function KeyManagementTab({ onResult: _onResult }) {
                                     
                                     <div className="card card-error p-2">
                                         <div className="flex">
-                                            <ExclamationTriangleIcon className="h-4 w-4 text-error mr-1 flex-shrink-0" />
+                                            <ExclamationTriangleIcon className="h-4 w-4 text-red-600 mr-1 flex-shrink-0" />
                                             <div className="text-xs text-secondary">
-                                                <p className="font-medium text-error">Security Warning</p>
+                                                <p className="font-medium text-red-600">Security Warning</p>
                                                 <p>Only enter your private key on trusted devices. Never share or store private keys in plain text.</p>
                                             </div>
                                         </div>

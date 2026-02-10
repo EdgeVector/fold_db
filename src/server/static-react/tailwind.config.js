@@ -25,12 +25,6 @@ export default {
           DEFAULT: '#111111',
           hover: '#333333',
         },
-        // Status colors (muted to match minimal aesthetic)
-        success: '#166534',
-        error: '#991b1b',
-        warning: '#92400e',
-        info: '#1e40af',
-        purple: '#6b21a8',
       },
       fontFamily: {
         sans: ['Inter', 'Helvetica Neue', 'Helvetica', 'Arial', 'sans-serif'],

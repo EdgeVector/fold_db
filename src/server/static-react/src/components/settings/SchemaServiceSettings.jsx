@@ -69,7 +69,7 @@ function SchemaServiceSettings() {
 
       <div className="card card-info p-3">
         <p className="text-xs text-secondary">
-          <strong>Note:</strong> Schema service configuration is set at server startup via the <code className="text-info">--schema-service-url</code> flag or environment variable.
+          <strong>Note:</strong> Schema service configuration is set at server startup via the <code className="text-blue-600">--schema-service-url</code> flag or environment variable.
         </p>
       </div>
     </div>

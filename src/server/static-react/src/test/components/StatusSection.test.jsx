@@ -56,7 +56,7 @@ describe('StatusSection Component', () => {
     const heading = screen.getByText('System Status')
     const icon = heading.parentElement.querySelector('svg')
     expect(icon).toBeInTheDocument()
-    expect(icon).toHaveClass('w-5', 'h-5', 'text-success')
+    expect(icon).toHaveClass('w-5', 'h-5', 'text-green-600')
   })
 
   it('has proper layout structure', () => {

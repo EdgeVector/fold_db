@@ -29,8 +29,8 @@ function Header({ onSettingsClick }) {
               className="flex items-center gap-2 px-3 py-1.5 bg-surface-secondary border border-border"
               title={aiReady ? `${ingestionStatus.provider} · ${ingestionStatus.model}` : 'AI not configured — open Settings'}
             >
-              <div className={`w-2 h-2 rounded-full animate-pulse ${aiReady ? 'bg-success' : 'bg-error'}`} />
-              <span className={`text-xs font-mono ${aiReady ? 'text-success' : 'text-error'}`}>
+              <div className={`w-2 h-2 rounded-full animate-pulse ${aiReady ? 'bg-green-600' : 'bg-red-600'}`} />
+              <span className={`text-xs font-mono ${aiReady ? 'text-green-600' : 'text-red-600'}`}>
                 {aiReady ? `AI · ${ingestionStatus.provider}` : 'AI off'}
               </span>
             </div>
@@ -38,7 +38,7 @@ function Header({ onSettingsClick }) {
         </div>
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2 text-sm text-secondary">
-            <span className="w-2 h-2 bg-success rounded-full" />
+            <span className="w-2 h-2 bg-green-600 rounded-full" />
             Connected
           </div>
           {isAuthenticated && (

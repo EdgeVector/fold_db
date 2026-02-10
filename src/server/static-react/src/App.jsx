@@ -190,7 +190,7 @@ export function AppContent() {
               {/* Schema Loading/Error States */}
               {schemasError && (
                 <div className="mb-4 p-3 bg-surface border border-red-200 border-l-4 border-l-error">
-                  <p className="text-error text-sm">{schemasError}</p>
+                  <p className="text-red-600 text-sm">{schemasError}</p>
                 </div>
               )}
 

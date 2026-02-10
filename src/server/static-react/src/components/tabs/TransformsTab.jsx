@@ -115,7 +115,7 @@ const TransformsTab = ({ onResult }) => {
 
       {!queueInfo.isEmpty && (
         <div className="card card-info p-4" data-testid="transform-queue">
-          <p className="text-sm font-medium text-info mb-2">Queue</p>
+          <p className="text-sm font-medium text-blue-600 mb-2">Queue</p>
           <ul className="list-none space-y-1">
             {queueInfo.queue.map((transformId, index) => (
               <li key={`${transformId}-${index}`} className="text-secondary font-mono text-sm">
@@ -136,7 +136,7 @@ const TransformsTab = ({ onResult }) => {
       {transformsError && (
         <div className="card card-error p-4" role="alert">
           <div className="flex items-center gap-4">
-            <span className="text-error">Error loading transforms: {transformsError}</span>
+            <span className="text-red-600">Error loading transforms: {transformsError}</span>
             <button onClick={fetchTransforms} className="btn-secondary btn-sm">Retry</button>
           </div>
         </div>
@@ -195,8 +195,8 @@ const TransformsTab = ({ onResult }) => {
 
                 <div className="mt-3 space-y-3">
                   {keyConfig && (
-                    <div className="bg-surface-secondary p-3 border-l-2 border-info">
-                      <p className="text-sm font-medium text-info mb-1">Key Config</p>
+                    <div className="bg-surface-secondary p-3 border-l-2 border-blue-300">
+                      <p className="text-sm font-medium text-blue-600 mb-1">Key Config</p>
                       <div className="text-sm text-secondary space-y-1 font-mono">
                         {keyConfig.hash_field && <p>hash_key: {keyConfig.hash_field}</p>}
                         {keyConfig.range_field && <p>range_key: {keyConfig.range_field}</p>}
@@ -230,7 +230,7 @@ const TransformsTab = ({ onResult }) => {
                   >
                     {isLoading ? '→ Adding...' : '→ Add to Queue'}
                   </button>
-                  {errorMessage && <span className="text-sm text-error">Error: {errorMessage}</span>}
+                  {errorMessage && <span className="text-sm text-red-600">Error: {errorMessage}</span>}
                 </div>
               </div>
             )

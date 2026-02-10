@@ -222,7 +222,7 @@ function LlmQueryTab({ onResult }) {
                           onResult(null);
                         }
                       }}
-                      className="text-xs text-info hover:underline bg-transparent border-none cursor-pointer"
+                      className="text-xs text-blue-600 hover:underline bg-transparent border-none cursor-pointer"
                     >
                       {showResults ? 'Hide Details' : 'Show Details'}
                     </button>

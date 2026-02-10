@@ -174,7 +174,7 @@ export default function NativeIndexTab({ onResult }) {
       </div>
 
       {error && (
-        <div className="text-sm text-error">{error}</div>
+        <div className="text-sm text-red-600">{error}</div>
       )}
 
       <div className="overflow-auto max-h-[450px] border border-border">

@@ -94,7 +94,7 @@ function SmartFolderTab({ onResult }) {
             <div className="space-y-1 max-h-64 overflow-y-auto p-3">
               {scanResult.recommended_files.map((file, i) => (
                 <div key={i} className="list-item text-sm">
-                  <span className="text-success text-xs">+</span>
+                  <span className="text-green-600 text-xs">+</span>
                   <span className="font-mono text-xs flex-1 truncate">{file.path}</span>
                   <span className="badge badge-neutral">{file.category}</span>
                   <span className="text-secondary text-xs">{file.reason}</span>
