@@ -85,7 +85,7 @@ function SelectField({
   if (loading) {
     return (
       <FieldWrapper label={label} name={name} required={required} error={error} helpText={helpText} className={className}>
-        <div className="minimal-select opacity-50 cursor-not-allowed flex items-center">
+        <div className="select opacity-50 cursor-not-allowed flex items-center">
           <div className="animate-spin h-4 w-4 border-2 border-default border-t-transparent rounded-full mr-2"></div>
           {UI_STATES.loading}
         </div>
@@ -97,7 +97,7 @@ function SelectField({
   if (!hasOptions) {
     return (
       <FieldWrapper label={label} name={name} required={required} error={error} helpText={helpText} className={className}>
-        <div className="minimal-select opacity-50 cursor-not-allowed">{emptyMessage}</div>
+        <div className="select opacity-50 cursor-not-allowed">{emptyMessage}</div>
       </FieldWrapper>
     );
   }
@@ -115,7 +115,7 @@ function SelectField({
             value={state.searchTerm}
             onChange={handleSearchChange}
             onFocus={() => searchableSelect.actions.openDropdown()}
-            className={`minimal-input ${hasError ? 'border-red-500' : ''}`}
+            className={`input ${hasError ? 'border-red-500' : ''}`}
           />
           {state.isOpen && state.filteredOptions.length > 0 && (
             <div className="absolute z-10 w-full mt-1 bg-surface border border-default rounded-md shadow-lg max-h-60 overflow-auto">

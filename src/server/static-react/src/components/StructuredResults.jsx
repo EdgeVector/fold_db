@@ -142,7 +142,7 @@ const showMoreHashes = useCallback(() => {
         <div className="pt-2">
           <button
             type="button"
-            className="text-xs px-3 py-1 rounded minimal-btn-secondary"
+            className="text-xs px-3 py-1 rounded text-secondary bg-transparent border border-border cursor-pointer hover:border-primary hover:text-primary transition-colors"
             onClick={showMoreHashes}
           >
             Show more hashes ({hashWindow.count}/{allHashes.length})
@@ -184,7 +184,7 @@ function HashRanges({ data, hashKey, rangeOpen, onToggleRange, pageSize, rangeWi
         <div className="pt-1">
           <button
             type="button"
-            className="text-xs px-3 py-1 rounded minimal-btn-secondary"
+            className="text-xs px-3 py-1 rounded text-secondary bg-transparent border border-border cursor-pointer hover:border-primary hover:text-primary transition-colors"
             onClick={showMoreRanges}
           >
             Show more ranges ({effectiveWindow.count}/{allRanges.length})

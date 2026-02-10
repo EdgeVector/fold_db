@@ -86,7 +86,7 @@ function StatusSection() {
       return (
         <div 
           key={job.id} 
-          className="minimal-card p-3 mb-3 opacity-75"
+          className="card p-3 mb-3 opacity-75"
         >
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -94,7 +94,7 @@ function StatusSection() {
               <span className="font-medium text-secondary">
                 {jobLabel}
               </span>
-              <span className="minimal-badge text-xs">
+              <span className="badge text-xs">
                 Complete
               </span>
             </div>
@@ -115,7 +115,7 @@ function StatusSection() {
       return (
         <div 
           key={job.id} 
-          className="minimal-section-error p-4 mb-3"
+          className="card card-error p-4 mb-3"
         >
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
@@ -123,7 +123,7 @@ function StatusSection() {
               <span className="font-medium text-error">
                 {jobLabel}
               </span>
-              <span className="minimal-badge minimal-badge-error text-xs">
+              <span className="badge badge-error text-xs">
                 Failed
               </span>
             </div>
@@ -145,7 +145,7 @@ function StatusSection() {
     const cardColor = isDatabaseReset ? 'red' : isIndexing ? 'purple' : 'blue'
     const bgColor = `bg-${cardColor}-50`
     const borderColor = `border-${cardColor}-200`
-    const textColor = isIndexing ? 'minimal-section-purple-text' : isDatabaseReset ? 'text-error' : 'minimal-section-info-text'
+    const textColor = isIndexing ? 'text-purple' : isDatabaseReset ? 'text-error' : 'text-info'
 
     return (
       <div
@@ -190,7 +190,7 @@ function StatusSection() {
 
     return (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-        <div className="minimal-modal p-6">
+        <div className="modal p-6">
           <div className="flex items-center gap-3 mb-4">
             <TrashIcon className="w-6 h-6 text-error" />
             <h3 className="text-lg font-semibold text-primary">Reset Database</h3>
@@ -211,7 +211,7 @@ function StatusSection() {
           <div className="flex gap-3 justify-end">
             <button
               onClick={() => setShowConfirmDialog(false)}
-              className="minimal-btn-secondary"
+              className="btn-secondary"
               disabled={isResetting}
             >
               Cancel
@@ -219,7 +219,7 @@ function StatusSection() {
             <button
               onClick={handleResetDatabase}
               disabled={isResetting}
-              className="minimal-btn-danger disabled:opacity-50 disabled:cursor-not-allowed"
+              className="btn-danger disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isResetting ? 'Resetting...' : 'Reset Database'}
             </button>
@@ -237,7 +237,7 @@ function StatusSection() {
 
   return (
     <>
-      <div className="minimal-card p-4 mb-6">
+      <div className="card p-4 mb-6">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
             <CheckCircleIcon className="w-5 h-5 text-success" />
@@ -246,7 +246,7 @@ function StatusSection() {
 
           <button
             onClick={() => setShowConfirmDialog(true)}
-            className="minimal-btn-danger minimal-btn-sm"
+            className="btn-danger btn-sm"
             disabled={isResetting}
           >
             <TrashIcon className="w-4 h-4" />
@@ -256,14 +256,14 @@ function StatusSection() {
 
         {/* Job Progress Section */}
         {isLoadingJobs ? (
-          <div className="minimal-card p-4 flex items-center justify-center">
+          <div className="card p-4 flex items-center justify-center">
             <ArrowPathIcon className="w-5 h-5 text-tertiary animate-spin mr-2" />
             <span className="text-secondary">Loading status...</span>
           </div>
         ) : displayJobs.length > 0 ? (
           displayJobs.map(job => renderJobCard(job))
         ) : (
-          <div className="minimal-section-success p-4">
+          <div className="card card-success p-4">
             <div className="flex items-center gap-2">
               <CheckCircleIcon className="w-5 h-5 text-success" />
               <span className="text-success font-medium">No active jobs</span>
@@ -273,8 +273,8 @@ function StatusSection() {
 
         {resetResult && (
           <div className={`mt-3 p-3 rounded-md text-sm ${resetResult.type === 'success'
-              ? 'minimal-section-success text-success'
-              : 'minimal-section-error text-error'
+              ? 'card card-success text-success'
+              : 'card card-error text-error'
             }`}>
             {resetResult.message}
           </div>

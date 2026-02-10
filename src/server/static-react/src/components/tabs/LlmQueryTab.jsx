@@ -1,6 +1,6 @@
 /**
  * LlmQueryTab Component - Conversational AI Query Interface
- * 
+ *
  * A simplified chat-style interface where the AI automatically loops through
  * queries until it finds data or determines it doesn't exist.
  * Uses minimal design system consistent with the rest of FoldDB.
@@ -33,7 +33,7 @@ function LlmQueryTab({ onResult }) {
   const conversationLog = useAppSelector(selectConversationLog);
   const showResults = useAppSelector(selectShowResults);
   const canAskFollowup = useAppSelector(selectCanAskFollowup);
-  
+
   const conversationEndRef = useRef(null);
 
   // Auto-scroll to bottom when conversation updates
@@ -84,7 +84,7 @@ function LlmQueryTab({ onResult }) {
    */
   const handleSubmit = useCallback(async (e) => {
     e?.preventDefault();
-    
+
     if (!inputText.trim() || isProcessing) {
       return;
     }
@@ -100,7 +100,7 @@ function LlmQueryTab({ onResult }) {
       // If this is a follow-up question (session exists and we have results)
       if (canAskFollowup) {
         addToLog('system', '🤔 Analyzing if question can be answered from existing context...');
-        
+
         // First analyze if the question can be answered from existing context
         const analysisResponse = await llmQueryClient.analyzeFollowup({
           session_id: sessionId,
@@ -113,11 +113,11 @@ function LlmQueryTab({ onResult }) {
         }
 
         const analysis = analysisResponse.data;
-        
+
         if (!analysis.needs_query) {
           // Can answer from existing context
           addToLog('system', `✅ Answering from existing context: ${analysis.reasoning}`);
-          
+
           const chatResponse = await llmQueryClient.chat({
             session_id: sessionId,
             question: userInput
@@ -171,33 +171,14 @@ function LlmQueryTab({ onResult }) {
   }, [dispatch]);
 
   return (
-    <div className="chat-container">
-      {/* Header */}
-      <div className="chat-header">
-        <div>
-          <h2 className="chat-title">AI Query</h2>
-          <p className="chat-subtitle">
-            Ask questions in plain English — the AI will find your data
-          </p>
-        </div>
-        {conversationLog.length > 0 && (
-          <button
-            onClick={handleNewConversation}
-            disabled={isProcessing}
-            className="minimal-btn-secondary text-sm"
-          >
-            New Conversation
-          </button>
-        )}
-      </div>
-
+    <div className="flex flex-col h-[600px]">
       {/* Conversation Log */}
-      <div className="chat-messages">
+      <div className="flex-1 overflow-y-auto p-6 space-y-3">
         {conversationLog.length === 0 ? (
-          <div className="chat-empty">
-            <div className="chat-empty-icon">→</div>
-            <p className="text-[15px] mb-2">Start a conversation</p>
-            <p className="text-[13px] text-tertiary">
+          <div className="flex flex-col items-center justify-center h-full text-secondary">
+            <div className="text-4xl mb-4">→</div>
+            <p className="text-base mb-2">Start a conversation</p>
+            <p className="text-sm text-tertiary">
               Try: "What schemas are available?" or "Find tweets mentioning rust" or "Search for blog posts about AI"
             </p>
           </div>
@@ -206,26 +187,26 @@ function LlmQueryTab({ onResult }) {
             <div key={idx} className="mb-3">
               {entry.type === 'user' && (
                 <div className="flex justify-end">
-                  <div className="chat-bubble-user">
-                    <p className="chat-bubble-label opacity-70">You</p>
-                    <p className="chat-bubble-text">{entry.content}</p>
+                  <div className="max-w-[80%] px-4 py-3 bg-primary text-white rounded-lg">
+                    <p className="text-xs opacity-70 mb-1">You</p>
+                    <p className="text-sm">{entry.content}</p>
                   </div>
                 </div>
               )}
-              
+
               {entry.type === 'system' && (
                 <div className="flex justify-start">
-                  <div className="chat-bubble-system">
-                    <p className="chat-bubble-label text-tertiary">AI Assistant</p>
-                    <p className="chat-bubble-text text-primary">{entry.content}</p>
+                  <div className="max-w-[80%] px-4 py-3 bg-surface-secondary border border-border rounded-lg">
+                    <p className="text-xs text-tertiary mb-1">AI Assistant</p>
+                    <p className="text-sm text-primary whitespace-pre-wrap">{entry.content}</p>
                   </div>
                 </div>
               )}
-              
+
               {entry.type === 'results' && entry.data && (
-                <div className="chat-bubble-results">
+                <div className="border border-border bg-surface p-4 rounded-lg">
                   <div className="flex justify-between items-center mb-2">
-                    <p className="text-[13px] font-medium text-primary m-0">
+                    <p className="text-sm font-medium text-primary">
                       Results ({entry.data.length})
                     </p>
                     <button
@@ -241,22 +222,22 @@ function LlmQueryTab({ onResult }) {
                           onResult(null);
                         }
                       }}
-                      className="chat-link-btn"
+                      className="text-xs text-info hover:underline bg-transparent border-none cursor-pointer"
                     >
                       {showResults ? 'Hide Details' : 'Show Details'}
                     </button>
                   </div>
                   {showResults && (
                     <>
-                      <div className="bg-[#fafafa] p-3 mb-2">
+                      <div className="bg-surface-secondary p-3 mb-2">
                         <p className="text-primary whitespace-pre-wrap mb-3 text-sm">{entry.content}</p>
                       </div>
                       <details className="mt-2">
-                        <summary className="cursor-pointer text-[13px] text-secondary">
+                        <summary className="cursor-pointer text-sm text-secondary">
                           View raw data ({entry.data.length} records)
                         </summary>
                         <div className="mt-2 max-h-64 overflow-y-auto">
-                          <pre className="chat-raw-data">
+                          <pre className="text-xs font-mono bg-surface-secondary p-3 border border-border overflow-x-auto">
                             {JSON.stringify(entry.data, null, 2)}
                           </pre>
                         </div>
@@ -272,7 +253,7 @@ function LlmQueryTab({ onResult }) {
       </div>
 
       {/* Input Box */}
-      <form onSubmit={handleSubmit} className="chat-input-form">
+      <form onSubmit={handleSubmit} className="px-6 py-4 border-t border-border bg-surface">
         <div className="flex gap-2">
           <input
             type="text"
@@ -284,19 +265,15 @@ function LlmQueryTab({ onResult }) {
                 : "Ask anything (e.g., 'Find tweets about rust', 'What schemas exist?')..."
             }
             disabled={isProcessing}
-            className="chat-input"
+            className="input flex-1"
             autoFocus
           />
-          <button
-            type="submit"
-            disabled={!inputText.trim() || isProcessing}
-            className="chat-send-btn"
-          >
+          <button type="submit" disabled={!inputText.trim() || isProcessing} className="btn-primary btn-lg">
             {isProcessing ? 'Processing…' : 'Send'}
           </button>
         </div>
         {isProcessing && (
-          <p className="text-center text-[13px] text-tertiary mt-2">
+          <p className="text-center text-sm text-tertiary mt-2">
             AI is analyzing and searching…
           </p>
         )}

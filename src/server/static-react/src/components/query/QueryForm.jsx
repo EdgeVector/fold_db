@@ -135,7 +135,7 @@ function QueryForm({
           error={validationErrors.fields}
           helpText="Select fields to include in your query"
         >
-          <div className="minimal-card p-4">
+          <div className="card p-4">
             <div className="space-y-3">
               {fieldNames.map(fieldName => (
                 <label key={fieldName} className="relative flex items-start">
@@ -165,7 +165,7 @@ function QueryForm({
           name="hashRangeFilter"
           helpText="Filter data by hash and range key values"
         >
-          <div className="minimal-section-purple p-4 space-y-4">
+          <div className="card p-4 space-y-4 bg-purple-50 border-purple-200">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {/* Hash Key Input */}
               <div className="space-y-2">

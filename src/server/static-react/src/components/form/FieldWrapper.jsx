@@ -39,7 +39,7 @@ function FieldWrapper({
       {/* Label */}
       <label 
         htmlFor={fieldId}
-        className="minimal-label"
+        className="label"
       >
         {label}
         {required && (

@@ -100,15 +100,6 @@ pub struct RunQueryRequest {
     pub session_id: Option<String>,
 }
 
-/// Response from run query
-#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
-pub struct RunQueryResponse {
-    pub session_id: String,
-    pub query_plan: QueryPlan,
-    pub results: Vec<serde_json::Value>,
-    pub summary: Option<String>,
-}
-
 /// Session context stored for each user session
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionContext {

@@ -78,10 +78,10 @@ export const MUTATION_TYPE_API_MAP = {
 
 // Schema Badge Colors
 export const SCHEMA_BADGE_COLORS = {
-  approved: "minimal-badge minimal-badge-success",
-  available: "minimal-badge minimal-badge-info",
-  blocked: "minimal-badge minimal-badge-error",
-  pending: "minimal-badge minimal-badge-warning",
+  approved: "badge badge-success",
+  available: "badge badge-info",
+  blocked: "badge badge-error",
+  pending: "badge badge-warning",
 };
 
 // Authentication Indicators
@@ -110,11 +110,11 @@ export const RANGE_SCHEMA_CONFIG = {
   FIELD_TYPE: "Range",
   MUTATION_WRAPPER_KEY: "value",
   label: "Range Key",
-  backgroundColor: "minimal-section-purple",
-  badgeColor: "minimal-badge minimal-badge-purple",
+  backgroundColor: "card bg-purple-50 border-purple-200 p-4",
+  badgeColor: "badge bg-purple-50 text-purple border-purple-200",
   indicator: {
     text: "Range",
-    className: "ml-1 text-xs minimal-badge minimal-badge-purple",
+    className: "ml-1 text-xs badge bg-purple-50 text-purple border-purple-200",
   },
   tooltip: "This schema supports range-based queries",
 };

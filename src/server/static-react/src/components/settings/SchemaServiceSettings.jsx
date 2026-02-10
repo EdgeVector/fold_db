@@ -25,29 +25,20 @@ function SchemaServiceSettings() {
 
   return (
     <div className="space-y-4">
-      <div className="mb-4">
-        <h4 className="text-md font-semibold text-success mb-2"># Schema Service</h4>
-        <p className="text-sm text-secondary mb-4">
-          The schema service provides centralized schema management and prevents duplicate schemas.
-        </p>
-      </div>
+      <p className="text-sm text-secondary mb-4">
+        The schema service provides centralized schema management and prevents duplicate schemas.
+      </p>
 
-      <div className="p-4 border border-default minimal-card">
+      <div className="card p-4">
         <div className="flex items-center justify-between mb-3">
           <span className="text-sm font-medium text-secondary">Backend Configuration</span>
           {schemaServiceLoading ? (
-            <span className="inline-flex items-center text-xs minimal-badge px-2 py-1">
-              <svg className="animate-spin h-3 w-3 mr-1" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-              </svg>
+            <span className="badge badge-neutral flex items-center gap-1">
+              <span className="spinner w-3 h-3" />
               Loading...
             </span>
           ) : (
-            <button
-              onClick={loadSchemaServiceStatus}
-              className="text-xs text-info hover:text-info"
-            >
+            <button onClick={loadSchemaServiceStatus} className="btn-secondary btn-sm">
               Refresh
             </button>
           )}
@@ -56,9 +47,7 @@ function SchemaServiceSettings() {
         {schemaServiceUrl ? (
           <div className="space-y-2">
             <div className="flex items-center gap-2">
-              <span className="inline-flex items-center text-xs minimal-badge minimal-badge-success px-2 py-1">
-                ✓ Connected
-              </span>
+              <span className="badge badge-success">✓ Connected</span>
               <span className="text-sm text-primary">Remote Schema Service</span>
             </div>
             <p className="text-xs text-secondary font-mono break-all">
@@ -68,9 +57,7 @@ function SchemaServiceSettings() {
         ) : (
           <div className="space-y-2">
             <div className="flex items-center gap-2">
-              <span className="inline-flex items-center text-xs minimal-badge px-2 py-1">
-                ○ Local
-              </span>
+              <span className="badge badge-neutral">○ Local</span>
               <span className="text-sm text-primary">Embedded Schema Storage</span>
             </div>
             <p className="text-xs text-secondary">
@@ -80,7 +67,7 @@ function SchemaServiceSettings() {
         )}
       </div>
 
-      <div className="p-3 border border-default minimal-card">
+      <div className="card card-info p-3">
         <p className="text-xs text-secondary">
           <strong>Note:</strong> Schema service configuration is set at server startup via the <code className="text-info">--schema-service-url</code> flag or environment variable.
         </p>

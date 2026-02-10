@@ -20,13 +20,11 @@ function SubmitButton({
       type={type}
       onClick={onClick}
       disabled={isDisabled}
-      className={`minimal-btn-secondary px-6 py-2.5 font-medium ${
-        isDisabled ? '' : 'minimal-btn'
-      } ${className}`}
+      className={`btn-secondary btn-lg ${isDisabled ? '' : 'btn-primary'} ${className}`}
     >
       {isLoading ? (
         <>
-          <span className="minimal-spinner"></span>
+          <span className="spinner"></span>
           <span>{loadingLabel}</span>
         </>
       ) : (

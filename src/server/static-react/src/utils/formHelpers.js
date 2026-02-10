@@ -38,7 +38,7 @@ export function generateInputStyles({
   disabled,
   additionalClasses = "",
 }) {
-  const baseStyles = "minimal-input";
+  const baseStyles = "input";
   const stateStyles = hasError ? "border-red-500" : "";
   const disabledStyles = disabled ? "opacity-50 cursor-not-allowed" : "";
 
@@ -60,7 +60,7 @@ export function generateSelectStyles({
   loading,
   additionalClasses = "",
 }) {
-  const baseStyles = "minimal-select";
+  const baseStyles = "select";
   const errorStyles = hasError ? "border-red-500" : "";
   const disabledStyles =
     disabled || loading ? "opacity-50 cursor-not-allowed" : "";

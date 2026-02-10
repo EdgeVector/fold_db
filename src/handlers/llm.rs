@@ -62,15 +62,6 @@ pub struct BackfillStatusHandlerResponse {
     pub estimated_completion: Option<String>,
 }
 
-/// Response for run query (combined analyze + execute)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RunQueryHandlerResponse {
-    pub session_id: String,
-    pub query_plan: QueryPlan,
-    pub results: Vec<Value>,
-    pub summary: Option<String>,
-}
-
 /// Response for AI native index query
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AiNativeIndexHandlerResponse {
@@ -417,88 +408,6 @@ pub async fn execute_query_plan(
             status: QueryExecutionStatus::Complete,
             backfill_progress: Some(1.0),
             results: Some(results),
-            summary,
-        },
-        user_hash,
-    ))
-}
-
-/// Run a query (combined analyze + execute)
-///
-/// # Arguments
-/// * `request` - The run query request
-/// * `user_hash` - User identifier for isolation
-/// * `service` - LLM query service
-/// * `session_manager` - Session manager for tracking conversation state
-/// * `node` - DataFold node instance
-///
-/// # Returns
-/// * `HandlerResult<RunQueryHandlerResponse>` - Combined result
-pub async fn run_query(
-    request: RunQueryRequest,
-    user_hash: &str,
-    service: &LlmQueryService,
-    session_manager: &SessionManager,
-    node: &DataFoldNode,
-) -> HandlerResult<RunQueryHandlerResponse> {
-    log::info!(
-        "AI Query: Run request received for session: {:?}, user: {}",
-        request.session_id,
-        user_hash
-    );
-
-    // First analyze
-    let analyze_request = AnalyzeQueryRequest {
-        query: request.query.clone(),
-        session_id: request.session_id.clone(),
-    };
-
-    let analyze_response =
-        analyze_query(analyze_request, user_hash, service, session_manager, node).await?;
-
-    let session_id = analyze_response
-        .data
-        .as_ref()
-        .ok_or_else(|| HandlerError::Internal("Missing analysis response data".to_string()))?
-        .session_id
-        .clone();
-    let query_plan = analyze_response
-        .data
-        .as_ref()
-        .ok_or_else(|| HandlerError::Internal("Missing analysis response data".to_string()))?
-        .query_plan
-        .clone();
-
-    // Then execute
-    let execute_request = ExecuteQueryPlanRequest {
-        session_id: session_id.clone(),
-        query_plan: query_plan.clone(),
-    };
-
-    let execute_response = execute_query_plan(
-        execute_request,
-        user_hash,
-        Some(service),
-        session_manager,
-        node,
-    )
-    .await?;
-
-    let results = execute_response
-        .data
-        .as_ref()
-        .and_then(|d| d.results.clone())
-        .unwrap_or_default();
-    let summary = execute_response
-        .data
-        .as_ref()
-        .and_then(|d| d.summary.clone());
-
-    Ok(ApiResponse::success_with_user(
-        RunQueryHandlerResponse {
-            session_id,
-            query_plan,
-            results,
             summary,
         },
         user_hash,

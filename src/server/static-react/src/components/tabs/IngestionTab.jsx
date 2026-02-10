@@ -10,138 +10,55 @@ function IngestionTab({ onResult }) {
 
   const processIngestion = async () => {
     setIsLoading(true)
-    
-    // Clear any previous results
     onResult(null)
-    
     try {
       const parsedData = JSON.parse(jsonData)
-
-      const options = {
-        autoExecute,
-        trustDistance: 0,
-        pubKey: 'default'
-      }
-
-      const response = await ingestionClient.processIngestion(parsedData, options)
-      
+      const response = await ingestionClient.processIngestion(parsedData, { autoExecute, trustDistance: 0, pubKey: 'default' })
       if (response.success) {
-        onResult({
-          success: true,
-          data: response.data
-        })
-        setJsonData('') // Clear the form on success
+        onResult({ success: true, data: response.data })
+        setJsonData('')
       } else {
-        onResult({
-          success: false,
-          error: 'Failed to process ingestion'
-        })
+        onResult({ success: false, error: 'Failed to process ingestion' })
       }
     } catch (error) {
-      onResult({
-        success: false,
-        error: error.message || 'Failed to process ingestion'
-      })
+      onResult({ success: false, error: error.message || 'Failed to process ingestion' })
     } finally {
       setIsLoading(false)
     }
   }
 
-  const loadSampleData = (sampleType) => {
-    const samples = {
-      blogposts: generateBlogPosts(),
-      twitter: twitterSamples,
-      instagram: instagramSamples,
-      linkedin: linkedinSamples,
-      tiktok: tiktokSamples
-    }
-    setJsonData(JSON.stringify(samples[sampleType], null, 2))
+  const loadSampleData = (type) => {
+    const samples = { blogposts: generateBlogPosts(), twitter: twitterSamples, instagram: instagramSamples, linkedin: linkedinSamples, tiktok: tiktokSamples }
+    setJsonData(JSON.stringify(samples[type], null, 2))
   }
 
   return (
-    <div className="space-y-4">
-
-      <div className="minimal-card p-4">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-primary font-medium">
-            JSON Data
-          </h3>
-          <div className="flex gap-2">
-            <button
-              onClick={() => loadSampleData('blogposts')}
-              className="minimal-btn-secondary minimal-btn-sm"
-            >
-              Blog Posts (100)
+    <div className="p-6 space-y-4">
+      <div className="flex items-center justify-between">
+        <div className="flex gap-2">
+          {['blogposts', 'twitter', 'instagram', 'linkedin', 'tiktok'].map(t => (
+            <button key={t} onClick={() => loadSampleData(t)} className="btn-secondary btn-sm">
+              {t === 'blogposts' ? 'Blog Posts (100)' : t.charAt(0).toUpperCase() + t.slice(1)}
             </button>
-            <button
-              onClick={() => loadSampleData('twitter')}
-              className="minimal-btn-secondary minimal-btn-sm"
-            >
-              Twitter
-            </button>
-            <button
-              onClick={() => loadSampleData('instagram')}
-              className="minimal-btn-secondary minimal-btn-sm"
-            >
-              Instagram
-            </button>
-            <button
-              onClick={() => loadSampleData('linkedin')}
-              className="minimal-btn-secondary minimal-btn-sm"
-            >
-              LinkedIn
-            </button>
-            <button
-              onClick={() => loadSampleData('tiktok')}
-              className="minimal-btn-secondary minimal-btn-sm"
-            >
-              TikTok
-            </button>
-          </div>
+          ))}
         </div>
-        
-        <textarea
-          id="jsonData"
-          value={jsonData}
-          onChange={(e) => setJsonData(e.target.value)}
-          placeholder="Enter your JSON data here or load a sample..."
-          className="minimal-textarea w-full h-64"
-        />
+        <label className="flex items-center gap-2 text-sm cursor-pointer">
+          <input type="checkbox" checked={autoExecute} onChange={(e) => setAutoExecute(e.target.checked)} className="checkbox" />
+          <span className="text-secondary">Auto-execute</span>
+        </label>
       </div>
 
-      {/* Process Button */}
-      <div className="minimal-card p-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <label className="flex items-center gap-2 text-sm cursor-pointer">
-              <input
-                type="checkbox"
-                checked={autoExecute}
-                onChange={(e) => setAutoExecute(e.target.checked)}
-              />
-              <span className="text-primary">Auto-execute mutations</span>
-            </label>
-            <span className="text-xs text-secondary">AI will analyze and automatically map data to schemas</span>
-          </div>
-          
-          <button
-            onClick={processIngestion}
-            disabled={isLoading || !jsonData.trim()}
-            className="minimal-btn px-6 py-2.5 font-medium"
-          >
-            {isLoading ? (
-              <>
-                <span className="minimal-spinner inline-block w-4 h-4 border-width-1"></span>
-                <span>Processing...</span>
-              </>
-            ) : (
-              <>
-                <span>→</span>
-                <span>Process Data</span>
-              </>
-            )}
-          </button>
-        </div>
+      <textarea
+        value={jsonData}
+        onChange={(e) => setJsonData(e.target.value)}
+        placeholder="Enter JSON data or load a sample..."
+        className="textarea h-72 font-mono"
+      />
+
+      <div className="flex justify-end">
+        <button onClick={processIngestion} disabled={isLoading || !jsonData.trim()} className="btn-primary btn-lg flex items-center gap-2">
+          {isLoading ? <><span className="spinner" />Processing...</> : <>→ Process Data</>}
+        </button>
       </div>
     </div>
   )

@@ -17,13 +17,13 @@ describe('Header Component', () => {
     expect(screen.getByText(/FoldDB/i)).toBeInTheDocument()
   })
 
-  it('has minimal header styling', () => {
+  it('has header styling', () => {
     renderWithRedux(<Header onSettingsClick={vi.fn()} />, {
       preloadedState: defaultPreloadedState
     })
 
     const header = screen.getByRole('banner')
-    expect(header).toHaveClass('minimal-header', 'flex-shrink-0')
+    expect(header).toHaveClass('bg-surface', 'border-b', 'flex-shrink-0')
   })
 
   it('has proper semantic structure', () => {
@@ -48,13 +48,13 @@ describe('Header Component', () => {
     expect(container).toHaveClass('flex', 'items-center', 'justify-between')
   })
 
-  it('title link has minimal logo class', () => {
+  it('title link has logo styling', () => {
     renderWithRedux(<Header onSettingsClick={vi.fn()} />, {
       preloadedState: defaultPreloadedState
     })
 
     const link = screen.getByRole('link')
-    expect(link).toHaveClass('minimal-logo')
+    expect(link).toHaveClass('text-lg', 'font-medium', 'text-primary')
   })
 
   it('displays settings button', () => {

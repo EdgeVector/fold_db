@@ -17,7 +17,6 @@ export const API_ENDPOINTS_DERIVED = {
   GET_BACKFILL_STATUS: (hash: PathParams<'/api/llm-query/backfill/{hash}', 'get'>['hash']) => `/llm-query/backfill/${hash}`,
   CHAT: '/llm-query/chat',
   EXECUTE_QUERY_PLAN: '/llm-query/execute',
-  RUN_QUERY: '/llm-query/run',
   LIST_LOGS: '/logs',
   GET_CONFIG: '/logs/config',
   RELOAD_CONFIG: '/logs/config/reload',

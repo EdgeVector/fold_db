@@ -426,7 +426,6 @@ impl DataFoldHttpServer {
             "/llm-query/native-index",
             web::post().to(llm_query::ai_native_index_query),
         )
-        .route("/llm-query/run", web::post().to(llm_query::run_query))
         .route(
             "/llm-query/analyze",
             web::post().to(llm_query::analyze_query),

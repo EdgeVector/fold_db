@@ -9,17 +9,13 @@ function ResultsSection({ results }) {
   const defaultStructured = useMemo(() => hasResults && !isError && isHashRangeFieldsShape(hasData ? results.data : results), [hasResults, results, isError, hasData])
   const [structured, setStructured] = useState(defaultStructured)
 
-  if (!hasResults) {
-    return null
-  }
+  if (!hasResults) return null
 
   return (
-    <div className="minimal-card mt-6">
-      <div className="minimal-card-header">
+    <div className="mt-6 card">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-surface-secondary">
         <div className="flex items-center gap-3">
-          <span className={`${isError ? 'text-error' : 'text-success'}`}>
-            {isError ? '✖' : '✔'}
-          </span>
+          <span className={isError ? 'text-error' : 'text-success'}>{isError ? '✖' : '✔'}</span>
           <span className={`font-medium ${isError ? 'text-error' : 'text-success'}`}>
             {isError ? 'ERROR' : 'OUTPUT'}
           </span>
@@ -27,35 +23,25 @@ function ResultsSection({ results }) {
             [{typeof results === 'string' ? 'text' : structured ? 'structured' : 'json'}]
           </span>
           {results.status && (
-            <span className={`minimal-badge ${
-              results.status >= 400
-                ? 'minimal-badge-error'
-                : 'minimal-badge-success'
-            }`}>
+            <span className={`badge ${results.status >= 400 ? 'badge-error' : 'badge-success'}`}>
               status: {results.status}
             </span>
           )}
         </div>
         {!isError && typeof results !== 'string' && (
-          <button
-            type="button"
-            className="minimal-btn-secondary minimal-btn-sm"
-            onClick={() => setStructured((v) => !v)}
-          >
+          <button className="btn-secondary btn-sm" onClick={() => setStructured(v => !v)}>
             {structured ? 'view json' : 'view structured'}
           </button>
         )}
       </div>
-      
-      <div className="minimal-card-body">
+
+      <div className="p-4">
         {isError && (
-          <div className="minimal-error-block mb-4">
+          <div className="mb-4 p-4 card card-error">
             <div className="flex items-start gap-3">
               <span className="text-error text-lg">!</span>
               <div>
-                <h4 className="text-sm font-medium text-error mb-1">
-                  Execution Failed
-                </h4>
+                <h4 className="text-sm font-medium text-error mb-1">Execution Failed</h4>
                 <p className="text-sm text-secondary">
                   <span className="text-error">→</span> {results.error || 'An unknown error occurred'}
                 </p>
@@ -63,27 +49,20 @@ function ResultsSection({ results }) {
             </div>
           </div>
         )}
-        
+
         {structured && !isError && typeof results !== 'string' ? (
-          <div className="overflow-auto max-h-[500px] p-4 border border-solid" style={{ borderColor: 'var(--color-border)' }}>
+          <div className="overflow-auto max-h-[500px] p-4 card">
             <StructuredResults results={results} />
           </div>
         ) : (
-          <div className="minimal-minimal-code-block overflow-auto max-h-[500px]">
-            <div className="minimal-code-header">
-              <span>{isError ? 'error.log' : 'output.json'}</span>
-              <span className="text-tertiary">
-                {new Date().toLocaleTimeString()}
-              </span>
+          <div className="overflow-auto max-h-[500px] card">
+            <div className="flex items-center justify-between px-4 py-2 bg-surface-secondary border-b border-border">
+              <span className="text-xs font-mono text-secondary">{isError ? 'error.log' : 'output.json'}</span>
+              <span className="text-xs text-tertiary">{new Date().toLocaleTimeString()}</span>
             </div>
-            <div className="minimal-code-body">
-              <pre className={`${isError ? 'text-error' : 'text-success'}`}>
-                {typeof results === 'string'
-                  ? results
-                  : JSON.stringify(hasData ? results.data : results, null, 2)
-                }
-              </pre>
-            </div>
+            <pre className={`p-4 text-sm font-mono whitespace-pre-wrap ${isError ? 'text-error' : 'text-success'}`}>
+              {typeof results === 'string' ? results : JSON.stringify(hasData ? results.data : results, null, 2)}
+            </pre>
           </div>
         )}
       </div>

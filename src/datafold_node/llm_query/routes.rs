@@ -301,59 +301,6 @@ pub async fn get_backfill_status(
     }
 }
 
-/// Single-step query execution: analyze, create index, wait for backfill, execute, and summarize
-#[utoipa::path(
-    post,
-    path = "/api/llm-query/run",
-    tag = "llm-query",
-    request_body = RunQueryRequest,
-    responses(
-        (status = 200, description = "Query execution complete", body = RunQueryResponse),
-        (status = 400, description = "Bad request"),
-        (status = 500, description = "Server error")
-    )
-)]
-pub async fn run_query(
-    request: web::Json<RunQueryRequest>,
-    app_state: web::Data<AppState>,
-    llm_state: web::Data<LlmQueryState>,
-) -> impl Responder {
-    let service = match require_service(&llm_state) {
-        Ok(svc) => svc,
-        Err(response) => return response,
-    };
-
-    let (user_hash, node_arc) = match require_node(&app_state).await {
-        Ok(res) => res,
-        Err(response) => return response,
-    };
-    let node = node_arc.read().await;
-
-    match shared_handlers::run_query(
-        request.into_inner(),
-        &user_hash,
-        service.as_ref(),
-        llm_state.session_manager.as_ref(),
-        &node,
-    )
-    .await
-    {
-        Ok(response) => {
-            if let Some(data) = response.data {
-                HttpResponse::Ok().json(RunQueryResponse {
-                    session_id: data.session_id,
-                    query_plan: data.query_plan,
-                    results: data.results,
-                    summary: data.summary,
-                })
-            } else {
-                HttpResponse::InternalServerError().json(json!({"error": "Missing response data"}))
-            }
-        }
-        Err(e) => handler_error_to_response(e),
-    }
-}
-
 /// Execute an AI-native index query workflow
 #[utoipa::path(
     post,

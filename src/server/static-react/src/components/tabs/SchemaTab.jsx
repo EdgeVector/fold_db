@@ -68,7 +68,13 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
 
   const getStateColor = (state) => {
     const key = state?.toLowerCase()
-    return SCHEMA_BADGE_COLORS[key] || 'minimal-badge'
+    const colors = {
+      approved: 'badge badge-success',
+      pending: 'badge badge-warning',
+      blocked: 'badge badge-error',
+      available: 'badge badge-info'
+    }
+    return colors[key] || 'bg-surface-secondary text-secondary border border-border'
   }
 
   const approveSchema = async (schemaName) => {
@@ -147,9 +153,9 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
     const hashRangeSchemaInfo = getHashRangeSchemaInfo(schema)
 
     return (
-      <div key={schema.name} className="minimal-card overflow-hidden transition-all duration-200 hover:shadow-md">
+      <div key={schema.name} className="card overflow-hidden">
         <div
-          className="px-4 py-3 bg-surface-secondary cursor-pointer select-none transition-colors duration-200 hover:bg-surface-secondary"
+          className="px-4 py-3 bg-surface-secondary cursor-pointer select-none"
           onClick={() => toggleSchema(schema.name)}
         >
           <div className="flex items-center justify-between">
@@ -167,14 +173,12 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
                 {state}
               </span>
               {rangeSchemaInfo && (
-                <span className="px-2 py-1 text-xs font-medium rounded-full minimal-section-purple-text" style={{background: '#f3e8ff'}}>
+                <span className="px-2 py-1 text-xs font-medium rounded-full bg-purple-50 text-purple border border-purple-200">
                   Range Schema
                 </span>
               )}
               {hashRangeSchemaInfo && (
-                <span className="px-2 py-1 text-xs font-medium rounded-full minimal-section-info-text" style={{background: '#dbeafe'}}>
-                  HashRange Schema
-                </span>
+                <span className="badge badge-info">HashRange Schema</span>
               )}
             </div>
             <div className="flex items-center space-x-2">
@@ -184,33 +188,24 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
                   - blocked → approved (once approved, cannot be unloaded) */}
               {state.toLowerCase() === 'available' && (
                 <button
-                  className="minimal-btn-secondary text-xs py-1 px-3"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    approveSchema(schema.name)
-                  }}
+                  className="btn-secondary btn-sm"
+                  onClick={(e) => { e.stopPropagation(); approveSchema(schema.name) }}
                 >
                   Approve
                 </button>
               )}
               {state.toLowerCase() === 'approved' && (
                 <button
-                  className="minimal-btn-secondary text-xs py-1 px-3 hover:text-error"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    blockSchema(schema.name)
-                  }}
+                  className="btn-secondary btn-sm hover:border-error hover:text-error"
+                  onClick={(e) => { e.stopPropagation(); blockSchema(schema.name) }}
                 >
                   Block
                 </button>
               )}
               {state.toLowerCase() === 'blocked' && (
                 <button
-                  className="minimal-btn-secondary text-xs py-1 px-3"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    approveSchema(schema.name)
-                  }}
+                  className="btn-secondary btn-sm"
+                  onClick={(e) => { e.stopPropagation(); approveSchema(schema.name) }}
                 >
                   Re-approve
                 </button>
@@ -218,69 +213,57 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
             </div>
           </div>
         </div>
-        
+
         {isExpanded && schema.fields && (
-          <div className="p-4 border-t" style={{borderColor: 'var(--color-border)'}}>
+          <div className="p-4 border-t border-border">
             {/* Range Schema Information */}
             {rangeSchemaInfo && (
-              <div className="mb-4 p-3 minimal-section-purple">
-                <h4 className="text-sm font-medium minimal-section-purple-text mb-2">Range Schema Information</h4>
-                <div className="space-y-1 text-xs minimal-section-purple-text">
+              <div className="card mb-4 p-3 bg-purple-50 border-purple-200">
+                <h4 className="text-sm font-medium text-purple mb-2">Range Schema Information</h4>
+                <div className="space-y-1 text-xs text-purple">
                   <p><strong>Range Key:</strong> {rangeSchemaInfo.rangeKey}</p>
                   <p><strong>Total Fields:</strong> {rangeSchemaInfo.totalFields}</p>
                   <p><strong>Range Fields:</strong> {rangeSchemaInfo.rangeFields.length}</p>
-                  <p className="minimal-section-purple-muted">
-                    This schema uses range-based storage for efficient querying and mutations.
-                  </p>
+                  <p className="opacity-70">This schema uses range-based storage for efficient querying and mutations.</p>
                 </div>
               </div>
             )}
-            
+
             {/* HashRange Schema Information */}
             {hashRangeSchemaInfo && (
-              <div className="mb-4 p-3 minimal-section-info">
-                <h4 className="text-sm font-medium minimal-section-info-text mb-2">HashRange Schema Information</h4>
-                <div className="space-y-1 text-xs minimal-section-info-text">
+              <div className="card card-info mb-4 p-3">
+                <h4 className="text-sm font-medium text-info mb-2">HashRange Schema Information</h4>
+                <div className="space-y-1 text-xs text-info">
                   <p><strong>Hash Field:</strong> {hashRangeSchemaInfo.hashField}</p>
                   <p><strong>Range Field:</strong> {hashRangeSchemaInfo.rangeField}</p>
                   <p><strong>Total Fields:</strong> {hashRangeSchemaInfo.totalFields}</p>
-                  <p className="minimal-section-info-muted">
-                    This schema uses hash-range-based storage for efficient querying and mutations with both hash and range keys.
-                  </p>
+                  <p className="opacity-70">This schema uses hash-range-based storage for efficient querying and mutations with both hash and range keys.</p>
                 </div>
               </div>
             )}
-            
+
             <div className="space-y-3">
               {/* Declarative schema: fields is an array of strings */}
               {Array.isArray(schema.fields) ? (
                 schema.fields.map(fieldName => {
                   const fieldTopology = schema.field_topologies?.[fieldName]
                   return (
-                    <div key={fieldName} className="p-3 minimal-card">
+                    <div key={fieldName} className="card p-3">
                       <div className="flex items-center justify-between">
                         <div className="flex-1">
                           <div className="flex items-center space-x-2">
                             <span className="font-medium text-primary">{fieldName}</span>
                             {rangeSchemaInfo?.rangeKey === fieldName && (
-                              <span className="px-2 py-0.5 text-xs font-medium rounded-full minimal-section-purple-text" style={{background: '#f3e8ff'}}>
-                                Range Key
-                              </span>
+                              <span className="badge bg-purple-50 text-purple border-purple-200">Range Key</span>
                             )}
                             {hashRangeSchemaInfo?.hashField === fieldName && (
-                              <span className="px-2 py-0.5 text-xs font-medium rounded-full minimal-section-info-text" style={{background: '#dbeafe'}}>
-                                Hash Key
-                              </span>
+                              <span className="badge badge-info">Hash Key</span>
                             )}
                             {hashRangeSchemaInfo?.rangeField === fieldName && (
-                              <span className="px-2 py-0.5 text-xs font-medium rounded-full minimal-section-purple-text" style={{background: '#f3e8ff'}}>
-                                Range Key
-                              </span>
+                              <span className="badge bg-purple-50 text-purple border-purple-200">Range Key</span>
                             )}
                           </div>
-                          {fieldTopology && (
-                            <TopologyDisplay topology={fieldTopology} />
-                          )}
+                          {fieldTopology && <TopologyDisplay topology={fieldTopology} />}
                         </div>
                       </div>
                     </div>
@@ -321,9 +304,7 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
         {approvedSchemas.length > 0 ? (
           approvedSchemas.map(renderSchema)
         ) : (
-          <div className="minimal-card p-8 text-center text-secondary">
-            No approved schemas found.
-          </div>
+          <div className="card p-8 text-center text-secondary">No approved schemas found.</div>
         )}
       </div>
     </div>

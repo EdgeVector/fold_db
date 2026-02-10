@@ -2,7 +2,7 @@
 function MutationEditor({ fields, mutationType, mutationData, onFieldChange, isRangeSchema }) {
   if (mutationType === 'Delete') {
     return (
-      <div className="minimal-card p-6">
+      <div className="card p-6">
         <h3 className="text-lg font-medium text-primary mb-4">Delete Operation</h3>
         <p className="text-sm text-secondary">
           This will delete the selected schema. No additional fields are required.
@@ -36,7 +36,7 @@ function MutationEditor({ fields, mutationType, mutationData, onFieldChange, isR
               <span className="ml-2 text-xs text-secondary">Collection</span>
             </label>
             <textarea
-              className="minimal-input mt-1 block w-full sm:text-sm font-mono"
+              className="input mt-1 block w-full sm:text-sm font-mono"
               value={arrayValue.length > 0 ? JSON.stringify(arrayValue, null, 2) : ''}
               onChange={(e) => {
                 const inputValue = e.target.value.trim()
@@ -72,7 +72,7 @@ function MutationEditor({ fields, mutationType, mutationData, onFieldChange, isR
               </label>
               <input
                 type="text"
-                className="minimal-input mt-1 block w-full sm:text-sm"
+                className="input mt-1 block w-full sm:text-sm"
                 value={value}
                 onChange={(e) => onFieldChange(fieldName, e.target.value)}
                 placeholder={`Enter ${fieldName} value`}
@@ -126,7 +126,7 @@ function MutationEditor({ fields, mutationType, mutationData, onFieldChange, isR
               {fieldName}
               <span className="ml-2 text-xs text-secondary">Range (Complex)</span>
             </label>
-            <div className="minimal-card p-4">
+            <div className="card p-4">
               <div className="space-y-3">
                 {rangeEntries.length === 0 ? (
                   <p className="text-sm text-secondary italic">No key-value pairs added yet</p>
@@ -136,7 +136,7 @@ function MutationEditor({ fields, mutationType, mutationData, onFieldChange, isR
                       <input
                         type="text"
                         placeholder="Key"
-                        className="minimal-input flex-1 sm:text-sm"
+                        className="input flex-1 sm:text-sm"
                         value={key}
                         onChange={(e) => updateKeyValuePair(index, e.target.value, val)}
                       />
@@ -144,7 +144,7 @@ function MutationEditor({ fields, mutationType, mutationData, onFieldChange, isR
                       <input
                         type="text"
                         placeholder="Value"
-                        className="minimal-input flex-1 sm:text-sm"
+                        className="input flex-1 sm:text-sm"
                         value={val}
                         onChange={(e) => updateKeyValuePair(index, key, e.target.value)}
                       />
@@ -164,7 +164,7 @@ function MutationEditor({ fields, mutationType, mutationData, onFieldChange, isR
                 <button
                   type="button"
                   onClick={addKeyValuePair}
-                  className="minimal-btn-secondary text-sm leading-4"
+                  className="btn-secondary text-sm leading-4"
                 >
                   <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
@@ -188,7 +188,7 @@ function MutationEditor({ fields, mutationType, mutationData, onFieldChange, isR
             </label>
             <input
               type="text"
-              className="minimal-input mt-1 block w-full sm:text-sm"
+              className="input mt-1 block w-full sm:text-sm"
               value={value}
               onChange={(e) => onFieldChange(fieldName, e.target.value)}
               placeholder={`Enter ${fieldName}`}
@@ -199,7 +199,7 @@ function MutationEditor({ fields, mutationType, mutationData, onFieldChange, isR
   }
 
   return (
-    <div className="minimal-card p-6">
+    <div className="card p-6">
       <h3 className="text-lg font-medium text-primary mb-4">
         Schema Fields
         {isRangeSchema && (

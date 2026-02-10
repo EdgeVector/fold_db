@@ -9,12 +9,12 @@ import { render, screen } from '@testing-library/react';
 import Footer from '../../components/Footer.jsx';
 
 describe('Footer Component', () => {
-  it('renders footer with minimal structure', () => {
+  it('renders footer with structure', () => {
     render(<Footer />);
 
     const footer = screen.getByRole('contentinfo');
     expect(footer).toBeInTheDocument();
-    expect(footer).toHaveClass('minimal-footer', 'flex-shrink-0');
+    expect(footer).toHaveClass('bg-surface', 'border-t', 'flex-shrink-0');
   });
 
   it('displays FoldDB branding', () => {

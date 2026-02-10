@@ -112,7 +112,7 @@ function QueryPreview({
 
   if (!query && !queryState) {
     return (
-      <div className={`minimal-card p-4 ${className}`}>
+      <div className={`card p-4 ${className}`}>
         <h3 className="text-sm font-medium text-secondary mb-2">{title}</h3>
         <p className="text-sm text-tertiary italic">No query to preview</p>
       </div>
@@ -120,7 +120,7 @@ function QueryPreview({
   }
 
   return (
-    <div className={`minimal-card ${className}`}>
+    <div className={`card ${className}`}>
       <div className="px-4 py-3" style={{borderBottom: '1px solid var(--color-border)'}}>
         <h3 className="text-sm font-medium text-primary">{title}</h3>
       </div>
@@ -128,7 +128,7 @@ function QueryPreview({
       <div className="p-4 space-y-4">
         {/* Validation Errors */}
         {validationErrors && validationErrors.length > 0 && (
-          <div className="minimal-section-error p-3">
+          <div className="card card-error p-3">
             <div className="flex items-center mb-2">
               <svg className="h-4 w-4 text-error mr-2" fill="currentColor" viewBox="0 0 20 20">
                 <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
@@ -147,13 +147,13 @@ function QueryPreview({
 
         {/* Executing Status */}
         {isExecuting && (
-          <div className="minimal-section-info p-3">
+          <div className="card card-info p-3">
             <div className="flex items-center">
               <svg className="animate-spin h-4 w-4 text-info mr-2" fill="none" viewBox="0 0 24 24">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
               </svg>
-              <span className="text-sm font-medium minimal-section-info-text">Executing query...</span>
+              <span className="text-sm font-medium card card-info-text">Executing query...</span>
             </div>
           </div>
         )}
@@ -165,7 +165,7 @@ function QueryPreview({
             <label className="block text-xs font-medium text-secondary mb-1">
               Schema
             </label>
-            <div className="inline-flex items-center px-2 py-1 rounded-md minimal-badge-info text-sm font-medium">
+            <div className="inline-flex items-center px-2 py-1 rounded-md badge badge-info text-sm font-medium">
               {formattedQuery?.schema || ''}
             </div>
           </div>
@@ -181,7 +181,7 @@ function QueryPreview({
                   const fieldValue = formattedQuery.fieldValues?.[field];
                   return (
                     <div key={index} className="inline-flex flex-col items-start">
-                      <span className="inline-flex items-center px-2 py-1 rounded-md minimal-badge-success text-sm">
+                      <span className="inline-flex items-center px-2 py-1 rounded-md badge badge-success text-sm">
                         {field}
                       </span>
                       {fieldValue && (
@@ -209,8 +209,8 @@ function QueryPreview({
                 {Array.isArray(formattedQuery.filters) ? (
                   // Handle filters as array (from test mocks)
                   formattedQuery.filters.map((filter, index) => (
-                    <div key={index} className="minimal-section-warning p-3">
-                      <div className="text-sm minimal-section-warning-text">
+                    <div key={index} className="card card-warning p-3">
+                      <div className="text-sm card card-warning-text">
                         {filter.field} {filter.operator} "{filter.value}"
                       </div>
                     </div>
@@ -218,11 +218,11 @@ function QueryPreview({
                 ) : (
                   // Handle filters as object (existing format)
                   Object.entries(formattedQuery.filters).map(([fieldName, filter]) => (
-                    <div key={fieldName} className="minimal-section-warning p-3">
-                      <div className="font-medium text-sm minimal-section-warning-text mb-1">
+                    <div key={fieldName} className="card card-warning p-3">
+                      <div className="font-medium text-sm card card-warning-text mb-1">
                         {fieldName}
                       </div>
-                      <div className="text-sm minimal-section-warning-text">
+                      <div className="text-sm card card-warning-text">
                         {filter.exactKey && (
                           <span>Exact key: <code className="bg-highlight-inline px-1 rounded">{filter.exactKey}</code></span>
                         )}
@@ -246,8 +246,8 @@ function QueryPreview({
               <label className="block text-xs font-medium text-secondary mb-1">
                 OrderBy
               </label>
-              <div className="minimal-section-purple p-3">
-                <div className="text-sm minimal-section-purple-muted">
+              <div className="card bg-purple-50 border-purple-200 p-3">
+                <div className="text-sm text-purple">
                   {formattedQuery.orderBy.field} {formattedQuery.orderBy.direction}
                 </div>
               </div>

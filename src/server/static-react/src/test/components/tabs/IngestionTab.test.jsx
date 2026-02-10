@@ -172,12 +172,12 @@ describe('IngestionTab Component', () => {
     expect(jsonInput.value).toContain('"username":')
 
     // Test LinkedIn sample
-    const linkedinButton = screen.getByRole('button', { name: 'LinkedIn' })
+    const linkedinButton = screen.getByRole('button', { name: 'Linkedin' })
     fireEvent.click(linkedinButton)
     expect(jsonInput.value).toContain('"author":')
 
     // Test TikTok sample
-    const tiktokButton = screen.getByRole('button', { name: 'TikTok' })
+    const tiktokButton = screen.getByRole('button', { name: 'Tiktok' })
     fireEvent.click(tiktokButton)
     expect(jsonInput.value).toContain('"video_id":')
   })

@@ -174,11 +174,7 @@ function MutationTab({ onResult }) {
         )}
 
         <div className="flex justify-end pt-4">
-          <button
-            type="submit"
-            className="minimal-btn-secondary minimal-btn px-6 py-2.5 font-medium"
-            disabled={isMutationDisabled}
-          >
+          <button type="submit" className="btn-primary btn-lg" disabled={isMutationDisabled}>
             → {BUTTON_TEXT.executeMutation}
           </button>
         </div>

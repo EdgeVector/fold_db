@@ -151,59 +151,42 @@ export default function NativeIndexTab({ onResult }) {
 
   return (
     <div className="p-6 space-y-4">
-      <div className="minimal-card p-4">
-        <div className="mb-3">
-          <h3 className="text-lg font-medium text-primary">Native Index Search</h3>
-          <p className="text-xs text-secondary">Search the database-native word index across all approved schemas.</p>
-        </div>
-        <div className="flex gap-2 items-center">
-          <input
-            type="text"
-            value={term}
-            onChange={(e) => setTerm(e.target.value)}
-            placeholder="Enter search term (e.g. jennifer)"
-            className="flex-1 px-3 py-2 border rounded-md text-sm"
-          />
-          <button
-            onClick={handleSearch}
-            disabled={isSearching || !term.trim()}
-            className="minimal-btn-secondary minimal-btn px-6 py-2 text-sm font-medium"
-          >
-            {isSearching ? 'Searching...' : '→ Search'}
-          </button>
-        </div>
+      <div className="flex gap-2 items-center">
+        <input
+          type="text"
+          value={term}
+          onChange={(e) => setTerm(e.target.value)}
+          placeholder="Search across all schemas..."
+          className="input flex-1"
+        />
+        <button onClick={handleSearch} disabled={isSearching || !term.trim()} className="btn-primary">
+          {isSearching ? 'Searching...' : '→ Search'}
+        </button>
       </div>
 
-
-      <div className="minimal-card p-4">
-        <div className="mb-2 flex items-center justify-between">
-          <h4 className="text-md font-medium text-primary">Search Results</h4>
-          <div className="flex items-center gap-3">
-            <span className="text-xs text-secondary">{results.length} matches</span>
-            {results.length > 0 && (
-              <button
-                type="button"
-                className="text-xs px-2 py-1 rounded minimal-btn-secondary"
-                onClick={() => fetchAllDetails()}
-              >
-                Refresh Details
-              </button>
-            )}
-          </div>
-        </div>
-        {error && (
-          <div className="mb-2 p-2 minimal-section-error text-xs text-error rounded">{error}</div>
+      <div className="flex items-center justify-between text-sm">
+        <span className="text-secondary">{results.length} matches</span>
+        {results.length > 0 && (
+          <button type="button" className="btn-secondary btn-sm" onClick={() => fetchAllDetails()}>
+            Refresh
+          </button>
         )}
-        <div className="overflow-auto max-h-[450px]">
+      </div>
+
+      {error && (
+        <div className="text-sm text-error">{error}</div>
+      )}
+
+      <div className="overflow-auto max-h-[450px] border border-border">
           <table className="min-w-full text-left text-xs">
             <thead>
               <tr className="bg-surface-secondary">
-                <th className="px-2 py-2 text-left text-xs font-semibold text-secondary uppercase tracking-wide border-b-2" style={{borderColor: 'var(--color-border)'}}>Hash</th>
-                <th className="px-2 py-2 text-left text-xs font-semibold text-secondary uppercase tracking-wide border-b-2" style={{borderColor: 'var(--color-border)'}}>Range</th>
-                <th className="px-2 py-2 text-left text-xs font-semibold text-secondary uppercase tracking-wide border-b-2" style={{borderColor: 'var(--color-border)'}}>Schema</th>
-                <th className="px-2 py-2 text-left text-xs font-semibold text-secondary uppercase tracking-wide border-b-2" style={{borderColor: 'var(--color-border)'}}>Field</th>
-                <th className="px-2 py-2 text-left text-xs font-semibold text-secondary uppercase tracking-wide border-b-2" style={{borderColor: 'var(--color-border)'}}>Value</th>
-                <th className="px-2 py-2 border-b-2" style={{borderColor: 'var(--color-border)'}}></th>
+                <th className="px-2 py-2 text-left text-xs font-semibold text-secondary uppercase tracking-wide border-b-2 border-border">Hash</th>
+                <th className="px-2 py-2 text-left text-xs font-semibold text-secondary uppercase tracking-wide border-b-2 border-border">Range</th>
+                <th className="px-2 py-2 text-left text-xs font-semibold text-secondary uppercase tracking-wide border-b-2 border-border">Schema</th>
+                <th className="px-2 py-2 text-left text-xs font-semibold text-secondary uppercase tracking-wide border-b-2 border-border">Field</th>
+                <th className="px-2 py-2 text-left text-xs font-semibold text-secondary uppercase tracking-wide border-b-2 border-border">Value</th>
+                <th className="px-2 py-2 border-b-2 border-border"></th>
               </tr>
             </thead>
             <tbody>
@@ -219,7 +202,7 @@ export default function NativeIndexTab({ onResult }) {
                       <td className="px-2 py-1 text-right">
                         <button
                           type="button"
-                          className="text-xs px-2 py-1 rounded minimal-btn-secondary"
+                          className="btn-secondary btn-sm"
                           onClick={async () => {
                             const next = new Set(expanded)
                             if (next.has(id)) next.delete(id); else next.add(id)
@@ -238,10 +221,8 @@ export default function NativeIndexTab({ onResult }) {
                     </tr>
                     {isOpen && (
                       <tr key={`${id}-details`}>
-                        <td colSpan={6} className="px-2 pb-3">
-                          <div className="ml-2 minimal-card">
-                            <FieldsTable fields={details || {}} />
-                          </div>
+                        <td colSpan={6} className="px-2 pb-3 bg-surface-secondary">
+                          <FieldsTable fields={details || {}} />
                         </td>
                       </tr>
                     )}
@@ -256,7 +237,6 @@ export default function NativeIndexTab({ onResult }) {
             </tbody>
           </table>
         </div>
-      </div>
     </div>
   )
 }

@@ -16,7 +16,6 @@ export default function LoginPage() {
     }
 
     try {
-      // loginUser thunk handles localStorage persistence internally
       await dispatch(loginUser(userId.trim())).unwrap()
     } catch (err) {
       setError(err.message)
@@ -24,64 +23,44 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="minimal-login-page">
-      <div className="minimal-login-card">
-        {/* Logo */}
-        <div className="mb-16">
-          <h1 className="minimal-login-logo">
-            FoldDB
-          </h1>
-          <p className="minimal-login-subtitle">
-            Your data, your rules
-          </p>
+    <div className="min-h-screen flex items-center justify-center bg-surface-secondary">
+      <div className="w-full max-w-sm p-10 card">
+        <div className="mb-16 text-center">
+          <h1 className="text-2xl font-medium">FoldDB</h1>
+          <p className="text-secondary mt-2">Your data, your rules</p>
         </div>
 
-        {/* Login form */}
         <form onSubmit={handleSubmit}>
           <div className="mb-6">
-            <label htmlFor="userId" className="minimal-label">
-              User Identifier
-            </label>
+            <label htmlFor="userId" className="label">User Identifier</label>
             <input
               id="userId"
-              name="userId"
               type="text"
               autoComplete="username"
               required
-              className="minimal-input minimal-input-lg"
+              className="input input-lg"
               placeholder="Enter your identifier"
               value={userId}
-              onChange={(e) => {
-                setUserId(e.target.value)
-                setError('')
-              }}
+              onChange={(e) => { setUserId(e.target.value); setError('') }}
               autoFocus
             />
           </div>
 
           {error && (
-            <div className="minimal-error-banner mb-6">
-              <p>{error}</p>
-            </div>
+            <div className="mb-6 p-3 card card-error text-error text-sm">{error}</div>
           )}
 
-          <button
-            type="submit"
-            disabled={isLoading}
-            className="minimal-btn w-full"
-          >
+          <button type="submit" disabled={isLoading} className="btn-primary w-full btn-lg">
             {isLoading ? 'Connecting...' : 'Continue'}
           </button>
         </form>
 
-        {/* Tip */}
-        <p className="minimal-hint mt-8">
-          Use any identifier (email, username) to create or access your node.
+        <p className="text-tertiary text-sm text-center mt-8">
+          Use any identifier to create or access your node.
         </p>
 
-        {/* Status */}
-        <div className="minimal-status mt-16 text-[13px]">
-          <span className="minimal-status-dot"></span>
+        <div className="mt-16 flex items-center justify-center gap-2 text-tertiary text-sm">
+          <span className="status-dot status-dot-success" />
           Server online
         </div>
       </div>

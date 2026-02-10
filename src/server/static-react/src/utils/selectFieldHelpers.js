@@ -73,7 +73,7 @@ export function getSelectStyles(
   disabled = false,
   loading = false,
 ) {
-  let classes = "minimal-select";
+  let classes = "select";
 
   if (hasError) {
     classes += " border-red-500";

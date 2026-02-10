@@ -197,11 +197,11 @@ describe('ResultsSection Component', () => {
 
   it('renders terminal-styled container', () => {
     const mockResults = { data: { test: true } };
-    
+
     render(<ResultsSection results={mockResults} />);
-    
-    // Check the container uses terminal classes
+
+    // Check the container uses card classes
     const outputTitle = screen.getByText('OUTPUT');
-    expect(outputTitle.closest('.minimal-card')).toBeInTheDocument();
+    expect(outputTitle.closest('.card')).toBeInTheDocument();
   });
 });

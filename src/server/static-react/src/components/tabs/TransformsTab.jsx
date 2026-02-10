@@ -107,16 +107,15 @@ const TransformsTab = ({ onResult }) => {
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-between items-center">
-        <h2 className="text-xl font-semibold text-success"># transforms</h2>
+      <div className="flex justify-end">
         <div className="text-sm text-secondary">
-          Queue Status: {queueInfo.isEmpty ? 'Empty' : `${queueInfo.length} transform(s) queued`}
+          Queue: {queueInfo.isEmpty ? 'Empty' : `${queueInfo.length} queued`}
         </div>
       </div>
 
       {!queueInfo.isEmpty && (
-        <div className="minimal-card p-4 border-l-4 border-blue-300" data-testid="transform-queue">
-          <h3 className="text-md font-medium text-info mb-2">$ queue</h3>
+        <div className="border border-border bg-surface p-4 border-l-4 border-l-blue-300" data-testid="transform-queue">
+          <h3 className="text-md font-medium text-info mb-2">Queue</h3>
           <ul className="list-none space-y-1">
             {queueInfo.queue.map((transformId, index) => (
               <li key={`${transformId}-${index}`} className="text-secondary font-mono text-sm">
@@ -128,7 +127,7 @@ const TransformsTab = ({ onResult }) => {
       )}
 
       {isLoadingTransforms && (
-        <div className="minimal-card p-4" role="status">
+        <div className="border border-border bg-surface p-4" role="status">
           <div className="flex items-center">
             <div className="animate-spin h-4 w-4 border-b-2 border-green-500 mr-2"></div>
             <span className="text-secondary">Loading transforms...</span>
@@ -137,12 +136,12 @@ const TransformsTab = ({ onResult }) => {
       )}
 
       {transformsError && (
-        <div className="minimal-card p-4 border-l-4 border-red-500" role="alert">
+        <div className="border border-border bg-surface p-4 border-l-4 border-l-red-500" role="alert">
           <div className="flex items-center">
             <span className="text-error">Error loading transforms: {transformsError}</span>
             <button
               onClick={fetchTransforms}
-              className="ml-4 minimal-btn-secondary text-sm"
+              className="ml-4 px-3 py-1.5 text-sm text-secondary bg-transparent border border-border cursor-pointer hover:border-primary hover:text-primary transition-colors"
             >
               Retry
             </button>
@@ -164,14 +163,14 @@ const TransformsTab = ({ onResult }) => {
             // Determine schema type - fields are flattened, so access directly
             const schemaType = transform.schema_type
             let schemaTypeLabel = 'Single'
-            let schemaTypeColor = 'minimal-badge'
-            
+            let schemaTypeColor = 'badge badge-neutral'
+
             if (schemaType?.Range) {
               schemaTypeLabel = 'Range'
-              schemaTypeColor = 'minimal-badge minimal-badge-info'
+              schemaTypeColor = 'badge badge-info'
             } else if (schemaType?.HashRange) {
               schemaTypeLabel = 'HashRange'
-              schemaTypeColor = 'minimal-badge text-secondary'
+              schemaTypeColor = 'badge badge-neutral'
             }
 
             // Get key configuration and transform fields - flattened
@@ -181,7 +180,7 @@ const TransformsTab = ({ onResult }) => {
             const fieldNames = Object.keys(transformFieldsObj)
 
             return (
-              <div key={transformId} className="minimal-card p-4 border-l-4 border-default">
+              <div key={transformId} className="border border-border bg-surface p-4 border-l-4 border-l-border">
                 <div className="flex justify-between items-start mb-3">
                   <div className="flex-1">
                     <h3 className="text-lg font-semibold text-primary">{schemaName}</h3>
@@ -190,7 +189,7 @@ const TransformsTab = ({ onResult }) => {
                         {schemaTypeLabel}
                       </span>
                       {transformFieldsCount > 0 && (
-                        <span className="inline-flex items-center px-2.5 py-0.5 text-xs font-medium minimal-badge minimal-badge-success">
+                        <span className="badge badge-success">
                           {transformFieldsCount} field{transformFieldsCount !== 1 ? 's' : ''}
                         </span>
                       )}
@@ -206,7 +205,7 @@ const TransformsTab = ({ onResult }) => {
                 <div className="mt-3 space-y-3">
                   {/* Key Configuration */}
                   {keyConfig && (
-                    <div className="minimal-card p-3 border-l-2 border-blue-300">
+                    <div className="border border-border bg-surface p-3 border-l-2 border-l-blue-300">
                       <div className="text-sm font-medium text-info mb-1">--key-config:</div>
                       <div className="text-sm text-secondary space-y-1 font-mono">
                         {keyConfig.hash_field && (
@@ -232,7 +231,7 @@ const TransformsTab = ({ onResult }) => {
                   {transformFieldsCount > 0 && (
                     <div>
                       <div className="text-sm font-medium text-secondary mb-2">--transform-fields:</div>
-                      <div className="minimal-card p-3 space-y-2">
+                      <div className="border border-border bg-surface p-3 space-y-2">
                         {Object.entries(transformFieldsObj).map(([fieldName, logic]) => (
                           <div key={fieldName} className="border-l-2 border-default pl-3">
                             <div className="font-medium text-primary text-sm">{fieldName}</div>
@@ -248,7 +247,7 @@ const TransformsTab = ({ onResult }) => {
                   <button
                     onClick={() => handleAddToQueue(transformId, null)}
                     disabled={isLoading}
-                    className="minimal-btn-secondary minimal-btn text-sm"
+                    className="px-4 py-2 text-sm bg-primary text-white border-none cursor-pointer hover:bg-accent-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {isLoading ? '→ Adding...' : '→ Add to Queue'}
                   </button>
@@ -264,7 +263,7 @@ const TransformsTab = ({ onResult }) => {
       )}
 
       {!isLoadingTransforms && !transformsError && transforms.length === 0 && (
-        <div className="minimal-card p-4">
+        <div className="border border-border bg-surface p-4">
           <p className="text-secondary">No transforms registered</p>
           <p className="text-sm text-secondary mt-1">
             Register a transform in a schema to view it here and add it to the processing queue.

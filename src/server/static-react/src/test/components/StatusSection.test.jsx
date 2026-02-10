@@ -43,10 +43,10 @@ describe('StatusSection Component', () => {
 
   it('has correct container styling', () => {
     render(<StatusSection />)
-    
+
     const heading = screen.getByText('System Status')
-    const container = heading.closest('.minimal-card')
-    expect(container).toHaveClass('minimal-card', 'p-4', 'mb-6')
+    const container = heading.closest('.card')
+    expect(container).toHaveClass('card', 'p-4', 'mb-6')
   })
 
   it('displays check circle icon', () => {
@@ -136,10 +136,10 @@ describe('StatusSection Component', () => {
 
     it('renders reset database button', () => {
       render(<StatusSection />)
-      
+
       const resetButton = screen.getByRole('button', { name: /reset database/i })
       expect(resetButton).toBeInTheDocument()
-      expect(resetButton).toHaveClass('minimal-btn-danger', 'minimal-btn-sm')
+      expect(resetButton).toHaveClass('btn-danger', 'btn-sm')
     })
 
     it('shows confirmation dialog when reset button is clicked', () => {
@@ -261,12 +261,12 @@ describe('StatusSection Component', () => {
 
     it('shows proper button styling for destructive action', () => {
       render(<StatusSection />)
-      
+
       const resetButton = screen.getByRole('button', { name: /reset database/i })
       fireEvent.click(resetButton)
-      
+
       const confirmButton = screen.getAllByRole('button', { name: /reset database/i })[1] // Get the modal button
-      expect(confirmButton).toHaveClass('minimal-btn-danger')
+      expect(confirmButton).toHaveClass('btn-danger')
     })
 
     it('includes trash icon in reset button', () => {

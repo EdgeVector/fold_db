@@ -87,19 +87,19 @@ describe('SchemaStatusBadge', () => {
   it('applies correct color classes for each state', () => {
     const { rerender } = render(<SchemaStatusBadge state="approved" />)
     let badge = screen.getByText('Approved')
-    expect(badge).toHaveClass('minimal-badge', 'minimal-badge-success')
+    expect(badge).toHaveClass('badge', 'badge-success')
 
     rerender(<SchemaStatusBadge state="available" />)
     badge = screen.getByText('Available')
-    expect(badge).toHaveClass('minimal-badge', 'minimal-badge-info')
+    expect(badge).toHaveClass('badge', 'badge-info')
 
     rerender(<SchemaStatusBadge state="blocked" />)
     badge = screen.getByText('Blocked')
-    expect(badge).toHaveClass('minimal-badge', 'minimal-badge-error')
+    expect(badge).toHaveClass('badge', 'badge-error')
 
     rerender(<SchemaStatusBadge state="pending" />)
     badge = screen.getByText('Pending')
-    expect(badge).toHaveClass('minimal-badge', 'minimal-badge-warning')
+    expect(badge).toHaveClass('badge', 'badge-warning')
   })
 
   it('renders both badges when isRangeSchema is true', () => {

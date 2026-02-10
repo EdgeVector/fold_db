@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import BatchFolderMode from './upload/BatchFolderMode'
 import FileUploadMode from './upload/FileUploadMode'
-import UploadInfoPanel from './upload/UploadInfoPanel'
 
 function FileUploadTab({ onResult }) {
   const [isDragging, setIsDragging] = useState(false)
@@ -247,93 +246,38 @@ function FileUploadTab({ onResult }) {
   }
 
   return (
-    <div className="space-y-4">
-      {/* Status Bar */}
-
-      {/* Uploading Indicator */}
-      {isUploading && uploadMode !== 'batch-folder' && (
-        <div className="minimal-card minimal-card-accent-info p-4">
-          <div className="flex items-center gap-3">
-            <span className="minimal-spinner"></span>
-            <span className="text-info font-medium">$ processing file...<span className="cursor"></span></span>
-          </div>
-        </div>
-      )}
-
-      {/* Batch Processing Indicator */}
-      {isUploading && uploadMode === 'batch-folder' && (
-        <div className="minimal-card minimal-card-accent-info p-4">
-          <div className="flex items-center gap-3">
-            <span className="minimal-spinner"></span>
-            <span className="text-info font-medium">
-              $ processing batch...
-              {batchProgress && (
-                <span className="text-secondary ml-2">
-                  ({Object.values(fileProgresses).filter(p => p.is_complete).length}/{batchProgress.files_found} complete)
-                </span>
-              )}
-              <span className="cursor"></span>
-            </span>
-          </div>
+    <div className="p-6 space-y-4">
+      {/* Processing Status */}
+      {isUploading && (
+        <div className="flex items-center gap-3 text-info">
+          <span className="spinner" />
+          <span>
+            {uploadMode === 'batch-folder' && batchProgress
+              ? `Processing batch... (${Object.values(fileProgresses).filter(p => p.is_complete).length}/${batchProgress.files_found})`
+              : 'Processing file...'}
+          </span>
         </div>
       )}
 
       {/* Mode Toggle */}
-      <div className="minimal-card p-4">
-        <div className="flex items-center gap-6">
-          <span className="text-sm font-medium text-secondary">--mode:</span>
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="radio"
-              checked={uploadMode === 'upload'}
-              onChange={() => setUploadMode('upload')}
-              className="accent-black"
-            />
-            <span className="text-sm text-primary">upload</span>
+      <div className="flex items-center gap-6">
+        {['upload', 's3-path', 'batch-folder'].map(mode => (
+          <label key={mode} className="flex items-center gap-2 cursor-pointer">
+            <input type="radio" checked={uploadMode === mode} onChange={() => setUploadMode(mode)} className="accent-black" />
+            <span className="text-sm text-primary">{mode}</span>
           </label>
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="radio"
-              checked={uploadMode === 's3-path'}
-              onChange={() => setUploadMode('s3-path')}
-              className="accent-black"
-            />
-            <span className="text-sm text-primary">s3-path</span>
-          </label>
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="radio"
-              checked={uploadMode === 'batch-folder'}
-              onChange={() => setUploadMode('batch-folder')}
-              className="accent-black"
-            />
-            <span className="text-sm text-primary">batch-folder</span>
-          </label>
-        </div>
+        ))}
       </div>
 
       {/* Mode-specific Input */}
       {uploadMode === 's3-path' && (
-        <div className="minimal-card p-6">
-          <h3 className="text-success font-medium mb-4">
-            <span className="text-secondary">$</span> S3 File Path
-          </h3>
-          <div className="space-y-3">
-            <label className="block text-sm font-medium text-secondary">
-              --s3-uri
-            </label>
-            <input
-              type="text"
-              value={s3FilePath}
-              onChange={(e) => setS3FilePath(e.target.value)}
-              placeholder="s3://bucket-name/path/to/file.json"
-              className="minimal-input w-full"
-            />
-            <p className="text-xs text-secondary">
-              # File will be downloaded from S3 for processing without re-uploading
-            </p>
-          </div>
-        </div>
+        <input
+          type="text"
+          value={s3FilePath}
+          onChange={(e) => setS3FilePath(e.target.value)}
+          placeholder="s3://bucket-name/path/to/file.json"
+          className="input"
+        />
       )}
 
       {uploadMode === 'batch-folder' && (
@@ -359,54 +303,21 @@ function FileUploadTab({ onResult }) {
         />
       )}
 
-      {/* Options and Upload Button */}
-      <div className="minimal-card p-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <label className="flex items-center gap-2 text-sm cursor-pointer">
-              <input
-                type="checkbox"
-                checked={autoExecute}
-                onChange={(e) => setAutoExecute(e.target.checked)}
-                className="accent-black"
-              />
-              <span className="text-primary">--auto-execute</span>
-            </label>
-            <span className="text-xs text-secondary">
-              # File → JSON → AI analysis → Schema mapping
-            </span>
-          </div>
+      {/* Actions */}
+      <div className="flex items-center justify-between">
+        <label className="flex items-center gap-2 text-sm cursor-pointer">
+          <input type="checkbox" checked={autoExecute} onChange={(e) => setAutoExecute(e.target.checked)} className="checkbox" />
+          <span className="text-secondary">Auto-execute</span>
+        </label>
 
-          <button
-            onClick={handleUpload}
-            disabled={
-              isUploading ||
-              (uploadMode === 'upload' && !selectedFile) ||
-              (uploadMode === 's3-path' && !s3FilePath) ||
-              (uploadMode === 'batch-folder' && !folderPath)
-            }
-            className="minimal-btn-secondary minimal-btn px-6 py-2.5 font-medium"
-          >
-            {isUploading ? (
-              <>
-                <span className="minimal-spinner"></span>
-                <span>Processing...</span>
-              </>
-            ) : (
-              <>
-                <span>→</span>
-                <span>
-                  {uploadMode === 's3-path' ? 'Process S3 File' :
-                   uploadMode === 'batch-folder' ? 'Ingest Folder' :
-                   'Upload & Process'}
-                </span>
-              </>
-            )}
-          </button>
-        </div>
+        <button
+          onClick={handleUpload}
+          disabled={isUploading || (uploadMode === 'upload' && !selectedFile) || (uploadMode === 's3-path' && !s3FilePath) || (uploadMode === 'batch-folder' && !folderPath)}
+          className="btn-primary btn-lg flex items-center gap-2"
+        >
+          {isUploading ? <><span className="spinner" />Processing...</> : <>→ {uploadMode === 's3-path' ? 'Process' : uploadMode === 'batch-folder' ? 'Ingest' : 'Upload'}</>}
+        </button>
       </div>
-
-      <UploadInfoPanel uploadMode={uploadMode} />
     </div>
   )
 }

@@ -31,7 +31,7 @@ function TabNavigation({
     return (
       <button
         key={tab.id}
-        className={`minimal-nav-item${isActive ? ' active' : ''}`}
+        className={`tab ${isActive ? 'tab-active' : ''} ${isDisabled ? 'opacity-40 cursor-not-allowed' : ''}`}
         onClick={() => handleTabClick(tab.id)}
         disabled={isDisabled}
         aria-current={isActive ? 'page' : undefined}
@@ -43,17 +43,17 @@ function TabNavigation({
   };
 
   return (
-    <nav className={`minimal-nav ${className}`}>
+    <nav className={`bg-surface border-b border-border px-10 flex items-center ${className}`}>
       {/* Main tabs */}
-      <div className="minimal-nav-group">
+      <div className="flex">
         {mainTabs.map((tab) => renderTab(tab))}
       </div>
 
       {/* Separator and Advanced tabs */}
       {advancedTabs.length > 0 && (
         <>
-          <div className="minimal-nav-separator" />
-          <div className="minimal-nav-group">
+          <div className="w-px h-6 bg-border mx-4" />
+          <div className="flex">
             {advancedTabs.map((tab) => renderTab(tab))}
           </div>
         </>

@@ -212,12 +212,12 @@ describe('QueryActions Component', () => {
       await user.click(executeButton);
 
       // Should show loading spinner
-      expect(executeButton.querySelector('.minimal-spinner')).toBeInTheDocument();
+      expect(executeButton.querySelector('.spinner')).toBeInTheDocument();
 
       // Resolve the promise
       executeResolve();
       await waitFor(() => {
-        expect(executeButton.querySelector('.minimal-spinner')).not.toBeInTheDocument();
+        expect(executeButton.querySelector('.spinner')).not.toBeInTheDocument();
       });
     });
 
@@ -234,12 +234,12 @@ describe('QueryActions Component', () => {
       await user.click(validateButton);
 
       // Should show loading spinner
-      expect(validateButton.querySelector('.minimal-spinner')).toBeInTheDocument();
+      expect(validateButton.querySelector('.spinner')).toBeInTheDocument();
 
       // Resolve the promise
       validateResolve();
       await waitFor(() => {
-        expect(validateButton.querySelector('.minimal-spinner')).not.toBeInTheDocument();
+        expect(validateButton.querySelector('.spinner')).not.toBeInTheDocument();
       });
     });
 

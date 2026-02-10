@@ -61,18 +61,6 @@ export interface BackfillStatusResponse {
   estimated_completion?: string;
 }
 
-export interface RunQueryRequest {
-  query: string;
-  session_id?: string;
-}
-
-export interface RunQueryResponse {
-  session_id: string;
-  query_plan: QueryPlan;
-  results: any[];
-  summary?: string;
-}
-
 export interface FollowupAnalysis {
   needs_query: boolean;
   query?: QueryPlan;
@@ -98,13 +86,6 @@ export interface AgentQueryResponse {
 }
 
 export const llmQueryClient = {
-  /**
-   * Run a query in a single step (analyze + execute with internal polling loop)
-   */
-  async runQuery(request: RunQueryRequest) {
-    return client.post<RunQueryResponse>('/llm-query/run', request);
-  },
-
   /**
    * Analyze a natural language query
    */

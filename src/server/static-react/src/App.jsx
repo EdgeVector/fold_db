@@ -142,13 +142,7 @@ export function AppContent() {
       case 'llm-query':
         return <LlmQueryTab onResult={handleOperationResult} />
       case 'mutation':
-        return (
-          <div className="tab-content">
-            <MutationTab
-              onResult={handleOperationResult}
-            />
-          </div>
-        )
+        return <MutationTab onResult={handleOperationResult} />
       case 'smart-folder':
         return <SmartFolderTab onResult={handleOperationResult} />
       case 'ingestion':
@@ -170,64 +164,61 @@ export function AppContent() {
   // Show loading spinner while restoring session or checking auth
   if (isAuthLoading) {
     return (
-      <div className="minimal-loading-page">
+      <div className="h-screen flex items-center justify-center bg-surface-secondary">
         <div className="text-center">
-          <div className="minimal-spinner"></div>
-          <p className="text-secondary text-sm">
-            Loading...
-          </p>
+          <div className="w-6 h-6 border-2 border-border border-t-primary rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-secondary text-sm">Loading...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="minimal-shell">
+    <div className="h-screen flex flex-col bg-surface overflow-hidden">
       <Header onSettingsClick={() => setIsSettingsOpen(true)} />
       <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
 
-      <div className="minimal-shell-body">
-        <div className="minimal-shell-content">
-          {/* Tab Navigation - fixed at top */}
+      <div className="flex flex-1 overflow-hidden">
+        <div className="flex-1 flex flex-col overflow-hidden">
           <TabNavigation
             activeTab={activeTab}
             onTabChange={handleTabChange}
           />
 
-          <main className="minimal-main">
-            <div className="minimal-main-inner">
-            {/* Schema Loading/Error States */}
-            {schemasError && (
-              <div className="minimal-error-banner">
-                <p>{schemasError}</p>
-              </div>
-            )}
-
-            {schemasLoading && (
-              <div className="minimal-loading-banner">
-                <p>Loading schemas...</p>
-              </div>
-            )}
-
-            {/* Section Title */}
-            <div className="minimal-section-title">
-              {activeTab.replace('-', ' ')}
-            </div>
-
-            {/* Tab Content */}
-            {renderActiveTab()}
-
-            {/* Results */}
-            {results && (
-              <div className="mt-6">
-                <div className="minimal-section-title">
-                  Results
+          <main className="flex-1 overflow-y-auto bg-surface-secondary">
+            <div className="max-w-5xl mx-auto px-8 py-5 bg-surface min-h-full">
+              {/* Schema Loading/Error States */}
+              {schemasError && (
+                <div className="mb-4 p-3 bg-surface border border-red-200 border-l-4 border-l-error">
+                  <p className="text-error text-sm">{schemasError}</p>
                 </div>
-                <ResultsSection results={results} />
+              )}
+
+              {schemasLoading && (
+                <div className="mb-4 p-3 bg-surface border border-border">
+                  <p className="text-secondary text-sm">Loading schemas...</p>
+                </div>
+              )}
+
+              {/* Section Title */}
+              <div className="text-xs uppercase tracking-widest text-tertiary mb-3">
+                {activeTab.replace('-', ' ')}
               </div>
-            )}
-          </div>
-        </main>
+
+              {/* Tab Content */}
+              {renderActiveTab()}
+
+              {/* Results */}
+              {results && (
+                <div className="mt-6">
+                  <div className="text-xs uppercase tracking-widest text-tertiary mb-3">
+                    Results
+                  </div>
+                  <ResultsSection results={results} />
+                </div>
+              )}
+            </div>
+          </main>
         </div>
 
         <LogSidebar />

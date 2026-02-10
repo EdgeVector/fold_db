@@ -9,7 +9,6 @@ function SettingsModal({ isOpen, onClose }) {
   const [activeTab, setActiveTab] = useState('ai')
   const [configSaveStatus, setConfigSaveStatus] = useState(null)
 
-  // Sub-component instances (using render-prop pattern for save handlers)
   const aiConfig = AiConfigSettings({ configSaveStatus, setConfigSaveStatus, onClose })
   const dbConfig = DatabaseSettings({ configSaveStatus, setConfigSaveStatus, onClose })
 
@@ -24,41 +23,35 @@ function SettingsModal({ isOpen, onClose }) {
   ]
 
   const handleSave = () => {
-    if (activeTab === 'ai') {
-      aiConfig.saveAiConfig()
-    } else if (activeTab === 'database') {
-      dbConfig.saveDatabaseConfig()
-    }
+    if (activeTab === 'ai') aiConfig.saveAiConfig()
+    else if (activeTab === 'database') dbConfig.saveDatabaseConfig()
   }
 
   return (
-    <div className="minimal-modal-overlay" onClick={onClose}>
-      <div className="minimal-modal" onClick={(e) => e.stopPropagation()}>
-        {/* Header */}
-        <div className="minimal-modal-header">
-          <h3>Settings</h3>
-          <button onClick={onClose} className="minimal-modal-close">
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <h3 className="text-lg font-medium">Settings</h3>
+          <button onClick={onClose} className="btn-secondary btn-sm p-1">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
         </div>
 
-        {/* Tabs */}
-        <div className="minimal-modal-tabs">
-          {tabs.map(tab => (
+        <div className="flex border-b border-border px-6">
+          {tabs.map(t => (
             <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`minimal-modal-tab ${activeTab === tab.id ? 'active' : ''}`}
+              key={t.id}
+              onClick={() => setActiveTab(t.id)}
+              className={`tab ${activeTab === t.id ? 'tab-active' : ''}`}
             >
-              {tab.label}
+              {t.label}
             </button>
           ))}
         </div>
 
-        {/* Body */}
-        <div className="minimal-modal-body">
+        <div className="modal-body">
           {activeTab === 'ai' && aiConfig.content}
           {activeTab === 'transforms' && <TransformsTab onResult={() => {}} />}
           {activeTab === 'keys' && <KeyManagementTab onResult={() => {}} />}
@@ -66,21 +59,16 @@ function SettingsModal({ isOpen, onClose }) {
           {activeTab === 'database' && dbConfig.content}
         </div>
 
-        {/* Footer */}
-        <div className="minimal-modal-footer">
+        <div className="modal-footer">
           {activeTab === 'ai' || activeTab === 'database' ? (
             <>
-              <button onClick={onClose} className="minimal-btn-secondary text-sm">
-                Cancel
-              </button>
-              <button onClick={handleSave} className="minimal-btn text-sm">
+              <button onClick={onClose} className="btn-secondary">Cancel</button>
+              <button onClick={handleSave} className="btn-primary">
                 {activeTab === 'database' ? 'Save and Restart DB' : 'Save Configuration'}
               </button>
             </>
           ) : (
-            <button onClick={onClose} className="minimal-btn-secondary text-sm">
-              Close
-            </button>
+            <button onClick={onClose} className="btn-secondary">Close</button>
           )}
         </div>
       </div>

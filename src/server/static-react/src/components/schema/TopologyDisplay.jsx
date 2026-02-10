@@ -17,7 +17,7 @@ function TopologyNode({ node, depth = 0, name = null }) {
     const typeColor = {
       String: 'text-success',
       Number: 'text-info',
-      Boolean: 'minimal-section-purple-muted',
+      Boolean: 'text-purple',
       Null: 'text-secondary'
     }[primitiveType] || 'text-secondary'
 
@@ -133,7 +133,7 @@ export default function TopologyDisplay({ topology, compact = false }) {
   }
 
   return (
-    <div className="mt-2 p-2 minimal-card">
+    <div className="mt-2 p-2 card">
       <div className="text-xs font-medium text-secondary mb-1">Type Structure:</div>
       <div className="pl-2">
         <TopologyNode node={topology.root} />

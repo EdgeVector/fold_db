@@ -75,17 +75,13 @@ function KeyManagementTab({ onResult: _onResult }) {
     };
 
     return (
-        <div className="p-4 minimal-card">
-            <h2 className="text-xl font-semibold mb-4 text-success">
-                <span className="text-secondary">$</span> key-management
-            </h2>
-
+        <div className="p-4 border border-border bg-surface">
             {/* Current System Public Key Display */}
-            <div className="minimal-card minimal-card-accent-info p-4 mb-6">
+            <div className="card card-info p-4 mb-6">
                 <div className="flex items-start">
                     <ShieldCheckIcon className="h-5 w-5 text-info mr-2 flex-shrink-0 mt-0.5" />
                     <div className="text-sm text-primary flex-1">
-                        <p className="font-medium text-info"># Current System Public Key:</p>
+                        <p className="font-medium text-info">Current System Public Key</p>
                         {isLoading ? (
                             <p className="text-secondary">Loading...</p>
                         ) : systemPublicKey ? (
@@ -95,11 +91,11 @@ function KeyManagementTab({ onResult: _onResult }) {
                                         type="text"
                                         value={systemPublicKey && systemPublicKey !== 'null' ? systemPublicKey : ''}
                                         readOnly
-                                        className="flex-1 px-2 py-1 minimal-input text-xs font-mono"
+                                        className="flex-1 px-2 py-1 text-xs font-mono bg-surface border border-border text-primary focus:outline-none focus:border-primary"
                                     />
                                     <button
                                         onClick={() => copyToClipboard(systemPublicKey, 'system')}
-                                        className="px-2 py-1 minimal-input border-l-0 bg-surface-secondary focus:outline-none"
+                                        className="px-2 py-1 border border-border border-l-0 bg-surface-secondary focus:outline-none cursor-pointer hover:bg-surface transition-colors"
                                     >
                                         {copiedField === 'system' ? (
                                             <CheckIcon className="h-3 w-3 text-success" />
@@ -124,11 +120,11 @@ function KeyManagementTab({ onResult: _onResult }) {
 
             {/* Current Private Key Display */}
             {isAuthenticated && privateKeyBase64 && (
-                <div className="minimal-card minimal-card-accent-success p-4 mb-6">
+                <div className="card card-success p-4 mb-6">
                     <div className="flex items-start">
                         <KeyIcon className="h-5 w-5 text-success mr-2 flex-shrink-0 mt-0.5" />
                         <div className="text-sm text-primary flex-1">
-                            <p className="font-medium text-success"># Current Private Key (Auto-loaded from Node)</p>
+                            <p className="font-medium text-success">Current Private Key (Auto-loaded)</p>
                             <p className="mt-1 text-secondary">Your private key has been automatically loaded from the backend node.</p>
                             
                             <div className="mt-3">
@@ -136,13 +132,13 @@ function KeyManagementTab({ onResult: _onResult }) {
                                     <textarea
                                         value={privateKeyBase64}
                                         readOnly
-                                        className="flex-1 px-3 py-2 minimal-input text-xs font-mono resize-none"
+                                        className="flex-1 px-3 py-2 text-xs font-mono bg-surface border border-border text-primary resize-none focus:outline-none focus:border-primary"
                                         rows={3}
                                         placeholder="Private key will appear here..."
                                     />
                                     <button
                                         onClick={() => copyToClipboard(privateKeyBase64, 'private')}
-                                        className="px-3 py-2 minimal-input border-l-0 bg-surface-secondary focus:outline-none"
+                                        className="px-3 py-2 border border-border border-l-0 bg-surface-secondary focus:outline-none cursor-pointer hover:bg-surface transition-colors"
                                         title="Copy private key"
                                     >
                                         {copiedField === 'private' ? (
@@ -161,17 +157,17 @@ function KeyManagementTab({ onResult: _onResult }) {
 
             {/* Private Key Input Section - Only show if not authenticated */}
             {systemPublicKey && !isAuthenticated && !privateKeyBase64 && (
-                <div className="minimal-card minimal-card-accent-warning p-4 mb-6">
+                <div className="card card-warning p-4 mb-6">
                     <div className="flex items-start">
                         <KeyIcon className="h-5 w-5 text-warning mr-2 flex-shrink-0 mt-0.5" />
                         <div className="text-sm text-primary flex-1">
-                            <p className="font-medium text-warning"># Import Private Key</p>
+                            <p className="font-medium text-warning">Import Private Key</p>
                             <p className="mt-1 text-secondary">You have a registered public key but no local private key. Enter your private key to restore access.</p>
                             
                             {!showPrivateKeyInput ? (
                                 <button
                                     onClick={() => setShowPrivateKeyInput(true)}
-                                    className="mt-3 minimal-btn-secondary text-warning"
+                                    className="btn-secondary mt-3 flex items-center text-warning"
                                 >
                                     <KeyIcon className="h-4 w-4 mr-1" />
                                     Import Private Key
@@ -186,17 +182,15 @@ function KeyManagementTab({ onResult: _onResult }) {
                                             value={privateKeyInput}
                                             onChange={(e) => setPrivateKeyInput(e.target.value)}
                                             placeholder="Enter your private key here..."
-                                            className="minimal-textarea w-full text-xs"
+                                            className="w-full px-3 py-2 text-xs font-mono bg-surface border border-border text-primary placeholder-tertiary focus:outline-none focus:border-primary resize-y"
                                             rows={3}
                                         />
                                     </div>
                                     
                                     {/* Validation Status */}
                                     {privateKeyValidation && (
-                                        <div className={`p-2 text-xs ${
-                                            privateKeyValidation.valid 
-                                                ? 'minimal-card-accent-success text-success'
-                                                : 'minimal-card-accent-error text-error'
+                                        <div className={`card p-2 text-xs ${
+                                            privateKeyValidation.valid ? 'card-success text-success' : 'card-error text-error'
                                         }`}>
                                             {privateKeyValidation.valid ? (
                                                 <div className="flex items-center">
@@ -216,23 +210,23 @@ function KeyManagementTab({ onResult: _onResult }) {
                                         <button
                                             onClick={handlePrivateKeySubmit}
                                             disabled={isValidatingPrivateKey || !privateKeyInput.trim()}
-                                            className="minimal-btn-secondary minimal-btn text-xs disabled:opacity-50"
+                                            className="px-3 py-1.5 text-xs bg-primary text-white border-none cursor-pointer hover:bg-accent-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                         >
                                             {isValidatingPrivateKey ? 'Validating...' : '→ Validate & Import'}
                                         </button>
                                         <button
                                             onClick={handleCancelPrivateKeyInput}
-                                            className="minimal-btn-secondary text-xs"
+                                            className="px-3 py-1.5 text-xs text-secondary bg-transparent border border-border cursor-pointer hover:border-primary hover:text-primary transition-colors"
                                         >
                                             Cancel
                                         </button>
                                     </div>
                                     
-                                    <div className="minimal-card minimal-card-accent-error p-2">
+                                    <div className="card card-error p-2">
                                         <div className="flex">
                                             <ExclamationTriangleIcon className="h-4 w-4 text-error mr-1 flex-shrink-0" />
                                             <div className="text-xs text-secondary">
-                                                <p className="font-medium text-error"># Security Warning:</p>
+                                                <p className="font-medium text-error">Security Warning</p>
                                                 <p>Only enter your private key on trusted devices. Never share or store private keys in plain text.</p>
                                             </div>
                                         </div>
