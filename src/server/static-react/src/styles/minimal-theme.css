@@ -55,7 +55,7 @@
 
   /* Form elements */
   .input {
-    @apply w-full px-4 py-2 text-sm bg-surface border border-border text-primary placeholder-tertiary focus:outline-none focus:border-primary;
+    @apply w-full px-4 py-2 text-sm bg-surface border border-border text-primary placeholder-tertiary focus:outline-none focus:border-primary focus:ring-0;
   }
   .input-lg {
     @apply py-3 text-base;

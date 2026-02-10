@@ -17,7 +17,7 @@ function TopologyNode({ node, depth = 0, name = null }) {
     const typeColor = {
       String: 'text-success',
       Number: 'text-info',
-      Boolean: 'text-purple',
+      Boolean: 'text-warning',
       Null: 'text-secondary'
     }[primitiveType] || 'text-secondary'
 

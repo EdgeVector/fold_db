@@ -114,7 +114,7 @@ const showMoreHashes = useCallback(() => {
         <span>Ranges: <strong>{counts.ranges}</strong></span>
       </div>
 
-      <div className="border rounded-md divide-y divide-default bg-surface-secondary">
+      <div className="border border-border divide-y divide-border bg-surface-secondary">
         {visibleHashes.map((h) => (
           <div key={h} className="p-2">
             <ToggleButton
@@ -140,11 +140,7 @@ const showMoreHashes = useCallback(() => {
 
       {hashWindow.count < allHashes.length && (
         <div className="pt-2">
-          <button
-            type="button"
-            className="text-xs px-3 py-1 rounded text-secondary bg-transparent border border-border cursor-pointer hover:border-primary hover:text-primary transition-colors"
-            onClick={showMoreHashes}
-          >
+          <button type="button" onClick={showMoreHashes} className="btn-secondary btn-sm">
             Show more hashes ({hashWindow.count}/{allHashes.length})
           </button>
         </div>
@@ -182,11 +178,7 @@ function HashRanges({ data, hashKey, rangeOpen, onToggleRange, pageSize, rangeWi
 
       {effectiveWindow.count < allRanges.length && (
         <div className="pt-1">
-          <button
-            type="button"
-            className="text-xs px-3 py-1 rounded text-secondary bg-transparent border border-border cursor-pointer hover:border-primary hover:text-primary transition-colors"
-            onClick={showMoreRanges}
-          >
+          <button type="button" onClick={showMoreRanges} className="btn-secondary btn-sm">
             Show more ranges ({effectiveWindow.count}/{allRanges.length})
           </button>
         </div>

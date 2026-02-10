@@ -150,8 +150,8 @@ const TransformsTab = ({ onResult }) => {
             const isLoading = loading[transformId]
             const errorMessage = errors[transformId]
 
-            // Extract schema name from transform_id or use the name field
-            const schemaName = transform.name || transform.transform_id?.split('.')[0] || 'Unknown'
+            // Extract schema name - prefer descriptive_name, fall back to name or transform_id
+            const schemaName = transform.descriptive_name || transform.name || transform.transform_id?.split('.')[0] || 'Unknown'
 
             // Determine schema type - fields are flattened, so access directly
             const schemaType = transform.schema_type
@@ -176,7 +176,7 @@ const TransformsTab = ({ onResult }) => {
               <div key={transformId} className="card p-4">
                 <div className="flex justify-between items-start mb-3">
                   <div className="flex-1">
-                    <p className="text-lg font-semibold text-primary">{schemaName}</p>
+                    <p className="text-lg text-primary">{schemaName}</p>
                     <div className="flex gap-2 mt-2 flex-wrap">
                       <span className={schemaTypeColor}>{schemaTypeLabel}</span>
                       {transformFieldsCount > 0 && (
@@ -196,7 +196,7 @@ const TransformsTab = ({ onResult }) => {
                 <div className="mt-3 space-y-3">
                   {keyConfig && (
                     <div className="bg-surface-secondary p-3 border-l-2 border-info">
-                      <p className="text-sm font-medium text-info mb-1">--key-config:</p>
+                      <p className="text-sm font-medium text-info mb-1">Key Config</p>
                       <div className="text-sm text-secondary space-y-1 font-mono">
                         {keyConfig.hash_field && <p>hash_key: {keyConfig.hash_field}</p>}
                         {keyConfig.range_field && <p>range_key: {keyConfig.range_field}</p>}
@@ -209,7 +209,7 @@ const TransformsTab = ({ onResult }) => {
 
                   {transformFieldsCount > 0 && (
                     <div>
-                      <p className="text-sm font-medium text-secondary mb-2">--transform-fields:</p>
+                      <p className="text-sm font-medium text-secondary mb-2">Transform Fields</p>
                       <div className="bg-surface-secondary p-3 space-y-2">
                         {Object.entries(transformFieldsObj).map(([fieldName, logic]) => (
                           <div key={fieldName} className="border-l-2 border-border pl-3">

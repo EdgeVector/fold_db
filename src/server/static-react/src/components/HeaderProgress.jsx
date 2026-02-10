@@ -80,7 +80,7 @@ function HeaderProgress() {
     indicators.push(
       <div key="indexing" className="flex items-center gap-2 px-3 py-1.5 bg-surface-secondary border border-border">
         {/* Animated spinner */}
-        <div className="w-2 h-2 bg-purple rounded-full animate-pulse" />
+        <div className="w-2 h-2 bg-info rounded-full animate-pulse" />
         {/* Status text */}
         <span className="text-xs font-mono text-secondary">
           indexing {opsInProgress > 0 ? `(${opsInProgress})` : ''}{opsQueued > 0 ? ` +${opsQueued}` : ''}
@@ -115,7 +115,7 @@ function HeaderProgress() {
     const dotColor = isReset
       ? 'bg-error'
       : isJobIndexing
-        ? 'bg-purple'
+        ? 'bg-info'
         : 'bg-info'
 
     const textClass = isReset

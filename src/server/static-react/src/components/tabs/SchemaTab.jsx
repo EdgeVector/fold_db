@@ -173,9 +173,7 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
                 {state}
               </span>
               {rangeSchemaInfo && (
-                <span className="px-2 py-1 text-xs font-medium rounded-full bg-purple-50 text-purple border border-purple-200">
-                  Range Schema
-                </span>
+                <span className="badge badge-info">Range Schema</span>
               )}
               {hashRangeSchemaInfo && (
                 <span className="badge badge-info">HashRange Schema</span>
@@ -218,9 +216,9 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
           <div className="p-4 border-t border-border">
             {/* Range Schema Information */}
             {rangeSchemaInfo && (
-              <div className="card mb-4 p-3 bg-purple-50 border-purple-200">
-                <h4 className="text-sm font-medium text-purple mb-2">Range Schema Information</h4>
-                <div className="space-y-1 text-xs text-purple">
+              <div className="card card-info mb-4 p-3">
+                <h4 className="text-sm font-medium text-info mb-2">Range Schema Information</h4>
+                <div className="space-y-1 text-xs text-info">
                   <p><strong>Range Key:</strong> {rangeSchemaInfo.rangeKey}</p>
                   <p><strong>Total Fields:</strong> {rangeSchemaInfo.totalFields}</p>
                   <p><strong>Range Fields:</strong> {rangeSchemaInfo.rangeFields.length}</p>
@@ -254,13 +252,13 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
                           <div className="flex items-center space-x-2">
                             <span className="font-medium text-primary">{fieldName}</span>
                             {rangeSchemaInfo?.rangeKey === fieldName && (
-                              <span className="badge bg-purple-50 text-purple border-purple-200">Range Key</span>
+                              <span className="badge badge-info">Range Key</span>
                             )}
                             {hashRangeSchemaInfo?.hashField === fieldName && (
                               <span className="badge badge-info">Hash Key</span>
                             )}
                             {hashRangeSchemaInfo?.rangeField === fieldName && (
-                              <span className="badge bg-purple-50 text-purple border-purple-200">Range Key</span>
+                              <span className="badge badge-info">Range Key</span>
                             )}
                           </div>
                           {fieldTopology && <TopologyDisplay topology={fieldTopology} />}

@@ -246,8 +246,8 @@ function QueryPreview({
               <label className="block text-xs font-medium text-secondary mb-1">
                 OrderBy
               </label>
-              <div className="card bg-purple-50 border-purple-200 p-3">
-                <div className="text-sm text-purple">
+              <div className="card card-info p-3">
+                <div className="text-sm text-info">
                   {formattedQuery.orderBy.field} {formattedQuery.orderBy.direction}
                 </div>
               </div>

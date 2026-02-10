@@ -1,5 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
-import BatchFolderMode from './upload/BatchFolderMode'
+import { useState, useCallback } from 'react'
 import FileUploadMode from './upload/FileUploadMode'
 
 function FileUploadTab({ onResult }) {
@@ -9,119 +8,6 @@ function FileUploadTab({ onResult }) {
   const [trustDistance, setTrustDistance] = useState(0)
   const [pubKey, setPubKey] = useState('default')
   const [isUploading, setIsUploading] = useState(false)
-
-  const [uploadMode, setUploadMode] = useState('upload') // 'upload', 's3-path', 'batch-folder'
-  const [s3FilePath, setS3FilePath] = useState('')
-  const [folderPath, setFolderPath] = useState('sample_data')
-  const [batchProgress, setBatchProgress] = useState(null)
-  const [fileProgresses, setFileProgresses] = useState({})
-  const pollIntervalRef = useRef(null)
-
-  useEffect(() => {
-    return () => {
-      if (pollIntervalRef.current) {
-        clearInterval(pollIntervalRef.current)
-      }
-    }
-  }, [])
-  const pollFileProgress = useCallback(async (progressIds) => {
-    const progresses = {}
-    let allComplete = true
-
-    for (const info of progressIds) {
-      try {
-        const response = await fetch(`/api/ingestion/progress/${info.progress_id}`)
-        if (response.ok) {
-          const progress = await response.json()
-          progresses[info.progress_id] = {
-            ...progress,
-            file_name: info.file_name
-          }
-          if (!progress.is_complete) {
-            allComplete = false
-          }
-        }
-      } catch (error) {
-        console.error(`Failed to fetch progress for ${info.file_name}:`, error)
-      }
-    }
-
-    setFileProgresses(progresses)
-
-    if (allComplete && pollIntervalRef.current) {
-      clearInterval(pollIntervalRef.current)
-      pollIntervalRef.current = null
-      setIsUploading(false)
-
-      const completed = Object.values(progresses).filter(p => p.is_complete && !p.is_failed).length
-      const failed = Object.values(progresses).filter(p => p.is_failed).length
-
-      onResult({
-        success: failed === 0,
-        data: {
-          total_files: progressIds.length,
-          completed,
-          failed,
-          message: `Processed ${completed} files successfully${failed > 0 ? `, ${failed} failed` : ''}`
-        }
-      })
-    }
-  }, [onResult])
-
-  const handleBatchFolderIngest = async () => {
-    if (!folderPath) {
-      onResult({
-        success: false,
-        error: 'Please provide a folder path'
-      })
-      return
-    }
-
-    setIsUploading(true)
-    setBatchProgress(null)
-    setFileProgresses({})
-    onResult(null)
-
-    try {
-      const response = await fetch('/api/ingestion/batch-folder', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          folder_path: folderPath,
-          auto_execute: autoExecute
-        }),
-      })
-
-      const result = await response.json()
-
-      if (result.success) {
-        setBatchProgress(result)
-
-        // Start polling for individual file progress
-        if (result.file_progress_ids && result.file_progress_ids.length > 0) {
-          pollIntervalRef.current = setInterval(() => {
-            pollFileProgress(result.file_progress_ids)
-          }, 1000)
-          // Initial poll
-          pollFileProgress(result.file_progress_ids)
-        }
-      } else {
-        setIsUploading(false)
-        onResult({
-          success: false,
-          error: result.error || 'Failed to start batch ingestion'
-        })
-      }
-    } catch (error) {
-      setIsUploading(false)
-      onResult({
-        success: false,
-        error: error.message || 'Failed to start batch ingestion'
-      })
-    }
-  }
 
   const handleDragEnter = useCallback((e) => {
     e.preventDefault()
@@ -159,29 +45,12 @@ function FileUploadTab({ onResult }) {
   }, [])
 
   const handleUpload = async () => {
-    // Handle batch folder mode separately
-    if (uploadMode === 'batch-folder') {
-      handleBatchFolderIngest()
+    if (!selectedFile) {
+      onResult({
+        success: false,
+        error: 'Please select a file to upload'
+      })
       return
-    }
-
-    // Validate input based on mode
-    if (uploadMode === 's3-path') {
-      if (!s3FilePath || !s3FilePath.startsWith('s3://')) {
-        onResult({
-          success: false,
-          error: 'Please provide a valid S3 path (e.g., s3://bucket/path/to/file.json)'
-        })
-        return
-      }
-    } else {
-      if (!selectedFile) {
-        onResult({
-          success: false,
-          error: 'Please select a file to upload'
-        })
-        return
-      }
     }
 
     setIsUploading(true)
@@ -189,17 +58,9 @@ function FileUploadTab({ onResult }) {
 
     try {
       const formData = new FormData()
-
-      // Generate a progress_id for tracking
       const progressId = crypto.randomUUID()
       formData.append('progress_id', progressId)
-
-      if (uploadMode === 's3-path') {
-        formData.append('s3FilePath', s3FilePath)
-      } else {
-        formData.append('file', selectedFile)
-      }
-      
+      formData.append('file', selectedFile)
       formData.append('autoExecute', autoExecute.toString())
       formData.append('trustDistance', trustDistance.toString())
       formData.append('pubKey', pubKey)
@@ -247,63 +108,25 @@ function FileUploadTab({ onResult }) {
 
   return (
     <div className="p-6 space-y-4">
-      {/* Processing Status */}
       {isUploading && (
         <div className="flex items-center gap-3 text-info">
           <span className="spinner" />
-          <span>
-            {uploadMode === 'batch-folder' && batchProgress
-              ? `Processing batch... (${Object.values(fileProgresses).filter(p => p.is_complete).length}/${batchProgress.files_found})`
-              : 'Processing file...'}
-          </span>
+          <span>Processing file...</span>
         </div>
       )}
 
-      {/* Mode Toggle */}
-      <div className="flex items-center gap-6">
-        {['upload', 's3-path', 'batch-folder'].map(mode => (
-          <label key={mode} className="flex items-center gap-2 cursor-pointer">
-            <input type="radio" checked={uploadMode === mode} onChange={() => setUploadMode(mode)} className="accent-black" />
-            <span className="text-sm text-primary">{mode}</span>
-          </label>
-        ))}
-      </div>
+      <FileUploadMode
+        isDragging={isDragging}
+        selectedFile={selectedFile}
+        setSelectedFile={setSelectedFile}
+        handleDragEnter={handleDragEnter}
+        handleDragOver={handleDragOver}
+        handleDragLeave={handleDragLeave}
+        handleDrop={handleDrop}
+        handleFileSelect={handleFileSelect}
+        formatFileSize={formatFileSize}
+      />
 
-      {/* Mode-specific Input */}
-      {uploadMode === 's3-path' && (
-        <input
-          type="text"
-          value={s3FilePath}
-          onChange={(e) => setS3FilePath(e.target.value)}
-          placeholder="s3://bucket-name/path/to/file.json"
-          className="input"
-        />
-      )}
-
-      {uploadMode === 'batch-folder' && (
-        <BatchFolderMode
-          folderPath={folderPath}
-          setFolderPath={setFolderPath}
-          batchProgress={batchProgress}
-          fileProgresses={fileProgresses}
-        />
-      )}
-
-      {uploadMode === 'upload' && (
-        <FileUploadMode
-          isDragging={isDragging}
-          selectedFile={selectedFile}
-          setSelectedFile={setSelectedFile}
-          handleDragEnter={handleDragEnter}
-          handleDragOver={handleDragOver}
-          handleDragLeave={handleDragLeave}
-          handleDrop={handleDrop}
-          handleFileSelect={handleFileSelect}
-          formatFileSize={formatFileSize}
-        />
-      )}
-
-      {/* Actions */}
       <div className="flex items-center justify-between">
         <label className="flex items-center gap-2 text-sm cursor-pointer">
           <input type="checkbox" checked={autoExecute} onChange={(e) => setAutoExecute(e.target.checked)} className="checkbox" />
@@ -312,10 +135,10 @@ function FileUploadTab({ onResult }) {
 
         <button
           onClick={handleUpload}
-          disabled={isUploading || (uploadMode === 'upload' && !selectedFile) || (uploadMode === 's3-path' && !s3FilePath) || (uploadMode === 'batch-folder' && !folderPath)}
+          disabled={isUploading || !selectedFile}
           className="btn-primary btn-lg flex items-center gap-2"
         >
-          {isUploading ? <><span className="spinner" />Processing...</> : <>→ {uploadMode === 's3-path' ? 'Process' : uploadMode === 'batch-folder' ? 'Ingest' : 'Upload'}</>}
+          {isUploading ? <><span className="spinner" />Processing...</> : '→ Upload'}
         </button>
       </div>
     </div>

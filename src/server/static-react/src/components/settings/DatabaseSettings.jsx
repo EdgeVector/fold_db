@@ -79,7 +79,7 @@ function DatabaseSettings({ configSaveStatus, setConfigSaveStatus, onClose }) {
         <p className="text-sm text-secondary mb-4">Choose the storage backend. Changes require a server restart.</p>
 
         <div>
-          <label className="label">--storage-type</label>
+          <label className="label">Storage Type</label>
           <select value={dbType} onChange={(e) => setDbType(e.target.value)} className="select">
             <option value="local">Local (Sled)</option>
             <option value="dynamodb">DynamoDB</option>
@@ -89,7 +89,7 @@ function DatabaseSettings({ configSaveStatus, setConfigSaveStatus, onClose }) {
 
         {dbType === 'local' && (
           <div>
-            <label className="label">--path</label>
+            <label className="label">Path</label>
             <input type="text" value={dbPath} onChange={(e) => setDbPath(e.target.value)} placeholder="data" className="input" />
             <p className="text-xs text-secondary mt-1">Local filesystem path for the database</p>
           </div>

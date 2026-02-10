@@ -86,7 +86,7 @@ function SelectField({
     return (
       <FieldWrapper label={label} name={name} required={required} error={error} helpText={helpText} className={className}>
         <div className="select opacity-50 cursor-not-allowed flex items-center">
-          <div className="animate-spin h-4 w-4 border-2 border-default border-t-transparent rounded-full mr-2"></div>
+          <span className="spinner mr-2" />
           {UI_STATES.loading}
         </div>
       </FieldWrapper>
@@ -118,7 +118,7 @@ function SelectField({
             className={`input ${hasError ? 'border-red-500' : ''}`}
           />
           {state.isOpen && state.filteredOptions.length > 0 && (
-            <div className="absolute z-10 w-full mt-1 bg-surface border border-default rounded-md shadow-lg max-h-60 overflow-auto">
+            <div className="absolute z-10 w-full mt-1 bg-surface border border-border shadow-lg max-h-60 overflow-auto">
               {Object.entries(state.groupedOptions).map(([groupName, groupOptions]) => (
                 <div key={groupName}>
                   {groupName !== 'default' && (

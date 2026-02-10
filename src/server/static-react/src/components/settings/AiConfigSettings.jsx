@@ -53,14 +53,14 @@ function AiConfigSettings({ configSaveStatus, setConfigSaveStatus, onClose }) {
       <div className="space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="label">--provider</label>
+            <label className="label">Provider</label>
             <select value={aiProvider} onChange={(e) => setAiProvider(e.target.value)} className="select">
               <option value="OpenRouter">OpenRouter</option>
               <option value="Ollama">Ollama</option>
             </select>
           </div>
           <div>
-            <label className="label">--model</label>
+            <label className="label">Model</label>
             {aiProvider === 'OpenRouter' ? (
               <select value={openrouterModel} onChange={(e) => setOpenrouterModel(e.target.value)} className="select">
                 <option value="anthropic/claude-3.5-sonnet">Claude 3.5 Sonnet</option>
@@ -87,19 +87,19 @@ function AiConfigSettings({ configSaveStatus, setConfigSaveStatus, onClose }) {
 
         {aiProvider === 'OpenRouter' && (
           <div>
-            <label className="label">--api-key <span className="text-xs text-secondary">(<a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer" className="text-info hover:underline">get key</a>)</span></label>
+            <label className="label">API Key <span className="text-xs text-secondary">(<a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer" className="text-info hover:underline">get key</a>)</span></label>
             <input type="password" value={openrouterApiKey} onChange={(e) => setOpenrouterApiKey(e.target.value)} placeholder="sk-or-..." className="input" />
           </div>
         )}
 
         <div>
           <button onClick={() => setShowAdvanced(!showAdvanced)} className="text-sm text-secondary hover:text-primary flex items-center gap-1">
-            <span>{showAdvanced ? '▼' : '▶'}</span> --advanced
+            <span>{showAdvanced ? '▼' : '▶'}</span> Advanced
           </button>
           {showAdvanced && (
             <div className="mt-3 space-y-3 pl-4 border-l-2 border-border">
               <div>
-                <label className="label">--base-url</label>
+                <label className="label">Base URL</label>
                 <input
                   type="text"
                   value={aiProvider === 'OpenRouter' ? openrouterBaseUrl : ollamaBaseUrl}

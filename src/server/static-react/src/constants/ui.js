@@ -110,11 +110,11 @@ export const RANGE_SCHEMA_CONFIG = {
   FIELD_TYPE: "Range",
   MUTATION_WRAPPER_KEY: "value",
   label: "Range Key",
-  backgroundColor: "bg-purple-50 border border-purple-200 rounded-lg p-4",
-  badgeColor: "badge bg-purple-50 text-purple border-purple-200",
+  backgroundColor: "bg-blue-50 border border-blue-200 rounded-lg p-4",
+  badgeColor: "badge badge-info",
   indicator: {
     text: "Range",
-    className: "badge bg-purple-50 text-purple border-purple-200",
+    className: "badge badge-info",
   },
   tooltip: "This schema supports range-based queries",
 };

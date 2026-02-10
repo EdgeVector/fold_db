@@ -142,8 +142,8 @@ function StatusSection() {
     }
 
     // In-progress jobs show full progress bar
-    const cardClass = isDatabaseReset ? 'card card-error' : isIndexing ? 'bg-purple-50 border border-purple-200' : 'card card-info'
-    const textColor = isIndexing ? 'text-purple' : isDatabaseReset ? 'text-error' : 'text-info'
+    const cardClass = isDatabaseReset ? 'card card-error' : isIndexing ? 'card card-info' : 'card card-info'
+    const textColor = isIndexing ? 'text-info' : isDatabaseReset ? 'text-error' : 'text-info'
 
     return (
       <div
@@ -156,7 +156,7 @@ function StatusSection() {
             <span className={`font-medium ${textColor}`}>
               {jobLabel}
             </span>
-            <span className={`badge ${isDatabaseReset ? 'badge-error' : isIndexing ? 'bg-purple-50 text-purple border-purple-200' : 'badge-info'}`}>
+            <span className={`badge ${isDatabaseReset ? 'badge-error' : 'badge-info'}`}>
               In Progress
             </span>
           </div>
