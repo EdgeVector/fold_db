@@ -297,16 +297,12 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
 
 
   return (
-    <div className="p-6 space-y-6">
-      {/* Approved Schemas List */}
-      <div className="space-y-4">
-        <h3 className="text-lg font-medium text-primary">Approved Schemas</h3>
-        {approvedSchemas.length > 0 ? (
-          approvedSchemas.map(renderSchema)
-        ) : (
-          <div className="card p-8 text-center text-secondary">No approved schemas found.</div>
-        )}
-      </div>
+    <div className="p-6 space-y-4">
+      {approvedSchemas.length > 0 ? (
+        approvedSchemas.map(renderSchema)
+      ) : (
+        <p className="text-secondary">No approved schemas found.</p>
+      )}
     </div>
   )
 }

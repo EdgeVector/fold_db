@@ -62,7 +62,7 @@ describe('SchemaTab Component', () => {
     })
 
     await waitFor(() => {
-      expect(screen.getByText('Approved Schemas')).toBeInTheDocument()
+      expect(screen.getByText('No approved schemas found.')).toBeInTheDocument()
     })
   })
 

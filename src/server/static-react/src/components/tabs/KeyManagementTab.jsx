@@ -75,9 +75,9 @@ function KeyManagementTab({ onResult: _onResult }) {
     };
 
     return (
-        <div className="p-4 border border-border bg-surface">
+        <div className="p-6 space-y-4">
             {/* Current System Public Key Display */}
-            <div className="card card-info p-4 mb-6">
+            <div className="card card-info p-4">
                 <div className="flex items-start">
                     <ShieldCheckIcon className="h-5 w-5 text-info mr-2 flex-shrink-0 mt-0.5" />
                     <div className="text-sm text-primary flex-1">
@@ -120,7 +120,7 @@ function KeyManagementTab({ onResult: _onResult }) {
 
             {/* Current Private Key Display */}
             {isAuthenticated && privateKeyBase64 && (
-                <div className="card card-success p-4 mb-6">
+                <div className="card card-success p-4 ">
                     <div className="flex items-start">
                         <KeyIcon className="h-5 w-5 text-success mr-2 flex-shrink-0 mt-0.5" />
                         <div className="text-sm text-primary flex-1">
@@ -157,7 +157,7 @@ function KeyManagementTab({ onResult: _onResult }) {
 
             {/* Private Key Input Section - Only show if not authenticated */}
             {systemPublicKey && !isAuthenticated && !privateKeyBase64 && (
-                <div className="card card-warning p-4 mb-6">
+                <div className="card card-warning p-4 ">
                     <div className="flex items-start">
                         <KeyIcon className="h-5 w-5 text-warning mr-2 flex-shrink-0 mt-0.5" />
                         <div className="text-sm text-primary flex-1">

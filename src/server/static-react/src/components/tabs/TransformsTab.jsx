@@ -106,16 +106,16 @@ const TransformsTab = ({ onResult }) => {
   }, [fetchQueueInfo, onResult])
 
   return (
-    <div className="space-y-4">
+    <div className="p-6 space-y-4">
       <div className="flex justify-end">
-        <div className="text-sm text-secondary">
+        <span className="text-sm text-secondary">
           Queue: {queueInfo.isEmpty ? 'Empty' : `${queueInfo.length} queued`}
-        </div>
+        </span>
       </div>
 
       {!queueInfo.isEmpty && (
-        <div className="border border-border bg-surface p-4 border-l-4 border-l-blue-300" data-testid="transform-queue">
-          <h3 className="text-md font-medium text-info mb-2">Queue</h3>
+        <div className="card card-info p-4" data-testid="transform-queue">
+          <p className="text-sm font-medium text-info mb-2">Queue</p>
           <ul className="list-none space-y-1">
             {queueInfo.queue.map((transformId, index) => (
               <li key={`${transformId}-${index}`} className="text-secondary font-mono text-sm">
@@ -127,24 +127,17 @@ const TransformsTab = ({ onResult }) => {
       )}
 
       {isLoadingTransforms && (
-        <div className="border border-border bg-surface p-4" role="status">
-          <div className="flex items-center">
-            <div className="animate-spin h-4 w-4 border-b-2 border-green-500 mr-2"></div>
-            <span className="text-secondary">Loading transforms...</span>
-          </div>
+        <div className="flex items-center gap-2" role="status">
+          <span className="spinner" />
+          <span className="text-secondary">Loading transforms...</span>
         </div>
       )}
 
       {transformsError && (
-        <div className="border border-border bg-surface p-4 border-l-4 border-l-red-500" role="alert">
-          <div className="flex items-center">
+        <div className="card card-error p-4" role="alert">
+          <div className="flex items-center gap-4">
             <span className="text-error">Error loading transforms: {transformsError}</span>
-            <button
-              onClick={fetchTransforms}
-              className="ml-4 px-3 py-1.5 text-sm text-secondary bg-transparent border border-border cursor-pointer hover:border-primary hover:text-primary transition-colors"
-            >
-              Retry
-            </button>
+            <button onClick={fetchTransforms} className="btn-secondary btn-sm">Retry</button>
           </div>
         </div>
       )}
@@ -180,14 +173,12 @@ const TransformsTab = ({ onResult }) => {
             const fieldNames = Object.keys(transformFieldsObj)
 
             return (
-              <div key={transformId} className="border border-border bg-surface p-4 border-l-4 border-l-border">
+              <div key={transformId} className="card p-4">
                 <div className="flex justify-between items-start mb-3">
                   <div className="flex-1">
-                    <h3 className="text-lg font-semibold text-primary">{schemaName}</h3>
+                    <p className="text-lg font-semibold text-primary">{schemaName}</p>
                     <div className="flex gap-2 mt-2 flex-wrap">
-                      <span className={`inline-flex items-center px-2.5 py-0.5 text-xs font-medium ${schemaTypeColor}`}>
-                        {schemaTypeLabel}
-                      </span>
+                      <span className={schemaTypeColor}>{schemaTypeLabel}</span>
                       {transformFieldsCount > 0 && (
                         <span className="badge badge-success">
                           {transformFieldsCount} field{transformFieldsCount !== 1 ? 's' : ''}
@@ -195,47 +186,35 @@ const TransformsTab = ({ onResult }) => {
                       )}
                     </div>
                     {fieldNames.length > 0 && (
-                      <div className="mt-2 text-sm text-secondary">
+                      <p className="mt-2 text-sm text-secondary">
                         <span className="font-medium">Fields:</span> {fieldNames.join(', ')}
-                      </div>
+                      </p>
                     )}
                   </div>
                 </div>
 
                 <div className="mt-3 space-y-3">
-                  {/* Key Configuration */}
                   {keyConfig && (
-                    <div className="border border-border bg-surface p-3 border-l-2 border-l-blue-300">
-                      <div className="text-sm font-medium text-info mb-1">--key-config:</div>
+                    <div className="bg-surface-secondary p-3 border-l-2 border-info">
+                      <p className="text-sm font-medium text-info mb-1">--key-config:</p>
                       <div className="text-sm text-secondary space-y-1 font-mono">
-                        {keyConfig.hash_field && (
-                          <div>
-                            hash_key: {keyConfig.hash_field}
-                          </div>
-                        )}
-                        {keyConfig.range_field && (
-                          <div>
-                            range_key: {keyConfig.range_field}
-                          </div>
-                        )}
+                        {keyConfig.hash_field && <p>hash_key: {keyConfig.hash_field}</p>}
+                        {keyConfig.range_field && <p>range_key: {keyConfig.range_field}</p>}
                         {!keyConfig.hash_field && !keyConfig.range_field && keyConfig.key_field && (
-                          <div>
-                            key: {keyConfig.key_field}
-                          </div>
+                          <p>key: {keyConfig.key_field}</p>
                         )}
                       </div>
                     </div>
                   )}
-                  
-                  {/* Transform Fields */}
+
                   {transformFieldsCount > 0 && (
                     <div>
-                      <div className="text-sm font-medium text-secondary mb-2">--transform-fields:</div>
-                      <div className="border border-border bg-surface p-3 space-y-2">
+                      <p className="text-sm font-medium text-secondary mb-2">--transform-fields:</p>
+                      <div className="bg-surface-secondary p-3 space-y-2">
                         {Object.entries(transformFieldsObj).map(([fieldName, logic]) => (
-                          <div key={fieldName} className="border-l-2 border-default pl-3">
-                            <div className="font-medium text-primary text-sm">{fieldName}</div>
-                            <div className="text-secondary font-mono text-xs mt-1 break-all">{logic}</div>
+                          <div key={fieldName} className="border-l-2 border-border pl-3">
+                            <p className="font-medium text-primary text-sm">{fieldName}</p>
+                            <p className="text-secondary font-mono text-xs mt-1 break-all">{logic}</p>
                           </div>
                         ))}
                       </div>
@@ -247,14 +226,11 @@ const TransformsTab = ({ onResult }) => {
                   <button
                     onClick={() => handleAddToQueue(transformId, null)}
                     disabled={isLoading}
-                    className="px-4 py-2 text-sm bg-primary text-white border-none cursor-pointer hover:bg-accent-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="btn-primary"
                   >
                     {isLoading ? '→ Adding...' : '→ Add to Queue'}
                   </button>
-
-                  {errorMessage && (
-                    <span className="text-sm text-error">Error: {errorMessage}</span>
-                  )}
+                  {errorMessage && <span className="text-sm text-error">Error: {errorMessage}</span>}
                 </div>
               </div>
             )
@@ -263,12 +239,7 @@ const TransformsTab = ({ onResult }) => {
       )}
 
       {!isLoadingTransforms && !transformsError && transforms.length === 0 && (
-        <div className="border border-border bg-surface p-4">
-          <p className="text-secondary">No transforms registered</p>
-          <p className="text-sm text-secondary mt-1">
-            Register a transform in a schema to view it here and add it to the processing queue.
-          </p>
-        </div>
+        <p className="text-secondary">No transforms registered. Register a transform in a schema to view it here.</p>
       )}
     </div>
   )
