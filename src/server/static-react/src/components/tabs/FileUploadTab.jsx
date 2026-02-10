@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useIngestionStatus } from '../../hooks/useIngestionStatus'
+import IngestionStatusBar from '../shared/IngestionStatusBar'
 
 function FileUploadTab({ onResult }) {
   const [isDragging, setIsDragging] = useState(false)
@@ -247,21 +248,7 @@ function FileUploadTab({ onResult }) {
   return (
     <div className="space-y-4">
       {/* Status Bar */}
-      {ingestionStatus && (
-        <div className="minimal-card minimal-card-accent-success p-3">
-          <div className="flex items-center gap-4 text-sm">
-            <span className={`minimal-badge ${
-              ingestionStatus.enabled && ingestionStatus.configured 
-                ? 'minimal-badge-success' 
-                : 'minimal-badge-error'
-            }`}>
-              {ingestionStatus.enabled && ingestionStatus.configured ? 'Ready' : 'Not Configured'}
-            </span>
-            <span className="text-secondary">{ingestionStatus.provider} · {ingestionStatus.model}</span>
-            <span className="text-xs text-secondary">Configure AI settings using the Settings button in the header</span>
-          </div>
-        </div>
-      )}
+      <IngestionStatusBar ingestionStatus={ingestionStatus} showConfigHint />
 
       {/* Uploading Indicator */}
       {isUploading && uploadMode !== 'batch-folder' && (
@@ -507,14 +494,7 @@ function FileUploadTab({ onResult }) {
               (uploadMode === 's3-path' && !s3FilePath) ||
               (uploadMode === 'batch-folder' && !folderPath)
             }
-            className={`minimal-btn-secondary px-6 py-2.5 font-medium ${
-              isUploading ||
-              (uploadMode === 'upload' && !selectedFile) ||
-              (uploadMode === 's3-path' && !s3FilePath) ||
-              (uploadMode === 'batch-folder' && !folderPath)
-                ? 'opacity-50 cursor-not-allowed'
-                : 'minimal-btn'
-            }`}
+            className="minimal-btn-secondary minimal-btn px-6 py-2.5 font-medium"
           >
             {isUploading ? (
               <>

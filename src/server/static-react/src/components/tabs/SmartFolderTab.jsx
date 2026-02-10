@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { ingestionClient } from '../../api/clients'
 import { useIngestionStatus } from '../../hooks/useIngestionStatus'
+import IngestionStatusBar from '../shared/IngestionStatusBar'
 
 // Check if running in Tauri
 const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__
@@ -103,20 +104,7 @@ function SmartFolderTab({ onResult }) {
   return (
     <div className="space-y-4">
       {/* Status Bar */}
-      {ingestionStatus && (
-        <div className="minimal-card minimal-card-accent-success p-3">
-          <div className="flex items-center gap-4 text-sm">
-            <span className={`minimal-badge ${
-              ingestionStatus.enabled && ingestionStatus.configured
-                ? 'minimal-badge-success'
-                : 'minimal-badge-error'
-            }`}>
-              {ingestionStatus.enabled && ingestionStatus.configured ? 'Ready' : 'Not Configured'}
-            </span>
-            <span className="text-secondary">{ingestionStatus.provider} · {ingestionStatus.model}</span>
-          </div>
-        </div>
-      )}
+      <IngestionStatusBar ingestionStatus={ingestionStatus} />
 
       {/* Phase 1: Scan Input */}
       {!scanResult && !ingestionStarted && (
@@ -150,11 +138,7 @@ function SmartFolderTab({ onResult }) {
             <button
               onClick={handleScan}
               disabled={isScanning || !folderPath.trim()}
-              className={`minimal-btn-secondary px-6 py-2 font-medium ${
-                isScanning || !folderPath.trim()
-                  ? 'opacity-50 cursor-not-allowed'
-                  : 'minimal-btn'
-              }`}
+              className="minimal-btn-secondary minimal-btn px-6 py-2 font-medium"
             >
               {isScanning ? (
                 <>
@@ -256,11 +240,7 @@ function SmartFolderTab({ onResult }) {
               <button
                 onClick={handleIngest}
                 disabled={isIngesting || scanResult.recommended_files.length === 0}
-                className={`minimal-btn-secondary px-6 py-2.5 font-medium ${
-                  isIngesting || scanResult.recommended_files.length === 0
-                    ? 'opacity-50 cursor-not-allowed'
-                    : 'minimal-btn'
-                }`}
+                className="minimal-btn-secondary minimal-btn px-6 py-2.5 font-medium"
               >
                 {isIngesting ? (
                   <>

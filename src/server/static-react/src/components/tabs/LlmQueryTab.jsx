@@ -49,6 +49,37 @@ function LlmQueryTab({ onResult }) {
   }, [dispatch]);
 
   /**
+   * Process an AI agent response — shared by follow-up and new-query paths
+   */
+  const processAgentResponse = useCallback((agentResponse) => {
+    if (!agentResponse.ok) {
+      addToLog('system', `❌ Error: ${agentResponse.error || 'Failed to run AI agent query'}`);
+      return;
+    }
+
+    const result = agentResponse.data;
+
+    // Update session ID if returned from the server
+    if (result.session_id) {
+      dispatch(setSessionId(result.session_id));
+    }
+
+    // Show tool calls if any were made
+    if (result.tool_calls && result.tool_calls.length > 0) {
+      addToLog('system', `🔧 Made ${result.tool_calls.length} tool call(s)`);
+      addToLog('results', 'Tool execution trace', result.tool_calls);
+    }
+
+    // Display the AI's final answer
+    addToLog('system', result.answer);
+
+    // Show results section if user has expanded details
+    if (showResults && result.tool_calls) {
+      onResult({ success: true, data: result.tool_calls });
+    }
+  }, [addToLog, dispatch, showResults, onResult]);
+
+  /**
    * Handle user input - run query or ask follow-up
    */
   const handleSubmit = useCallback(async (e) => {
@@ -109,32 +140,7 @@ function LlmQueryTab({ onResult }) {
             max_iterations: 10
           });
 
-          if (!agentResponse.ok) {
-            addToLog('system', `❌ Error: ${agentResponse.error || 'Failed to run AI agent query'}`);
-            return;
-          }
-
-          const result = agentResponse.data;
-
-          // Update session ID if returned from the server
-          if (result.session_id) {
-            dispatch(setSessionId(result.session_id));
-          }
-
-          // Show tool calls if any were made
-          if (result.tool_calls && result.tool_calls.length > 0) {
-            addToLog('system', `🔧 Made ${result.tool_calls.length} tool call(s)`);
-            // Add tool calls as results for detailed view
-            addToLog('results', 'Tool execution trace', result.tool_calls);
-          }
-
-          // Display the AI's final answer
-          addToLog('system', result.answer);
-
-          // Show results section if user has expanded details
-          if (showResults && result.tool_calls) {
-            onResult({ success: true, data: result.tool_calls });
-          }
+          processAgentResponse(agentResponse);
         }
       } else {
         // New query - use AI agent with tool calling
@@ -146,32 +152,7 @@ function LlmQueryTab({ onResult }) {
           max_iterations: 10
         });
 
-        if (!agentResponse.ok) {
-          addToLog('system', `❌ Error: ${agentResponse.error || 'Failed to run AI agent query'}`);
-          return;
-        }
-
-        const result = agentResponse.data;
-
-        // Update session ID if returned from the server
-        if (result.session_id) {
-          dispatch(setSessionId(result.session_id));
-        }
-
-        // Show tool calls if any were made
-        if (result.tool_calls && result.tool_calls.length > 0) {
-          addToLog('system', `🔧 Made ${result.tool_calls.length} tool call(s)`);
-          // Add tool calls as results for detailed view
-          addToLog('results', 'Tool execution trace', result.tool_calls);
-        }
-
-        // Display the AI's final answer
-        addToLog('system', result.answer);
-
-        // Show results section if user has expanded details
-        if (showResults && result.tool_calls) {
-          onResult({ success: true, data: result.tool_calls });
-        }
+        processAgentResponse(agentResponse);
       }
     } catch (error) {
       console.error('Error processing input:', error);
@@ -180,7 +161,7 @@ function LlmQueryTab({ onResult }) {
     } finally {
       dispatch(setIsProcessing(false));
     }
-  }, [inputText, sessionId, canAskFollowup, isProcessing, showResults, addToLog, onResult, dispatch]);
+  }, [inputText, sessionId, canAskFollowup, isProcessing, processAgentResponse, addToLog, onResult, dispatch]);
 
   /**
    * Start a new conversation

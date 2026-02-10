@@ -347,6 +347,15 @@
     font-size: 12px;
   }
 
+  .minimal-btn-disabled,
+  .minimal-btn:disabled,
+  .minimal-btn-secondary:disabled,
+  .minimal-btn-danger:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    pointer-events: none;
+  }
+
   /* ---------- Cards ---------- */
 
   .minimal-card {

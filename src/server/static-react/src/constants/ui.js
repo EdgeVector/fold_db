@@ -107,11 +107,14 @@ export const HELP_TEXT = {
 
 // Range Schema Configuration
 export const RANGE_SCHEMA_CONFIG = {
+  FIELD_TYPE: "Range",
+  MUTATION_WRAPPER_KEY: "value",
   label: "Range Key",
-  badgeColor: "bg-purple-100 text-purple-800",
+  backgroundColor: "minimal-section-purple",
+  badgeColor: "minimal-badge minimal-badge-purple",
   indicator: {
     text: "Range",
-    className: "ml-1 text-xs bg-purple-100 text-purple-800 px-1 py-0.5 rounded",
+    className: "ml-1 text-xs minimal-badge minimal-badge-purple",
   },
   tooltip: "This schema supports range-based queries",
 };

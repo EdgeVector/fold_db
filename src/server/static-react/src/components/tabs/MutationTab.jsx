@@ -4,12 +4,8 @@ import MutationEditor from './mutation/MutationEditor'
 import ResultViewer from './mutation/ResultViewer'
 import TextField from '../form/TextField'
 import { mutationClient } from '../../api'
-import { MUTATION_TYPE_API_MAP } from '../../constants/ui.js'
+import { MUTATION_TYPE_API_MAP, BUTTON_TEXT, FORM_LABELS, RANGE_SCHEMA_CONFIG } from '../../constants/ui.js'
 // Removed hook dependencies - using Redux state management instead (TASK-003)
-// Temporarily bypass constants to break circular dependency
-const BUTTON_TEXT = { executeMutation: 'Execute Mutation', confirm: 'Confirm', cancel: 'Cancel' };
-const FORM_LABELS = { schema: 'Schema', operationType: 'Operation Type', rangeKeyFilter: 'Range Key Filter', rangeKeyRequired: 'Range key is required', rangeKeyOptional: 'Range key is optional for delete operations' };
-const RANGE_SCHEMA_CONFIG = { FIELD_TYPE: 'Range', MUTATION_WRAPPER_KEY: 'value', label: 'Range Key', backgroundColor: 'bg-blue-50' };
 const VALIDATION_MESSAGES = { RANGE_KEY_REQUIRED: 'Range key is required for range schema mutations', RANGE_KEY_EMPTY: 'Range key cannot be empty' };
 import {
   isRangeSchema,
@@ -180,11 +176,7 @@ function MutationTab({ onResult }) {
         <div className="flex justify-end pt-4">
           <button
             type="submit"
-            className={`minimal-btn-secondary px-6 py-2.5 font-medium ${
-              isMutationDisabled
-                ? 'opacity-50 cursor-not-allowed'
-                : 'minimal-btn'
-            }`}
+            className="minimal-btn-secondary minimal-btn px-6 py-2.5 font-medium"
             disabled={isMutationDisabled}
           >
             → {BUTTON_TEXT.executeMutation}

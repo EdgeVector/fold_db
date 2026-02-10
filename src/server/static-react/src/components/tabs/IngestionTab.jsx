@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { ingestionClient } from '../../api/clients'
 import { useIngestionStatus } from '../../hooks/useIngestionStatus'
+import IngestionStatusBar from '../shared/IngestionStatusBar'
 import { generateBlogPosts } from '../../data/sampleBlogPosts'
 import { twitterSamples, instagramSamples, linkedinSamples, tiktokSamples } from '../../data/sampleSocialPosts'
 
@@ -63,21 +64,7 @@ function IngestionTab({ onResult }) {
   return (
     <div className="space-y-4">
       {/* Status Bar */}
-      {ingestionStatus && (
-        <div className="minimal-card p-3 border-l-4" style={{ borderLeftColor: ingestionStatus.enabled && ingestionStatus.configured ? 'var(--color-success)' : 'var(--color-error)' }}>
-          <div className="flex items-center gap-4 text-sm">
-            <span className={`minimal-badge ${
-              ingestionStatus.enabled && ingestionStatus.configured 
-                ? 'minimal-badge-success' 
-                : 'minimal-badge-error'
-            }`}>
-              {ingestionStatus.enabled && ingestionStatus.configured ? 'Ready' : 'Not Configured'}
-            </span>
-            <span className="text-secondary">{ingestionStatus.provider} · {ingestionStatus.model}</span>
-            <span className="text-xs text-secondary">Configure AI settings using the Settings button in the header</span>
-          </div>
-        </div>
-      )}
+      <IngestionStatusBar ingestionStatus={ingestionStatus} showConfigHint />
 
 
       <div className="minimal-card p-4">
@@ -146,11 +133,7 @@ function IngestionTab({ onResult }) {
           <button
             onClick={processIngestion}
             disabled={isLoading || !jsonData.trim()}
-            className={`minimal-btn px-6 py-2.5 font-medium ${
-              isLoading || !jsonData.trim()
-                ? 'opacity-50 cursor-not-allowed'
-                : ''
-            }`}
+            className="minimal-btn px-6 py-2.5 font-medium"
           >
             {isLoading ? (
               <>

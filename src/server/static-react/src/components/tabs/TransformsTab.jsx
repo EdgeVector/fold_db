@@ -248,9 +248,7 @@ const TransformsTab = ({ onResult }) => {
                   <button
                     onClick={() => handleAddToQueue(transformId, null)}
                     disabled={isLoading}
-                    className={`minimal-btn-secondary minimal-btn text-sm ${
-                      isLoading ? 'opacity-50 cursor-not-allowed' : ''
-                    }`}
+                    className="minimal-btn-secondary minimal-btn text-sm"
                   >
                     {isLoading ? '→ Adding...' : '→ Add to Queue'}
                   </button>
