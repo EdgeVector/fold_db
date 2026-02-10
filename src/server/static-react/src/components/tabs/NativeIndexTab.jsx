@@ -9,19 +9,19 @@ import {
 function ResultRow({ r }) {
   return (
     <tr className="border-t">
-      <td className="px-2 py-1 text-xs text-gray-600">
+      <td className="px-2 py-1 text-xs text-secondary">
         {r.key_value?.hash ?? ''}
       </td>
-      <td className="px-2 py-1 text-xs text-gray-600">
+      <td className="px-2 py-1 text-xs text-secondary">
         {r.key_value?.range ?? ''}
       </td>
-      <td className="px-2 py-1 text-xs font-mono text-gray-800">
+      <td className="px-2 py-1 text-xs font-mono text-primary">
         {r.schema_name}
       </td>
-      <td className="px-2 py-1 text-xs text-gray-800">
+      <td className="px-2 py-1 text-xs text-primary">
         {r.field}
       </td>
-      <td className="px-2 py-1 text-xs text-gray-800 whitespace-pre-wrap break-words">
+      <td className="px-2 py-1 text-xs text-primary whitespace-pre-wrap break-words">
         {formatValue(r.value)}
       </td>
     </tr>
@@ -151,10 +151,10 @@ export default function NativeIndexTab({ onResult }) {
 
   return (
     <div className="p-6 space-y-4">
-      <div className="bg-white p-4 rounded-lg shadow">
+      <div className="minimal-card p-4">
         <div className="mb-3">
-          <h3 className="text-lg font-medium text-gray-900">Native Index Search</h3>
-          <p className="text-xs text-gray-500">Search the database-native word index across all approved schemas.</p>
+          <h3 className="text-lg font-medium text-primary">Native Index Search</h3>
+          <p className="text-xs text-secondary">Search the database-native word index across all approved schemas.</p>
         </div>
         <div className="flex gap-2 items-center">
           <input
@@ -175,15 +175,15 @@ export default function NativeIndexTab({ onResult }) {
       </div>
 
 
-      <div className="bg-white p-4 rounded-lg shadow">
+      <div className="minimal-card p-4">
         <div className="mb-2 flex items-center justify-between">
-          <h4 className="text-md font-medium text-gray-900">Search Results</h4>
+          <h4 className="text-md font-medium text-primary">Search Results</h4>
           <div className="flex items-center gap-3">
-            <span className="text-xs text-gray-500">{results.length} matches</span>
+            <span className="text-xs text-secondary">{results.length} matches</span>
             {results.length > 0 && (
               <button
                 type="button"
-                className="text-xs px-2 py-1 rounded border border-gray-300 hover:bg-gray-100"
+                className="text-xs px-2 py-1 rounded minimal-btn-secondary"
                 onClick={() => fetchAllDetails()}
               >
                 Refresh Details
@@ -192,18 +192,18 @@ export default function NativeIndexTab({ onResult }) {
           </div>
         </div>
         {error && (
-          <div className="mb-2 p-2 bg-red-50 border border-red-200 text-xs text-red-700 rounded">{error}</div>
+          <div className="mb-2 p-2 minimal-section-error text-xs text-error rounded">{error}</div>
         )}
         <div className="overflow-auto max-h-[450px]">
           <table className="min-w-full text-left text-xs">
             <thead>
               <tr className="bg-gray-50">
-                <th className="px-2 py-2 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide border-b-2 border-gray-300">Hash</th>
-                <th className="px-2 py-2 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide border-b-2 border-gray-300">Range</th>
-                <th className="px-2 py-2 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide border-b-2 border-gray-300">Schema</th>
-                <th className="px-2 py-2 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide border-b-2 border-gray-300">Field</th>
-                <th className="px-2 py-2 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide border-b-2 border-gray-300">Value</th>
-                <th className="px-2 py-2 border-b-2 border-gray-300"></th>
+                <th className="px-2 py-2 text-left text-xs font-semibold text-secondary uppercase tracking-wide border-b-2" style={{borderColor: 'var(--color-border)'}}>Hash</th>
+                <th className="px-2 py-2 text-left text-xs font-semibold text-secondary uppercase tracking-wide border-b-2" style={{borderColor: 'var(--color-border)'}}>Range</th>
+                <th className="px-2 py-2 text-left text-xs font-semibold text-secondary uppercase tracking-wide border-b-2" style={{borderColor: 'var(--color-border)'}}>Schema</th>
+                <th className="px-2 py-2 text-left text-xs font-semibold text-secondary uppercase tracking-wide border-b-2" style={{borderColor: 'var(--color-border)'}}>Field</th>
+                <th className="px-2 py-2 text-left text-xs font-semibold text-secondary uppercase tracking-wide border-b-2" style={{borderColor: 'var(--color-border)'}}>Value</th>
+                <th className="px-2 py-2 border-b-2" style={{borderColor: 'var(--color-border)'}}></th>
               </tr>
             </thead>
             <tbody>
@@ -219,7 +219,7 @@ export default function NativeIndexTab({ onResult }) {
                       <td className="px-2 py-1 text-right">
                         <button
                           type="button"
-                          className="text-xs px-2 py-1 rounded border border-gray-300 hover:bg-gray-100"
+                          className="text-xs px-2 py-1 rounded minimal-btn-secondary"
                           onClick={async () => {
                             const next = new Set(expanded)
                             if (next.has(id)) next.delete(id); else next.add(id)
@@ -239,7 +239,7 @@ export default function NativeIndexTab({ onResult }) {
                     {isOpen && (
                       <tr key={`${id}-details`}>
                         <td colSpan={6} className="px-2 pb-3">
-                          <div className="ml-2 bg-gray-50 border rounded">
+                          <div className="ml-2 minimal-card">
                             <FieldsTable fields={details || {}} />
                           </div>
                         </td>
@@ -250,7 +250,7 @@ export default function NativeIndexTab({ onResult }) {
               })}
               {results.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-2 py-3 text-center text-gray-500">No results</td>
+                  <td colSpan={5} className="px-2 py-3 text-center text-secondary">No results</td>
                 </tr>
               )}
             </tbody>

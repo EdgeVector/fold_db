@@ -76,7 +76,7 @@ function AiConfigSettings({ configSaveStatus, setConfigSaveStatus, onClose }) {
             <select
               value={aiProvider}
               onChange={(e) => setAiProvider(e.target.value)}
-              className="w-full p-2 border border-gray-200 bg-white text-primary text-sm"
+              className="minimal-input w-full p-2 text-sm"
             >
               <option value="OpenRouter">OpenRouter</option>
               <option value="Ollama">Ollama</option>
@@ -91,7 +91,7 @@ function AiConfigSettings({ configSaveStatus, setConfigSaveStatus, onClose }) {
               <select
                 value={openrouterModel}
                 onChange={(e) => setOpenrouterModel(e.target.value)}
-                className="w-full p-2 border border-gray-200 bg-white text-primary text-sm"
+                className="minimal-input w-full p-2 text-sm"
               >
                 <option value="anthropic/claude-3.5-sonnet">Claude 3.5 Sonnet</option>
                 <option value="anthropic/claude-3.5-haiku">Claude 3.5 Haiku</option>
@@ -115,7 +115,7 @@ function AiConfigSettings({ configSaveStatus, setConfigSaveStatus, onClose }) {
               <select
                 value={ollamaModel}
                 onChange={(e) => setOllamaModel(e.target.value)}
-                className="w-full p-2 border border-gray-200 bg-white text-primary text-sm"
+                className="minimal-input w-full p-2 text-sm"
               >
                 <option value="llama3.3">Llama 3.3 (70B)</option>
                 <option value="llama3.2">Llama 3.2 (3B)</option>
@@ -146,7 +146,7 @@ function AiConfigSettings({ configSaveStatus, setConfigSaveStatus, onClose }) {
               value={openrouterApiKey}
               onChange={(e) => setOpenrouterApiKey(e.target.value)}
               placeholder="sk-or-..."
-              className="w-full p-2 border border-gray-200 bg-white text-primary text-sm"
+              className="minimal-input w-full p-2 text-sm"
             />
           </div>
         )}
@@ -162,7 +162,7 @@ function AiConfigSettings({ configSaveStatus, setConfigSaveStatus, onClose }) {
           </button>
           
           {showAdvanced && (
-            <div className="mt-3 space-y-3 pl-4 border-l-2 border-gray-200">
+            <div className="mt-3 space-y-3 pl-4 border-l-2" style={{borderColor: 'var(--color-border)'}}>
               <div>
                 <label className="block text-sm font-medium text-secondary mb-1">
                   --base-url
@@ -178,7 +178,7 @@ function AiConfigSettings({ configSaveStatus, setConfigSaveStatus, onClose }) {
                     ? 'https://openrouter.ai/api/v1'
                     : 'http://192.168.1.226:11434'
                   }
-                  className="w-full p-2 border border-gray-200 bg-white text-primary text-sm"
+                  className="minimal-input w-full p-2 text-sm"
                 />
               </div>
             </div>
@@ -186,11 +186,10 @@ function AiConfigSettings({ configSaveStatus, setConfigSaveStatus, onClose }) {
         </div>
 
         {configSaveStatus && (
-          <div className={`p-3 border-l-4 ${
-            configSaveStatus.success 
-              ? 'border-green-500 text-success' 
-              : 'border-red-500 text-error'
-          }`}>
+          <div
+            className={`p-3 border-l-4 ${configSaveStatus.success ? 'text-success' : 'text-error'}`}
+            style={{ borderLeftColor: configSaveStatus.success ? 'var(--color-success)' : 'var(--color-error)' }}
+          >
             <span className="text-sm font-medium">
               {configSaveStatus.success ? '✓' : '✗'} {configSaveStatus.message}
             </span>

@@ -135,20 +135,20 @@ function QueryForm({
           error={validationErrors.fields}
           helpText="Select fields to include in your query"
         >
-          <div className="bg-gray-50 rounded-md p-4">
+          <div className="minimal-card p-4">
             <div className="space-y-3">
               {fieldNames.map(fieldName => (
                 <label key={fieldName} className="relative flex items-start">
                   <div className="flex items-center h-5">
                     <input
                       type="checkbox"
-                      className="h-4 w-4 text-primary border-gray-300 rounded focus:ring-primary"
+                      className="h-4 w-4 text-primary rounded focus:ring-primary" style={{borderColor: 'var(--color-border)'}}
                       checked={queryState?.queryFields?.includes(fieldName) || false}
                       onChange={() => handleFieldToggle(fieldName)}
                     />
                   </div>
                   <div className="ml-3 flex items-center">
-                    <span className="text-sm font-medium text-gray-700">{fieldName}</span>
+                    <span className="text-sm font-medium text-primary">{fieldName}</span>
                   </div>
                 </label>
               ))}
@@ -165,11 +165,11 @@ function QueryForm({
           name="hashRangeFilter"
           helpText="Filter data by hash and range key values"
         >
-          <div className="bg-purple-50 rounded-md p-4 space-y-4">
+          <div className="minimal-section-purple p-4 space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {/* Hash Key Input */}
               <div className="space-y-2">
-                <label className="block text-sm font-medium text-gray-700">
+                <label className="block text-sm font-medium text-primary">
                   Hash Key
                 </label>
                 <input
@@ -179,14 +179,14 @@ function QueryForm({
                   value={queryState?.hashKeyValue || ''}
                   onChange={(e) => onHashKeyChange(e.target.value)}
                 />
-                <div className="text-xs text-gray-500">
+                <div className="text-xs text-secondary">
                   Hash field: {getHashKey(approvedSchemas.find(s => s.name === queryState?.selectedSchema)) || 'N/A'}
                 </div>
               </div>
 
               {/* Range Key Input */}
               <div className="space-y-2">
-                <label className="block text-sm font-medium text-gray-700">
+                <label className="block text-sm font-medium text-primary">
                   Range Key
                 </label>
                 <input
@@ -196,13 +196,13 @@ function QueryForm({
                   value={queryState?.rangeKeyValue || ''}
                   onChange={(e) => onRangeSchemaFilterChange({ key: e.target.value })}
                 />
-                <div className="text-xs text-gray-500">
+                <div className="text-xs text-secondary">
                   Range field: {getRangeKey(approvedSchemas.find(s => s.name === queryState?.selectedSchema)) || 'N/A'}
                 </div>
               </div>
             </div>
             
-            <div className="text-xs text-gray-500">
+            <div className="text-xs text-secondary">
               <p><strong>Hash Key:</strong> Used for partitioning data across multiple nodes</p>
               <p><strong>Range Key:</strong> Used for ordering and range queries within a partition</p>
             </div>

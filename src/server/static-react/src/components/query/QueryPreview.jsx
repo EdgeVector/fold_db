@@ -112,32 +112,32 @@ function QueryPreview({
 
   if (!query && !queryState) {
     return (
-      <div className={`bg-gray-50 rounded-md p-4 ${className}`}>
-        <h3 className="text-sm font-medium text-gray-500 mb-2">{title}</h3>
-        <p className="text-sm text-gray-400 italic">No query to preview</p>
+      <div className={`minimal-card p-4 ${className}`}>
+        <h3 className="text-sm font-medium text-secondary mb-2">{title}</h3>
+        <p className="text-sm text-tertiary italic">No query to preview</p>
       </div>
     );
   }
 
   return (
-    <div className={`bg-white border border-gray-200 rounded-lg shadow-sm ${className}`}>
-      <div className="px-4 py-3 border-b border-gray-200">
-        <h3 className="text-sm font-medium text-gray-900">{title}</h3>
+    <div className={`minimal-card ${className}`}>
+      <div className="px-4 py-3" style={{borderBottom: '1px solid var(--color-border)'}}>
+        <h3 className="text-sm font-medium text-primary">{title}</h3>
       </div>
       
       <div className="p-4 space-y-4">
         {/* Validation Errors */}
         {validationErrors && validationErrors.length > 0 && (
-          <div className="bg-red-50 border border-red-200 rounded-md p-3">
+          <div className="minimal-section-error p-3">
             <div className="flex items-center mb-2">
-              <svg className="h-4 w-4 text-red-400 mr-2" fill="currentColor" viewBox="0 0 20 20">
+              <svg className="h-4 w-4 text-error mr-2" fill="currentColor" viewBox="0 0 20 20">
                 <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
               </svg>
-              <span className="text-sm font-medium text-red-800">Validation Errors</span>
+              <span className="text-sm font-medium text-error">Validation Errors</span>
             </div>
             <ul className="space-y-1">
               {validationErrors.map((error, index) => (
-                <li key={index} className="text-sm text-red-700">
+                <li key={index} className="text-sm text-error">
                   {error}
                 </li>
               ))}
@@ -147,13 +147,13 @@ function QueryPreview({
 
         {/* Executing Status */}
         {isExecuting && (
-          <div className="bg-blue-50 border border-blue-200 rounded-md p-3">
+          <div className="minimal-section-info p-3">
             <div className="flex items-center">
-              <svg className="animate-spin h-4 w-4 text-blue-400 mr-2" fill="none" viewBox="0 0 24 24">
+              <svg className="animate-spin h-4 w-4 text-info mr-2" fill="none" viewBox="0 0 24 24">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
               </svg>
-              <span className="text-sm font-medium text-blue-800">Executing query...</span>
+              <span className="text-sm font-medium minimal-section-info-text">Executing query...</span>
             </div>
           </div>
         )}
@@ -162,17 +162,17 @@ function QueryPreview({
         <div className="space-y-3">
           {/* Schema */}
           <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">
+            <label className="block text-xs font-medium text-secondary mb-1">
               Schema
             </label>
-            <div className="inline-flex items-center px-2 py-1 rounded-md bg-blue-100 text-blue-800 text-sm font-medium">
+            <div className="inline-flex items-center px-2 py-1 rounded-md minimal-badge-info text-sm font-medium">
               {formattedQuery?.schema || ''}
             </div>
           </div>
 
           {/* Fields with Values */}
           <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">
+            <label className="block text-xs font-medium text-secondary mb-1">
               Fields ({formattedQuery?.fields ? formattedQuery.fields.length : 0})
             </label>
             <div className="flex flex-wrap gap-1">
@@ -181,11 +181,11 @@ function QueryPreview({
                   const fieldValue = formattedQuery.fieldValues?.[field];
                   return (
                     <div key={index} className="inline-flex flex-col items-start">
-                      <span className="inline-flex items-center px-2 py-1 rounded-md bg-green-100 text-green-800 text-sm">
+                      <span className="inline-flex items-center px-2 py-1 rounded-md minimal-badge-success text-sm">
                         {field}
                       </span>
                       {fieldValue && (
-                        <span className="text-xs text-gray-600 mt-1 px-2">
+                        <span className="text-xs text-secondary mt-1 px-2">
                           {fieldValue}
                         </span>
                       )}
@@ -193,7 +193,7 @@ function QueryPreview({
                   );
                 })
               ) : (
-                <span className="text-sm text-gray-500 italic">No fields selected</span>
+                <span className="text-sm text-secondary italic">No fields selected</span>
               )}
             </div>
           </div>
@@ -202,15 +202,15 @@ function QueryPreview({
           {((formattedQuery.filters && Array.isArray(formattedQuery.filters) && formattedQuery.filters.length > 0) ||
             (formattedQuery.filters && !Array.isArray(formattedQuery.filters) && Object.keys(formattedQuery.filters).length > 0)) && (
             <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">
+              <label className="block text-xs font-medium text-secondary mb-1">
                 Filters
               </label>
               <div className="space-y-2">
                 {Array.isArray(formattedQuery.filters) ? (
                   // Handle filters as array (from test mocks)
                   formattedQuery.filters.map((filter, index) => (
-                    <div key={index} className="bg-yellow-50 rounded-md p-3">
-                      <div className="text-sm text-yellow-700">
+                    <div key={index} className="minimal-section-warning p-3">
+                      <div className="text-sm minimal-section-warning-text">
                         {filter.field} {filter.operator} "{filter.value}"
                       </div>
                     </div>
@@ -218,11 +218,11 @@ function QueryPreview({
                 ) : (
                   // Handle filters as object (existing format)
                   Object.entries(formattedQuery.filters).map(([fieldName, filter]) => (
-                    <div key={fieldName} className="bg-yellow-50 rounded-md p-3">
-                      <div className="font-medium text-sm text-yellow-800 mb-1">
+                    <div key={fieldName} className="minimal-section-warning p-3">
+                      <div className="font-medium text-sm minimal-section-warning-text mb-1">
                         {fieldName}
                       </div>
-                      <div className="text-sm text-yellow-700">
+                      <div className="text-sm minimal-section-warning-text">
                         {filter.exactKey && (
                           <span>Exact key: <code className="bg-yellow-200 px-1 rounded">{filter.exactKey}</code></span>
                         )}
@@ -243,11 +243,11 @@ function QueryPreview({
           {/* OrderBy */}
           {formattedQuery.orderBy && (
             <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">
+              <label className="block text-xs font-medium text-secondary mb-1">
                 OrderBy
               </label>
-              <div className="bg-purple-50 rounded-md p-3">
-                <div className="text-sm text-purple-700">
+              <div className="minimal-section-purple p-3">
+                <div className="text-sm minimal-section-purple-muted">
                   {formattedQuery.orderBy.field} {formattedQuery.orderBy.direction}
                 </div>
               </div>
@@ -257,7 +257,7 @@ function QueryPreview({
           {/* Range Key (for range schemas) */}
           {formattedQuery.rangeKey && (
             <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">
+              <label className="block text-xs font-medium text-secondary mb-1">
                 RangeKey
               </label>
               <div className="bg-indigo-50 rounded-md p-3">
@@ -271,8 +271,8 @@ function QueryPreview({
 
         {/* JSON format toggle */}
         {showJson && (
-          <div className="border-t border-gray-200 pt-4">
-            <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">
+          <div className="pt-4" style={{borderTop: '1px solid var(--color-border)'}}>
+            <label className="block text-xs font-medium text-secondary uppercase tracking-wide mb-2">
               Raw JSON
             </label>
             <pre style={{ background: '#1a1a1a', color: '#e5e5e5' }} className="text-xs p-3 overflow-x-auto">

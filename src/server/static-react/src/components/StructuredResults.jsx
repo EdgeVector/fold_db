@@ -19,8 +19,8 @@ function ToggleButton({ isOpen, onClick, label }) {
       onClick={onClick}
       aria-expanded={isOpen}
     >
-      <span className="font-mono text-sm text-gray-800 truncate">{label}</span>
-      <span className="ml-2 text-gray-500 text-xs">{isOpen ? '▼' : '▶'}</span>
+      <span className="font-mono text-sm text-primary truncate">{label}</span>
+      <span className="ml-2 text-secondary text-xs">{isOpen ? '▼' : '▶'}</span>
     </button>
   )
 }
@@ -29,7 +29,7 @@ function FieldsTable({ fields }) {
   const entries = useMemo(() => Object.entries(fields || {}), [fields])
   if (entries.length === 0) {
     return (
-      <div className="text-xs text-gray-500 italic px-3 py-2">No fields</div>
+      <div className="text-xs text-secondary italic px-3 py-2">No fields</div>
     )
   }
 
@@ -39,8 +39,8 @@ function FieldsTable({ fields }) {
         <tbody>
           {entries.map(([k, v]) => (
             <tr key={k} className="bg-white">
-              <td className="align-top text-xs font-medium text-gray-700 pr-4 whitespace-nowrap">{k}</td>
-              <td className="align-top text-xs text-gray-700">
+              <td className="align-top text-xs font-medium text-primary pr-4 whitespace-nowrap">{k}</td>
+              <td className="align-top text-xs text-primary">
                 <pre className="font-mono whitespace-pre-wrap break-words">{formatValue(v)}</pre>
               </td>
             </tr>
@@ -109,7 +109,7 @@ const showMoreHashes = useCallback(() => {
 
   return (
     <div className="space-y-2">
-      <div className="text-xs text-gray-600">
+      <div className="text-xs text-secondary">
         <span className="mr-4">Hashes: <strong>{counts.hashes}</strong></span>
         <span>Ranges: <strong>{counts.ranges}</strong></span>
       </div>
@@ -142,7 +142,7 @@ const showMoreHashes = useCallback(() => {
         <div className="pt-2">
           <button
             type="button"
-            className="text-xs px-3 py-1 rounded bg-gray-200 hover:bg-gray-300"
+            className="text-xs px-3 py-1 rounded minimal-btn-secondary"
             onClick={showMoreHashes}
           >
             Show more hashes ({hashWindow.count}/{allHashes.length})
@@ -184,7 +184,7 @@ function HashRanges({ data, hashKey, rangeOpen, onToggleRange, pageSize, rangeWi
         <div className="pt-1">
           <button
             type="button"
-            className="text-xs px-3 py-1 rounded bg-gray-200 hover:bg-gray-300"
+            className="text-xs px-3 py-1 rounded minimal-btn-secondary"
             onClick={showMoreRanges}
           >
             Show more ranges ({effectiveWindow.count}/{allRanges.length})

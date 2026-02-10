@@ -147,7 +147,7 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
     const hashRangeSchemaInfo = getHashRangeSchemaInfo(schema)
 
     return (
-      <div key={schema.name} className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden transition-all duration-200 hover:shadow-md">
+      <div key={schema.name} className="minimal-card overflow-hidden transition-all duration-200 hover:shadow-md">
         <div
           className="px-4 py-3 bg-gray-50 cursor-pointer select-none transition-colors duration-200 hover:bg-gray-100"
           onClick={() => toggleSchema(schema.name)}
@@ -155,24 +155,24 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-2">
               {isExpanded ? (
-                <ChevronDownIcon className="w-4 h-4 text-gray-400 transition-transform duration-200" />
+                <ChevronDownIcon className="w-4 h-4 text-tertiary transition-transform duration-200" />
               ) : (
-                <ChevronRightIcon className="w-4 h-4 text-gray-400 transition-transform duration-200" />
+                <ChevronRightIcon className="w-4 h-4 text-tertiary transition-transform duration-200" />
               )}
-              <h3 className="font-medium text-gray-900">{getDisplayName(schema)}</h3>
+              <h3 className="font-medium text-primary">{getDisplayName(schema)}</h3>
               {schema.descriptive_name && schema.descriptive_name !== schema.name && (
-                <span className="text-xs text-gray-500" title={schema.name}>({schema.name.length > 12 ? schema.name.slice(0, 8) + '…' : schema.name})</span>
+                <span className="text-xs text-secondary" title={schema.name}>({schema.name.length > 12 ? schema.name.slice(0, 8) + '…' : schema.name})</span>
               )}
               <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStateColor(state)}`}>
                 {state}
               </span>
               {rangeSchemaInfo && (
-                <span className="px-2 py-1 text-xs font-medium rounded-full bg-purple-100 text-purple-800">
+                <span className="px-2 py-1 text-xs font-medium rounded-full minimal-section-purple-text" style={{background: '#f3e8ff'}}>
                   Range Schema
                 </span>
               )}
               {hashRangeSchemaInfo && (
-                <span className="px-2 py-1 text-xs font-medium rounded-full bg-blue-100 text-blue-800">
+                <span className="px-2 py-1 text-xs font-medium rounded-full minimal-section-info-text" style={{background: '#dbeafe'}}>
                   HashRange Schema
                 </span>
               )}
@@ -184,7 +184,7 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
                   - blocked → approved (once approved, cannot be unloaded) */}
               {state.toLowerCase() === 'available' && (
                 <button
-                  className="inline-flex items-center px-3 py-1 text-xs font-medium border border-gray-300 text-gray-700 bg-white hover:border-gray-900 hover:text-gray-900 transition-colors"
+                  className="minimal-btn-secondary text-xs py-1 px-3"
                   onClick={(e) => {
                     e.stopPropagation()
                     approveSchema(schema.name)
@@ -195,7 +195,7 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
               )}
               {state.toLowerCase() === 'approved' && (
                 <button
-                  className="inline-flex items-center px-3 py-1 text-xs font-medium border border-gray-300 text-gray-500 bg-white hover:border-red-400 hover:text-red-600 transition-colors"
+                  className="minimal-btn-secondary text-xs py-1 px-3 hover:text-error"
                   onClick={(e) => {
                     e.stopPropagation()
                     blockSchema(schema.name)
@@ -206,7 +206,7 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
               )}
               {state.toLowerCase() === 'blocked' && (
                 <button
-                  className="inline-flex items-center px-3 py-1 text-xs font-medium border border-gray-300 text-gray-700 bg-white hover:border-gray-900 hover:text-gray-900 transition-colors"
+                  className="minimal-btn-secondary text-xs py-1 px-3"
                   onClick={(e) => {
                     e.stopPropagation()
                     approveSchema(schema.name)
@@ -220,16 +220,16 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
         </div>
         
         {isExpanded && schema.fields && (
-          <div className="p-4 border-t border-gray-200">
+          <div className="p-4 border-t" style={{borderColor: 'var(--color-border)'}}>
             {/* Range Schema Information */}
             {rangeSchemaInfo && (
-              <div className="mb-4 p-3 bg-purple-50 rounded-md border border-purple-200">
-                <h4 className="text-sm font-medium text-purple-900 mb-2">Range Schema Information</h4>
-                <div className="space-y-1 text-xs text-purple-800">
+              <div className="mb-4 p-3 minimal-section-purple">
+                <h4 className="text-sm font-medium minimal-section-purple-text mb-2">Range Schema Information</h4>
+                <div className="space-y-1 text-xs minimal-section-purple-text">
                   <p><strong>Range Key:</strong> {rangeSchemaInfo.rangeKey}</p>
                   <p><strong>Total Fields:</strong> {rangeSchemaInfo.totalFields}</p>
                   <p><strong>Range Fields:</strong> {rangeSchemaInfo.rangeFields.length}</p>
-                  <p className="text-purple-600">
+                  <p className="minimal-section-purple-muted">
                     This schema uses range-based storage for efficient querying and mutations.
                   </p>
                 </div>
@@ -238,13 +238,13 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
             
             {/* HashRange Schema Information */}
             {hashRangeSchemaInfo && (
-              <div className="mb-4 p-3 bg-blue-50 rounded-md border border-blue-200">
-                <h4 className="text-sm font-medium text-blue-900 mb-2">HashRange Schema Information</h4>
-                <div className="space-y-1 text-xs text-blue-800">
+              <div className="mb-4 p-3 minimal-section-info">
+                <h4 className="text-sm font-medium minimal-section-info-text mb-2">HashRange Schema Information</h4>
+                <div className="space-y-1 text-xs minimal-section-info-text">
                   <p><strong>Hash Field:</strong> {hashRangeSchemaInfo.hashField}</p>
                   <p><strong>Range Field:</strong> {hashRangeSchemaInfo.rangeField}</p>
                   <p><strong>Total Fields:</strong> {hashRangeSchemaInfo.totalFields}</p>
-                  <p className="text-blue-600">
+                  <p className="minimal-section-info-muted">
                     This schema uses hash-range-based storage for efficient querying and mutations with both hash and range keys.
                   </p>
                 </div>
@@ -257,23 +257,23 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
                 schema.fields.map(fieldName => {
                   const fieldTopology = schema.field_topologies?.[fieldName]
                   return (
-                    <div key={fieldName} className="p-3 bg-gray-50 rounded-md border border-gray-200">
+                    <div key={fieldName} className="p-3 minimal-card">
                       <div className="flex items-center justify-between">
                         <div className="flex-1">
                           <div className="flex items-center space-x-2">
-                            <span className="font-medium text-gray-900">{fieldName}</span>
+                            <span className="font-medium text-primary">{fieldName}</span>
                             {rangeSchemaInfo?.rangeKey === fieldName && (
-                              <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-purple-100 text-purple-800">
+                              <span className="px-2 py-0.5 text-xs font-medium rounded-full minimal-section-purple-text" style={{background: '#f3e8ff'}}>
                                 Range Key
                               </span>
                             )}
                             {hashRangeSchemaInfo?.hashField === fieldName && (
-                              <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-blue-100 text-blue-800">
+                              <span className="px-2 py-0.5 text-xs font-medium rounded-full minimal-section-info-text" style={{background: '#dbeafe'}}>
                                 Hash Key
                               </span>
                             )}
                             {hashRangeSchemaInfo?.rangeField === fieldName && (
-                              <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-purple-100 text-purple-800">
+                              <span className="px-2 py-0.5 text-xs font-medium rounded-full minimal-section-purple-text" style={{background: '#f3e8ff'}}>
                                 Range Key
                               </span>
                             )}
@@ -287,7 +287,7 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
                   )
                 })
               ) : (
-                <p className="text-sm text-gray-500 italic">No fields defined</p>
+                <p className="text-sm text-secondary italic">No fields defined</p>
               )}
             </div>
           </div>
@@ -317,11 +317,11 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
     <div className="p-6 space-y-6">
       {/* Approved Schemas List */}
       <div className="space-y-4">
-        <h3 className="text-lg font-medium text-gray-900">Approved Schemas</h3>
+        <h3 className="text-lg font-medium text-primary">Approved Schemas</h3>
         {approvedSchemas.length > 0 ? (
           approvedSchemas.map(renderSchema)
         ) : (
-          <div className="border rounded-lg p-8 bg-white shadow-sm text-center text-gray-500">
+          <div className="minimal-card p-8 text-center text-secondary">
             No approved schemas found.
           </div>
         )}
