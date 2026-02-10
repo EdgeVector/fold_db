@@ -94,7 +94,7 @@ function StatusSection() {
               <span className="font-medium text-secondary">
                 {jobLabel}
               </span>
-              <span className="badge text-xs">
+              <span className="badge badge-neutral text-xs">
                 Complete
               </span>
             </div>
@@ -142,23 +142,21 @@ function StatusSection() {
     }
 
     // In-progress jobs show full progress bar
-    const cardColor = isDatabaseReset ? 'red' : isIndexing ? 'purple' : 'blue'
-    const bgColor = `bg-${cardColor}-50`
-    const borderColor = `border-${cardColor}-200`
+    const cardClass = isDatabaseReset ? 'card card-error' : isIndexing ? 'bg-purple-50 border border-purple-200' : 'card card-info'
     const textColor = isIndexing ? 'text-purple' : isDatabaseReset ? 'text-error' : 'text-info'
 
     return (
       <div
         key={job.id}
-        className={`p-4 rounded-lg border-2 ${borderColor} ${bgColor} mb-3`}
+        className={`p-4 ${cardClass} mb-3`}
       >
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2">
-            <ArrowPathIcon className="w-5 h-5 text-info animate-spin" />
+            <ArrowPathIcon className={`w-5 h-5 ${textColor} animate-spin`} />
             <span className={`font-medium ${textColor}`}>
               {jobLabel}
             </span>
-            <span className={`text-xs ${textColor} bg-surface/50 px-2 py-0.5 rounded-full`}>
+            <span className={`badge ${isDatabaseReset ? 'badge-error' : isIndexing ? 'bg-purple-50 text-purple border-purple-200' : 'badge-info'}`}>
               In Progress
             </span>
           </div>
@@ -189,8 +187,8 @@ function StatusSection() {
     if (!showConfirmDialog) return null
 
     return (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-        <div className="modal p-6">
+      <div className="modal-overlay">
+        <div className="modal max-w-md p-6">
           <div className="flex items-center gap-3 mb-4">
             <TrashIcon className="w-6 h-6 text-error" />
             <h3 className="text-lg font-semibold text-primary">Reset Database</h3>
@@ -272,10 +270,7 @@ function StatusSection() {
         )}
 
         {resetResult && (
-          <div className={`mt-3 p-3 rounded-md text-sm ${resetResult.type === 'success'
-              ? 'card card-success text-success'
-              : 'card card-error text-error'
-            }`}>
+          <div className={`mt-3 p-3 text-sm ${resetResult.type === 'success' ? 'card card-success text-success' : 'card card-error text-error'}`}>
             {resetResult.message}
           </div>
         )}

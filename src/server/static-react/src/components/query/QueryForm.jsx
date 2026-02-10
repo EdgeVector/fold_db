@@ -165,47 +165,38 @@ function QueryForm({
           name="hashRangeFilter"
           helpText="Filter data by hash and range key values"
         >
-          <div className="card p-4 space-y-4 bg-purple-50 border-purple-200">
+          <div className="bg-purple-50 border border-purple-200 p-4 space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Hash Key Input */}
               <div className="space-y-2">
-                <label className="block text-sm font-medium text-primary">
-                  Hash Key
-                </label>
+                <label className="label">Hash Key</label>
                 <input
                   type="text"
                   placeholder="Enter hash key value"
-                  className="w-full px-3 py-2 text-sm border border-default rounded-md focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
+                  className="input"
                   value={queryState?.hashKeyValue || ''}
                   onChange={(e) => onHashKeyChange(e.target.value)}
                 />
-                <div className="text-xs text-secondary">
+                <p className="text-xs text-secondary">
                   Hash field: {getHashKey(approvedSchemas.find(s => s.name === queryState?.selectedSchema)) || 'N/A'}
-                </div>
+                </p>
               </div>
-
-              {/* Range Key Input */}
               <div className="space-y-2">
-                <label className="block text-sm font-medium text-primary">
-                  Range Key
-                </label>
+                <label className="label">Range Key</label>
                 <input
                   type="text"
                   placeholder="Enter range key value"
-                  className="w-full px-3 py-2 text-sm border border-default rounded-md focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
+                  className="input"
                   value={queryState?.rangeKeyValue || ''}
                   onChange={(e) => onRangeSchemaFilterChange({ key: e.target.value })}
                 />
-                <div className="text-xs text-secondary">
+                <p className="text-xs text-secondary">
                   Range field: {getRangeKey(approvedSchemas.find(s => s.name === queryState?.selectedSchema)) || 'N/A'}
-                </div>
+                </p>
               </div>
             </div>
-            
-            <div className="text-xs text-secondary">
-              <p><strong>Hash Key:</strong> Used for partitioning data across multiple nodes</p>
-              <p><strong>Range Key:</strong> Used for ordering and range queries within a partition</p>
-            </div>
+            <p className="text-xs text-secondary">
+              <strong>Hash Key:</strong> Partitions data. <strong>Range Key:</strong> Orders data within partitions.
+            </p>
           </div>
         </FieldWrapper>
       )}

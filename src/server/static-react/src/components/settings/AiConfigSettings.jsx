@@ -112,7 +112,7 @@ function AiConfigSettings({ configSaveStatus, setConfigSaveStatus, onClose }) {
         </div>
 
         {configSaveStatus && (
-          <div className={`p-3 border-l-4 ${configSaveStatus.success ? 'text-success border-success' : 'text-error border-error'}`}>
+          <div className={`p-3 card ${configSaveStatus.success ? 'card-success text-success' : 'card-error text-error'}`}>
             <span className="text-sm font-medium">{configSaveStatus.success ? '✓' : '✗'} {configSaveStatus.message}</span>
           </div>
         )}

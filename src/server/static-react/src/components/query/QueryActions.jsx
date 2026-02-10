@@ -108,70 +108,30 @@ function QueryActions({
   };
 
   return (
-    <div className={`flex justify-end space-x-3 ${className}`}>
-      {/* Clear Button */}
+    <div className={`flex justify-end gap-3 ${className}`}>
       {showClear && (
-        <button
-          type="button"
-          onClick={handleClear}
-          disabled={disabled}
-          className={`btn-secondary px-4 py-2 text-sm font-medium ${
-            disabled ? 'opacity-50 cursor-not-allowed' : ''
-          }`}
-        >
+        <button type="button" onClick={handleClear} disabled={disabled} className="btn-secondary">
           {BUTTON_TEXT.clearQuery || 'Clear Query'}
         </button>
       )}
 
-      {/* Validate Button */}
       {showValidation && onValidate && (
-        <button
-          type="button"
-          onClick={handleValidate}
-          disabled={disabled}
-          className={`btn-secondary px-4 py-2 text-sm font-medium ${
-            disabled ? 'opacity-50 cursor-not-allowed' : 'btn-primary'
-          }`}
-        >
-          {loadingAction === 'validate' && (
-            <span className="spinner"></span>
-          )}
+        <button type="button" onClick={handleValidate} disabled={disabled} className="btn-secondary flex items-center gap-2">
+          {loadingAction === 'validate' && <span className="spinner" />}
           {BUTTON_TEXT.validateQuery || 'Validate'}
         </button>
       )}
 
-      {/* Save Button */}
       {showSave && (onSave || onSaveQuery) && (
-        <button
-          type="button"
-          onClick={handleSave}
-          disabled={disabled || isSaving}
-          className={`btn-secondary px-4 py-2 text-sm font-medium ${
-            disabled || isSaving ? 'opacity-50 cursor-not-allowed' : ''
-          }`}
-        >
-          {(loadingAction === 'save' || isSaving) && (
-            <span className="spinner"></span>
-          )}
+        <button type="button" onClick={handleSave} disabled={disabled || isSaving} className="btn-secondary flex items-center gap-2">
+          {(loadingAction === 'save' || isSaving) && <span className="spinner" />}
           {BUTTON_TEXT.saveQuery || 'Save Query'}
         </button>
       )}
 
-      {/* Execute Button */}
-      <button
-        type="button"
-        onClick={handleExecute}
-        disabled={disabled || isExecuting}
-        className={`btn-secondary px-6 py-2 text-sm font-medium ${
-          disabled || isExecuting ? 'opacity-50 cursor-not-allowed' : 'btn-primary'
-        }`}
-      >
-        {(loadingAction === 'execute' || isExecuting) && (
-          <span className="spinner"></span>
-        )}
-        {(loadingAction === 'execute' || isExecuting)
-          ? 'Executing...'
-          : (BUTTON_TEXT.executeQuery || '→ Execute Query')}
+      <button type="button" onClick={handleExecute} disabled={disabled || isExecuting} className="btn-primary flex items-center gap-2">
+        {(loadingAction === 'execute' || isExecuting) && <span className="spinner" />}
+        {(loadingAction === 'execute' || isExecuting) ? 'Executing...' : (BUTTON_TEXT.executeQuery || '→ Execute Query')}
       </button>
     </div>
   );
