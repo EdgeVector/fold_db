@@ -149,7 +149,7 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
     return (
       <div key={schema.name} className="minimal-card overflow-hidden transition-all duration-200 hover:shadow-md">
         <div
-          className="px-4 py-3 bg-gray-50 cursor-pointer select-none transition-colors duration-200 hover:bg-gray-100"
+          className="px-4 py-3 bg-surface-secondary cursor-pointer select-none transition-colors duration-200 hover:bg-surface-secondary"
           onClick={() => toggleSchema(schema.name)}
         >
           <div className="flex items-center justify-between">

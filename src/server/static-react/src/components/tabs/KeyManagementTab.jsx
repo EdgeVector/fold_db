@@ -99,7 +99,7 @@ function KeyManagementTab({ onResult: _onResult }) {
                                     />
                                     <button
                                         onClick={() => copyToClipboard(systemPublicKey, 'system')}
-                                        className="px-2 py-1 minimal-input border-l-0 bg-gray-50 focus:outline-none"
+                                        className="px-2 py-1 minimal-input border-l-0 bg-surface-secondary focus:outline-none"
                                     >
                                         {copiedField === 'system' ? (
                                             <CheckIcon className="h-3 w-3 text-success" />
@@ -142,7 +142,7 @@ function KeyManagementTab({ onResult: _onResult }) {
                                     />
                                     <button
                                         onClick={() => copyToClipboard(privateKeyBase64, 'private')}
-                                        className="px-3 py-2 minimal-input border-l-0 bg-gray-50 focus:outline-none"
+                                        className="px-3 py-2 minimal-input border-l-0 bg-surface-secondary focus:outline-none"
                                         title="Copy private key"
                                     >
                                         {copiedField === 'private' ? (

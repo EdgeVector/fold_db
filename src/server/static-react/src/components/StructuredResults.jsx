@@ -15,7 +15,7 @@ function ToggleButton({ isOpen, onClick, label }) {
   return (
     <button
       type="button"
-      className="text-left w-full flex items-center justify-between px-3 py-2 hover:bg-gray-100 rounded"
+      className="text-left w-full flex items-center justify-between px-3 py-2 hover:bg-surface-secondary rounded"
       onClick={onClick}
       aria-expanded={isOpen}
     >
@@ -38,7 +38,7 @@ function FieldsTable({ fields }) {
       <table className="min-w-full border-separate border-spacing-y-1">
         <tbody>
           {entries.map(([k, v]) => (
-            <tr key={k} className="bg-white">
+            <tr key={k} className="bg-surface">
               <td className="align-top text-xs font-medium text-primary pr-4 whitespace-nowrap">{k}</td>
               <td className="align-top text-xs text-primary">
                 <pre className="font-mono whitespace-pre-wrap break-words">{formatValue(v)}</pre>
@@ -114,7 +114,7 @@ const showMoreHashes = useCallback(() => {
         <span>Ranges: <strong>{counts.ranges}</strong></span>
       </div>
 
-      <div className="border rounded-md divide-y divide-gray-200 bg-gray-50">
+      <div className="border rounded-md divide-y divide-default bg-surface-secondary">
         {visibleHashes.map((h) => (
           <div key={h} className="p-2">
             <ToggleButton

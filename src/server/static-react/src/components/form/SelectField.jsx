@@ -86,7 +86,7 @@ function SelectField({
     return (
       <FieldWrapper label={label} name={name} required={required} error={error} helpText={helpText} className={className}>
         <div className="minimal-select opacity-50 cursor-not-allowed flex items-center">
-          <div className="animate-spin h-4 w-4 border-2 border-gray-400 border-t-transparent rounded-full mr-2"></div>
+          <div className="animate-spin h-4 w-4 border-2 border-default border-t-transparent rounded-full mr-2"></div>
           {UI_STATES.loading}
         </div>
       </FieldWrapper>
@@ -118,11 +118,11 @@ function SelectField({
             className={`minimal-input ${hasError ? 'border-red-500' : ''}`}
           />
           {state.isOpen && state.filteredOptions.length > 0 && (
-            <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-auto">
+            <div className="absolute z-10 w-full mt-1 bg-surface border border-default rounded-md shadow-lg max-h-60 overflow-auto">
               {Object.entries(state.groupedOptions).map(([groupName, groupOptions]) => (
                 <div key={groupName}>
                   {groupName !== 'default' && (
-                    <div className="px-3 py-2 text-xs font-semibold text-gray-500 bg-gray-50 border-b">
+                    <div className="px-3 py-2 text-xs font-semibold text-tertiary bg-surface-secondary border-b">
                       {groupName}
                     </div>
                   )}
@@ -132,8 +132,8 @@ function SelectField({
                       type="button"
                       onClick={() => handleOptionSelect(option)}
                       disabled={option.disabled}
-                      className={`w-full text-left px-3 py-2 hover:bg-gray-100 focus:bg-gray-100 focus:outline-none ${
-                        option.disabled ? 'text-gray-400 cursor-not-allowed' : 'text-gray-900'
+                      className={`w-full text-left px-3 py-2 hover:bg-surface-secondary focus:bg-surface-secondary focus:outline-none ${
+                        option.disabled ? 'text-tertiary cursor-not-allowed' : 'text-primary'
                       } ${value === option.value ? 'bg-primary text-white' : ''}`}
                     >
                       {option.label}

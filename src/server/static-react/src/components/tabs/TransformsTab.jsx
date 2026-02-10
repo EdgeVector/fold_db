@@ -181,7 +181,7 @@ const TransformsTab = ({ onResult }) => {
             const fieldNames = Object.keys(transformFieldsObj)
 
             return (
-              <div key={transformId} className="minimal-card p-4 border-l-4 border-gray-200-blue">
+              <div key={transformId} className="minimal-card p-4 border-l-4 border-default">
                 <div className="flex justify-between items-start mb-3">
                   <div className="flex-1">
                     <h3 className="text-lg font-semibold text-primary">{schemaName}</h3>
@@ -234,7 +234,7 @@ const TransformsTab = ({ onResult }) => {
                       <div className="text-sm font-medium text-secondary mb-2">--transform-fields:</div>
                       <div className="minimal-card p-3 space-y-2">
                         {Object.entries(transformFieldsObj).map(([fieldName, logic]) => (
-                          <div key={fieldName} className="border-l-2 border-gray-200 pl-3">
+                          <div key={fieldName} className="border-l-2 border-default pl-3">
                             <div className="font-medium text-primary text-sm">{fieldName}</div>
                             <div className="text-secondary font-mono text-xs mt-1 break-all">{logic}</div>
                           </div>

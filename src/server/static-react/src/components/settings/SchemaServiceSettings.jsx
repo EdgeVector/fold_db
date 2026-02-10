@@ -32,7 +32,7 @@ function SchemaServiceSettings() {
         </p>
       </div>
 
-      <div className="p-4 border border-gray-200 minimal-card">
+      <div className="p-4 border border-default minimal-card">
         <div className="flex items-center justify-between mb-3">
           <span className="text-sm font-medium text-secondary">Backend Configuration</span>
           {schemaServiceLoading ? (
@@ -80,7 +80,7 @@ function SchemaServiceSettings() {
         )}
       </div>
 
-      <div className="p-3 border border-gray-200-dim minimal-card">
+      <div className="p-3 border border-default minimal-card">
         <p className="text-xs text-secondary">
           <strong>Note:</strong> Schema service configuration is set at server startup via the <code className="text-info">--schema-service-url</code> flag or environment variable.
         </p>

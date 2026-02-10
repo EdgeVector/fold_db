@@ -175,7 +175,7 @@ function QueryForm({
                 <input
                   type="text"
                   placeholder="Enter hash key value"
-                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
+                  className="w-full px-3 py-2 text-sm border border-default rounded-md focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
                   value={queryState?.hashKeyValue || ''}
                   onChange={(e) => onHashKeyChange(e.target.value)}
                 />
@@ -192,7 +192,7 @@ function QueryForm({
                 <input
                   type="text"
                   placeholder="Enter range key value"
-                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
+                  className="w-full px-3 py-2 text-sm border border-default rounded-md focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
                   value={queryState?.rangeKeyValue || ''}
                   onChange={(e) => onRangeSchemaFilterChange({ key: e.target.value })}
                 />

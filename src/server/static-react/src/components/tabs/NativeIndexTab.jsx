@@ -197,7 +197,7 @@ export default function NativeIndexTab({ onResult }) {
         <div className="overflow-auto max-h-[450px]">
           <table className="min-w-full text-left text-xs">
             <thead>
-              <tr className="bg-gray-50">
+              <tr className="bg-surface-secondary">
                 <th className="px-2 py-2 text-left text-xs font-semibold text-secondary uppercase tracking-wide border-b-2" style={{borderColor: 'var(--color-border)'}}>Hash</th>
                 <th className="px-2 py-2 text-left text-xs font-semibold text-secondary uppercase tracking-wide border-b-2" style={{borderColor: 'var(--color-border)'}}>Range</th>
                 <th className="px-2 py-2 text-left text-xs font-semibold text-secondary uppercase tracking-wide border-b-2" style={{borderColor: 'var(--color-border)'}}>Schema</th>

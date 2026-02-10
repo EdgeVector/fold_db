@@ -3,7 +3,6 @@
  */
 
 export { useApprovedSchemas } from "./useApprovedSchemas.js";
-export { useRangeSchema } from "./useRangeSchema.js";
 export { useQueryState } from "./useQueryState.js";
 export { useSearchableSelect } from "./useSearchableSelect.js";
 export { useRangeMode } from "./useRangeMode.js";

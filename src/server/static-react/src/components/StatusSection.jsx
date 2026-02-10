@@ -158,7 +158,7 @@ function StatusSection() {
             <span className={`font-medium ${textColor}`}>
               {jobLabel}
             </span>
-            <span className={`text-xs ${textColor} bg-white/50 px-2 py-0.5 rounded-full`}>
+            <span className={`text-xs ${textColor} bg-surface/50 px-2 py-0.5 rounded-full`}>
               In Progress
             </span>
           </div>
@@ -174,7 +174,7 @@ function StatusSection() {
             <span>{job.status_message || 'Processing...'}</span>
             <span className="font-medium">{job.progress_percentage || 0}%</span>
           </div>
-          <div className="w-full bg-gray-200 rounded-full h-3">
+          <div className="w-full bg-surface-secondary rounded-full h-3">
             <div
               className="h-3 rounded-full transition-all duration-300 bg-black"
               style={{ width: `${job.progress_percentage || 0}%` }}

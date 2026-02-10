@@ -144,7 +144,7 @@ function MutationTab({ onResult }) {
 
         {selectedSchema && isCurrentSchemaRangeSchema && (
           <div className={`${RANGE_SCHEMA_CONFIG.backgroundColor} rounded-lg p-4`}>
-            <h3 className="text-lg font-medium text-gray-900 mb-4">Range Schema Configuration</h3>
+            <h3 className="text-lg font-medium text-primary mb-4">Range Schema Configuration</h3>
             <TextField
               name="rangeKey"
               label={`${rangeKey} (${RANGE_SCHEMA_CONFIG.label})`}

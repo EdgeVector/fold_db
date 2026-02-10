@@ -82,6 +82,24 @@
   .text-warning { color: var(--color-warning); }
   .text-info { color: var(--color-info); }
 
+  /* ---------- Semantic Background Colors ---------- */
+
+  .bg-surface { background-color: var(--color-bg); }
+  .bg-surface-secondary { background-color: var(--color-bg-secondary); }
+  .bg-highlight { background-color: var(--color-warning); opacity: 0.3; }
+  .bg-highlight-inline { background-color: rgba(234, 179, 8, 0.25); }
+
+  /* ---------- Semantic Border Colors ---------- */
+
+  .border-default { border-color: var(--color-border); }
+  .divide-default > :not([hidden]) ~ :not([hidden]) {
+    border-color: var(--color-border);
+  }
+
+  /* ---------- Interactive States ---------- */
+
+  .hover\:bg-surface-secondary:hover { background-color: var(--color-bg-secondary); }
+
   /* ---------- App Shell ---------- */
 
   .minimal-shell {

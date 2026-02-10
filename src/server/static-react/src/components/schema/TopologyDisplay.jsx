@@ -29,7 +29,7 @@ function TopologyNode({ node, depth = 0, name = null }) {
         {node.classifications && node.classifications.length > 0 && (
           <span className="flex space-x-1">
             {node.classifications.map(cls => (
-              <span key={cls} className="px-1.5 py-0.5 text-xs bg-gray-200 text-primary rounded-full font-sans">
+              <span key={cls} className="px-1.5 py-0.5 text-xs bg-surface-secondary text-primary rounded-full font-sans">
                 {cls}
               </span>
             ))}
@@ -72,7 +72,7 @@ function TopologyNode({ node, depth = 0, name = null }) {
         <div className="flex items-center">
           <button
             onClick={() => setIsExpanded(!isExpanded)}
-            className="flex items-center hover:bg-gray-100 rounded px-1 -ml-1"
+            className="flex items-center hover:bg-surface-secondary rounded px-1 -ml-1"
           >
             {isExpanded ? (
               <ChevronDownIcon className="h-3 w-3 text-secondary" />
@@ -88,7 +88,7 @@ function TopologyNode({ node, depth = 0, name = null }) {
         </div>
 
         {isExpanded && (
-          <div className="ml-4 border-l-2 border-gray-200 pl-3 mt-1">
+          <div className="ml-4 border-l-2 border-default pl-3 mt-1">
             {fields.map(([fieldName, fieldNode], index) => (
               <div key={fieldName} className="py-1">
                 <span className="font-mono text-sm text-indigo-600">{fieldName}</span>

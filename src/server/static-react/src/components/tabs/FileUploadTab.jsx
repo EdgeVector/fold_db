@@ -1,4 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
+import BatchFolderMode from './upload/BatchFolderMode'
+import FileUploadMode from './upload/FileUploadMode'
+import UploadInfoPanel from './upload/UploadInfoPanel'
 
 function FileUploadTab({ onResult }) {
   const [isDragging, setIsDragging] = useState(false)
@@ -334,135 +337,26 @@ function FileUploadTab({ onResult }) {
       )}
 
       {uploadMode === 'batch-folder' && (
-        <div className="minimal-card p-6">
-          <h3 className="text-success font-medium mb-4">
-            <span className="text-secondary">$</span> Batch Folder Ingestion
-          </h3>
-          <div className="space-y-3">
-            <label className="block text-sm font-medium text-secondary">
-              --folder-path
-            </label>
-            <input
-              type="text"
-              value={folderPath}
-              onChange={(e) => setFolderPath(e.target.value)}
-              placeholder="sample_data"
-              className="minimal-input w-full"
-            />
-            <p className="text-xs text-secondary">
-              # Path relative to project root or absolute path. Supported files: .json, .csv, .txt, .md
-            </p>
-          </div>
-
-          {/* Batch Progress Display */}
-          {batchProgress && (
-            <div className="mt-4 space-y-3">
-              <div className="flex items-center gap-2 text-sm">
-                <span className="text-secondary">batch_id:</span>
-                <span className="text-info font-mono text-xs">{batchProgress.batch_id.slice(0, 8)}...</span>
-                <span className="text-secondary">|</span>
-                <span className="text-secondary">files:</span>
-                <span className="text-success">{batchProgress.files_found}</span>
-              </div>
-
-              {/* Individual File Progress */}
-              <div className="space-y-2 max-h-48 overflow-y-auto">
-                {Object.entries(fileProgresses).map(([id, progress]) => (
-                  <div key={id} className="flex items-center gap-3 text-sm bg-white-darker p-2 rounded">
-                    <span className={`w-2 h-2 rounded-full ${
-                      progress.is_failed ? 'bg-white-red' :
-                      progress.is_complete ? 'bg-white-green' :
-                      'bg-white-yellow animate-pulse'
-                    }`}></span>
-                    <span className="text-primary font-mono text-xs truncate flex-1">
-                      {progress.file_name}
-                    </span>
-                    <span className="text-secondary text-xs">
-                      {progress.progress_percentage}%
-                    </span>
-                    <span className={`text-xs ${
-                      progress.is_failed ? 'text-error' :
-                      progress.is_complete ? 'text-success' :
-                      'text-warning'
-                    }`}>
-                      {progress.is_failed ? 'failed' :
-                       progress.is_complete ? 'done' :
-                       progress.current_step || 'processing'}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
+        <BatchFolderMode
+          folderPath={folderPath}
+          setFolderPath={setFolderPath}
+          batchProgress={batchProgress}
+          fileProgresses={fileProgresses}
+        />
       )}
 
       {uploadMode === 'upload' && (
-        <div className="minimal-card p-6">
-          <h3 className="text-success font-medium mb-4">
-            <span className="text-secondary">$</span> Upload File
-          </h3>
-
-          <div
-            className={`border-2 border-dashed p-12 text-center transition-colors ${
-              isDragging
-                ? 'border-current bg-gray-50'
-                : 'border-gray-200 bg-white hover:border-current'
-            }`}
-            onDragEnter={handleDragEnter}
-            onDragOver={handleDragOver}
-            onDragLeave={handleDragLeave}
-            onDrop={handleDrop}
-          >
-            <div className="space-y-4">
-              {/* Upload Icon - ASCII style */}
-              <div className="text-secondary font-mono text-3xl">
-                ↑
-              </div>
-
-              {/* Text */}
-              {selectedFile ? (
-                <div className="space-y-2">
-                  <p className="text-success font-medium">{selectedFile.name}</p>
-                  <p className="text-sm text-secondary">{formatFileSize(selectedFile.size)}</p>
-                  <button
-                    onClick={() => setSelectedFile(null)}
-                    className="text-sm text-error hover:glow-red"
-                  >
-                    [x] remove
-                  </button>
-                </div>
-              ) : (
-                <div>
-                  <p className="text-primary mb-2">
-                    Drag and drop a file here, or click to select
-                  </p>
-                  <p className="text-sm text-secondary">
-                    # Supported: PDF, DOCX, TXT, CSV, JSON, XML
-                  </p>
-                </div>
-              )}
-
-              {/* Hidden File Input */}
-              <input
-                type="file"
-                id="file-upload"
-                className="hidden"
-                onChange={handleFileSelect}
-              />
-
-              {/* Browse Button */}
-              {!selectedFile && (
-                <label
-                  htmlFor="file-upload"
-                  className="minimal-btn-secondary minimal-btn inline-block cursor-pointer"
-                >
-                  → Browse Files
-                </label>
-              )}
-            </div>
-          </div>
-        </div>
+        <FileUploadMode
+          isDragging={isDragging}
+          selectedFile={selectedFile}
+          setSelectedFile={setSelectedFile}
+          handleDragEnter={handleDragEnter}
+          handleDragOver={handleDragOver}
+          handleDragLeave={handleDragLeave}
+          handleDrop={handleDrop}
+          handleFileSelect={handleFileSelect}
+          formatFileSize={formatFileSize}
+        />
       )}
 
       {/* Options and Upload Button */}
@@ -512,39 +406,7 @@ function FileUploadTab({ onResult }) {
         </div>
       </div>
 
-      {/* Info Panel */}
-      <div className="minimal-card minimal-card-accent-info p-4">
-        <div className="flex items-start gap-3">
-          <span className="text-info">[i]</span>
-          <div className="text-sm text-secondary">
-            <p className="font-medium mb-1 text-info"># How it works:</p>
-            <ol className="list-decimal list-inside space-y-1">
-              {uploadMode === 'batch-folder' ? (
-                <>
-                  <li>Specify a folder path containing files to ingest</li>
-                  <li>All supported files (.json, .csv, .txt, .md) are processed in parallel</li>
-                  <li>Each file is converted to JSON and analyzed by AI</li>
-                  <li>Data is mapped to schemas and stored in the database</li>
-                </>
-              ) : uploadMode === 's3-path' ? (
-                <>
-                  <li>Provide an S3 file path (files already in S3 are not re-uploaded)</li>
-                  <li>File is automatically converted to JSON using AI</li>
-                  <li>AI analyzes the JSON and maps it to appropriate schemas</li>
-                  <li>Data is stored in the database with the file location tracked</li>
-                </>
-              ) : (
-                <>
-                  <li>Upload any file type (PDFs, documents, spreadsheets, etc.)</li>
-                  <li>File is automatically converted to JSON using AI</li>
-                  <li>AI analyzes the JSON and maps it to appropriate schemas</li>
-                  <li>Data is stored in the database with the file location tracked</li>
-                </>
-              )}
-            </ol>
-          </div>
-        </div>
-      </div>
+      <UploadInfoPanel uploadMode={uploadMode} />
     </div>
   )
 }

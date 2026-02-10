@@ -224,13 +224,13 @@ function QueryPreview({
                       </div>
                       <div className="text-sm minimal-section-warning-text">
                         {filter.exactKey && (
-                          <span>Exact key: <code className="bg-yellow-200 px-1 rounded">{filter.exactKey}</code></span>
+                          <span>Exact key: <code className="bg-highlight-inline px-1 rounded">{filter.exactKey}</code></span>
                         )}
                         {filter.keyRange && (
-                          <span>Key range: <code className="bg-yellow-200 px-1 rounded">{filter.keyRange}</code></span>
+                          <span>Key range: <code className="bg-highlight-inline px-1 rounded">{filter.keyRange}</code></span>
                         )}
                         {filter.keyPrefix && (
-                          <span>Key prefix: <code className="bg-yellow-200 px-1 rounded">{filter.keyPrefix}</code></span>
+                          <span>Key prefix: <code className="bg-highlight-inline px-1 rounded">{filter.keyPrefix}</code></span>
                         )}
                       </div>
                     </div>
