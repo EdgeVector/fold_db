@@ -44,7 +44,7 @@ function Header({ onSettingsClick }) {
           {isAuthenticated && (
             <div className="flex items-center gap-4">
               <span className="text-secondary text-sm">
-                {user?.id?.length > 12 ? `${user.id.slice(0, 8)}…` : user?.id}
+                {user?.id}
               </span>
               <button
                 onClick={handleLogout}

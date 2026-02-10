@@ -42,7 +42,7 @@ function TopologyNode({ node, depth = 0, name = null }) {
   // Handle Any type
   if (node.type === 'Any') {
     return (
-      <span className="font-mono text-sm text-orange-600">
+      <span className="font-mono text-sm text-secondary">
         any
       </span>
     )
@@ -91,7 +91,7 @@ function TopologyNode({ node, depth = 0, name = null }) {
           <div className="ml-4 border-l-2 border-border pl-3 mt-1">
             {fields.map(([fieldName, fieldNode], index) => (
               <div key={fieldName} className="py-1">
-                <span className="font-mono text-sm text-indigo-600">{fieldName}</span>
+                <span className="font-mono text-sm text-primary">{fieldName}</span>
                 <span className="font-mono text-sm text-secondary">: </span>
                 <TopologyNode node={fieldNode} depth={depth + 1} name={fieldName} />
                 {index < fields.length - 1 && <span className="text-tertiary">,</span>}

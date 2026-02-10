@@ -69,7 +69,7 @@ export function getRangeModeConfig(mode = 'all') {
  * @returns {string} CSS classes for mode button
  */
 export function getModeButtonStyles(isActive = false) {
-  const baseStyles = 'px-3 py-1 text-xs rounded-md transition-colors duration-200';
+  const baseStyles = 'px-3 py-1 text-xs transition-colors duration-200';
   
   if (isActive) {
     return `${baseStyles} bg-primary text-white`;
@@ -144,7 +144,7 @@ export function validateRangeConfig(config = {}) {
  * @returns {string} CSS classes for range field container
  */
 export function getRangeFieldContainerStyles() {
-  return 'bg-yellow-50 rounded-lg p-4 space-y-4';
+  return 'bg-yellow-50 border border-yellow-200 p-4 space-y-4';
 }
 
 /**
@@ -152,7 +152,7 @@ export function getRangeFieldContainerStyles() {
  * @returns {string} CSS classes for range key display
  */
 export function getRangeKeyDisplayStyles() {
-  return 'text-sm font-medium text-gray-800';
+  return 'text-sm font-medium text-primary';
 }
 
 /**

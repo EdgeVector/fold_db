@@ -110,7 +110,7 @@ export const RANGE_SCHEMA_CONFIG = {
   FIELD_TYPE: "Range",
   MUTATION_WRAPPER_KEY: "value",
   label: "Range Key",
-  backgroundColor: "bg-blue-50 border border-blue-200 rounded-lg p-4",
+  backgroundColor: "bg-blue-50 border border-blue-200 p-4",
   badgeColor: "badge badge-info",
   indicator: {
     text: "Range",

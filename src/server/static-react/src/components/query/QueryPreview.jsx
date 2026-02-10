@@ -165,7 +165,7 @@ function QueryPreview({
             <label className="block text-xs font-medium text-secondary mb-1">
               Schema
             </label>
-            <div className="inline-flex items-center px-2 py-1 rounded-md badge badge-info text-sm font-medium">
+            <div className="inline-flex items-center badge badge-info text-sm font-medium">
               {formattedQuery?.schema || ''}
             </div>
           </div>
@@ -181,7 +181,7 @@ function QueryPreview({
                   const fieldValue = formattedQuery.fieldValues?.[field];
                   return (
                     <div key={index} className="inline-flex flex-col items-start">
-                      <span className="inline-flex items-center px-2 py-1 rounded-md badge badge-success text-sm">
+                      <span className="inline-flex items-center badge badge-success text-sm">
                         {field}
                       </span>
                       {fieldValue && (
@@ -260,9 +260,9 @@ function QueryPreview({
               <label className="block text-xs font-medium text-secondary mb-1">
                 RangeKey
               </label>
-              <div className="bg-indigo-50 rounded-md p-3">
-                <div className="text-sm text-indigo-700">
-                  <code className="bg-indigo-200 px-1 rounded">{formattedQuery.rangeKey}</code>
+              <div className="bg-blue-50 border border-blue-200 p-3">
+                <div className="text-sm text-blue-700">
+                  <code className="bg-blue-100 px-1">{formattedQuery.rangeKey}</code>
                 </div>
               </div>
             </div>
@@ -275,7 +275,7 @@ function QueryPreview({
             <label className="block text-xs font-medium text-secondary uppercase tracking-wide mb-2">
               Raw JSON
             </label>
-            <pre className="text-xs p-3 overflow-x-auto bg-neutral-900 text-neutral-200">
+            <pre className="text-xs p-3 overflow-x-auto bg-gray-900 text-gray-200">
               {JSON.stringify(query, null, 2)}
             </pre>
           </div>
