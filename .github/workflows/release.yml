@@ -69,6 +69,21 @@ jobs:
           path: target
           key: ${{ matrix.os }}-cargo-build-${{ hashFiles('**/Cargo.lock') }}
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Cache node_modules
+        uses: actions/cache@v3
+        with:
+          path: src/server/static-react/node_modules
+          key: ${{ matrix.os }}-node-${{ hashFiles('**/package-lock.json') }}
+
+      - name: Build frontend (required by RustEmbed)
+        working-directory: src/server/static-react
+        run: npm ci && npm run build
+
       - name: Build release binary
         run: cargo build --release --bin ${{ matrix.binary }} --target ${{ matrix.target }}
 
