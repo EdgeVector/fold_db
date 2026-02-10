@@ -8,44 +8,37 @@ A Rust-based distributed data platform with schema-based storage, AI-powered ing
 
 ## ✨ Features
 
-- **🤖 AI-Powered Data Ingestion** - Automatic schema creation and field mapping using AI [Initial prototype]
+- **🤖 AI-Powered Data Ingestion** - Automatic schema creation and field mapping using AI [working]
+- **📂 Smart Folder Ingestion** - LLM-powered file filtering and batch ingestion from local directories [working]
 - **💬 AI Natural Language Query** - Ask questions in plain English, get AI-interpreted results [working]
 - **🔄 Real-Time Processing** - Event-driven architecture with automatic transform execution [working]
 - **🌐 Distributed Architecture** - P2P networking with automatic peer discovery [untested]
 - **📊 Flexible Schema System** - Dynamic schema management with validation [working]
 - **🔐 Permission Management** - Fine-grained access control and trust-based permissions [working]
-- **⚡ High Performance** - Rust-based core with optimized storage and query execution [maybe]
-- **☁️ Serverless Ready** - S3-backed storage for AWS Lambda and serverless deployments [working]
+- **🔒 Encryption at Rest** - AES-256-GCM encryption with local key or AWS KMS support [working]
+- **⚡ High Performance** - Rust-based core with optimized storage and query execution [working]
+- **☁️ Serverless Ready** - DynamoDB + S3 storage for AWS Lambda and serverless deployments [working]
 - **🔌 Extensible Ingestion** - Plugin system for social media and external data sources [not yet begun]
 
 ## 🚀 Quick Start
 
 ### Installation
 
-#### Option 1: Download Pre-built Binary (Recommended)
+#### Option 1: Install via Script (Recommended)
 
-Download the latest release for your platform from [GitHub Releases](https://github.com/shiba4life/fold_db/releases):
+Install the `folddb` CLI with a single command:
 
 ```bash
-# macOS (Intel)
-curl -LO https://github.com/shiba4life/fold_db/releases/latest/download/datafold_http_server-macos-x86_64-VERSION
-chmod +x datafold_http_server-macos-x86_64-VERSION
-sudo mv datafold_http_server-macos-x86_64-VERSION /usr/local/bin/datafold_http_server
-
-# macOS (Apple Silicon)
-curl -LO https://github.com/shiba4life/fold_db/releases/latest/download/datafold_http_server-macos-aarch64-VERSION
-chmod +x datafold_http_server-macos-aarch64-VERSION
-sudo mv datafold_http_server-macos-aarch64-VERSION /usr/local/bin/datafold_http_server
-
-# Linux
-curl -LO https://github.com/shiba4life/fold_db/releases/latest/download/datafold_http_server-linux-x86_64-VERSION
-chmod +x datafold_http_server-linux-x86_64-VERSION
-sudo mv datafold_http_server-linux-x86_64-VERSION /usr/local/bin/datafold_http_server
+curl -fsSL https://raw.githubusercontent.com/shiba4life/fold_db/master/install.sh | bash
 ```
 
-Replace `VERSION` with the actual version number (e.g., `0.1.5`).
+This auto-detects your OS and architecture (macOS/Linux, Intel/Apple Silicon) and installs the latest release.
 
-#### Option 2: Install from Crates.io
+#### Option 2: Download Pre-built Binary
+
+Download the latest release for your platform from [GitHub Releases](https://github.com/shiba4life/fold_db/releases). Nightly builds are also available for the latest development changes.
+
+#### Option 3: Install from Crates.io
 
 Add DataFold to your `Cargo.toml`:
 
@@ -60,11 +53,10 @@ Or install the CLI tools:
 cargo install datafold
 ```
 
-This provides three binaries:
+This provides two main binaries:
 
-- `datafold_cli` - Command-line interface
+- `folddb` - Human-first CLI with nested subcommands
 - `datafold_http_server` - HTTP server with web UI
-- `datafold_node` - P2P node server
 
 ### Optional TypeScript Bindings
 
@@ -274,16 +266,19 @@ try {
 ### Frontend Development Setup
 
 ```bash
-# Start the backend server
-cargo run --bin datafold_http_server -- --port 9001
+# Start both backend and frontend with a single command
+./run.sh --local
+```
 
-# In another terminal, start the React frontend
-cd src/datafold_node/static-react
+This starts the Rust backend on port 9001 and the React frontend on port 5173 with hot-reload.
+
+For frontend-only development:
+
+```bash
+cd src/server/static-react
 npm install
 npm run dev
 ```
-
-The frontend will be available at `http://localhost:5173` with hot-reload.
 
 ### Frontend Documentation
 
@@ -382,16 +377,13 @@ cargo test --workspace
 
 ### Running the Web UI
 
-For development with hot-reload:
-
 ```bash
-# Start the Rust backend
-cargo run --bin datafold_http_server -- --port 9001
+# Start backend + frontend together (recommended)
+./run.sh --local
 
-# In another terminal, start the React frontend
-cd src/datafold_node/static-react
-npm install
-npm run dev
+# Other modes:
+./run.sh --local --local-schema    # Fully offline (local storage + local schema service)
+./run.sh --local --empty-db        # Start with a fresh database
 ```
 
 The UI will be available at `http://localhost:5173`.
@@ -502,13 +494,13 @@ DataFold automatically handles multi-tenancy. When you pass a `user_id` to inges
 
 ```bash
 # Use the CLI to load a schema
-datafold_cli load-schema examples/user_schema.json
+folddb schema load examples/user_schema.json
 
 # Query data
-datafold_cli query examples/user_query.json
+folddb query run examples/user_query.json
 
 # Execute mutations
-datafold_cli mutate examples/user_mutation.json
+folddb mutation run examples/user_mutation.json
 ```
 
 ### Rust Code Examples
@@ -571,7 +563,7 @@ registered. This keeps authentication intact across restarts. See
 ## 📚 Documentation
 
 - **[API Documentation](https://docs.rs/datafold)** - Complete API reference
-- **[CLI Guide](README_CLI.md)** - Command-line interface usage
+- **CLI Guide** - Run `folddb --help` for full command reference
 - **[Ingestion Guide](INGESTION_README.md)** - AI-powered data ingestion
 - **[S3 File Path Ingestion](docs/S3_FILE_PATH_INGESTION.md)** - Process S3 files without re-uploading
 - **[AI Query Guide](docs/AI_QUERY_USAGE_GUIDE.md)** - Natural language query with AI interpretation

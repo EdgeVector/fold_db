@@ -111,7 +111,7 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     env:
-      OPENAPI_URL: ${{ github.workspace }}/src/datafold_node/static-react/target/openapi.json
+      OPENAPI_URL: ${{ github.workspace }}/src/server/static-react/target/openapi.json
     
     steps:
       - name: Checkout repository
@@ -140,19 +140,19 @@ jobs:
       - name: Cache node_modules
         uses: actions/cache@v3
         with:
-          path: src/datafold_node/static-react/node_modules
+          path: src/server/static-react/node_modules
           key: ${{ matrix.os }}-node-${{ hashFiles('**/package-lock.json') }}
 
       - name: Install frontend dependencies
-        working-directory: src/datafold_node/static-react
+        working-directory: src/server/static-react
         run: npm ci
 
       - name: Build frontend
-        working-directory: src/datafold_node/static-react
+        working-directory: src/server/static-react
         run: npm run build
 
       - name: Build Tauri app
-        working-directory: src/datafold_node/static-react
+        working-directory: src/server/static-react
         run: npm run tauri:build
 
       - name: Get version from tag
@@ -163,19 +163,19 @@ jobs:
       - name: Show bundle outputs
         shell: bash
         run: |
-          echo "Bundle path: src/datafold_node/static-react/src-tauri/target/release/bundle"
-          ls -al src/datafold_node/static-react/src-tauri/target/release/bundle || true
+          echo "Bundle path: src/server/static-react/src-tauri/target/release/bundle"
+          ls -al src/server/static-react/src-tauri/target/release/bundle || true
           echo "dmg dir:"
-          ls -al src/datafold_node/static-react/src-tauri/target/release/bundle/dmg || true
+          ls -al src/server/static-react/src-tauri/target/release/bundle/dmg || true
           echo "macos dir:"
-          ls -al src/datafold_node/static-react/src-tauri/target/release/bundle/macos || true
+          ls -al src/server/static-react/src-tauri/target/release/bundle/macos || true
 
       - name: Rename and prepare artifacts
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p "$GITHUB_WORKSPACE/dist"
-          cd src/datafold_node/static-react/src-tauri/target/release/bundle
+          cd src/server/static-react/src-tauri/target/release/bundle
           
           # Copy DMG (if produced)
           for f in dmg/DataFold_*.dmg; do
