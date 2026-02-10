@@ -88,7 +88,7 @@ function TopologyNode({ node, depth = 0, name = null }) {
         </div>
 
         {isExpanded && (
-          <div className="ml-4 border-l-2 border-default pl-3 mt-1">
+          <div className="ml-4 border-l-2 border-border pl-3 mt-1">
             {fields.map(([fieldName, fieldNode], index) => (
               <div key={fieldName} className="py-1">
                 <span className="font-mono text-sm text-indigo-600">{fieldName}</span>

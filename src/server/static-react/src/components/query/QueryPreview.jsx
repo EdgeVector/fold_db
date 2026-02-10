@@ -153,7 +153,7 @@ function QueryPreview({
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
               </svg>
-              <span className="text-sm font-medium card card-info-text">Executing query...</span>
+              <span className="text-sm font-medium text-blue-600">Executing query...</span>
             </div>
           </div>
         )}
@@ -210,7 +210,7 @@ function QueryPreview({
                   // Handle filters as array (from test mocks)
                   formattedQuery.filters.map((filter, index) => (
                     <div key={index} className="card card-warning p-3">
-                      <div className="text-sm card card-warning-text">
+                      <div className="text-sm text-amber-700">
                         {filter.field} {filter.operator} "{filter.value}"
                       </div>
                     </div>
@@ -219,18 +219,18 @@ function QueryPreview({
                   // Handle filters as object (existing format)
                   Object.entries(formattedQuery.filters).map(([fieldName, filter]) => (
                     <div key={fieldName} className="card card-warning p-3">
-                      <div className="font-medium text-sm card card-warning-text mb-1">
+                      <div className="font-medium text-sm text-amber-700 mb-1">
                         {fieldName}
                       </div>
-                      <div className="text-sm card card-warning-text">
+                      <div className="text-sm text-amber-700">
                         {filter.exactKey && (
-                          <span>Exact key: <code className="bg-highlight-inline px-1 rounded">{filter.exactKey}</code></span>
+                          <span>Exact key: <code className="bg-amber-100 px-1 rounded">{filter.exactKey}</code></span>
                         )}
                         {filter.keyRange && (
-                          <span>Key range: <code className="bg-highlight-inline px-1 rounded">{filter.keyRange}</code></span>
+                          <span>Key range: <code className="bg-amber-100 px-1 rounded">{filter.keyRange}</code></span>
                         )}
                         {filter.keyPrefix && (
-                          <span>Key prefix: <code className="bg-highlight-inline px-1 rounded">{filter.keyPrefix}</code></span>
+                          <span>Key prefix: <code className="bg-amber-100 px-1 rounded">{filter.keyPrefix}</code></span>
                         )}
                       </div>
                     </div>
