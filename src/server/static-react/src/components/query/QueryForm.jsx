@@ -142,7 +142,7 @@ function QueryForm({
                   <div className="flex items-center h-5">
                     <input
                       type="checkbox"
-                      className="h-4 w-4 text-primary rounded focus:ring-primary" style={{borderColor: 'var(--color-border)'}}
+                      className="h-4 w-4 text-primary rounded border border-border focus:ring-primary"
                       checked={queryState?.queryFields?.includes(fieldName) || false}
                       onChange={() => handleFieldToggle(fieldName)}
                     />

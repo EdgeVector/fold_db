@@ -89,7 +89,7 @@ describe('IngestionTab Component', () => {
       preloadedState: initialState
     })
 
-    expect(screen.getByPlaceholderText('Enter your JSON data here or load a sample...')).toBeInTheDocument()
+    expect(screen.getByPlaceholderText('Enter JSON data or load a sample...')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /process data/i })).toBeInTheDocument()
   })
 
@@ -104,7 +104,7 @@ describe('IngestionTab Component', () => {
       preloadedState: initialState
     })
 
-    const jsonInput = screen.getByPlaceholderText('Enter your JSON data here or load a sample...')
+    const jsonInput = screen.getByPlaceholderText('Enter JSON data or load a sample...')
     
     // Test input interaction
     fireEvent.change(jsonInput, { target: { value: '{"name": "John", "age": 30}' } })
@@ -122,7 +122,7 @@ describe('IngestionTab Component', () => {
       preloadedState: initialState
     })
 
-    const jsonInput = screen.getByPlaceholderText('Enter your JSON data here or load a sample...')
+    const jsonInput = screen.getByPlaceholderText('Enter JSON data or load a sample...')
     fireEvent.change(jsonInput, { target: { value: '{"name": "John", "age": 30}' } })
 
     const processButton = screen.getByRole('button', { name: /process data/i })
@@ -144,7 +144,7 @@ describe('IngestionTab Component', () => {
     const twitterButton = screen.getByRole('button', { name: 'Twitter' })
     fireEvent.click(twitterButton)
 
-    const jsonInput = screen.getByPlaceholderText('Enter your JSON data here or load a sample...')
+    const jsonInput = screen.getByPlaceholderText('Enter JSON data or load a sample...')
     expect(jsonInput.value).toContain('"post_id":') // Should contain sample data (formatted JSON)
   })
 
@@ -159,7 +159,7 @@ describe('IngestionTab Component', () => {
       preloadedState: initialState
     })
 
-    const jsonInput = screen.getByPlaceholderText('Enter your JSON data here or load a sample...')
+    const jsonInput = screen.getByPlaceholderText('Enter JSON data or load a sample...')
 
     // Test Twitter sample
     const twitterButton = screen.getByRole('button', { name: 'Twitter' })

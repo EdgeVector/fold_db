@@ -121,7 +121,7 @@ function QueryPreview({
 
   return (
     <div className={`card ${className}`}>
-      <div className="px-4 py-3" style={{borderBottom: '1px solid var(--color-border)'}}>
+      <div className="px-4 py-3 border-b border-border">
         <h3 className="text-sm font-medium text-primary">{title}</h3>
       </div>
       
@@ -271,11 +271,11 @@ function QueryPreview({
 
         {/* JSON format toggle */}
         {showJson && (
-          <div className="pt-4" style={{borderTop: '1px solid var(--color-border)'}}>
+          <div className="pt-4 border-t border-border">
             <label className="block text-xs font-medium text-secondary uppercase tracking-wide mb-2">
               Raw JSON
             </label>
-            <pre style={{ background: '#1a1a1a', color: '#e5e5e5' }} className="text-xs p-3 overflow-x-auto">
+            <pre className="text-xs p-3 overflow-x-auto bg-neutral-900 text-neutral-200">
               {JSON.stringify(query, null, 2)}
             </pre>
           </div>
