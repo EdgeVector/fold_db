@@ -361,7 +361,7 @@ impl DataFoldNode {
 
                 // Use append-only indexing (optimized: no read-modify-write)
                 let result = native_index_mgr
-                    .batch_index_append_only(&index_operations)
+                    .batch_index(&index_operations)
                     .await;
 
                 if let Err(e) = result {

@@ -1,12 +1,15 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use log::{debug, error, info, warn};
+use serde_json::Value;
 
-use crate::db_operations::{native_index::{BatchIndexOperation, NativeIndexManager}, DbOperations};
+use crate::db_operations::{native_index::NativeIndexManager, DbOperations};
 use crate::fold_db_core::infrastructure::message_bus::{
     query_events::MutationExecuted, AsyncMessageBus, Event,
 };
 use crate::fold_db_core::orchestration::index_status::IndexStatusTracker;
+use crate::fold_db_core::orchestration::keyword_extractor::KeywordExtractor;
 
 /// Orchestrator for Native Indexing operations
 pub struct IndexOrchestrator {
@@ -14,6 +17,7 @@ pub struct IndexOrchestrator {
     index_status_tracker: Option<IndexStatusTracker>,
     pending_tasks:
         Arc<crate::fold_db_core::infrastructure::pending_task_tracker::PendingTaskTracker>,
+    keyword_extractor: Option<Arc<KeywordExtractor>>,
 }
 
 impl IndexOrchestrator {
@@ -24,21 +28,24 @@ impl IndexOrchestrator {
         pending_tasks: Arc<
             crate::fold_db_core::infrastructure::pending_task_tracker::PendingTaskTracker,
         >,
+        keyword_extractor: Option<Arc<KeywordExtractor>>,
     ) -> Self {
         Self {
             db_ops,
             index_status_tracker,
             pending_tasks,
+            keyword_extractor,
         }
     }
 
     /// Start listening for mutation events to trigger indexing
     pub async fn start_event_listener(&self, message_bus: Arc<AsyncMessageBus>) {
-        info!("🔎 IndexOrchestrator: Starting event listener task");
+        info!("IndexOrchestrator: Starting event listener task");
 
         let db_ops = Arc::clone(&self.db_ops);
         let tracker = self.index_status_tracker.clone();
         let mut consumer = message_bus.subscribe("MutationExecuted").await;
+        let keyword_extractor = self.keyword_extractor.clone();
 
         let pending_tasks = self.pending_tasks.clone();
 
@@ -54,7 +61,7 @@ impl IndexOrchestrator {
                             }
 
                             debug!(
-                                "🔎 IndexOrchestrator: Received mutation event with {} rows, user_id: {:?}",
+                                "IndexOrchestrator: Received mutation event with {} rows, user_id: {:?}",
                                 data.len(),
                                 event.user_id
                             );
@@ -65,13 +72,13 @@ impl IndexOrchestrator {
                             // Process indexing within user context (critical for multi-tenant DynamoDB writes)
                             if let Some(ref user_id) = event.user_id {
                                 crate::logging::core::run_with_user(user_id, async {
-                                    Self::process_indexing(&db_ops, &tracker, &event).await;
+                                    Self::process_indexing(&db_ops, &tracker, &event, &keyword_extractor).await;
                                 })
                                 .await;
                             } else {
                                 // No user context - process anyway (will use default user_id)
-                                warn!("🔎 IndexOrchestrator: No user_id in event, using default");
-                                Self::process_indexing(&db_ops, &tracker, &event).await;
+                                warn!("IndexOrchestrator: No user_id in event, using default");
+                                Self::process_indexing(&db_ops, &tracker, &event, &keyword_extractor).await;
                             }
 
                             // Task completed
@@ -80,7 +87,7 @@ impl IndexOrchestrator {
                     }
                     Some(_) => {} // Ignore other events
                     None => {
-                        error!("❌ IndexOrchestrator: Message bus disconnected");
+                        error!("IndexOrchestrator: Message bus disconnected");
                         break;
                     }
                 }
@@ -93,6 +100,7 @@ impl IndexOrchestrator {
         db_ops: &Arc<DbOperations>,
         tracker: &Option<IndexStatusTracker>,
         event: &MutationExecuted,
+        keyword_extractor: &Option<Arc<KeywordExtractor>>,
     ) {
         let Some(native_index_mgr) = db_ops.native_index_manager() else {
             return;
@@ -122,54 +130,65 @@ impl IndexOrchestrator {
 
         // Delete old index entries for this record before reindexing
         if let Err(e) = native_index_mgr
-            .delete_record_index_append_only(schema_name, &key_value)
+            .delete_record_index(schema_name, &key_value)
             .await
         {
             warn!("Failed to delete old index entries: {}", e);
         }
 
-        // Construct operations from ALL rows in data
-        let mut index_operations: Vec<BatchIndexOperation> = Vec::new();
-
-        for row in data {
-            for (field_name, value) in row {
-                if NativeIndexManager::should_index_field(field_name) {
-                    index_operations.push((
-                        schema_name.clone(),
-                        field_name.clone(),
-                        key_value.clone(),
-                        value.clone(),
-                        None,
-                    ));
+        // If keyword extractor is available, use LLM-powered extraction
+        if let Some(extractor) = keyword_extractor {
+            // Merge all rows into a single HashMap for one LLM call
+            let mut merged_fields: HashMap<String, Value> = HashMap::new();
+            for row in data {
+                for (field_name, value) in row {
+                    if NativeIndexManager::should_index_field(field_name) {
+                        merged_fields.insert(field_name.clone(), value.clone());
+                    }
                 }
             }
-        }
 
-        if index_operations.is_empty() {
+            if merged_fields.is_empty() {
+                return;
+            }
+
+            // Update tracker
+            if let Some(idx_tracker) = tracker {
+                idx_tracker.start_batch(merged_fields.len()).await;
+            }
+
+            let start = std::time::Instant::now();
+
+            match extractor.extract_keywords(&merged_fields).await {
+                Ok(keywords) => {
+                    if !keywords.is_empty() {
+                        if let Err(e) = native_index_mgr
+                            .batch_index_from_keywords(
+                                schema_name,
+                                &key_value,
+                                keywords,
+                            )
+                            .await
+                        {
+                            error!("IndexOrchestrator: Keyword indexing failed: {}", e);
+                        }
+                    }
+                }
+                Err(e) => {
+                    error!("IndexOrchestrator: LLM keyword extraction failed: {}", e);
+                }
+            }
+
+            // Complete tracker
+            if let Some(idx_tracker) = tracker {
+                idx_tracker
+                    .complete_batch(merged_fields.len(), start.elapsed().as_millis())
+                    .await;
+            }
+        } else {
+            // No keyword extractor - skip indexing (LLM not configured)
+            debug!("IndexOrchestrator: No keyword extractor available, skipping indexing");
             return;
-        }
-
-        // Update tracker
-        if let Some(idx_tracker) = tracker {
-            idx_tracker.start_batch(index_operations.len()).await;
-        }
-
-        let start = std::time::Instant::now();
-
-        // Execute Batch Indexing using append-only method (optimized: no read-modify-write)
-        let result = native_index_mgr
-            .batch_index_append_only(&index_operations)
-            .await;
-
-        if let Err(e) = result {
-            error!("❌ IndexOrchestrator: Batch indexing failed: {}", e);
-        }
-
-        // Complete tracker
-        if let Some(idx_tracker) = tracker {
-            idx_tracker
-                .complete_batch(index_operations.len(), start.elapsed().as_millis())
-                .await;
         }
 
         // Flush for sync backends (Sled)

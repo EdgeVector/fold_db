@@ -3,40 +3,16 @@ use crate::schema::types::key_value::KeyValue;
 use crate::schema::SchemaError;
 use crate::storage::traits::KvStore;
 use log;
-use rust_stemmers::{Algorithm, Stemmer};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sled::Tree;
 use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
-use unicode_segmentation::UnicodeSegmentation;
 
-const STOPWORDS: &[&str] = &[
-    "a", "about", "above", "after", "again", "against", "ain", "all", "am", "an", "and", "any",
-    "are", "aren", "aren't", "as", "at", "be", "because", "been", "before", "being", "below",
-    "between", "both", "but", "by", "can", "couldn", "couldn't", "d", "did", "didn", "didn't",
-    "do", "does", "doesn", "doesn't", "doing", "don", "don't", "down", "during", "each", "few",
-    "for", "from", "further", "had", "hadn", "hadn't", "has", "hasn", "hasn't", "have", "haven",
-    "haven't", "having", "he", "her", "here", "hers", "herself", "him", "himself", "his", "how",
-    "i", "if", "in", "into", "is", "isn", "isn't", "it", "it's", "its", "itself", "just", "ll",
-    "m", "ma", "me", "mightn", "mightn't", "more", "most", "mustn", "mustn't", "my", "myself",
-    "needn", "needn't", "no", "nor", "not", "now", "o", "of", "off", "on", "once", "only", "or",
-    "other", "our", "ours", "ourselves", "out", "over", "own", "re", "s", "same", "shan",
-    "shan't", "she", "she's", "should", "should've", "shouldn", "shouldn't", "so", "some", "such",
-    "t", "than", "that", "that'll", "the", "their", "theirs", "them", "themselves", "then",
-    "there", "these", "they", "this", "those", "through", "to", "too", "under", "until", "up",
-    "ve", "very", "was", "wasn", "wasn't", "we", "were", "weren", "weren't", "what", "when",
-    "where", "which", "while", "who", "whom", "why", "will", "with", "won", "won't", "wouldn",
-    "wouldn't", "y", "you", "you'd", "you'll", "you're", "you've", "your", "yours", "yourself",
-    "yourselves",
-];
-
-const MIN_WORD_LENGTH: usize = 2;
-const MAX_WORD_LENGTH: usize = 100;
 const EXCLUDED_FIELDS: &[&str] = &["uuid", "id", "password", "token"];
 
-/// Index entry prefix for append-only index storage
+/// Index entry prefix for index storage
 const INDEX_ENTRY_PREFIX: &str = "idx:";
 /// Reverse mapping prefix for cleanup on record deletion
 const REVERSE_INDEX_PREFIX: &str = "rev:";
@@ -44,7 +20,7 @@ const REVERSE_INDEX_PREFIX: &str = "rev:";
 /// Compact index entry - reference only, no value duplication
 ///
 /// This is ~89% smaller than IndexResult because it doesn't store the value.
-/// Used for append-only index storage where each entry is a separate key.
+/// Each entry is stored as a separate key for fast writes and prefix scanning.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct IndexEntry {
     /// Schema name containing the indexed record
@@ -53,7 +29,7 @@ pub struct IndexEntry {
     pub key: KeyValue,
     /// Which field matched the search term
     pub field: String,
-    /// Classification type (word, email, name:person, etc.)
+    /// Index type (e.g. "word", "field")
     pub classification: String,
     /// When indexed (milliseconds since epoch, for sorting/dedup)
     pub timestamp: i64,
@@ -165,20 +141,10 @@ pub struct IndexResult {
 /// Represents a batch index operation: (schema_name, field_name, key_value, value, classifications)
 pub type BatchIndexOperation = (String, String, KeyValue, Value, Option<Vec<String>>);
 
+#[derive(Clone)]
 pub struct NativeIndexManager {
     tree: Option<Tree>,
     store: Option<Arc<dyn KvStore>>,
-    stemmer: Stemmer,
-}
-
-impl Clone for NativeIndexManager {
-    fn clone(&self) -> Self {
-        Self {
-            tree: self.tree.clone(),
-            store: self.store.clone(),
-            stemmer: Stemmer::create(Algorithm::English),
-        }
-    }
 }
 
 impl NativeIndexManager {
@@ -187,7 +153,6 @@ impl NativeIndexManager {
         Self {
             tree: Some(tree),
             store: None,
-            stemmer: Stemmer::create(Algorithm::English),
         }
     }
 
@@ -196,7 +161,6 @@ impl NativeIndexManager {
         Self {
             tree: None,
             store: Some(store),
-            stemmer: Stemmer::create(Algorithm::English),
         }
     }
 
@@ -279,15 +243,9 @@ impl NativeIndexManager {
         }
     }
 
-    // ========== LEGACY SEARCH METHODS (REMOVED) ==========
-    // The following methods have been replaced by append-only search:
-    // - search_word_async -> use search_append_only
-    // - search_word -> use search_append_only_sync
-    // - search_with_classification -> use search_append_only_with_classification
-    // - search_with_classification_async -> use search_append_only_with_classification
+    // ========== SEARCH METHODS ==========
 
-    /// Async version of search_all_classifications
-    /// Uses the optimized append-only index format
+    /// Search all indexed keywords and return results (async version)
     pub async fn search_all_classifications_async(
         &self,
         term: &str,
@@ -297,8 +255,7 @@ impl NativeIndexManager {
             term
         );
 
-        // Use append-only search
-        let entries = self.search_all_append_only(term).await?;
+        let entries = self.search_all(term).await?;
         let results = self.entries_to_results(entries);
 
         log::info!(
@@ -309,9 +266,7 @@ impl NativeIndexManager {
         Ok(results)
     }
 
-    /// Search across all classification types and aggregate results
-    /// Uses the optimized append-only index format
-    /// Synchronous version (Sled only)
+    /// Search all indexed keywords and return results (sync version, Sled only)
     pub fn search_all_classifications(&self, term: &str) -> Result<Vec<IndexResult>, SchemaError> {
         log::debug!(
             "Native Index: search_all_classifications called for term: '{}'",
@@ -320,7 +275,7 @@ impl NativeIndexManager {
 
         // For Sled backend, use sync search
         if !self.is_async() {
-            let entries = self.search_append_only_sync(term)?;
+            let entries = self.search_sync(term)?;
             let results = self.entries_to_results(entries);
             log::info!(
                 "Native Index: search_all_classifications for '{}' returned {} total results",
@@ -337,7 +292,7 @@ impl NativeIndexManager {
             .map_err(|e| SchemaError::InvalidData(format!("Failed to create runtime: {}", e)))?;
 
         rt.block_on(async {
-            let entries = self.search_all_append_only(term).await?;
+            let entries = self.search_all(term).await?;
             let results = self.entries_to_results(entries);
             log::info!(
                 "Native Index: search_all_classifications for '{}' returned {} total results",
@@ -447,81 +402,50 @@ impl NativeIndexManager {
         ))
     }
 
+    fn normalize_search_term(&self, term: &str) -> Option<String> {
+        let lowered = term.trim().to_lowercase();
+        if lowered.len() < 2 {
+            return None;
+        }
+        Some(lowered)
+    }
+
     fn collect_words(&self, value: &Value) -> Vec<String> {
         let mut words = HashSet::new();
-        self.collect_words_recursive(value, &mut words);
+        Self::collect_words_recursive(value, &mut words);
         let mut result: Vec<String> = words.into_iter().collect();
         result.sort_unstable();
         result
     }
 
-    fn collect_words_recursive(&self, value: &Value, acc: &mut HashSet<String>) {
+    fn collect_words_recursive(value: &Value, acc: &mut HashSet<String>) {
         match value {
             Value::String(text) => {
-                for word in text.unicode_words() {
-                    if let Some(normalized) = self.normalize_word(word) {
-                        acc.insert(normalized);
+                for word in text.split(|c: char| !c.is_alphanumeric()) {
+                    let lowered = word.trim().to_lowercase();
+                    if lowered.len() >= 2 {
+                        acc.insert(lowered);
                     }
                 }
             }
             Value::Number(n) => {
                 let s = n.to_string();
-                if let Some(word) = self.normalize_word(&s) {
-                    acc.insert(word);
-                }
-            }
-            Value::Bool(b) => {
-                let s = b.to_string();
-                if let Some(word) = self.normalize_word(&s) {
-                    acc.insert(word);
+                if s.len() >= 2 {
+                    acc.insert(s);
                 }
             }
             Value::Array(values) => {
                 for item in values {
-                    self.collect_words_recursive(item, acc);
+                    Self::collect_words_recursive(item, acc);
                 }
             }
             Value::Object(obj) => {
                 for (_, nested_value) in obj {
-                    self.collect_words_recursive(nested_value, acc);
+                    Self::collect_words_recursive(nested_value, acc);
                 }
             }
             _ => {}
         }
-    }
-
-    fn normalize_word(&self, raw: &str) -> Option<String> {
-        let trimmed = raw.trim();
-        if trimmed.is_empty() {
-            return None;
-        }
-
-        let lowered = trimmed.to_lowercase();
-
-        if lowered.len() < MIN_WORD_LENGTH || lowered.len() > MAX_WORD_LENGTH {
-            return None;
-        }
-
-        if STOPWORDS.contains(&lowered.as_str()) {
-            return None;
-        }
-
-        let stemmed = self.stemmer.stem(&lowered).into_owned();
-
-        if stemmed.len() < MIN_WORD_LENGTH {
-            return None;
-        }
-
-        Some(stemmed)
-    }
-
-    fn normalize_search_term(&self, term: &str) -> Option<String> {
-        for word in term.unicode_words() {
-            if let Some(normalized) = self.normalize_word(word) {
-                return Some(normalized);
-            }
-        }
-        None
     }
 
     /// Read entries from index (sync version for Sled)
@@ -1161,19 +1085,90 @@ impl NativeIndexManager {
         Ok(())
     }
 
-    // ========== APPEND-ONLY INDEX OPERATIONS (OPTIMIZED) ==========
+    // ========== INDEX OPERATIONS ==========
 
-    /// Batch index using append-only writes (no read-modify-write)
+    /// Index a record using LLM-extracted keywords.
     ///
-    /// This is the optimized version that writes each index entry as a separate key,
-    /// eliminating the need to read existing entries before writing.
-    /// Performance improvement: ~75x faster for bulk ingestion.
-    pub async fn batch_index_append_only(
+    /// Takes a flat list of keywords (already normalized by the LLM) and writes
+    /// index entries + reverse mappings for each keyword.
+    pub async fn batch_index_from_keywords(
+        &self,
+        schema_name: &str,
+        key_value: &KeyValue,
+        keywords: Vec<String>,
+    ) -> Result<(), SchemaError> {
+        log::info!(
+            "[NativeIndex] batch_index_from_keywords: {} keywords for schema '{}'",
+            keywords.len(),
+            schema_name
+        );
+
+        if self.tree.is_none() && self.store.is_none() {
+            return Err(SchemaError::InvalidData(
+                "NativeIndexManager not properly initialized".to_string(),
+            ));
+        }
+
+        let mut index_entries: Vec<(Vec<u8>, Vec<u8>)> = Vec::new();
+        let mut reverse_entries: Vec<(Vec<u8>, Vec<u8>)> = Vec::new();
+
+        for keyword in &keywords {
+            let entry = IndexEntry::new(
+                schema_name.to_string(),
+                key_value.clone(),
+                "llm_keyword".to_string(),
+                "word".to_string(),
+            );
+
+            // Term is stored as "word:{keyword}" to match the search prefix format
+            let term = format!("word:{}", keyword);
+            let storage_key = entry.storage_key(&term);
+            let entry_bytes = serde_json::to_vec(&entry).map_err(|e| {
+                SchemaError::InvalidData(format!("Failed to serialize IndexEntry: {}", e))
+            })?;
+
+            let rev_key = reverse_index_key(schema_name, key_value, &term);
+            reverse_entries.push((rev_key.into_bytes(), storage_key.as_bytes().to_vec()));
+            index_entries.push((storage_key.into_bytes(), entry_bytes));
+        }
+
+        // Write all entries
+        if let Some(ref store) = self.store {
+            let mut all_entries = index_entries;
+            all_entries.extend(reverse_entries);
+
+            let mut seen_keys = std::collections::HashSet::new();
+            let deduped_entries: Vec<(Vec<u8>, Vec<u8>)> = all_entries
+                .into_iter()
+                .filter(|(key, _)| seen_keys.insert(key.clone()))
+                .collect();
+
+            store.batch_put(deduped_entries).await.map_err(|e| {
+                SchemaError::InvalidData(format!("Failed to batch write keyword entries: {}", e))
+            })?;
+        } else if let Some(ref tree) = self.tree {
+            let mut batch = sled::Batch::default();
+            for (key, value) in index_entries {
+                batch.insert(key, value);
+            }
+            for (key, value) in reverse_entries {
+                batch.insert(key, value);
+            }
+            tree.apply_batch(batch)
+                .map_err(|e| SchemaError::InvalidData(format!("Batch apply failed: {}", e)))?;
+        }
+
+        log::info!("[NativeIndex] batch_index_from_keywords: Completed successfully");
+        Ok(())
+    }
+
+    /// Batch index a record's fields by extracting terms and writing index entries.
+    pub async fn batch_index(
         &self,
         index_operations: &[BatchIndexOperation],
     ) -> Result<(), SchemaError> {
         log::info!(
-            "[NativeIndex] batch_index_append_only: Starting with {} operations",
+            "[NativeIndex] batch_index: Starting with {} operations",
             index_operations.len()
         );
 
@@ -1201,7 +1196,7 @@ impl NativeIndexManager {
 
             // Extract terms and create index entries
             let terms_with_classification =
-                self.extract_terms_for_append_only(&effective_classifications, value);
+                self.extract_terms(&effective_classifications, value);
 
             for (term, classification) in &terms_with_classification {
                 let entry = IndexEntry::new(
@@ -1245,7 +1240,7 @@ impl NativeIndexManager {
         }
 
         log::info!(
-            "[NativeIndex] batch_index_append_only: Writing {} index entries and {} reverse mappings",
+            "[NativeIndex] batch_index: Writing {} index entries and {} reverse mappings",
             index_entries.len(),
             reverse_entries.len()
         );
@@ -1265,7 +1260,7 @@ impl NativeIndexManager {
                 .collect();
 
             log::info!(
-                "[NativeIndex] batch_index_append_only: After dedup: {} entries",
+                "[NativeIndex] batch_index: After dedup: {} entries",
                 deduped_entries.len()
             );
 
@@ -1284,12 +1279,12 @@ impl NativeIndexManager {
                 .map_err(|e| SchemaError::InvalidData(format!("Batch apply failed: {}", e)))?;
         }
 
-        log::info!("[NativeIndex] batch_index_append_only: Completed successfully");
+        log::info!("[NativeIndex] batch_index: Completed successfully");
         Ok(())
     }
 
-    /// Extract terms for append-only indexing
-    fn extract_terms_for_append_only(
+    /// Extract terms from a value for indexing
+    fn extract_terms(
         &self,
         classifications: &[String],
         value: &Value,
@@ -1307,42 +1302,69 @@ impl NativeIndexManager {
         results
     }
 
-    /// Search using prefix scan (append-only format) - async version
+    /// Search for index entries matching a term.
     ///
-    /// This searches for all index entries matching a term using prefix scan.
-    /// Works with both Sled and DynamoDB backends.
-    pub async fn search_append_only(&self, term: &str) -> Result<Vec<IndexEntry>, SchemaError> {
+    /// For multi-word queries like "alice johnson", tries the full phrase first
+    /// (direct index match), then falls back to intersecting individual word results.
+    pub async fn search(&self, term: &str) -> Result<Vec<IndexEntry>, SchemaError> {
         let Some(normalized) = self.normalize_search_term(term) else {
             return Ok(Vec::new());
         };
 
-        // Build prefix for word search: idx:word:{normalized}:
+        // Try the full term as-is
         let prefix = format!("{}word:{}:", INDEX_ENTRY_PREFIX, normalized);
-
-        log::debug!(
-            "[NativeIndex] search_append_only: Searching with prefix '{}'",
-            prefix
-        );
-
         let entries = self.scan_index_prefix(&prefix).await?;
+        if !entries.is_empty() || !normalized.contains(' ') {
+            return Ok(entries);
+        }
 
-        log::info!(
-            "[NativeIndex] search_append_only: Found {} entries for term '{}'",
-            entries.len(),
-            term
-        );
+        // Multi-word with no direct match — intersect individual words
+        let words: Vec<String> = term
+            .split_whitespace()
+            .filter_map(|w| self.normalize_search_term(w))
+            .collect();
 
-        Ok(entries)
+        if words.len() < 2 {
+            return Ok(Vec::new());
+        }
+
+        // Search the first word, then filter to records that also match all other words
+        let first_prefix = format!("{}word:{}:", INDEX_ENTRY_PREFIX, words[0]);
+        let candidates = self.scan_index_prefix(&first_prefix).await?;
+
+        // Collect record keys that appear for every other word
+        let mut required_keys: Option<HashSet<(String, KeyValue)>> = None;
+        for word in &words[1..] {
+            let p = format!("{}word:{}:", INDEX_ENTRY_PREFIX, word);
+            let word_entries = self.scan_index_prefix(&p).await?;
+            let keys: HashSet<(String, KeyValue)> = word_entries
+                .into_iter()
+                .map(|e| (e.schema.clone(), e.key.clone()))
+                .collect();
+            required_keys = Some(match required_keys {
+                Some(existing) => existing.intersection(&keys).cloned().collect(),
+                None => keys,
+            });
+        }
+
+        let required_keys = required_keys.unwrap_or_default();
+        let mut seen = HashSet::new();
+        let results: Vec<IndexEntry> = candidates
+            .into_iter()
+            .filter(|e| {
+                let rk = (e.schema.clone(), e.key.clone());
+                required_keys.contains(&rk) && seen.insert(rk)
+            })
+            .collect();
+
+        Ok(results)
     }
 
-    /// Search using prefix scan (append-only format) - sync version for Sled only
-    ///
-    /// This is a synchronous version that works only with Sled backend.
-    /// Use search_append_only for async backends (DynamoDB).
-    pub fn search_append_only_sync(&self, term: &str) -> Result<Vec<IndexEntry>, SchemaError> {
+    /// Sync version of search (Sled only).
+    pub fn search_sync(&self, term: &str) -> Result<Vec<IndexEntry>, SchemaError> {
         let Some(ref tree) = self.tree else {
             return Err(SchemaError::InvalidData(
-                "Sync search only available with Sled backend. Use search_append_only for async backends.".to_string(),
+                "Sync search only available with Sled backend".to_string(),
             ));
         };
 
@@ -1350,40 +1372,69 @@ impl NativeIndexManager {
             return Ok(Vec::new());
         };
 
-        // Build prefix for word search: idx:word:{normalized}:
-        let prefix = format!("{}word:{}:", INDEX_ENTRY_PREFIX, normalized);
-
-        log::debug!(
-            "[NativeIndex] search_append_only_sync: Searching with prefix '{}'",
-            prefix
-        );
-
-        let mut entries = Vec::new();
-        for result in tree.scan_prefix(prefix.as_bytes()) {
-            match result {
-                Ok((_key, value)) => match serde_json::from_slice::<IndexEntry>(&value) {
-                    Ok(entry) => entries.push(entry),
-                    Err(e) => {
-                        log::warn!("Failed to deserialize IndexEntry: {}", e);
-                    }
-                },
-                Err(e) => {
-                    log::warn!("Sled scan error: {}", e);
+        let scan_sync = |prefix: &str| -> Vec<IndexEntry> {
+            let mut entries = Vec::new();
+            for result in tree.scan_prefix(prefix.as_bytes()) {
+                match result {
+                    Ok((_key, value)) => match serde_json::from_slice::<IndexEntry>(&value) {
+                        Ok(entry) => entries.push(entry),
+                        Err(e) => log::warn!("Failed to deserialize IndexEntry: {}", e),
+                    },
+                    Err(e) => log::warn!("Sled scan error: {}", e),
                 }
             }
+            entries
+        };
+
+        // Try the full term as-is
+        let prefix = format!("{}word:{}:", INDEX_ENTRY_PREFIX, normalized);
+        let entries = scan_sync(&prefix);
+        if !entries.is_empty() || !normalized.contains(' ') {
+            return Ok(entries);
         }
 
-        log::info!(
-            "[NativeIndex] search_append_only_sync: Found {} entries for term '{}'",
-            entries.len(),
-            term
-        );
+        // Multi-word fallback — intersect individual words
+        let words: Vec<String> = term
+            .split_whitespace()
+            .filter_map(|w| self.normalize_search_term(w))
+            .collect();
 
-        Ok(entries)
+        if words.len() < 2 {
+            return Ok(Vec::new());
+        }
+
+        let first_prefix = format!("{}word:{}:", INDEX_ENTRY_PREFIX, words[0]);
+        let candidates = scan_sync(&first_prefix);
+
+        let mut required_keys: Option<HashSet<(String, KeyValue)>> = None;
+        for word in &words[1..] {
+            let p = format!("{}word:{}:", INDEX_ENTRY_PREFIX, word);
+            let word_entries = scan_sync(&p);
+            let keys: HashSet<(String, KeyValue)> = word_entries
+                .into_iter()
+                .map(|e| (e.schema.clone(), e.key.clone()))
+                .collect();
+            required_keys = Some(match required_keys {
+                Some(existing) => existing.intersection(&keys).cloned().collect(),
+                None => keys,
+            });
+        }
+
+        let required_keys = required_keys.unwrap_or_default();
+        let mut seen = HashSet::new();
+        let results: Vec<IndexEntry> = candidates
+            .into_iter()
+            .filter(|e| {
+                let rk = (e.schema.clone(), e.key.clone());
+                required_keys.contains(&rk) && seen.insert(rk)
+            })
+            .collect();
+
+        Ok(results)
     }
 
-    /// Search with classification using prefix scan (append-only format)
-    pub async fn search_append_only_with_classification(
+    /// Search with classification using prefix scan
+    pub async fn search_with_classification(
         &self,
         term: &str,
         classification: Option<ClassificationType>,
@@ -1412,22 +1463,20 @@ impl NativeIndexManager {
         let prefix = format!("{}{}:{}:", INDEX_ENTRY_PREFIX, class_prefix, normalized);
 
         log::debug!(
-            "[NativeIndex] search_append_only_with_classification: Searching with prefix '{}'",
+            "[NativeIndex] search_with_classification: Searching with prefix '{}'",
             prefix
         );
 
         self.scan_index_prefix(&prefix).await
     }
 
-    /// Search all classifications using prefix scan (append-only format)
-    ///
-    /// Only scans "word" classification and field names, since other classifications
-    /// (email, phone, etc.) are never populated during indexing.
-    pub async fn search_all_append_only(&self, term: &str) -> Result<Vec<IndexEntry>, SchemaError> {
-        // Only scan classifications that actually have data: word + field
+    /// Search all indexed keywords and field names.
+    /// Supports multi-word queries (phrase match first, then word intersection).
+    pub async fn search_all(&self, term: &str) -> Result<Vec<IndexEntry>, SchemaError> {
+        // Use search which handles multi-word intersection
         let (word_result, field_result) = tokio::join!(
-            self.search_append_only_with_classification(term, None),
-            self.search_field_names_append_only(term)
+            self.search(term),
+            self.search_field_names(term)
         );
 
         let mut all_entries = Vec::new();
@@ -1454,8 +1503,8 @@ impl NativeIndexManager {
         Ok(all_entries)
     }
 
-    /// Search for field names using append-only index
-    async fn search_field_names_append_only(
+    /// Search for field names in the index
+    async fn search_field_names(
         &self,
         term: &str,
     ) -> Result<Vec<IndexEntry>, SchemaError> {
@@ -1468,8 +1517,8 @@ impl NativeIndexManager {
         self.scan_index_prefix(&prefix).await
     }
 
-    /// Search for field names using append-only index - sync version for Sled only
-    pub fn search_field_names_append_only_sync(
+    /// Search for field names in the index (sync version, Sled only)
+    pub fn search_field_names_sync(
         &self,
         term: &str,
     ) -> Result<Vec<IndexEntry>, SchemaError> {
@@ -1487,7 +1536,7 @@ impl NativeIndexManager {
         let prefix = format!("{}field:{}:", INDEX_ENTRY_PREFIX, normalized);
 
         log::debug!(
-            "[NativeIndex] search_field_names_append_only_sync: Searching with prefix '{}'",
+            "[NativeIndex] search_field_names_sync: Searching with prefix '{}'",
             prefix
         );
 
@@ -1507,7 +1556,7 @@ impl NativeIndexManager {
         }
 
         log::info!(
-            "[NativeIndex] search_field_names_append_only_sync: Found {} field name entries for term '{}'",
+            "[NativeIndex] search_field_names_sync: Found {} field name entries for term '{}'",
             entries.len(),
             term
         );
@@ -1546,10 +1595,8 @@ impl NativeIndexManager {
         Ok(entries)
     }
 
-    /// Delete all index entries for a record (append-only format)
-    ///
-    /// Uses reverse mapping to find and delete all index entries for a record.
-    pub async fn delete_record_index_append_only(
+    /// Delete all index entries for a record using the reverse mapping.
+    pub async fn delete_record_index(
         &self,
         schema_name: &str,
         key_value: &KeyValue,
@@ -1558,7 +1605,7 @@ impl NativeIndexManager {
         let rev_prefix = reverse_index_prefix(schema_name, key_value);
 
         log::debug!(
-            "[NativeIndex] delete_record_index_append_only: Scanning reverse prefix '{}'",
+            "[NativeIndex] delete_record_index: Scanning reverse prefix '{}'",
             rev_prefix
         );
 
@@ -1582,7 +1629,7 @@ impl NativeIndexManager {
 
         if reverse_entries.is_empty() {
             log::debug!(
-                "[NativeIndex] delete_record_index_append_only: No entries to delete for {:?}:{}",
+                "[NativeIndex] delete_record_index: No entries to delete for {:?}:{}",
                 schema_name,
                 key_value
             );
@@ -1600,7 +1647,7 @@ impl NativeIndexManager {
         }
 
         log::info!(
-            "[NativeIndex] delete_record_index_append_only: Deleting {} entries",
+            "[NativeIndex] delete_record_index: Deleting {} entries",
             keys_to_delete.len()
         );
 
@@ -1657,13 +1704,13 @@ mod tests {
 
         // Index using append-only method
         manager
-            .batch_index_append_only(&operations)
+            .batch_index(&operations)
             .await
             .expect("indexing failed");
 
         // Search using append-only method
         let results = manager
-            .search_append_only("Jennifer")
+            .search("Jennifer")
             .await
             .expect("search failed");
 
@@ -1672,14 +1719,14 @@ mod tests {
 
         // Search parts
         let results = manager
-            .search_append_only("async")
+            .search("async")
             .await
             .expect("search failed");
         assert_eq!(results.len(), 1);
 
         // Verify we can find by field name
         let results = manager
-            .search_all_append_only("content")
+            .search_all("content")
             .await
             .expect("field search");
         assert!(!results.is_empty());
@@ -1703,13 +1750,13 @@ mod tests {
 
         // Index using append-only method (should default to "word" indexing)
         manager
-            .batch_index_append_only(&operations)
+            .batch_index(&operations)
             .await
             .expect("indexing failed");
 
         // Verify "word" search works
         let results = manager
-            .search_append_only("hello")
+            .search("hello")
             .await
             .expect("search failed");
         assert_eq!(results.len(), 1);
@@ -1742,13 +1789,13 @@ mod tests {
 
         // Index using append-only method
         manager
-            .batch_index_append_only(&operations)
+            .batch_index(&operations)
             .await
             .expect("indexing failed");
 
         // Search "Hello"
         let results = manager
-            .search_append_only("Hello")
+            .search("Hello")
             .await
             .expect("search failed for Hello");
 
@@ -1756,7 +1803,7 @@ mod tests {
 
         // Search "world"
         let results = manager
-            .search_append_only("world")
+            .search("world")
             .await
             .expect("search failed for world");
 
@@ -1764,14 +1811,14 @@ mod tests {
 
         // Search "https" (part of URL, should be extracted as word "https")
         let results = manager
-            .search_append_only("https")
+            .search("https")
             .await
             .expect("search failed for https");
 
         assert_eq!(results.len(), 1, "Should find 1 result for https");
     }
 
-    // ========== APPEND-ONLY INDEX TESTS ==========
+    // ========== INDEX TESTS ==========
 
     #[tokio::test]
     async fn test_append_only_basic_indexing() {
@@ -1791,13 +1838,13 @@ mod tests {
 
         // Index using append-only method
         manager
-            .batch_index_append_only(&operations)
+            .batch_index(&operations)
             .await
             .expect("append-only indexing failed");
 
         // Search using append-only method
         let results = manager
-            .search_append_only("hello")
+            .search("hello")
             .await
             .expect("search failed");
 
@@ -1843,27 +1890,27 @@ mod tests {
         ];
 
         manager
-            .batch_index_append_only(&operations)
+            .batch_index(&operations)
             .await
             .expect("append-only indexing failed");
 
         // Search for "hello" - should find 2 results
         let results = manager
-            .search_append_only("hello")
+            .search("hello")
             .await
             .expect("search failed");
         assert_eq!(results.len(), 2, "Should find 2 results for hello");
 
         // Search for "goodbye" - should find 1 result
         let results = manager
-            .search_append_only("goodbye")
+            .search("goodbye")
             .await
             .expect("search failed");
         assert_eq!(results.len(), 1, "Should find 1 result for goodbye");
 
         // Search for "tweet" - should find 3 results
         let results = manager
-            .search_append_only("tweet")
+            .search("tweet")
             .await
             .expect("search failed");
         assert_eq!(results.len(), 3, "Should find 3 results for tweet");
@@ -1898,26 +1945,26 @@ mod tests {
         ];
 
         manager
-            .batch_index_append_only(&operations)
+            .batch_index(&operations)
             .await
             .expect("append-only indexing failed");
 
         // Verify both are indexed
         let results = manager
-            .search_append_only("hello")
+            .search("hello")
             .await
             .expect("search failed");
         assert_eq!(results.len(), 2, "Should find 2 results for hello");
 
         // Delete first record's index
         manager
-            .delete_record_index_append_only("TestSchema", &key1)
+            .delete_record_index("TestSchema", &key1)
             .await
             .expect("delete failed");
 
         // Verify only one remains
         let results = manager
-            .search_append_only("hello")
+            .search("hello")
             .await
             .expect("search failed");
         assert_eq!(
@@ -1945,13 +1992,13 @@ mod tests {
         )];
 
         manager
-            .batch_index_append_only(&operations)
+            .batch_index(&operations)
             .await
             .expect("append-only indexing failed");
 
         // Search for field name "email"
         let results = manager
-            .search_all_append_only("email")
+            .search_all("email")
             .await
             .expect("search failed");
 

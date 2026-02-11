@@ -280,12 +280,24 @@ impl FoldDB {
         // This is shared between MutationManager (read status) and IndexOrchestrator (write status)
         let index_status_tracker = IndexStatusTracker::new(Some(progress_tracker.clone()));
 
+        // Create keyword extractor if ingestion service (LLM) is available
+        use super::orchestration::keyword_extractor::KeywordExtractor;
+        let keyword_extractor = crate::ingestion::ingestion_service::IngestionService::from_env()
+            .ok()
+            .map(|svc| Arc::new(KeywordExtractor::new(Arc::new(svc))));
+        if keyword_extractor.is_some() {
+            info!("KeywordExtractor initialized - LLM-powered indexing enabled");
+        } else {
+            info!("KeywordExtractor not available - indexing will be skipped (no API key configured)");
+        }
+
         // Create and start IndexOrchestrator for event-driven native indexing
         use super::orchestration::index_orchestrator::IndexOrchestrator;
         let index_orchestrator = Arc::new(IndexOrchestrator::new(
             Arc::clone(&db_ops),
             Some(index_status_tracker.clone()),
             Arc::clone(&pending_tasks),
+            keyword_extractor,
         ));
         index_orchestrator
             .start_event_listener(Arc::clone(&message_bus))
@@ -437,74 +449,7 @@ impl FoldDB {
     pub fn schema_manager(&self) -> Arc<SchemaCore> {
         Arc::clone(&self.schema_manager)
     }
-    /// Search the native word index for a specific term (async version)
-    /// Uses the optimized append-only index format
-    pub async fn native_word_search_async(
-        &self,
-        term: &str,
-    ) -> Result<Vec<IndexResult>, SchemaError> {
-        let manager = self.db_ops.native_index_manager().ok_or_else(|| {
-            SchemaError::InvalidData("Native index manager not available".to_string())
-        })?;
-
-        let entries = manager.search_append_only(term).await?;
-        Ok(manager.entries_to_results(entries))
-    }
-
-    /// Search the native word index for a specific term (sync version)
-    /// Uses the optimized append-only index format
-    /// For Sled backend, uses sync search. For async backends, creates a new runtime.
-    /// Also searches for field names that match the term.
-    pub fn native_word_search(&self, term: &str) -> Result<Vec<IndexResult>, SchemaError> {
-        let manager = self.db_ops.native_index_manager().ok_or_else(|| {
-            SchemaError::InvalidData("Native index manager not available".to_string())
-        })?;
-
-        // For Sled backend, use sync search directly
-        if !manager.is_async() {
-            // Search for word matches
-            let word_entries = manager.search_append_only_sync(term)?;
-            let mut results = manager.entries_to_results(word_entries);
-
-            // Also search for field name matches
-            if let Ok(field_entries) = manager.search_field_names_append_only_sync(term) {
-                let field_results = manager.entries_to_results(field_entries);
-                // Deduplicate by key
-                let mut seen = std::collections::HashSet::new();
-                for r in &results {
-                    seen.insert((r.schema_name.clone(), r.field.clone(), r.key_value.clone()));
-                }
-                for r in field_results {
-                    let key = (r.schema_name.clone(), r.field.clone(), r.key_value.clone());
-                    if seen.insert(key) {
-                        results.push(r);
-                    }
-                }
-            }
-
-            return Ok(results);
-        }
-
-        // For async backends (DynamoDB), create a new runtime
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .map_err(|e| SchemaError::InvalidData(format!("Failed to create runtime: {}", e)))?;
-
-        rt.block_on(async {
-            // Search for word matches
-            let word_entries = manager.search_append_only(term).await?;
-            let results = manager.entries_to_results(word_entries);
-
-            // The async backend doesn't have field name search exposed publicly,
-            // but the search_all_append_only method includes field names.
-            // For now, we use the same approach for async.
-            Ok(results)
-        })
-    }
-
-    /// Search native index across all classification types and aggregate results
-    /// Uses the optimized append-only index format
+    /// Search native index across all classification types
     pub async fn native_search_all_classifications(
         &self,
         term: &str,
@@ -519,7 +464,7 @@ impl FoldDB {
         })?;
 
         // Use append-only search for all classifications
-        let entries = manager.search_all_append_only(term).await?;
+        let entries = manager.search_all(term).await?;
         Ok(manager.entries_to_results(entries))
     }
 

@@ -463,13 +463,9 @@ impl LlmQueryService {
             .await?;
 
         // Step 2: Execute native index searches for each term
-        // Use search_all_classifications which searches:
-        // - Word matches + field name matches
-        // - All classification types (email, phone, date, name, etc.)
         let mut all_results = Vec::new();
         if let Some(native_index_mgr) = db_ops.native_index_manager() {
             for term in &search_terms {
-                // Check if we need to use async or sync search
                 if native_index_mgr.is_async() {
                     match native_index_mgr
                         .search_all_classifications_async(term)
@@ -531,13 +527,9 @@ impl LlmQueryService {
             .await?;
 
         // Step 2: Execute native index searches for each term
-        // Use search_all_classifications which searches:
-        // - Word matches + field name matches
-        // - All classification types (email, phone, date, name, etc.)
         let mut all_results = Vec::new();
         if let Some(native_index_mgr) = db_ops.native_index_manager() {
             for term in &search_terms {
-                // Check if we need to use async or sync search
                 if native_index_mgr.is_async() {
                     match native_index_mgr
                         .search_all_classifications_async(term)

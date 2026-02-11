@@ -13,6 +13,7 @@ pub mod backfill_manager;
 pub mod execution_coordinator;
 pub mod index_orchestrator;
 pub mod index_status;
+pub mod keyword_extractor;
 pub mod persistence_manager;
 pub mod queue_manager;
 
