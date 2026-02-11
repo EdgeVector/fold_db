@@ -3,16 +3,33 @@ use crate::schema::types::key_value::KeyValue;
 use crate::schema::SchemaError;
 use crate::storage::traits::KvStore;
 use log;
+use rust_stemmers::{Algorithm, Stemmer};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sled::Tree;
 use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
+use unicode_segmentation::UnicodeSegmentation;
 
 const STOPWORDS: &[&str] = &[
-    "a", "an", "and", "are", "as", "at", "be", "but", "by", "for", "from", "in", "is", "it", "of",
-    "on", "or", "the", "to", "with",
+    "a", "about", "above", "after", "again", "against", "ain", "all", "am", "an", "and", "any",
+    "are", "aren", "aren't", "as", "at", "be", "because", "been", "before", "being", "below",
+    "between", "both", "but", "by", "can", "couldn", "couldn't", "d", "did", "didn", "didn't",
+    "do", "does", "doesn", "doesn't", "doing", "don", "don't", "down", "during", "each", "few",
+    "for", "from", "further", "had", "hadn", "hadn't", "has", "hasn", "hasn't", "have", "haven",
+    "haven't", "having", "he", "her", "here", "hers", "herself", "him", "himself", "his", "how",
+    "i", "if", "in", "into", "is", "isn", "isn't", "it", "it's", "its", "itself", "just", "ll",
+    "m", "ma", "me", "mightn", "mightn't", "more", "most", "mustn", "mustn't", "my", "myself",
+    "needn", "needn't", "no", "nor", "not", "now", "o", "of", "off", "on", "once", "only", "or",
+    "other", "our", "ours", "ourselves", "out", "over", "own", "re", "s", "same", "shan",
+    "shan't", "she", "she's", "should", "should've", "shouldn", "shouldn't", "so", "some", "such",
+    "t", "than", "that", "that'll", "the", "their", "theirs", "them", "themselves", "then",
+    "there", "these", "they", "this", "those", "through", "to", "too", "under", "until", "up",
+    "ve", "very", "was", "wasn", "wasn't", "we", "were", "weren", "weren't", "what", "when",
+    "where", "which", "while", "who", "whom", "why", "will", "with", "won", "won't", "wouldn",
+    "wouldn't", "y", "you", "you'd", "you'll", "you're", "you've", "your", "yours", "yourself",
+    "yourselves",
 ];
 
 const MIN_WORD_LENGTH: usize = 2;
@@ -148,10 +165,20 @@ pub struct IndexResult {
 /// Represents a batch index operation: (schema_name, field_name, key_value, value, classifications)
 pub type BatchIndexOperation = (String, String, KeyValue, Value, Option<Vec<String>>);
 
-#[derive(Clone)]
 pub struct NativeIndexManager {
     tree: Option<Tree>,
     store: Option<Arc<dyn KvStore>>,
+    stemmer: Stemmer,
+}
+
+impl Clone for NativeIndexManager {
+    fn clone(&self) -> Self {
+        Self {
+            tree: self.tree.clone(),
+            store: self.store.clone(),
+            stemmer: Stemmer::create(Algorithm::English),
+        }
+    }
 }
 
 impl NativeIndexManager {
@@ -160,6 +187,7 @@ impl NativeIndexManager {
         Self {
             tree: Some(tree),
             store: None,
+            stemmer: Stemmer::create(Algorithm::English),
         }
     }
 
@@ -168,6 +196,7 @@ impl NativeIndexManager {
         Self {
             tree: None,
             store: Some(store),
+            stemmer: Stemmer::create(Algorithm::English),
         }
     }
 
@@ -394,7 +423,7 @@ impl NativeIndexManager {
         }
     }
 
-    fn should_index_field(&self, field_name: &str) -> bool {
+    pub fn should_index_field(field_name: &str) -> bool {
         !EXCLUDED_FIELDS
             .iter()
             .any(|excluded| excluded.eq_ignore_ascii_case(field_name))
@@ -429,10 +458,22 @@ impl NativeIndexManager {
     fn collect_words_recursive(&self, value: &Value, acc: &mut HashSet<String>) {
         match value {
             Value::String(text) => {
-                for segment in text.split(|c: char| !c.is_alphanumeric()) {
-                    if let Some(word) = self.normalize_word(segment) {
-                        acc.insert(word);
+                for word in text.unicode_words() {
+                    if let Some(normalized) = self.normalize_word(word) {
+                        acc.insert(normalized);
                     }
+                }
+            }
+            Value::Number(n) => {
+                let s = n.to_string();
+                if let Some(word) = self.normalize_word(&s) {
+                    acc.insert(word);
+                }
+            }
+            Value::Bool(b) => {
+                let s = b.to_string();
+                if let Some(word) = self.normalize_word(&s) {
+                    acc.insert(word);
                 }
             }
             Value::Array(values) => {
@@ -441,7 +482,6 @@ impl NativeIndexManager {
                 }
             }
             Value::Object(obj) => {
-                // For objects, recursively process all values
                 for (_, nested_value) in obj {
                     self.collect_words_recursive(nested_value, acc);
                 }
@@ -456,23 +496,29 @@ impl NativeIndexManager {
             return None;
         }
 
-        let normalized = trimmed.to_ascii_lowercase();
+        let lowered = trimmed.to_lowercase();
 
-        if normalized.len() < MIN_WORD_LENGTH || normalized.len() > MAX_WORD_LENGTH {
+        if lowered.len() < MIN_WORD_LENGTH || lowered.len() > MAX_WORD_LENGTH {
             return None;
         }
 
-        if STOPWORDS.contains(&normalized.as_str()) {
+        if STOPWORDS.contains(&lowered.as_str()) {
             return None;
         }
 
-        Some(normalized)
+        let stemmed = self.stemmer.stem(&lowered).into_owned();
+
+        if stemmed.len() < MIN_WORD_LENGTH {
+            return None;
+        }
+
+        Some(stemmed)
     }
 
     fn normalize_search_term(&self, term: &str) -> Option<String> {
-        for segment in term.split(|c: char| !c.is_alphanumeric()) {
-            if let Some(word) = self.normalize_word(segment) {
-                return Some(word);
+        for word in term.unicode_words() {
+            if let Some(normalized) = self.normalize_word(word) {
+                return Some(normalized);
             }
         }
         None
@@ -613,7 +659,7 @@ impl NativeIndexManager {
             let mut record_keys: Vec<(String, HashSet<String>)> = Vec::new();
 
             for (schema_name, field_name, key_value, value, classifications) in index_operations {
-                if !self.should_index_field(field_name) {
+                if !Self::should_index_field(field_name) {
                     continue;
                 }
 
@@ -759,7 +805,7 @@ impl NativeIndexManager {
         for (i, (schema_name, field_name, key_value, value, classifications)) in
             index_operations.iter().enumerate()
         {
-            if !self.should_index_field(field_name) {
+            if !Self::should_index_field(field_name) {
                 continue;
             }
 
@@ -1142,7 +1188,7 @@ impl NativeIndexManager {
         let mut reverse_entries: Vec<(Vec<u8>, Vec<u8>)> = Vec::new();
 
         for (schema_name, field_name, key_value, value, classifications) in index_operations {
-            if !self.should_index_field(field_name) {
+            if !Self::should_index_field(field_name) {
                 continue;
             }
 
@@ -1374,34 +1420,21 @@ impl NativeIndexManager {
     }
 
     /// Search all classifications using prefix scan (append-only format)
+    ///
+    /// Only scans "word" classification and field names, since other classifications
+    /// (email, phone, etc.) are never populated during indexing.
     pub async fn search_all_append_only(&self, term: &str) -> Result<Vec<IndexEntry>, SchemaError> {
-        use futures_util::future::join_all;
-
-        let classifications = vec![
-            None, // word search
-            Some(ClassificationType::NamePerson),
-            Some(ClassificationType::NameCompany),
-            Some(ClassificationType::NamePlace),
-            Some(ClassificationType::Email),
-            Some(ClassificationType::Phone),
-            Some(ClassificationType::Url),
-            Some(ClassificationType::Date),
-            Some(ClassificationType::Hashtag),
-            Some(ClassificationType::Username),
-        ];
-
-        let futures = classifications
-            .into_iter()
-            .map(|c| self.search_append_only_with_classification(term, c));
-
-        let results = join_all(futures).await;
+        // Only scan classifications that actually have data: word + field
+        let (word_result, field_result) = tokio::join!(
+            self.search_append_only_with_classification(term, None),
+            self.search_field_names_append_only(term)
+        );
 
         let mut all_entries = Vec::new();
         let mut seen = HashSet::new();
 
-        for entries in results.into_iter().flatten() {
+        if let Ok(entries) = word_result {
             for entry in entries {
-                // Deduplicate by schema + key + field
                 let key = format!("{:?}:{:?}:{}", entry.schema, entry.key, entry.field);
                 if seen.insert(key) {
                     all_entries.push(entry);
@@ -1409,8 +1442,7 @@ impl NativeIndexManager {
             }
         }
 
-        // Also search field names
-        if let Ok(field_entries) = self.search_field_names_append_only(term).await {
+        if let Ok(field_entries) = field_result {
             for entry in field_entries {
                 let key = format!("{:?}:{:?}:{}", entry.schema, entry.key, entry.field);
                 if seen.insert(key) {

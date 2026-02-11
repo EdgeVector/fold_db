@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use log::{debug, error, info, warn};
 
-use crate::db_operations::{native_index::BatchIndexOperation, DbOperations};
+use crate::db_operations::{native_index::{BatchIndexOperation, NativeIndexManager}, DbOperations};
 use crate::fold_db_core::infrastructure::message_bus::{
     query_events::MutationExecuted, AsyncMessageBus, Event,
 };
@@ -101,14 +101,11 @@ impl IndexOrchestrator {
         let schema_name = &event.schema;
         let data = event.data.as_ref().unwrap();
 
-        // extract key_value from mutation_context
-        // We assume 1:1 mapping between data[0] and mutation_context.key_value
-        // If batching evolves, this logic needs update to match data rows to keys.
+        // Extract key_value from mutation_context
         let key_value = if let Some(ctx) = &event.mutation_context {
             if let Some(kv) = &ctx.key_value {
                 kv.clone()
             } else {
-                // Fallback if no key value (should not happen for mutations usually)
                 warn!(
                     "IndexOrchestrator: No key_value in mutation context for schema {}",
                     schema_name
@@ -123,15 +120,20 @@ impl IndexOrchestrator {
             return;
         };
 
-        // Construct operations
+        // Delete old index entries for this record before reindexing
+        if let Err(e) = native_index_mgr
+            .delete_record_index_append_only(schema_name, &key_value)
+            .await
+        {
+            warn!("Failed to delete old index entries: {}", e);
+        }
+
+        // Construct operations from ALL rows in data
         let mut index_operations: Vec<BatchIndexOperation> = Vec::new();
 
-        // For now, only process the first row in data, as we have 1 context per event
-        if let Some(row) = data.first() {
+        for row in data {
             for (field_name, value) in row {
-                // Filter excluded fields (uuid, id, password, token)
-                if should_index_field(field_name) {
-                    // We pass None for classifications to let NativeIndexManager default it (usually "word")
+                if NativeIndexManager::should_index_field(field_name) {
                     index_operations.push((
                         schema_name.clone(),
                         field_name.clone(),
@@ -175,9 +177,4 @@ impl IndexOrchestrator {
             let _ = native_index_mgr.flush();
         }
     }
-}
-
-fn should_index_field(field_name: &str) -> bool {
-    let excluded = ["uuid", "id", "password", "token"];
-    !excluded.iter().any(|e| e.eq_ignore_ascii_case(field_name))
 }
