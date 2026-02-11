@@ -110,7 +110,7 @@ All downstream operations use `get_current_user_id()` to:
 
 ## Key Files Changed
 
-1. **`src/bin/datafold_http_server.rs`** - Removed startup user_id requirement
+1. **`src/bin/folddb_server.rs`** - Removed startup user_id requirement
 2. **`src/server/middleware/auth.rs`** - Added support for x-user-hash header
 
 ## Key Files (Unchanged, Already Correct)
@@ -123,10 +123,10 @@ All downstream operations use `get_current_user_id()` to:
 
 ```bash
 # No user_id needed at startup anymore!
-cargo run --bin datafold_http_server -- --port 9001
+cargo run --bin folddb_server -- --port 9001
 
 # Optional: with schema service
-cargo run --bin datafold_http_server -- --port 9001 --schema-service-url http://localhost:9002
+cargo run --bin folddb_server -- --port 9001 --schema-service-url http://localhost:9002
 ```
 
 ## Security Notes
@@ -142,5 +142,5 @@ If you were running the old version that required `--user-id`:
 
 1. Stop the old server
 2. Update to the new version
-3. Start without `--user-id`: `cargo run --bin datafold_http_server`
+3. Start without `--user-id`: `cargo run --bin folddb_server`
 4. Users log in via the UI (their data is already partitioned by hash)

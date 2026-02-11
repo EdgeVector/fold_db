@@ -17,16 +17,16 @@ jobs:
         include:
           - os: macos-15-large  # Intel runner
             target: x86_64-apple-darwin
-            artifact_name: datafold_http_server-macos-x86_64
-            binary: datafold_http_server
+            artifact_name: folddb_server-macos-x86_64
+            binary: folddb_server
           - os: macos-latest  # Apple Silicon (ARM64)
             target: aarch64-apple-darwin
-            artifact_name: datafold_http_server-macos-aarch64
-            binary: datafold_http_server
+            artifact_name: folddb_server-macos-aarch64
+            binary: folddb_server
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            artifact_name: datafold_http_server-linux-x86_64
-            binary: datafold_http_server
+            artifact_name: folddb_server-linux-x86_64
+            binary: folddb_server
           - os: macos-15-large  # Intel runner
             target: x86_64-apple-darwin
             artifact_name: folddb-macos-x86_64
@@ -127,7 +127,7 @@ jobs:
 
     env:
       OPENAPI_URL: ${{ github.workspace }}/src/server/static-react/target/openapi.json
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -191,32 +191,32 @@ jobs:
           set -euo pipefail
           mkdir -p "$GITHUB_WORKSPACE/dist"
           cd src/server/static-react/src-tauri/target/release/bundle
-          
+
           # Copy DMG (if produced)
-          for f in dmg/DataFold_*.dmg; do
+          for f in dmg/FoldDB_*.dmg; do
             if [ -f "$f" ]; then
               echo "Found DMG: $f"
-              cp "$f" "$GITHUB_WORKSPACE/dist/DataFold-${{ steps.get_version.outputs.version }}-${{ matrix.arch }}.dmg"
+              cp "$f" "$GITHUB_WORKSPACE/dist/FoldDB-${{ steps.get_version.outputs.version }}-${{ matrix.arch }}.dmg"
             else
-              echo "No DMG found matching dmg/DataFold_*.dmg"
+              echo "No DMG found matching dmg/FoldDB_*.dmg"
             fi
           done
-          
+
           # Zip the .app (if produced)
-          if [ -d macos/DataFold.app ]; then
+          if [ -d macos/FoldDB.app ]; then
             echo "Found .app; creating zip"
             cd macos
-            zip -r "$GITHUB_WORKSPACE/dist/DataFold-${{ steps.get_version.outputs.version }}-${{ matrix.arch }}.app.zip" DataFold.app
+            zip -r "$GITHUB_WORKSPACE/dist/FoldDB-${{ steps.get_version.outputs.version }}-${{ matrix.arch }}.app.zip" FoldDB.app
           else
-            echo "No macOS .app found at macos/DataFold.app"
+            echo "No macOS .app found at macos/FoldDB.app"
           fi
 
       - name: Upload DMG to release
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: dist/DataFold-${{ steps.get_version.outputs.version }}-${{ matrix.arch }}.dmg
-          asset_name: DataFold-${{ steps.get_version.outputs.version }}-${{ matrix.arch }}.dmg
+          file: dist/FoldDB-${{ steps.get_version.outputs.version }}-${{ matrix.arch }}.dmg
+          asset_name: FoldDB-${{ steps.get_version.outputs.version }}-${{ matrix.arch }}.dmg
           tag: ${{ github.ref }}
           overwrite: true
 
@@ -224,8 +224,8 @@ jobs:
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: dist/DataFold-${{ steps.get_version.outputs.version }}-${{ matrix.arch }}.app.zip
-          asset_name: DataFold-${{ steps.get_version.outputs.version }}-${{ matrix.arch }}.app.zip
+          file: dist/FoldDB-${{ steps.get_version.outputs.version }}-${{ matrix.arch }}.app.zip
+          asset_name: FoldDB-${{ steps.get_version.outputs.version }}-${{ matrix.arch }}.app.zip
           tag: ${{ github.ref }}
           overwrite: true
 
@@ -234,7 +234,7 @@ jobs:
     name: Create Release Notes
     needs: [build-cli, build-macos-app]
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -253,58 +253,58 @@ jobs:
           tag: ${{ github.ref }}
           overwrite: true
           body: |
-            ## DataFold ${{ github.ref_name }}
-            
-            ### 🎉 Native macOS App (Recommended)
-            
+            ## FoldDB ${{ github.ref_name }}
+
+            ### Native macOS App (Recommended)
+
             **Download the native app for macOS:**
-            - **Apple Silicon (M1/M2/M3)**: [DataFold-${{ steps.get_version.outputs.version }}-aarch64.dmg](https://github.com/shiba4life/fold_db/releases/download/${{ github.ref_name }}/DataFold-${{ steps.get_version.outputs.version }}-aarch64.dmg)
-            - **Intel Mac**: [DataFold-${{ steps.get_version.outputs.version }}-x86_64.dmg](https://github.com/shiba4life/fold_db/releases/download/${{ github.ref_name }}/DataFold-${{ steps.get_version.outputs.version }}-x86_64.dmg)
-            
+            - **Apple Silicon (M1/M2/M3)**: [FoldDB-${{ steps.get_version.outputs.version }}-aarch64.dmg](https://github.com/shiba4life/fold_db/releases/download/${{ github.ref_name }}/FoldDB-${{ steps.get_version.outputs.version }}-aarch64.dmg)
+            - **Intel Mac**: [FoldDB-${{ steps.get_version.outputs.version }}-x86_64.dmg](https://github.com/shiba4life/fold_db/releases/download/${{ github.ref_name }}/FoldDB-${{ steps.get_version.outputs.version }}-x86_64.dmg)
+
             **Installation:**
             1. Download the `.dmg` file for your Mac
             2. Open the `.dmg` file
-            3. Drag `DataFold.app` to your Applications folder
-            4. Launch DataFold from Applications
-            
-            **Features:**
-            - ✅ Native macOS application
-            - ✅ Double-click to launch
-            - ✅ Embedded server (no separate process needed)
-            - ✅ Data stored in `~/.datafold/data`
-            - ✅ Same UI as web version
-            
-            ---
-            
-            ### 🖥️ HTTP Server Binaries
+            3. Drag `FoldDB.app` to your Applications folder
+            4. Launch FoldDB from Applications
 
-            For running DataFold as a web server:
-            - **macOS (Intel)**: [datafold_http_server-macos-x86_64-${{ steps.get_version.outputs.version }}](https://github.com/shiba4life/fold_db/releases/download/${{ github.ref_name }}/datafold_http_server-macos-x86_64-${{ steps.get_version.outputs.version }})
-            - **macOS (Apple Silicon)**: [datafold_http_server-macos-aarch64-${{ steps.get_version.outputs.version }}](https://github.com/shiba4life/fold_db/releases/download/${{ github.ref_name }}/datafold_http_server-macos-aarch64-${{ steps.get_version.outputs.version }})
-            - **Linux**: [datafold_http_server-linux-x86_64-${{ steps.get_version.outputs.version }}](https://github.com/shiba4life/fold_db/releases/download/${{ github.ref_name }}/datafold_http_server-linux-x86_64-${{ steps.get_version.outputs.version }})
+            **Features:**
+            - Native macOS application
+            - Double-click to launch
+            - Embedded server (no separate process needed)
+            - Data stored in `~/.folddb/data`
+            - Same UI as web version
+
+            ---
+
+            ### HTTP Server Binaries
+
+            For running FoldDB as a web server:
+            - **macOS (Intel)**: [folddb_server-macos-x86_64-${{ steps.get_version.outputs.version }}](https://github.com/shiba4life/fold_db/releases/download/${{ github.ref_name }}/folddb_server-macos-x86_64-${{ steps.get_version.outputs.version }})
+            - **macOS (Apple Silicon)**: [folddb_server-macos-aarch64-${{ steps.get_version.outputs.version }}](https://github.com/shiba4life/fold_db/releases/download/${{ github.ref_name }}/folddb_server-macos-aarch64-${{ steps.get_version.outputs.version }})
+            - **Linux**: [folddb_server-linux-x86_64-${{ steps.get_version.outputs.version }}](https://github.com/shiba4life/fold_db/releases/download/${{ github.ref_name }}/folddb_server-linux-x86_64-${{ steps.get_version.outputs.version }})
 
             **Installation:**
             ```bash
             # Download the binary for your platform
-            chmod +x datafold_http_server-*
+            chmod +x folddb_server-*
 
             # Move to your PATH (optional)
-            sudo mv datafold_http_server-* /usr/local/bin/datafold_http_server
+            sudo mv folddb_server-* /usr/local/bin/folddb_server
             ```
 
             **Usage:**
             ```bash
             # Start the HTTP server
-            datafold_http_server --port 9001
+            folddb_server --port 9001
 
             # Visit http://localhost:9001 for the web interface
             ```
 
             ---
 
-            ### ⌨️ CLI Tool Downloads
+            ### CLI Tool Downloads
 
-            The `folddb` provides full control from your terminal:
+            The `folddb` CLI provides full control from your terminal:
             - **macOS (Intel)**: [folddb-macos-x86_64-${{ steps.get_version.outputs.version }}](https://github.com/shiba4life/fold_db/releases/download/${{ github.ref_name }}/folddb-macos-x86_64-${{ steps.get_version.outputs.version }})
             - **macOS (Apple Silicon)**: [folddb-macos-aarch64-${{ steps.get_version.outputs.version }}](https://github.com/shiba4life/fold_db/releases/download/${{ github.ref_name }}/folddb-macos-aarch64-${{ steps.get_version.outputs.version }})
             - **Linux**: [folddb-linux-x86_64-${{ steps.get_version.outputs.version }}](https://github.com/shiba4life/fold_db/releases/download/${{ github.ref_name }}/folddb-linux-x86_64-${{ steps.get_version.outputs.version }})
@@ -321,16 +321,16 @@ jobs:
             folddb ingest data.json
             folddb llm-query "Show me recent purchases over $50"
             ```
-            
+
             ---
-            
-            ### 📚 Documentation
-            
+
+            ### Documentation
+
             - [Quick Start Guide](https://github.com/shiba4life/fold_db/blob/mainline/QUICK_START.md)
             - [Native App Guide](https://github.com/shiba4life/fold_db/blob/mainline/TAURI_NATIVE_APP.md)
             - [Full Documentation](https://github.com/shiba4life/fold_db/blob/mainline/README.md)
             - [Changelog](https://github.com/shiba4life/fold_db/blob/mainline/CHANGELOG.md)
-            
+
             ---
-            
-            **First time using the native app?** On first launch, macOS may show a security warning. Go to **System Preferences → Security & Privacy** and click "Open Anyway".
+
+            **First time using the native app?** On first launch, macOS may show a security warning. Go to **System Preferences > Security & Privacy** and click "Open Anyway".

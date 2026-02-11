@@ -78,9 +78,9 @@ git push origin mainline --tags
 ```
 
 **Release binaries are named:**
-- `datafold_http_server-macos-x86_64-{version}`
-- `datafold_http_server-macos-aarch64-{version}`
-- `datafold_http_server-linux-x86_64-{version}`
+- `folddb_server-macos-x86_64-{version}`
+- `folddb_server-macos-aarch64-{version}`
+- `folddb_server-linux-x86_64-{version}`
 
 For detailed workflow validation and troubleshooting, see [RELEASE_WORKFLOW_VALIDATION.md](./RELEASE_WORKFLOW_VALIDATION.md).
 

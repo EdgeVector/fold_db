@@ -1,8 +1,8 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "DataFold",
-  "version": "0.1.10",
-  "identifier": "ai.datafold.app",
+  "productName": "FoldDB",
+  "version": "0.2.3",
+  "identifier": "com.folddb.app",
   "build": {
     "devUrl": "http://localhost:9001",
     "beforeDevCommand": "",
@@ -11,7 +11,7 @@
   "app": {
     "windows": [
       {
-        "title": "DataFold - Personal Database",
+        "title": "FoldDB - Personal Database",
         "width": 1400,
         "height": 900,
         "minWidth": 1000,
@@ -45,6 +45,6 @@
     },
     "category": "Developer Tool",
     "shortDescription": "Personal Database for Data Sovereignty",
-    "longDescription": "DataFold is a powerful personal database with AI-powered ingestion, schema management, and natural language queries. Built with Rust for performance and security."
+    "longDescription": "FoldDB is a powerful personal database with AI-powered ingestion, schema management, and natural language queries. Built with Rust for performance and security."
   }
 }

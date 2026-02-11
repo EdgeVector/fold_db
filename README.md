@@ -56,7 +56,7 @@ cargo install datafold
 This provides two main binaries:
 
 - `folddb` - Human-first CLI with nested subcommands
-- `datafold_http_server` - HTTP server with web UI
+- `folddb_server` - HTTP server with web UI
 
 ### Optional TypeScript Bindings
 
@@ -111,7 +111,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ```bash
 # Start the HTTP server with web UI
-datafold_http_server --port 9001
+folddb_server --port 9001
 ```
 
 Then visit `http://localhost:9001` for the web interface.

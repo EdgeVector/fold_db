@@ -49,16 +49,16 @@ jobs:
         include:
           - os: macos-15-large
             target: x86_64-apple-darwin
-            artifact_name: datafold_http_server-macos-x86_64
-            binary: datafold_http_server
+            artifact_name: folddb_server-macos-x86_64
+            binary: folddb_server
           - os: macos-latest
             target: aarch64-apple-darwin
-            artifact_name: datafold_http_server-macos-aarch64
-            binary: datafold_http_server
+            artifact_name: folddb_server-macos-aarch64
+            binary: folddb_server
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            artifact_name: datafold_http_server-linux-x86_64
-            binary: datafold_http_server
+            artifact_name: folddb_server-linux-x86_64
+            binary: folddb_server
           - os: macos-15-large
             target: x86_64-apple-darwin
             artifact_name: folddb-macos-x86_64
@@ -188,9 +188,9 @@ jobs:
 
             | Platform | Download |
             |----------|----------|
-            | macOS (Intel) | [datafold_http_server-macos-x86_64](https://github.com/shiba4life/fold_db/releases/download/nightly/datafold_http_server-macos-x86_64) |
-            | macOS (Apple Silicon) | [datafold_http_server-macos-aarch64](https://github.com/shiba4life/fold_db/releases/download/nightly/datafold_http_server-macos-aarch64) |
-            | Linux (x86_64) | [datafold_http_server-linux-x86_64](https://github.com/shiba4life/fold_db/releases/download/nightly/datafold_http_server-linux-x86_64) |
+            | macOS (Intel) | [folddb_server-macos-x86_64](https://github.com/shiba4life/fold_db/releases/download/nightly/folddb_server-macos-x86_64) |
+            | macOS (Apple Silicon) | [folddb_server-macos-aarch64](https://github.com/shiba4life/fold_db/releases/download/nightly/folddb_server-macos-aarch64) |
+            | Linux (x86_64) | [folddb_server-linux-x86_64](https://github.com/shiba4life/fold_db/releases/download/nightly/folddb_server-linux-x86_64) |
 
             ### CLI Tool Binaries
 
@@ -210,8 +210,8 @@ jobs:
             sudo mv folddb-* /usr/local/bin/folddb
 
             # Or use the HTTP server
-            chmod +x datafold_http_server-*
-            ./datafold_http_server-* --port 9001
+            chmod +x folddb_server-*
+            ./folddb_server-* --port 9001
             ```
 
             ---

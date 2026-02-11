@@ -51,7 +51,7 @@ DataFold includes several security features:
 This security policy covers:
 
 - The DataFold core library (`fold_db`)
-- The HTTP server (`datafold_http_server`)
+- The HTTP server (`folddb_server`)
 - The schema service (`schema_service`)
 
 Third-party dependencies are outside the scope of this policy, but we monitor them for known vulnerabilities.

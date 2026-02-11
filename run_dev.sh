@@ -8,7 +8,7 @@
 set -e
 
 # Kill existing processes
-pkill -f datafold_http_server 2>/dev/null || true
+pkill -f folddb_server 2>/dev/null || true
 pkill -f "vite" 2>/dev/null || true
 sleep 1
 
@@ -22,7 +22,7 @@ cd ../../..
 
 # Start Rust backend in background
 echo "Starting Rust backend on port 9001..."
-cargo run --bin datafold_http_server -- --port 9001 &
+cargo run --bin folddb_server -- --port 9001 &
 BACKEND_PID=$!
 
 # Wait for backend to be ready

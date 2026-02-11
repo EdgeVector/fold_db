@@ -32,7 +32,7 @@ cleanup_processes() {
     echo "Checking for existing datafold/fold_db processes..."
 
     # Kill any existing processes (try multiple patterns)
-    pkill -f datafold_http_server 2>/dev/null || true
+    pkill -f folddb_server 2>/dev/null || true
     pkill -f fold_db 2>/dev/null || true
     pkill -f "cargo run.*datafold" 2>/dev/null || true
     pkill -f "cargo run.*fold_db" 2>/dev/null || true
@@ -51,7 +51,7 @@ cleanup_processes() {
     sleep 2
 
     # Force kill if still running
-    pkill -9 -f datafold_http_server 2>/dev/null || true
+    pkill -9 -f folddb_server 2>/dev/null || true
     pkill -9 -f fold_db 2>/dev/null || true
     pkill -9 -f "cargo run.*datafold" 2>/dev/null || true
     pkill -9 -f "cargo run.*fold_db" 2>/dev/null || true
@@ -188,9 +188,9 @@ start_http_server() {
 
     echo "Starting the HTTP server on port 9001..."
     if [ -n "$features" ]; then
-        RUST_LOG=debug nohup cargo run --features "$features" --bin datafold_http_server -- --port 9001 --schema-service-url "$schema_url" > server.log 2>&1 &
+        RUST_LOG=debug nohup cargo run --features "$features" --bin folddb_server -- --port 9001 --schema-service-url "$schema_url" > server.log 2>&1 &
     else
-        RUST_LOG=debug nohup cargo run --bin datafold_http_server -- --port 9001 --schema-service-url "$schema_url" > server.log 2>&1 &
+        RUST_LOG=debug nohup cargo run --bin folddb_server -- --port 9001 --schema-service-url "$schema_url" > server.log 2>&1 &
     fi
     SERVER_PID=$!
 
