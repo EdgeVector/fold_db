@@ -51,7 +51,7 @@ async fn test_native_word_index_search_updates_with_mutations() {
             .expect("failed to approve schema");
     }
 
-    node.mutate_batch(vec![common::create_test_mutation(
+    node.mutate_batch_and_index(vec![common::create_test_mutation(
         &blogpost_schema,
         json!({
             "schema_name": "BlogPost",
@@ -77,7 +77,8 @@ async fn test_native_word_index_search_updates_with_mutations() {
         let mut jennifer_found = false;
         loop {
             let jennifer_results = fold_db
-                .native_word_search("Jennifer")
+                .native_search_all_classifications("Jennifer")
+                .await
                 .expect("search should succeed");
 
             if jennifer_results
@@ -101,12 +102,13 @@ async fn test_native_word_index_search_updates_with_mutations() {
         );
 
         let stopword_results = fold_db
-            .native_word_search("the")
+            .native_search_all_classifications("the")
+            .await
             .expect("stopword search should succeed");
         assert!(stopword_results.is_empty(), "stopwords should be excluded");
     }
 
-    node.mutate_batch(vec![common::create_test_mutation(
+    node.mutate_batch_and_index(vec![common::create_test_mutation(
         &blogpost_schema,
         json!({
             "schema_name": "BlogPost",
@@ -125,7 +127,8 @@ async fn test_native_word_index_search_updates_with_mutations() {
         let fold_db = node.get_fold_db().await.expect("failed to get FoldDB");
 
         let jennifer_results = fold_db
-            .native_word_search("jennifer")
+            .native_search_all_classifications("jennifer")
+            .await
             .expect("search after update should succeed");
 
         // Verify that jennifer appears in author field (this tests recursive object processing)
@@ -158,7 +161,8 @@ async fn test_native_word_index_search_updates_with_mutations() {
         let mut alice_found = false;
         loop {
             let alice_results = fold_db
-                .native_word_search("alice")
+                .native_search_all_classifications("alice")
+                .await
                 .expect("search for alice should succeed");
 
             if alice_results.iter().any(|entry| entry.field == "content") {

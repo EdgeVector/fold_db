@@ -51,13 +51,13 @@ async fn test_append_only_preserves_different_classifications() {
 
     // Batch index using append-only method
     manager
-        .batch_index_append_only(&operations)
+        .batch_index(&operations)
         .await
         .expect("batch indexing should succeed");
 
     // Verify word entries are preserved
     let word_results = manager
-        .search_append_only("john")
+        .search("john")
         .await
         .expect("search should succeed");
     eprintln!("Word search results: {} entries", word_results.len());
@@ -108,13 +108,13 @@ async fn test_append_only_handles_duplicate_same_classification() {
 
     // Batch index using append-only method
     manager
-        .batch_index_append_only(&operations)
+        .batch_index(&operations)
         .await
         .expect("batch indexing should succeed");
 
     // Verify entries exist (append-only may have duplicates, but that's OK for search)
     let learning_results = manager
-        .search_append_only("learning")
+        .search("learning")
         .await
         .expect("search should succeed");
     eprintln!(
@@ -167,13 +167,13 @@ async fn test_append_only_across_different_fields_same_record() {
 
     // Batch index using append-only method
     manager
-        .batch_index_append_only(&operations)
+        .batch_index(&operations)
         .await
         .expect("batch indexing should succeed");
 
     // Verify both fields are indexed separately for the word "rust"
     let rust_results = manager
-        .search_append_only("rust")
+        .search("rust")
         .await
         .expect("search should succeed");
     eprintln!("Search results for 'rust': {} entries", rust_results.len());
@@ -233,13 +233,13 @@ async fn test_append_only_handles_same_field_different_records() {
 
     // Batch index using append-only method
     manager
-        .batch_index_append_only(&operations)
+        .batch_index(&operations)
         .await
         .expect("batch indexing should succeed");
 
     // Verify all records are preserved
     let shared_results = manager
-        .search_append_only("shared")
+        .search("shared")
         .await
         .expect("search should succeed");
     eprintln!(

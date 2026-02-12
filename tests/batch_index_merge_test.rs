@@ -72,18 +72,18 @@ async fn test_batch_index_merges_existing_entries() {
         }),
     );
 
-    let results = node.mutate_batch(vec![mutation_a]).await.unwrap();
+    let results = node.mutate_batch_and_index(vec![mutation_a]).await.unwrap();
     assert_eq!(results.len(), 1, "First batch should process 1 mutation");
 
-    // Wait for background indexing to complete
-    std::thread::sleep(std::time::Duration::from_millis(600));
+    // No sleep needed - mutate_batch_and_index does synchronous indexing
 
     // Search for "foo" - should find record A
     eprintln!("\n=== Searching for 'foo' after BATCH 1 ===");
     let search_results = {
         let fold_db = node.get_fold_db().await.expect("failed to get FoldDB");
         fold_db
-            .native_word_search("foo")
+            .native_search_all_classifications("foo")
+            .await
             .expect("search should succeed")
     };
     eprintln!("Found {} results for 'foo'", search_results.len());
@@ -117,18 +117,18 @@ async fn test_batch_index_merges_existing_entries() {
         }),
     );
 
-    let results = node.mutate_batch(vec![mutation_b]).await.unwrap();
+    let results = node.mutate_batch_and_index(vec![mutation_b]).await.unwrap();
     assert_eq!(results.len(), 1, "Second batch should process 1 mutation");
 
-    // Wait for background indexing to complete
-    std::thread::sleep(std::time::Duration::from_millis(600));
+    // No sleep needed - mutate_batch_and_index does synchronous indexing
 
     // THE CRITICAL TEST: Search for "foo" - should find BOTH records A and B
     eprintln!("\n=== Searching for 'foo' after BATCH 2 ===");
     let search_results = {
         let fold_db = node.get_fold_db().await.expect("failed to get FoldDB");
         fold_db
-            .native_word_search("foo")
+            .native_search_all_classifications("foo")
+            .await
             .expect("search should succeed")
     };
     eprintln!("Found {} results for 'foo'", search_results.len());

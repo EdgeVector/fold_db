@@ -85,13 +85,13 @@ async fn test_search_by_field_name() {
 
         let mutation = create_test_mutation(&schema_for_helper, mutation_json);
 
-        node.mutate_batch(vec![mutation])
+        node.mutate_batch_and_index(vec![mutation])
             .await
             .expect("mutation should succeed");
     }
 
-    // Wait for background indexing
-    std::thread::sleep(std::time::Duration::from_secs(2));
+    // Wait for any background processing to settle
+    std::thread::sleep(std::time::Duration::from_secs(1));
 
     println!("\n========== Searching for 'email' ==========");
 
@@ -99,7 +99,8 @@ async fn test_search_by_field_name() {
     let email_results = {
         let fold_db = node.get_fold_db().await.expect("failed to get FoldDB");
         fold_db
-            .native_word_search("email")
+            .native_search_all_classifications("email")
+            .await
             .expect("search should succeed")
     };
 
@@ -218,7 +219,7 @@ async fn test_search_nonexistent_field_name() {
 
     let mutation = create_test_mutation(&schema_for_helper, mutation_json);
 
-    node.mutate_batch(vec![mutation])
+    node.mutate_batch_and_index(vec![mutation])
         .await
         .expect("mutation should succeed");
 
@@ -229,7 +230,8 @@ async fn test_search_nonexistent_field_name() {
     let results = {
         let fold_db = node.get_fold_db().await.expect("failed to get FoldDB");
         fold_db
-            .native_word_search("email")
+            .native_search_all_classifications("email")
+            .await
             .expect("search should succeed")
     };
 
@@ -310,7 +312,7 @@ async fn test_combined_field_name_and_word_search() {
 
     let mutation = create_test_mutation(&schema_for_helper, mutation_json);
 
-    node.mutate_batch(vec![mutation])
+    node.mutate_batch_and_index(vec![mutation])
         .await
         .expect("mutation should succeed");
 
@@ -323,7 +325,8 @@ async fn test_combined_field_name_and_word_search() {
     let results = {
         let fold_db = node.get_fold_db().await.expect("failed to get FoldDB");
         fold_db
-            .native_word_search("title")
+            .native_search_all_classifications("title")
+            .await
             .expect("search should succeed")
     };
 
