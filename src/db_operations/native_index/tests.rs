@@ -2,256 +2,6 @@ use super::*;
 use crate::schema::types::key_value::KeyValue;
 use crate::storage::{NamespacedStore, SledNamespacedStore};
 
-#[tokio::test]
-async fn test_basic_indexing_flow() {
-    let db = sled::Config::new().temporary(true).open().unwrap();
-    let store = std::sync::Arc::new(SledNamespacedStore::new(db));
-    let kv_store = store.open_namespace("native_index").await.unwrap();
-
-    let manager = NativeIndexManager::new(kv_store);
-
-    let operations = vec![(
-        "AsyncSchema".to_string(),
-        "content".to_string(),
-        KeyValue::new(Some("k1".to_string()), None),
-        serde_json::Value::String("Jennifer wrote async code".to_string()),
-        None,
-    )];
-
-    manager
-        .batch_index(&operations)
-        .await
-        .expect("indexing failed");
-
-    let results = manager
-        .search("Jennifer")
-        .await
-        .expect("search failed");
-
-    assert_eq!(results.len(), 1, "Should find 1 result for Jennifer");
-    assert_eq!(results[0].key, KeyValue::new(Some("k1".to_string()), None));
-
-    let results = manager
-        .search("async")
-        .await
-        .expect("search failed");
-    assert_eq!(results.len(), 1);
-
-    // Verify we can find by field name
-    let results = manager
-        .search_all("content")
-        .await
-        .expect("field search");
-    assert!(!results.is_empty());
-}
-
-#[tokio::test]
-async fn test_indexing_with_empty_classifications() {
-    let db = sled::Config::new().temporary(true).open().unwrap();
-    let store = std::sync::Arc::new(SledNamespacedStore::new(db));
-    let kv_store = store.open_namespace("native_index").await.unwrap();
-
-    let manager = NativeIndexManager::new(kv_store);
-
-    let operations = vec![(
-        "TestSchema".to_string(),
-        "test_field".to_string(),
-        KeyValue::new(Some("key1".to_string()), None),
-        serde_json::Value::String("hello world".to_string()),
-        Some(vec![]),
-    )];
-
-    manager
-        .batch_index(&operations)
-        .await
-        .expect("indexing failed");
-
-    let results = manager
-        .search("hello")
-        .await
-        .expect("search failed");
-    assert_eq!(results.len(), 1);
-    assert_eq!(
-        results[0].key,
-        KeyValue::new(Some("key1".to_string()), None)
-    );
-
-    assert_eq!(results[0].classification, "word");
-}
-
-#[tokio::test]
-async fn test_indexing_complex_tweet() {
-    let db = sled::Config::new().temporary(true).open().unwrap();
-    let store = std::sync::Arc::new(SledNamespacedStore::new(db));
-    let kv_store = store.open_namespace("native_index").await.unwrap();
-
-    let manager = NativeIndexManager::new(kv_store);
-
-    let tweet_content = "RT @TwitterDev: Hello world! ... https://t.co/123456";
-    let operations = vec![(
-        "TwitterSchema".to_string(),
-        "content".to_string(),
-        KeyValue::new(Some("tweet_1".to_string()), None),
-        serde_json::Value::String(tweet_content.to_string()),
-        Some(vec!["word".to_string()]),
-    )];
-
-    manager
-        .batch_index(&operations)
-        .await
-        .expect("indexing failed");
-
-    let results = manager
-        .search("Hello")
-        .await
-        .expect("search failed for Hello");
-
-    assert_eq!(results.len(), 1, "Should find 1 result for Hello");
-
-    let results = manager
-        .search("world")
-        .await
-        .expect("search failed for world");
-
-    assert_eq!(results.len(), 1, "Should find 1 result for world");
-
-    let results = manager
-        .search("https")
-        .await
-        .expect("search failed for https");
-
-    assert_eq!(results.len(), 1, "Should find 1 result for https");
-}
-
-// ========== INDEX TESTS ==========
-
-#[tokio::test]
-async fn test_single_record_indexing() {
-    let db = sled::Config::new().temporary(true).open().unwrap();
-    let store = std::sync::Arc::new(SledNamespacedStore::new(db));
-    let kv_store = store.open_namespace("native_index").await.unwrap();
-
-    let manager = NativeIndexManager::new(kv_store);
-
-    let operations = vec![(
-        "TestSchema".to_string(),
-        "content".to_string(),
-        KeyValue::new(Some("key1".to_string()), None),
-        serde_json::Value::String("hello world from the index".to_string()),
-        None,
-    )];
-
-    manager
-        .batch_index(&operations)
-        .await
-        .expect("indexing failed");
-
-    let results = manager
-        .search("hello")
-        .await
-        .expect("search failed");
-
-    assert_eq!(results.len(), 1, "Should find 1 result for hello");
-    assert_eq!(results[0].schema, "TestSchema");
-    assert_eq!(results[0].field, "content");
-    assert_eq!(
-        results[0].key,
-        KeyValue::new(Some("key1".to_string()), None)
-    );
-}
-
-#[tokio::test]
-async fn test_multiple_record_indexing() {
-    let db = sled::Config::new().temporary(true).open().unwrap();
-    let store = std::sync::Arc::new(SledNamespacedStore::new(db));
-    let kv_store = store.open_namespace("native_index").await.unwrap();
-
-    let manager = NativeIndexManager::new(kv_store);
-
-    let operations = vec![
-        (
-            "Tweet".to_string(),
-            "content".to_string(),
-            KeyValue::new(Some("tweet1".to_string()), None),
-            serde_json::Value::String("hello from tweet one".to_string()),
-            None,
-        ),
-        (
-            "Tweet".to_string(),
-            "content".to_string(),
-            KeyValue::new(Some("tweet2".to_string()), None),
-            serde_json::Value::String("hello from tweet two".to_string()),
-            None,
-        ),
-        (
-            "Tweet".to_string(),
-            "content".to_string(),
-            KeyValue::new(Some("tweet3".to_string()), None),
-            serde_json::Value::String("goodbye from tweet three".to_string()),
-            None,
-        ),
-    ];
-
-    manager
-        .batch_index(&operations)
-        .await
-        .expect("indexing failed");
-
-    // Search for "hello" - should find 2 results
-    let results = manager
-        .search("hello")
-        .await
-        .expect("search failed");
-    assert_eq!(results.len(), 2, "Should find 2 results for hello");
-
-    // Search for "goodbye" - should find 1 result
-    let results = manager
-        .search("goodbye")
-        .await
-        .expect("search failed");
-    assert_eq!(results.len(), 1, "Should find 1 result for goodbye");
-
-    // Search for "tweet" - should find 3 results
-    let results = manager
-        .search("tweet")
-        .await
-        .expect("search failed");
-    assert_eq!(results.len(), 3, "Should find 3 results for tweet");
-}
-
-#[tokio::test]
-async fn test_field_name_search() {
-    let db = sled::Config::new().temporary(true).open().unwrap();
-    let store = std::sync::Arc::new(SledNamespacedStore::new(db));
-    let kv_store = store.open_namespace("native_index").await.unwrap();
-
-    let manager = NativeIndexManager::new(kv_store);
-
-    let operations = vec![(
-        "User".to_string(),
-        "email".to_string(),
-        KeyValue::new(Some("user1".to_string()), None),
-        serde_json::Value::String("test@example.com".to_string()),
-        None,
-    )];
-
-    manager
-        .batch_index(&operations)
-        .await
-        .expect("indexing failed");
-
-    // Search for field name "email"
-    let results = manager
-        .search_all("email")
-        .await
-        .expect("search failed");
-
-    assert!(
-        !results.is_empty(),
-        "Should find results for field name email"
-    );
-}
-
 #[test]
 fn test_index_entry_storage_key() {
     let entry = IndexEntry::with_timestamp(
@@ -329,27 +79,26 @@ async fn test_multi_word_search_intersection() {
 
     let manager = NativeIndexManager::new(kv_store);
 
-    let operations = vec![
-        (
-            "People".to_string(),
-            "name".to_string(),
-            KeyValue::new(Some("p1".to_string()), None),
-            serde_json::Value::String("alice johnson".to_string()),
-            None,
-        ),
-        (
-            "People".to_string(),
-            "name".to_string(),
-            KeyValue::new(Some("p2".to_string()), None),
-            serde_json::Value::String("alice smith".to_string()),
-            None,
-        ),
-    ];
-
+    // Index keywords for two "people" records using batch_index_from_keywords
+    let key_p1 = KeyValue::new(Some("p1".to_string()), None);
     manager
-        .batch_index(&operations)
+        .batch_index_from_keywords(
+            "People",
+            &key_p1,
+            vec!["alice".to_string(), "johnson".to_string()],
+        )
         .await
-        .expect("indexing failed");
+        .expect("indexing p1 failed");
+
+    let key_p2 = KeyValue::new(Some("p2".to_string()), None);
+    manager
+        .batch_index_from_keywords(
+            "People",
+            &key_p2,
+            vec!["alice".to_string(), "smith".to_string()],
+        )
+        .await
+        .expect("indexing p2 failed");
 
     // Single-word "alice" should find both records
     let results = manager.search("alice").await.expect("search failed");

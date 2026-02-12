@@ -105,5 +105,3 @@ pub struct IndexResult {
     pub metadata: Option<Value>,
 }
 
-/// Represents a batch index operation: (schema_name, field_name, key_value, value, classifications)
-pub type BatchIndexOperation = (String, String, KeyValue, Value, Option<Vec<String>>);

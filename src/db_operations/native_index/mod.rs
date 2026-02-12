@@ -1,4 +1,3 @@
-mod extraction;
 mod indexing;
 mod search;
 mod types;
@@ -6,7 +5,7 @@ mod types;
 #[cfg(test)]
 mod tests;
 
-pub use types::{BatchIndexOperation, IndexEntry, IndexResult};
+pub use types::{IndexEntry, IndexResult};
 
 use crate::storage::traits::KvStore;
 use std::sync::Arc;

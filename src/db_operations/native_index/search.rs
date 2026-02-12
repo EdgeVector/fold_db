@@ -5,6 +5,14 @@ use super::types::{IndexEntry, IndexResult, INDEX_ENTRY_PREFIX};
 use super::NativeIndexManager;
 
 impl NativeIndexManager {
+    pub(super) fn normalize_search_term(term: &str) -> Option<String> {
+        let lowered = term.trim().to_lowercase();
+        if lowered.len() < 2 {
+            return None;
+        }
+        Some(lowered)
+    }
+
     /// Search all indexed keywords and return results
     pub async fn search_all_classifications(
         &self,
