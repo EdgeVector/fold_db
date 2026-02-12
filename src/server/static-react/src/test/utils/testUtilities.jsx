@@ -40,18 +40,6 @@ export const SCHEMA_STATES = {
  * @returns {Object} Configured test store
  */
 export function createTestStore(preloadedState = {}) {
-  // Debug: Check if reducers are properly imported
-  if (typeof authReducer !== 'function') {
-    console.error('DEBUG: authReducer is not a function:', typeof authReducer, authReducer);
-    throw new Error('authReducer is not properly imported');
-  }
-  if (typeof schemaReducer !== 'function') {
-    console.error('DEBUG: schemaReducer is not a function:', typeof schemaReducer, schemaReducer);
-    throw new Error('schemaReducer is not properly imported');
-  }
-
-  console.log('DEBUG: Creating test store with reducers:', { authReducer, schemaReducer });
-
   const defaultState = {
     auth: {
       isAuthenticated: false,

@@ -7,7 +7,7 @@ function AiConfigSettings({ configSaveStatus, setConfigSaveStatus, onClose }) {
   const [openrouterModel, setOpenrouterModel] = useState('anthropic/claude-3.5-sonnet')
   const [openrouterBaseUrl, setOpenrouterBaseUrl] = useState('https://openrouter.ai/api/v1')
   const [ollamaModel, setOllamaModel] = useState('llama3')
-  const [ollamaBaseUrl, setOllamaBaseUrl] = useState('http://192.168.1.226:11434')
+  const [ollamaBaseUrl, setOllamaBaseUrl] = useState('http://localhost:11434')
   const [showAdvanced, setShowAdvanced] = useState(false)
 
   useEffect(() => { loadAiConfig() }, [])
@@ -20,7 +20,7 @@ function AiConfigSettings({ configSaveStatus, setConfigSaveStatus, onClose }) {
         setOpenrouterModel(response.data.openrouter.model || 'anthropic/claude-3.5-sonnet')
         setOpenrouterBaseUrl(response.data.openrouter.base_url || 'https://openrouter.ai/api/v1')
         setOllamaModel(response.data.ollama.model || 'llama3')
-        setOllamaBaseUrl(response.data.ollama.base_url || 'http://192.168.1.226:11434')
+        setOllamaBaseUrl(response.data.ollama.base_url || 'http://localhost:11434')
         setAiProvider(response.data.provider || 'OpenRouter')
       }
     } catch (error) { console.error('Failed to load AI config:', error) }

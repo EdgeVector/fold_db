@@ -8,6 +8,7 @@
 
 import { createApiClient } from "../core/client";
 import { UnifiedSchemaClient } from "./schemaClient";
+import { SCHEMA_SERVICE_ENVIRONMENTS } from "../../contexts/SchemaServiceConfigContext";
 
 /**
  * Get the current schema service base URL from localStorage
@@ -17,14 +18,17 @@ export function getSchemaServiceBaseUrl(): string {
   const STORAGE_KEY = "schemaServiceEnvironment";
   const stored = localStorage.getItem(STORAGE_KEY);
 
-  // Default environments configuration matching SchemaServiceConfigContext
-  const environments: Record<string, string> = {
-    local: "http://127.0.0.1:9002/api", // Local schema service with /api prefix
-    dev: "https://cemkk2xzxd.execute-api.us-west-2.amazonaws.com",
-    prod: "https://owwjygkso3.execute-api.us-east-1.amazonaws.com",
-  };
+  // Build environments map from the single source of truth
+  const environments: Record<string, string> = Object.fromEntries(
+    Object.values(SCHEMA_SERVICE_ENVIRONMENTS).map((env) => [
+      env.id,
+      env.baseUrl,
+    ])
+  );
 
-  return environments[stored || "local"] || "http://127.0.0.1:9002/api";
+  return (
+    environments[stored || "local"] || SCHEMA_SERVICE_ENVIRONMENTS.LOCAL.baseUrl
+  );
 }
 
 /**

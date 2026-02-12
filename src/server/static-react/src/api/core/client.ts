@@ -449,11 +449,8 @@ export class ApiClient implements ApiClientInstance {
 
       // Add User ID header (Strict User Isolation)
       // Send both x-user-hash (for exemem cloud) and x-user-id (for legacy)
-      // Check both localStorage keys for backwards compatibility
       if (typeof window !== "undefined") {
-        const userHash =
-          localStorage.getItem("fold_user_hash") ||
-          localStorage.getItem("exemem_user_hash");
+        const userHash = localStorage.getItem("fold_user_hash");
         if (userHash) {
           headers["x-user-hash"] = userHash; // Primary: for exemem cloud
           headers["x-user-id"] = userHash; // Fallback: for standalone
