@@ -1,5 +1,5 @@
-use fold_db::datafold_node::node::DataFoldNode;
-use fold_db::datafold_node::OperationProcessor;
+use fold_db::fold_node::node::FoldNode;
+use fold_db::fold_node::OperationProcessor;
 use fold_db::logging::core::run_with_user;
 use fold_db::schema::types::operations::MutationType;
 use fold_db::schema::types::KeyValue;
@@ -14,7 +14,7 @@ async fn test_indexing_progress_tracking() {
     let keypair = fold_db::security::Ed25519KeyPair::generate().unwrap();
     let user_id = keypair.public_key_base64();
     config = config.with_identity(&user_id, &keypair.secret_key_base64());
-    let node = DataFoldNode::new(config).await.unwrap();
+    let node = FoldNode::new(config).await.unwrap();
 
     // Create a schema
     let schema_json = r#"{

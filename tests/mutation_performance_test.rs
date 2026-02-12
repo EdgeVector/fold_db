@@ -12,7 +12,7 @@ use std::time::Instant;
 
 use serde_json::json;
 
-use fold_db::datafold_node::{DataFoldNode, NodeConfig};
+use fold_db::fold_node::{FoldNode, NodeConfig};
 use fold_db::schema::types::Mutation;
 // use fold_db::MutationType; - Removed as it's implied or handled by helper if we pass "Create" string
 // use fold_db::schema::types::key_value::KeyValue; - Removed as helper abstracts this
@@ -62,7 +62,7 @@ async fn run_mutation_performance_test() {
         .with_schema_service_url("test://mock")
         .with_identity(&keypair.public_key_base64(), &keypair.secret_key_base64());
 
-    let node = DataFoldNode::new(config)
+    let node = FoldNode::new(config)
         .await
         .expect("Failed to create test node");
 
@@ -189,7 +189,7 @@ async fn run_mutation_performance_test() {
 
 /// Execute mutations one at a time (single mode) - directly on the database
 async fn execute_single_mutations_direct(
-    node: &DataFoldNode,
+    node: &FoldNode,
     count: usize,
     schema: &serde_json::Value,
 ) -> Vec<u64> {
@@ -221,7 +221,7 @@ async fn execute_single_mutations_direct(
 
 /// Execute mutations in a single batch - directly on the database
 async fn execute_batch_mutations_direct(
-    node: &DataFoldNode,
+    node: &FoldNode,
     count: usize,
     schema: &serde_json::Value,
 ) {

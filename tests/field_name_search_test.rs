@@ -1,4 +1,4 @@
-use fold_db::datafold_node::DataFoldNode;
+use fold_db::fold_node::FoldNode;
 use fold_db::schema::SchemaState;
 use fold_db::NodeConfig;
 use serde_json::json;
@@ -18,9 +18,9 @@ async fn test_search_by_field_name() {
     let config = NodeConfig::new(db_path)
         .with_schema_service_url("test://mock")
         .with_identity(&keypair.public_key_base64(), &keypair.secret_key_base64());
-    let node = DataFoldNode::new(config)
+    let node = FoldNode::new(config)
         .await
-        .expect("failed to create DataFoldNode");
+        .expect("failed to create FoldNode");
 
     {
         let fold_db = node.get_fold_db().await.expect("failed to get FoldDB");
@@ -164,9 +164,9 @@ async fn test_search_nonexistent_field_name() {
     let config = NodeConfig::new(db_path)
         .with_schema_service_url("test://mock")
         .with_identity(&keypair.public_key_base64(), &keypair.secret_key_base64());
-    let node = DataFoldNode::new(config)
+    let node = FoldNode::new(config)
         .await
-        .expect("failed to create DataFoldNode");
+        .expect("failed to create FoldNode");
 
     {
         let fold_db = node.get_fold_db().await.expect("failed to get FoldDB");
@@ -253,9 +253,9 @@ async fn test_combined_field_name_and_word_search() {
     let config = NodeConfig::new(db_path)
         .with_schema_service_url("test://mock")
         .with_identity(&keypair.public_key_base64(), &keypair.secret_key_base64());
-    let node = DataFoldNode::new(config)
+    let node = FoldNode::new(config)
         .await
-        .expect("failed to create DataFoldNode");
+        .expect("failed to create FoldNode");
 
     {
         let fold_db = node.get_fold_db().await.expect("failed to get FoldDB");

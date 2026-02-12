@@ -2,7 +2,7 @@ use serde_json::json;
 use std::collections::HashMap;
 use std::time::Instant;
 
-use fold_db::datafold_node::{DataFoldNode, NodeConfig};
+use fold_db::fold_node::{FoldNode, NodeConfig};
 use fold_db::ingestion::mutation_generator;
 
 mod common;
@@ -121,7 +121,7 @@ async fn _test_local_mutation_execution() {
         .with_schema_service_url("test://mock")
         .with_identity(&keypair.public_key_base64(), &keypair.secret_key_base64());
 
-    let node = DataFoldNode::new(config)
+    let node = FoldNode::new(config)
         .await
         .expect("Failed to create node");
 

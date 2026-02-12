@@ -1,6 +1,6 @@
 #![cfg(feature = "aws-backend")]
-use fold_db::datafold_node::config::DatabaseConfig;
-use fold_db::datafold_node::{DataFoldNode, NodeConfig};
+use fold_db::fold_node::config::DatabaseConfig;
+use fold_db::fold_node::{FoldNode, NodeConfig};
 use fold_db::schema::types::Mutation;
 use fold_db::storage::{CloudConfig, ExplicitTables};
 use serde_json::json;
@@ -108,13 +108,13 @@ async fn test_dynamodb_mutation_performance() {
 
     // 2. Initialize Node
     println!("Initializing DynamoDB Node...");
-    let node = DataFoldNode::new(config.clone())
+    let node = FoldNode::new(config.clone())
         .await
         .expect("Failed to initialize node");
 
     // 3. Load Schema
     // In test environment, we can manually load schema using internal DB access or schema service?
-    // DataFoldNode doesn't expose schema_client?
+    // FoldNode doesn't expose schema_client?
     // We use get_fold_db() pattern from other tests
 
     let (schema_name, schema_json) = get_test_schema();

@@ -1,8 +1,8 @@
-use fold_db::datafold_node::config::NodeConfig;
-use fold_db::datafold_node::DataFoldNode;
+use fold_db::fold_node::config::NodeConfig;
+use fold_db::fold_node::FoldNode;
 use tempfile::TempDir;
 
-/// Test to verify that DataFoldNode starts successfully when no schema service is configured
+/// Test to verify that FoldNode starts successfully when no schema service is configured
 #[tokio::test(flavor = "multi_thread")]
 async fn test_node_starts_without_schema_service() {
     // Create a temporary directory for this test
@@ -16,7 +16,7 @@ async fn test_node_starts_without_schema_service() {
         .with_identity(&keypair.public_key_base64(), &keypair.secret_key_base64());
 
     // Attempt to create the node - should succeed without schema service URL
-    let result = DataFoldNode::new(config).await;
+    let result = FoldNode::new(config).await;
 
     // Verify that node creation succeeds
     assert!(
@@ -27,7 +27,7 @@ async fn test_node_starts_without_schema_service() {
     println!("✅ Node correctly starts when schema service is not configured!");
 }
 
-/// Test to verify that DataFoldNode can start with a mock schema service for testing
+/// Test to verify that FoldNode can start with a mock schema service for testing
 #[tokio::test(flavor = "multi_thread")]
 async fn test_node_new_loads_schemas_for_testing() {
     // Create a temporary directory for this test
@@ -41,10 +41,10 @@ async fn test_node_new_loads_schemas_for_testing() {
         .with_schema_service_url("test://mock")
         .with_identity(&keypair.public_key_base64(), &keypair.secret_key_base64());
 
-    // Create a new node using DataFoldNode::new() with mock service
-    let node = DataFoldNode::new(config)
+    // Create a new node using FoldNode::new() with mock service
+    let node = FoldNode::new(config)
         .await
-        .expect("Failed to create DataFoldNode with mock schema service");
+        .expect("Failed to create FoldNode with mock schema service");
 
     // Get the fold_db to verify it was created successfully
     let fold_db = node.get_fold_db().await.expect("Failed to get FoldDB");
@@ -60,5 +60,5 @@ async fn test_node_new_loads_schemas_for_testing() {
         "No schemas should be auto-loaded with mock schema service"
     );
 
-    println!("✅ DataFoldNode correctly starts with mock schema service for testing!");
+    println!("✅ FoldNode correctly starts with mock schema service for testing!");
 }

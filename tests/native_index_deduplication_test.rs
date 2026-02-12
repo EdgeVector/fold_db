@@ -29,7 +29,7 @@ async fn test_append_only_preserves_different_classifications() {
     let store = Arc::new(SledNamespacedStore::new(db));
     let kv_store = store.open_namespace("native_index").await.unwrap();
 
-    let manager = NativeIndexManager::new_with_store(kv_store);
+    let manager = NativeIndexManager::new(kv_store);
 
     // Create index operations for the same field with different classifications
     let operations: Vec<BatchIndexOperation> = vec![
@@ -85,7 +85,7 @@ async fn test_append_only_handles_duplicate_same_classification() {
     let store = Arc::new(SledNamespacedStore::new(db));
     let kv_store = store.open_namespace("native_index").await.unwrap();
 
-    let manager = NativeIndexManager::new_with_store(kv_store);
+    let manager = NativeIndexManager::new(kv_store);
 
     // Create duplicate index operations with the same classification
     let operations: Vec<BatchIndexOperation> = vec![
@@ -145,7 +145,7 @@ async fn test_append_only_across_different_fields_same_record() {
     let store = Arc::new(SledNamespacedStore::new(db));
     let kv_store = store.open_namespace("native_index").await.unwrap();
 
-    let manager = NativeIndexManager::new_with_store(kv_store);
+    let manager = NativeIndexManager::new(kv_store);
 
     // Create operations for different fields with same word
     let operations: Vec<BatchIndexOperation> = vec![
@@ -204,7 +204,7 @@ async fn test_append_only_handles_same_field_different_records() {
     let store = Arc::new(SledNamespacedStore::new(db));
     let kv_store = store.open_namespace("native_index").await.unwrap();
 
-    let manager = NativeIndexManager::new_with_store(kv_store);
+    let manager = NativeIndexManager::new(kv_store);
 
     // Create operations for different records with same content
     let operations: Vec<BatchIndexOperation> = vec![

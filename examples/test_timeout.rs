@@ -1,7 +1,7 @@
 /// Example demonstrating that HTTP client timeouts prevent indefinite hanging
 ///
 /// Run with: cargo run --example test_timeout
-use fold_db::datafold_node::schema_client::SchemaServiceClient;
+use fold_db::fold_node::schema_client::SchemaServiceClient;
 use fold_db::schema::types::{JsonTopology, PrimitiveType, Schema, SchemaType, TopologyNode};
 use std::collections::HashMap;
 use std::time::Instant;

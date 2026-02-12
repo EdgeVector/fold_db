@@ -1,4 +1,4 @@
-use fold_db::datafold_node::DataFoldNode;
+use fold_db::fold_node::FoldNode;
 use fold_db::schema::SchemaState;
 use fold_db::NodeConfig;
 use serde_json::json;
@@ -15,9 +15,9 @@ async fn test_native_word_index_search_updates_with_mutations() {
     let config = NodeConfig::new(db_path)
         .with_schema_service_url("test://mock")
         .with_identity(&keypair.public_key_base64(), &keypair.secret_key_base64());
-    let node = DataFoldNode::new(config)
+    let node = FoldNode::new(config)
         .await
-        .expect("failed to create DataFoldNode");
+        .expect("failed to create FoldNode");
 
     let blogpost_schema = json!({
         "name": "BlogPost",

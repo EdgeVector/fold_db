@@ -1,6 +1,6 @@
-use fold_db::datafold_node::config::NodeConfig;
-use fold_db::datafold_node::DataFoldNode;
-use fold_db::datafold_node::OperationProcessor;
+use fold_db::fold_node::config::NodeConfig;
+use fold_db::fold_node::FoldNode;
+use fold_db::fold_node::OperationProcessor;
 use fold_db::schema::types::field::HashRangeFilter;
 use fold_db::schema::types::key_value::KeyValue;
 use fold_db::schema::types::operations::Query;
@@ -22,9 +22,9 @@ async fn test_exact_range_key_filtering_with_blogpost() {
     let config = NodeConfig::new(temp_db_path.into())
         .with_schema_service_url("test://mock")
         .with_identity(&keypair.public_key_base64(), &keypair.secret_key_base64());
-    let node = DataFoldNode::new(config)
+    let node = FoldNode::new(config)
         .await
-        .expect("Failed to create DataFoldNode");
+        .expect("Failed to create FoldNode");
 
     // Load BlogPost schema from file
     let blogpost_schema_path = std::env::current_dir()
@@ -271,9 +271,9 @@ async fn test_range_key_set_in_query_object() {
     let config = NodeConfig::new(temp_db_path.into())
         .with_schema_service_url("test://mock")
         .with_identity(&keypair.public_key_base64(), &keypair.secret_key_base64());
-    let node = DataFoldNode::new(config)
+    let node = FoldNode::new(config)
         .await
-        .expect("Failed to create DataFoldNode");
+        .expect("Failed to create FoldNode");
 
     // Load BlogPost schema from file
     let blogpost_schema_path = std::env::current_dir()
