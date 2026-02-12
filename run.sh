@@ -29,12 +29,12 @@ set -e
 # ============================================================================
 
 cleanup_processes() {
-    echo "Checking for existing datafold/fold_db processes..."
+    echo "Checking for existing fold_db processes..."
 
     # Kill any existing processes (try multiple patterns)
     pkill -f folddb_server 2>/dev/null || true
     pkill -f fold_db 2>/dev/null || true
-    pkill -f "cargo run.*datafold" 2>/dev/null || true
+    pkill -f "cargo run.*fold_db" 2>/dev/null || true
     pkill -f "cargo run.*fold_db" 2>/dev/null || true
     pkill -f schema_service 2>/dev/null || true
     pkill -f "cargo run.*schema" 2>/dev/null || true

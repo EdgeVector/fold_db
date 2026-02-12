@@ -6,7 +6,7 @@
 //!
 //! ## Components
 //!
-//! * `ingestion_service` - AI-powered ingestion service (works with DataFoldNode)
+//! * `ingestion_service` - AI-powered ingestion service (works with FoldNode)
 //! * `ai_helpers` - Shared AI response parsing and validation
 //! * `openrouter_service` - OpenRouter API integration for AI-powered schema analysis
 //! * `ollama_service` - Ollama API integration for local AI-powered schema analysis
@@ -78,7 +78,7 @@ fn default_pub_key() -> String {
 #[cfg_attr(feature = "ts-bindings", derive(TS))]
 #[cfg_attr(
     feature = "ts-bindings",
-    ts(export, export_to = "src/datafold_node/static-react/src/types/")
+    ts(export, export_to = "src/fold_node/static-react/src/types/")
 )]
 pub struct IngestionRequest {
     /// JSON data to ingest

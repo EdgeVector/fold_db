@@ -1,10 +1,10 @@
-# DataFold
+# FoldDB
 
-[![Crates.io](https://img.shields.io/crates/v/datafold.svg)](https://crates.io/crates/datafold)
-[![Documentation](https://docs.rs/datafold/badge.svg)](https://docs.rs/datafold)
+[![Crates.io](https://img.shields.io/crates/v/fold_db.svg)](https://crates.io/crates/fold_db)
+[![Documentation](https://docs.rs/fold_db/badge.svg)](https://docs.rs/fold_db)
 [![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](https://github.com/shiba4life/fold_db)
 
-A Rust-based distributed data platform with schema-based storage, AI-powered ingestion, and real-time data processing capabilities. DataFold provides a complete solution for distributed data management with automatic schema generation, field mapping, and extensible ingestion pipelines.
+A Rust-based distributed data platform with schema-based storage, AI-powered ingestion, and real-time data processing capabilities. FoldDB provides a complete solution for distributed data management with automatic schema generation, field mapping, and extensible ingestion pipelines.
 
 ## ✨ Features
 
@@ -40,17 +40,17 @@ Download the latest release for your platform from [GitHub Releases](https://git
 
 #### Option 3: Install from Crates.io
 
-Add DataFold to your `Cargo.toml`:
+Add FoldDB to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-datafold = "0.1.0"
+fold_db = "0.1.0"
 ```
 
 Or install the CLI tools:
 
 ```bash
-cargo install datafold
+cargo install fold_db
 ```
 
 This provides two main binaries:
@@ -75,13 +75,13 @@ version.
 ### Basic Usage
 
 ```rust
-use fold_db::{DataFoldNode, IngestionCore, Schema};
+use fold_db::{FoldNode, IngestionCore, Schema};
 use serde_json::json;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Initialize a DataFold node
-    let node = DataFoldNode::new_with_defaults().await?;
+    // Initialize a Fold node
+    let node = FoldNode::new_with_defaults().await?;
 
     // Create an ingestion pipeline
     let config = fold_db::IngestionConfig::from_env_allow_empty();
@@ -118,7 +118,7 @@ Then visit `http://localhost:9001` for the web interface.
 
 ## 🌐 Global Schema Service
 
-DataFold provides a **Global Schema Service** at [schema.folddb.com](https://schema.folddb.com) for sharing and discovering schemas across the network.
+FoldDB provides a **Global Schema Service** at [schema.folddb.com](https://schema.folddb.com) for sharing and discovering schemas across the network.
 
 ### How It Works
 
@@ -131,7 +131,7 @@ The global schema service is managed **automatically** through two processes:
 ### Features
 
 - **Automatic Schema Discovery** - Schemas are matched and reused automatically during ingestion
-- **Schema Registry** - Published schemas are available for all DataFold nodes to discover
+- **Schema Registry** - Published schemas are available for all FoldDB nodes to discover
 - **Interoperability** - Shared schemas enable seamless data exchange between nodes
 - **Version Tracking** - Schema versions are tracked over time
 
@@ -147,7 +147,7 @@ export DATAFOLD_SCHEMA_SERVICE_URL=https://schema.folddb.com
 
 ### Schemas
 
-DataFold uses dynamic schemas that define data structure and operations:
+FoldDB uses dynamic schemas that define data structure and operations:
 
 ```rust
 use fold_db::{Schema, Operation};
@@ -200,7 +200,7 @@ let peers = network.discover_peers().await?;
 
 ## 🌐 Frontend Development
 
-DataFold includes a comprehensive React frontend with a unified API client architecture that provides type-safe, standardized access to all backend operations.
+FoldDB includes a comprehensive React frontend with a unified API client architecture that provides type-safe, standardized access to all backend operations.
 
 ### Frontend API Clients
 
@@ -288,7 +288,7 @@ npm run dev
 
 ## 🔌 Extensible Ingestion
 
-DataFold supports ingesting data from various sources with the new adapter-based architecture:
+FoldDB supports ingesting data from various sources with the new adapter-based architecture:
 
 - **Social Media APIs** - Twitter, Facebook, Reddit, TikTok
 - **Real-time Streams** - WebSockets, Server-Sent Events
@@ -301,7 +301,7 @@ See [`SOCIAL_MEDIA_INGESTION_PROPOSAL.md`](SOCIAL_MEDIA_INGESTION_PROPOSAL.md) f
 
 ### File Ingestion
 
-DataFold provides two ways to ingest files:
+FoldDB provides two ways to ingest files:
 
 **1. Traditional File Upload**
 
@@ -361,7 +361,7 @@ See [S3 File Path Ingestion Guide](docs/S3_FILE_PATH_INGESTION.md) for complete 
 ```bash
 # Clone the repository
 git clone https://github.com/shiba4life/fold_db.git
-cd datafold
+cd fold_db
 
 # Install dependencies
 sudo apt install rustup
@@ -390,7 +390,7 @@ The UI will be available at `http://localhost:5173`.
 
 ## ☁️ Serverless Deployment (S3 Storage)
 
-DataFold can run in serverless environments like AWS Lambda using S3-backed storage:
+FoldDB can run in serverless environments like AWS Lambda using S3-backed storage:
 
 ```rust
 use fold_db::{FoldDB, S3Config};
@@ -435,7 +435,7 @@ See [S3 Configuration Guide](docs/S3_CONFIGURATION.md) for complete setup instru
 
 ## ⚡ AWS Lambda & DynamoDB
 
-DataFold provides first-class support for AWS Lambda with a multi-tenant DynamoDB backend. This allows you to build serverless, user-isolated applications without managing servers.
+FoldDB provides first-class support for AWS Lambda with a multi-tenant DynamoDB backend. This allows you to build serverless, user-isolated applications without managing servers.
 
 ### Setup
 
@@ -443,7 +443,7 @@ Add the `lambda` feature to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-datafold = { version = "0.1.0", features = ["lambda"] }
+fold_db = { version = "0.1.0", features = ["lambda"] }
 ```
 
 ### Configuration
@@ -486,7 +486,7 @@ The system requires and automatically manages **11 tables** per deployment. Usin
 
 ### Multi-Tenancy
 
-DataFold automatically handles multi-tenancy. When you pass a `user_id` to ingestion or node retrieval methods, operations are scoped to that user within the DynamoDB tables.
+FoldDB automatically handles multi-tenancy. When you pass a `user_id` to ingestion or node retrieval methods, operations are scoped to that user within the DynamoDB tables.
 
 ## 📊 Examples
 
@@ -529,7 +529,7 @@ See [`datafold_api_examples/`](datafold_api_examples/) for Python scripts demons
 
 ## 🔧 Configuration
 
-DataFold uses JSON configuration files. Default config:
+FoldDB uses JSON configuration files. Default config:
 
 ```json
 {
@@ -553,7 +553,7 @@ Environment variables:
 
 ## 🔐 Public Key Persistence
 
-DataFold stores registered Ed25519 public keys in the sled database. When the node
+FoldDB stores registered Ed25519 public keys in the sled database. When the node
 starts it loads all saved keys, and new keys are persisted as soon as they are
 registered. This keeps authentication intact across restarts. See
 [PBI SEC-8 documentation](docs/delivery/SEC-8/prd.md) for implementation details.
@@ -562,7 +562,7 @@ registered. This keeps authentication intact across restarts. See
 
 ## 📚 Documentation
 
-- **[API Documentation](https://docs.rs/datafold)** - Complete API reference
+- **[API Documentation](https://docs.rs/fold_db)** - Complete API reference
 - **CLI Guide** - Run `folddb --help` for full command reference
 - **[Ingestion Guide](INGESTION_README.md)** - AI-powered data ingestion
 - **[S3 File Path Ingestion](docs/S3_FILE_PATH_INGESTION.md)** - Process S3 files without re-uploading
@@ -598,4 +598,4 @@ at your option.
 
 ---
 
-**DataFold** - Distributed data platform for the modern world 🚀
+**FoldDB** - Distributed data platform for the modern world 🚀

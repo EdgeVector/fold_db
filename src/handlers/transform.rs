@@ -2,8 +2,8 @@
 //!
 //! Framework-agnostic handlers for transform and backfill operations.
 
-use crate::datafold_node::node::DataFoldNode;
-use crate::datafold_node::OperationProcessor;
+use crate::fold_node::node::FoldNode;
+use crate::fold_node::OperationProcessor;
 use crate::handlers::response::{ApiResponse, HandlerError, HandlerResult};
 use serde::{Deserialize, Serialize};
 
@@ -15,7 +15,7 @@ use ts_rs::TS;
 #[cfg_attr(feature = "ts-bindings", derive(TS))]
 #[cfg_attr(
     feature = "ts-bindings",
-    ts(export, export_to = "src/datafold_node/static-react/src/types/")
+    ts(export, export_to = "src/fold_node/static-react/src/types/")
 )]
 pub struct TransformListResponse {
     pub transforms: serde_json::Value,
@@ -26,7 +26,7 @@ pub struct TransformListResponse {
 #[cfg_attr(feature = "ts-bindings", derive(TS))]
 #[cfg_attr(
     feature = "ts-bindings",
-    ts(export, export_to = "src/datafold_node/static-react/src/types/")
+    ts(export, export_to = "src/fold_node/static-react/src/types/")
 )]
 pub struct TransformQueueResponse {
     pub length: usize,
@@ -41,7 +41,7 @@ pub struct TransformQueueResponse {
     ts(
         export,
         rename = "TransformSuccessResponse",
-        export_to = "src/datafold_node/static-react/src/types/"
+        export_to = "src/fold_node/static-react/src/types/"
     )
 )]
 pub struct SuccessResponse {
@@ -54,7 +54,7 @@ pub struct SuccessResponse {
 #[cfg_attr(feature = "ts-bindings", derive(TS))]
 #[cfg_attr(
     feature = "ts-bindings",
-    ts(export, export_to = "src/datafold_node/static-react/src/types/")
+    ts(export, export_to = "src/fold_node/static-react/src/types/")
 )]
 pub struct BackfillListResponse {
     pub backfills: serde_json::Value,
@@ -65,7 +65,7 @@ pub struct BackfillListResponse {
 #[cfg_attr(feature = "ts-bindings", derive(TS))]
 #[cfg_attr(
     feature = "ts-bindings",
-    ts(export, export_to = "src/datafold_node/static-react/src/types/")
+    ts(export, export_to = "src/fold_node/static-react/src/types/")
 )]
 pub struct BackfillResponse {
     pub backfill: serde_json::Value,
@@ -76,7 +76,7 @@ pub struct BackfillResponse {
 #[cfg_attr(feature = "ts-bindings", derive(TS))]
 #[cfg_attr(
     feature = "ts-bindings",
-    ts(export, export_to = "src/datafold_node/static-react/src/types/")
+    ts(export, export_to = "src/fold_node/static-react/src/types/")
 )]
 pub struct TransformStatsResponse {
     pub stats: serde_json::Value,
@@ -87,7 +87,7 @@ pub struct TransformStatsResponse {
 #[cfg_attr(feature = "ts-bindings", derive(TS))]
 #[cfg_attr(
     feature = "ts-bindings",
-    ts(export, export_to = "src/datafold_node/static-react/src/types/")
+    ts(export, export_to = "src/fold_node/static-react/src/types/")
 )]
 pub struct BackfillStatsResponse {
     pub stats: serde_json::Value,
@@ -96,7 +96,7 @@ pub struct BackfillStatsResponse {
 /// List all transforms
 pub async fn list_transforms(
     user_hash: &str,
-    node: &DataFoldNode,
+    node: &FoldNode,
 ) -> HandlerResult<TransformListResponse> {
     let processor = OperationProcessor::new(node.clone());
 
@@ -121,7 +121,7 @@ pub async fn list_transforms(
 /// Get transform queue
 pub async fn get_transform_queue(
     user_hash: &str,
-    node: &DataFoldNode,
+    node: &FoldNode,
 ) -> HandlerResult<TransformQueueResponse> {
     let processor = OperationProcessor::new(node.clone());
 
@@ -144,7 +144,7 @@ pub async fn get_transform_queue(
 pub async fn add_to_transform_queue(
     transform_id: &str,
     user_hash: &str,
-    node: &DataFoldNode,
+    node: &FoldNode,
 ) -> HandlerResult<SuccessResponse> {
     let processor = OperationProcessor::new(node.clone());
 
@@ -169,7 +169,7 @@ pub async fn add_to_transform_queue(
 /// Get all backfills
 pub async fn get_all_backfills(
     user_hash: &str,
-    node: &DataFoldNode,
+    node: &FoldNode,
 ) -> HandlerResult<BackfillListResponse> {
     let processor = OperationProcessor::new(node.clone());
 
@@ -194,7 +194,7 @@ pub async fn get_all_backfills(
 /// Get active backfills
 pub async fn get_active_backfills(
     user_hash: &str,
-    node: &DataFoldNode,
+    node: &FoldNode,
 ) -> HandlerResult<BackfillListResponse> {
     let processor = OperationProcessor::new(node.clone());
 
@@ -220,7 +220,7 @@ pub async fn get_active_backfills(
 pub async fn get_backfill(
     backfill_id: &str,
     user_hash: &str,
-    node: &DataFoldNode,
+    node: &FoldNode,
 ) -> HandlerResult<BackfillResponse> {
     let processor = OperationProcessor::new(node.clone());
 
@@ -248,7 +248,7 @@ pub async fn get_backfill(
 /// Get transform statistics
 pub async fn get_transform_statistics(
     user_hash: &str,
-    node: &DataFoldNode,
+    node: &FoldNode,
 ) -> HandlerResult<TransformStatsResponse> {
     let processor = OperationProcessor::new(node.clone());
 
@@ -270,7 +270,7 @@ pub async fn get_transform_statistics(
 /// Get backfill statistics
 pub async fn get_backfill_statistics(
     user_hash: &str,
-    node: &DataFoldNode,
+    node: &FoldNode,
 ) -> HandlerResult<BackfillStatsResponse> {
     let processor = OperationProcessor::new(node.clone());
 

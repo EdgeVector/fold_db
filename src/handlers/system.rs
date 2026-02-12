@@ -2,9 +2,9 @@
 //!
 //! Framework-agnostic handlers for system operations.
 
-use crate::datafold_node::config::DatabaseConfig;
-use crate::datafold_node::node::DataFoldNode;
-use crate::datafold_node::OperationProcessor;
+use crate::fold_node::config::DatabaseConfig;
+use crate::fold_node::node::FoldNode;
+use crate::fold_node::OperationProcessor;
 use crate::handlers::response::{ApiResponse, HandlerError, HandlerResult};
 use crate::progress::{Job, JobType, ProgressTracker};
 use serde::{Deserialize, Serialize};
@@ -22,7 +22,7 @@ use ts_rs::TS;
 #[cfg_attr(feature = "ts-bindings", derive(TS))]
 #[cfg_attr(
     feature = "ts-bindings",
-    ts(export, export_to = "src/datafold_node/static-react/src/types/")
+    ts(export, export_to = "src/fold_node/static-react/src/types/")
 )]
 pub struct SystemStatusResponse {
     pub status: String,
@@ -38,7 +38,7 @@ pub struct SystemStatusResponse {
 #[cfg_attr(feature = "ts-bindings", derive(TS))]
 #[cfg_attr(
     feature = "ts-bindings",
-    ts(export, export_to = "src/datafold_node/static-react/src/types/")
+    ts(export, export_to = "src/fold_node/static-react/src/types/")
 )]
 pub struct NodeKeyResponse {
     pub success: bool,
@@ -51,7 +51,7 @@ pub struct NodeKeyResponse {
 #[cfg_attr(feature = "ts-bindings", derive(TS))]
 #[cfg_attr(
     feature = "ts-bindings",
-    ts(export, export_to = "src/datafold_node/static-react/src/types/")
+    ts(export, export_to = "src/fold_node/static-react/src/types/")
 )]
 pub struct IndexingStatusResponse {
     pub status: serde_json::Value,
@@ -62,7 +62,7 @@ pub struct IndexingStatusResponse {
 #[cfg_attr(feature = "ts-bindings", derive(TS))]
 #[cfg_attr(
     feature = "ts-bindings",
-    ts(export, export_to = "src/datafold_node/static-react/src/types/")
+    ts(export, export_to = "src/fold_node/static-react/src/types/")
 )]
 pub struct ResetDatabaseRequest {
     pub confirm: bool,
@@ -73,7 +73,7 @@ pub struct ResetDatabaseRequest {
 #[cfg_attr(feature = "ts-bindings", derive(TS))]
 #[cfg_attr(
     feature = "ts-bindings",
-    ts(export, export_to = "src/datafold_node/static-react/src/types/")
+    ts(export, export_to = "src/fold_node/static-react/src/types/")
 )]
 pub struct ResetDatabaseResponse {
     pub success: bool,
@@ -87,7 +87,7 @@ pub struct ResetDatabaseResponse {
 #[cfg_attr(feature = "ts-bindings", derive(TS))]
 #[cfg_attr(
     feature = "ts-bindings",
-    ts(export, export_to = "src/datafold_node/static-react/src/types/")
+    ts(export, export_to = "src/fold_node/static-react/src/types/")
 )]
 pub struct ResetSchemaServiceResponse {
     pub success: bool,
@@ -99,7 +99,7 @@ pub struct ResetSchemaServiceResponse {
 #[cfg_attr(feature = "ts-bindings", derive(TS))]
 #[cfg_attr(
     feature = "ts-bindings",
-    ts(export, export_to = "src/datafold_node/static-react/src/types/")
+    ts(export, export_to = "src/fold_node/static-react/src/types/")
 )]
 pub struct DatabaseConfigResponse {
     pub config_type: String,
@@ -111,7 +111,7 @@ pub struct DatabaseConfigResponse {
 #[cfg_attr(feature = "ts-bindings", derive(TS))]
 #[cfg_attr(
     feature = "ts-bindings",
-    ts(export, export_to = "src/datafold_node/static-react/src/types/")
+    ts(export, export_to = "src/fold_node/static-react/src/types/")
 )]
 pub struct SecurityKeyResponse {
     pub success: bool,
@@ -126,7 +126,7 @@ pub struct SecurityKeyResponse {
 /// Get system status
 pub async fn get_system_status(
     user_hash: &str,
-    node: &DataFoldNode,
+    node: &FoldNode,
 ) -> HandlerResult<SystemStatusResponse> {
     Ok(ApiResponse::success_with_user(
         SystemStatusResponse {
@@ -145,7 +145,7 @@ pub async fn get_system_status(
 /// Get indexing status
 pub async fn get_indexing_status(
     user_hash: &str,
-    node: &DataFoldNode,
+    node: &FoldNode,
 ) -> HandlerResult<IndexingStatusResponse> {
     let processor = OperationProcessor::new(node.clone());
 
@@ -170,7 +170,7 @@ pub async fn get_indexing_status(
 /// Get node private key
 pub async fn get_node_private_key(
     user_hash: &str,
-    node: &DataFoldNode,
+    node: &FoldNode,
 ) -> HandlerResult<NodeKeyResponse> {
     let private_key = node.get_node_private_key();
 
@@ -187,7 +187,7 @@ pub async fn get_node_private_key(
 /// Get node public key
 pub async fn get_node_public_key(
     user_hash: &str,
-    node: &DataFoldNode,
+    node: &FoldNode,
 ) -> HandlerResult<NodeKeyResponse> {
     let public_key = node.get_node_public_key();
 
@@ -209,7 +209,7 @@ pub async fn reset_database(
     request: ResetDatabaseRequest,
     user_hash: &str,
     tracker: &ProgressTracker,
-    node: &DataFoldNode,
+    node: &FoldNode,
 ) -> HandlerResult<ResetDatabaseResponse> {
     // Require explicit confirmation
     if !request.confirm {
@@ -293,7 +293,7 @@ pub async fn reset_database(
 pub async fn reset_schema_service(
     request: ResetDatabaseRequest,
     user_hash: &str,
-    node: &DataFoldNode,
+    node: &FoldNode,
 ) -> HandlerResult<ResetSchemaServiceResponse> {
     // Require explicit confirmation
     if !request.confirm {
@@ -324,7 +324,7 @@ pub async fn reset_schema_service(
 /// Get database configuration
 pub async fn get_database_config(
     user_hash: &str,
-    node: &DataFoldNode,
+    node: &FoldNode,
 ) -> HandlerResult<DatabaseConfigResponse> {
     let config = &node.config;
 
@@ -356,7 +356,7 @@ pub async fn get_database_config(
 /// Get system public key (security manager)
 pub async fn get_system_public_key(
     user_hash: &str,
-    node: &DataFoldNode,
+    node: &FoldNode,
 ) -> HandlerResult<SecurityKeyResponse> {
     let security_manager = node.get_security_manager();
 

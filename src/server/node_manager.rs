@@ -10,8 +10,8 @@
 //! - **Local mode (Sled)**: Shares a single node across all users (single-tenant)
 //!   This avoids Sled lock conflicts since only one process can hold the lock.
 
-use crate::datafold_node::config::NodeConfig;
-use crate::datafold_node::DataFoldNode;
+use crate::fold_node::config::NodeConfig;
+use crate::fold_node::FoldNode;
 use crate::fold_db_core::factory;
 use crate::security::Ed25519KeyPair;
 use crate::storage::config::DatabaseConfig;
@@ -45,10 +45,10 @@ pub struct NodeManager {
     /// Configuration for creating new nodes
     config: NodeManagerConfig,
     /// Cache of active nodes (user_id -> Node)
-    nodes: Arc<Mutex<HashMap<String, Arc<RwLock<DataFoldNode>>>>>,
+    nodes: Arc<Mutex<HashMap<String, Arc<RwLock<FoldNode>>>>>,
     /// Shared node for local mode (single-tenant)
     /// In local Sled mode, we share one node to avoid lock conflicts
-    shared_local_node: Arc<Mutex<Option<Arc<RwLock<DataFoldNode>>>>>,
+    shared_local_node: Arc<Mutex<Option<Arc<RwLock<FoldNode>>>>>,
     /// Whether we're in local mode
     is_local_mode: bool,
 }
@@ -72,7 +72,7 @@ impl NodeManager {
     pub async fn get_node(
         &self,
         user_id: &str,
-    ) -> Result<Arc<RwLock<DataFoldNode>>, NodeManagerError> {
+    ) -> Result<Arc<RwLock<FoldNode>>, NodeManagerError> {
         // Local mode: use shared single node to avoid Sled lock conflicts
         if self.is_local_mode {
             return self.get_shared_local_node(user_id).await;
@@ -106,7 +106,7 @@ impl NodeManager {
     async fn get_shared_local_node(
         &self,
         user_id: &str,
-    ) -> Result<Arc<RwLock<DataFoldNode>>, NodeManagerError> {
+    ) -> Result<Arc<RwLock<FoldNode>>, NodeManagerError> {
         // Hold the lock for the entire check-and-create operation to avoid races
         let mut shared = self.shared_local_node.lock().await;
 
@@ -129,7 +129,7 @@ impl NodeManager {
     async fn create_node(
         &self,
         user_id: &str,
-    ) -> Result<Arc<RwLock<DataFoldNode>>, NodeManagerError> {
+    ) -> Result<Arc<RwLock<FoldNode>>, NodeManagerError> {
         // Clone the base config and set user_id
         let mut node_config = self.config.base_config.clone();
 
@@ -167,7 +167,7 @@ impl NodeManager {
 
         // Create DataFold node with user context set
         let node = crate::logging::core::run_with_user(user_id, async {
-            DataFoldNode::new_with_db(node_config, db).await
+            FoldNode::new_with_db(node_config, db).await
         })
         .await
         .map_err(|e| NodeManagerError::NodeCreationError(e.to_string()))?;
@@ -185,7 +185,7 @@ impl NodeManager {
 
     /// Set a pre-existing node in the cache
     /// This is useful for embedded scenarios where the node is created externally
-    pub async fn set_node(&self, user_id: &str, node: DataFoldNode) {
+    pub async fn set_node(&self, user_id: &str, node: FoldNode) {
         let node_arc = Arc::new(RwLock::new(node));
 
         // In local mode, also set the shared_local_node so get_node finds it

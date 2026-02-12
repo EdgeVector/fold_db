@@ -3,9 +3,9 @@
 //! Framework-agnostic handlers for LLM query operations.
 //! These can be called by both HTTP server routes and Lambda handlers.
 
-use crate::datafold_node::llm_query::{types::*, LlmQueryService, SessionManager};
-use crate::datafold_node::node::DataFoldNode;
-use crate::datafold_node::OperationProcessor;
+use crate::fold_node::llm_query::{types::*, LlmQueryService, SessionManager};
+use crate::fold_node::node::FoldNode;
+use crate::fold_node::OperationProcessor;
 use crate::db_operations::IndexResult;
 use crate::fold_db_core::query::records_from_field_map;
 use crate::fold_db_core::FoldDB;
@@ -83,7 +83,7 @@ pub struct AgentQueryHandlerRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentQueryHandlerResponse {
     pub answer: String,
-    pub tool_calls: Vec<crate::datafold_node::llm_query::types::ToolCallRecord>,
+    pub tool_calls: Vec<crate::fold_node::llm_query::types::ToolCallRecord>,
     pub session_id: String,
 }
 
@@ -177,7 +177,7 @@ pub async fn analyze_query(
     user_hash: &str,
     service: &LlmQueryService,
     session_manager: &SessionManager,
-    node: &DataFoldNode,
+    node: &FoldNode,
 ) -> HandlerResult<AnalyzeQueryHandlerResponse> {
     log::info!(
         "AI Query: Analysis request received for user: {}",
@@ -241,7 +241,7 @@ pub async fn execute_query_plan(
     user_hash: &str,
     service: Option<&LlmQueryService>,
     session_manager: &SessionManager,
-    node: &DataFoldNode,
+    node: &FoldNode,
 ) -> HandlerResult<ExecuteQueryPlanHandlerResponse> {
     log::info!(
         "AI Query: Execution request received for session: {:?}, user: {}",
@@ -430,7 +430,7 @@ pub async fn chat(
     user_hash: &str,
     service: &LlmQueryService,
     session_manager: &SessionManager,
-    node: &DataFoldNode,
+    node: &FoldNode,
 ) -> HandlerResult<ChatHandlerResponse> {
     log::info!(
         "AI Query Chat: received for session: {:?}, user: {}",
@@ -533,7 +533,7 @@ pub async fn analyze_followup(
     user_hash: &str,
     service: &LlmQueryService,
     session_manager: &SessionManager,
-    node: &DataFoldNode,
+    node: &FoldNode,
 ) -> HandlerResult<AnalyzeFollowupHandlerResponse> {
     log::info!(
         "AI Query Analyze Followup: received for session: {:?}, user: {}",
@@ -607,7 +607,7 @@ pub async fn analyze_followup(
 pub async fn get_backfill_status(
     hash: &str,
     user_hash: &str,
-    node: &DataFoldNode,
+    node: &FoldNode,
 ) -> HandlerResult<BackfillStatusHandlerResponse> {
     log::info!(
         "LLM Query Backfill Status: hash={}, user: {}",
@@ -810,7 +810,7 @@ pub async fn ai_native_index_query(
     user_hash: &str,
     service: &LlmQueryService,
     session_manager: &SessionManager,
-    node: &DataFoldNode,
+    node: &FoldNode,
 ) -> HandlerResult<AiNativeIndexHandlerResponse> {
     log::info!(
         "AI Native Index Query: received for session: {:?}, user: {}",
@@ -923,7 +923,7 @@ pub async fn agent_query(
     user_hash: &str,
     service: &LlmQueryService,
     session_manager: &SessionManager,
-    node: &DataFoldNode,
+    node: &FoldNode,
 ) -> HandlerResult<AgentQueryHandlerResponse> {
     log::info!(
         "Agent Query: received for user: {}, query: {}",

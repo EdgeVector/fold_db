@@ -12,7 +12,7 @@ jobs:
     
     defaults:
       run:
-        working-directory: src/datafold_node/static-react
+        working-directory: src/server/static-react
 
     steps:
     - name: Checkout code
@@ -23,7 +23,7 @@ jobs:
       with:
         node-version: '18'
         cache: 'npm'
-        cache-dependency-path: src/datafold_node/static-react/package-lock.json
+        cache-dependency-path: src/server/static-react/package-lock.json
 
     - name: Install dependencies
       run: npm ci
@@ -40,7 +40,7 @@ jobs:
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v3
       with:
-        file: src/datafold_node/static-react/coverage/lcov.info
+        file: src/server/static-react/coverage/lcov.info
         flags: frontend
         name: frontend-coverage
         fail_ci_if_error: true
@@ -50,7 +50,7 @@ jobs:
       if: always()
       with:
         name: frontend-coverage-report
-        path: src/datafold_node/static-react/coverage/
+        path: src/server/static-react/coverage/
         retention-days: 30
 
     - name: Comment coverage on PR
@@ -58,7 +58,7 @@ jobs:
       uses: romeovs/lcov-reporter-action@v0.3.1
       with:
         github-token: ${{ secrets.GITHUB_TOKEN }}
-        lcov-file: src/datafold_node/static-react/coverage/lcov.info
+        lcov-file: src/server/static-react/coverage/lcov.info
         delete-old-comments: true
 
   rust-coverage:

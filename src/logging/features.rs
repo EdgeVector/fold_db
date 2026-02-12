@@ -1,7 +1,7 @@
 //! Feature-specific logging macros and utilities
 //!
 //! This module provides convenient macros for logging in specific features/components
-//! of the datafold system, allowing easy filtering and debugging.
+//! of the fold_db system, allowing easy filtering and debugging.
 
 /// Feature categories for logging
 #[derive(Debug, Clone)]
@@ -22,16 +22,16 @@ impl LogFeature {
     /// Get the target string for this feature
     pub fn target(&self) -> &'static str {
         match self {
-            LogFeature::Transform => "datafold_node::transform",
-            LogFeature::Network => "datafold_node::network",
-            LogFeature::Database => "datafold_node::database",
-            LogFeature::Schema => "datafold_node::schema",
-            LogFeature::Query => "datafold_node::query",
-            LogFeature::Mutation => "datafold_node::mutation",
-            LogFeature::Permissions => "datafold_node::permissions",
-            LogFeature::HttpServer => "datafold_node::http_server",
-            LogFeature::TcpServer => "datafold_node::tcp_server",
-            LogFeature::Ingestion => "datafold_node::ingestion",
+            LogFeature::Transform => "fold_node::transform",
+            LogFeature::Network => "fold_node::network",
+            LogFeature::Database => "fold_node::database",
+            LogFeature::Schema => "fold_node::schema",
+            LogFeature::Query => "fold_node::query",
+            LogFeature::Mutation => "fold_node::mutation",
+            LogFeature::Permissions => "fold_node::permissions",
+            LogFeature::HttpServer => "fold_node::http_server",
+            LogFeature::TcpServer => "fold_node::tcp_server",
+            LogFeature::Ingestion => "fold_node::ingestion",
         }
     }
 }

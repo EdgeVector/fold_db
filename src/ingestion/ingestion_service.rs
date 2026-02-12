@@ -1,9 +1,9 @@
-//! AI-powered ingestion service that works with DataFoldNode
+//! AI-powered ingestion service that works with FoldNode
 //!
 //! Handles JSON data ingestion with AI schema recommendation, mutation generation,
-//! and execution. Refactored to take &DataFoldNode references for flexible locking.
+//! and execution. Refactored to take &FoldNode references for flexible locking.
 
-use crate::datafold_node::DataFoldNode;
+use crate::fold_node::FoldNode;
 use crate::ingestion::config::AIProvider;
 use crate::ingestion::IngestionRequest;
 use crate::ingestion::mutation_generator;
@@ -107,7 +107,7 @@ fn extract_nested_field_value<'a>(
     None
 }
 
-/// AI-powered ingestion service that works with DataFoldNode
+/// AI-powered ingestion service that works with FoldNode
 pub struct IngestionService {
     config: IngestionConfig,
     openrouter_service: Option<OpenRouterService>,
@@ -150,19 +150,19 @@ impl IngestionService {
         })
     }
 
-    /// Process JSON ingestion using a DataFoldNode with progress tracking
-    /// Accepts a reference to DataFoldNode, making it compatible with both Mutex and RwLock guards
+    /// Process JSON ingestion using a FoldNode with progress tracking
+    /// Accepts a reference to FoldNode, making it compatible with both Mutex and RwLock guards
     pub async fn process_json_with_node_and_progress(
         &self,
         request: IngestionRequest,
-        node: &DataFoldNode,
+        node: &FoldNode,
         progress_service: &ProgressService,
         progress_id: String,
     ) -> IngestionResult<IngestionResponse> {
         log_feature!(
             LogFeature::Ingestion,
             info,
-            "Starting JSON ingestion process with DataFoldNode (progress_id: {})",
+            "Starting JSON ingestion process with FoldNode (progress_id: {})",
             progress_id
         );
 
@@ -461,7 +461,7 @@ impl IngestionService {
         &self,
         ai_response: &AISchemaResponse,
         sample_data: &Value,
-        node: &DataFoldNode,
+        node: &FoldNode,
     ) -> IngestionResult<String> {
         // Always create a new schema from the AI definition
         if let Some(new_schema_def) = &ai_response.new_schemas {
@@ -476,12 +476,12 @@ impl IngestionService {
         ))
     }
 
-    /// Create a new schema using the DataFoldNode
+    /// Create a new schema using the FoldNode
     async fn create_new_schema_with_node(
         &self,
         schema_def: &Value,
         sample_data: &Value,
-        node: &DataFoldNode,
+        node: &FoldNode,
     ) -> IngestionResult<String> {
         // Deserialize Value to Schema
         let mut schema: crate::schema::types::Schema = serde_json::from_value(schema_def.clone())
@@ -639,7 +639,7 @@ impl IngestionService {
     async fn execute_mutations_with_node_and_progress(
         &self,
         mutations: Vec<Mutation>,
-        node: &DataFoldNode,
+        node: &FoldNode,
         progress_service: &ProgressService,
         progress_id: &str,
     ) -> IngestionResult<usize> {
@@ -658,7 +658,7 @@ impl IngestionService {
             )
             .await;
 
-        // Execute all mutations in a batch using DataFoldNode directly
+        // Execute all mutations in a batch using FoldNode directly
         // Use mutate_batch which publishes MutationExecuted events for the IndexOrchestrator
         let result = node.mutate_batch(mutations)
             .await

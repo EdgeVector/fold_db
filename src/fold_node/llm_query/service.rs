@@ -1,8 +1,8 @@
 //! LLM service for query analysis and summarization.
 
 use super::types::{AgentAction, FollowupAnalysis, Message, QueryPlan, ToolCallRecord};
-use crate::datafold_node::node::DataFoldNode;
-use crate::datafold_node::OperationProcessor;
+use crate::fold_node::node::FoldNode;
+use crate::fold_node::OperationProcessor;
 use crate::ingestion::{
     config::{AIProvider, IngestionConfig},
     ollama_service::OllamaService,
@@ -115,7 +115,7 @@ impl LlmQueryService {
         &self,
         user_query: &str,
         schemas: &[SchemaWithState],
-        node: &DataFoldNode,
+        node: &FoldNode,
         _user_hash: &str,
         max_iterations: usize,
     ) -> Result<(String, Vec<ToolCallRecord>), String> {
@@ -318,7 +318,7 @@ impl LlmQueryService {
         &self,
         tool: &str,
         params: &Value,
-        node: &DataFoldNode,
+        node: &FoldNode,
     ) -> Result<Value, String> {
         let processor = OperationProcessor::new(node.clone());
 

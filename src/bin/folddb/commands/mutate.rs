@@ -1,7 +1,7 @@
 use crate::cli::MutateCommand;
 use crate::commands::CommandOutput;
 use crate::error::CliError;
-use fold_db::datafold_node::OperationProcessor;
+use fold_db::fold_node::OperationProcessor;
 use fold_db::schema::types::key_value::KeyValue;
 use serde_json::Value;
 use std::collections::HashMap;

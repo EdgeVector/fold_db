@@ -5,8 +5,8 @@ use super::routes::{
     query as query_routes, schema as schema_routes, security as security_routes,
     system as system_routes,
 };
-use crate::datafold_node::llm_query;
-use crate::datafold_node::DataFoldNode;
+use crate::fold_node::llm_query;
+use crate::fold_node::FoldNode;
 use crate::error::{FoldDbError, FoldDbResult};
 use crate::ingestion::routes as ingestion_routes;
 use crate::utils::http_errors;
@@ -20,10 +20,10 @@ use actix_web::{web, App, HttpResponse, HttpServer as ActixHttpServer};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-/// HTTP server for the DataFold node.
+/// HTTP server for the Fold node.
 ///
-/// DataFoldHttpServer provides a web-based interface for external clients to interact
-/// with a DataFold node. It handles HTTP requests and can serve the built React
+/// FoldHttpServer provides a web-based interface for external clients to interact
+/// with a Fold node. It handles HTTP requests and can serve the built React
 /// UI, and provides REST API endpoints for schemas, queries, and mutations.
 ///
 /// # Architecture
@@ -41,7 +41,7 @@ use tokio::sync::RwLock;
 /// * REST API endpoints for schemas, queries, and mutations
 /// * Sample data management
 /// * One-click loading of sample data
-pub struct DataFoldHttpServer {
+pub struct FoldHttpServer {
     /// The node manager for lazy per-user node creation
     node_manager: Arc<NodeManager>,
     /// The HTTP server bind address
@@ -54,7 +54,7 @@ pub struct AppState {
     pub(crate) node_manager: Arc<NodeManager>,
 }
 
-impl DataFoldHttpServer {
+impl FoldHttpServer {
     /// Create a new HTTP server.
     ///
     /// This method creates a new HTTP server that listens on the specified address.
@@ -67,7 +67,7 @@ impl DataFoldHttpServer {
     ///
     /// # Returns
     ///
-    /// A `FoldDbResult` containing the new DataFoldHttpServer instance.
+    /// A `FoldDbResult` containing the new FoldHttpServer instance.
     ///
     /// # Errors
     ///
@@ -78,7 +78,7 @@ impl DataFoldHttpServer {
         let logs_config = {
             match &node_manager.get_base_config().database {
                 #[cfg(feature = "aws-backend")]
-                crate::datafold_node::config::DatabaseConfig::Cloud(d) => {
+                crate::fold_node::config::DatabaseConfig::Cloud(d) => {
                     // Note: user_id is NOT set here - it comes from per-request headers
                     Some((d.tables.logs.clone(), d.region.clone(), None))
                 }
@@ -158,7 +158,7 @@ impl DataFoldHttpServer {
         let progress_tracker = {
             #[cfg(feature = "aws-backend")]
             {
-                if let crate::datafold_node::config::DatabaseConfig::Cloud(cloud_config) =
+                if let crate::fold_node::config::DatabaseConfig::Cloud(cloud_config) =
                     &self.node_manager.get_base_config().database
                 {
                     crate::progress::create_tracker(Some((
@@ -243,7 +243,7 @@ impl DataFoldHttpServer {
 
                 // For schema loading, we need a temporary node
                 // Schemas are global, so we use a system context
-                let client = crate::datafold_node::SchemaServiceClient::new(&url);
+                let client = crate::fold_node::SchemaServiceClient::new(&url);
 
                 match client.list_schemas().await {
                     Ok(schemas) => {
@@ -464,7 +464,7 @@ impl DataFoldHttpServer {
 pub async fn get_node_for_request(
     app_state: &web::Data<AppState>,
     user_id: &str,
-) -> Result<Arc<RwLock<DataFoldNode>>, FoldDbError> {
+) -> Result<Arc<RwLock<FoldNode>>, FoldDbError> {
     app_state
         .node_manager
         .get_node(user_id)

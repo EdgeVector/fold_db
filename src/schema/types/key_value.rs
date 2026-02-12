@@ -13,7 +13,7 @@ use ts_rs::TS;
     feature = "ts-bindings",
     ts(
         export,
-        export_to = "bindings/src/datafold_node/static-react/src/types/generated.ts"
+        export_to = "bindings/src/fold_node/static-react/src/types/generated.ts"
     )
 )]
 pub struct KeyValue {

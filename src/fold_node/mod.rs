@@ -18,10 +18,10 @@ pub mod response_types;
 pub mod schema_client;
 mod transform_queue;
 
-// Re-export the DataFoldNode struct for easier imports
+// Re-export the FoldNode struct for easier imports
 pub use crate::server::{start_embedded_server, EmbeddedServerHandle};
 pub use config::load_node_config;
 pub use config::NodeConfig;
-pub use node::DataFoldNode;
+pub use node::FoldNode;
 pub use operation_processor::OperationProcessor;
 pub use schema_client::SchemaServiceClient;

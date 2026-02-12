@@ -2,7 +2,7 @@ use crate::cli::ConfigCommand;
 use crate::commands::CommandOutput;
 use crate::error::CliError;
 use crate::output::OutputMode;
-use fold_db::datafold_node::OperationProcessor;
+use fold_db::fold_node::OperationProcessor;
 
 pub async fn status(
     processor: &OperationProcessor,

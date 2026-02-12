@@ -1,16 +1,16 @@
 {
-  "name": "datafold-node-ui",
+  "name": "fold-node-ui",
   "version": "0.1.15",
   "type": "module",
   "files": [
     "dist-lib"
   ],
-  "main": "./dist-lib/datafold-node-ui.umd.js",
-  "module": "./dist-lib/datafold-node-ui.es.js",
+  "main": "./dist-lib/fold-node-ui.umd.js",
+  "module": "./dist-lib/fold-node-ui.es.js",
   "exports": {
     ".": {
-      "import": "./dist-lib/datafold-node-ui.es.js",
-      "require": "./dist-lib/datafold-node-ui.umd.js"
+      "import": "./dist-lib/fold-node-ui.es.js",
+      "require": "./dist-lib/fold-node-ui.umd.js"
     }
   },
   "scripts": {

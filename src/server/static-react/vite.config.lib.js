@@ -11,7 +11,7 @@ export default defineConfig({
       // Import TypeScript bindings directly from where ts-rs generates them
       "@generated": path.resolve(
         __dirname,
-        "../../../bindings/src/datafold_node/static-react/src/types",
+        "../../../bindings/src/fold_node/static-react/src/types",
       ),
     },
   },
@@ -19,8 +19,8 @@ export default defineConfig({
     outDir: "dist-lib",
     lib: {
       entry: path.resolve(__dirname, "src/index.js"),
-      name: "DataFoldNodeUI",
-      fileName: (format) => `datafold-node-ui.${format}.js`,
+      name: "FoldNodeUI",
+      fileName: (format) => `fold-node-ui.${format}.js`,
     },
     rollupOptions: {
       // make sure to externalize deps that shouldn't be bundled

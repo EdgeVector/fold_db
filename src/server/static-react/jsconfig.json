@@ -2,7 +2,7 @@
   "compilerOptions": {
     "baseUrl": ".",
     "paths": {
-      "@generated/*": ["../../../bindings/src/datafold_node/static-react/src/types/*"]
+      "@generated/*": ["../../../bindings/src/fold_node/static-react/src/types/*"]
     }
   },
   "include": ["src/**/*"],

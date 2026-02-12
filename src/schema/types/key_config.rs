@@ -11,7 +11,7 @@ use ts_rs::TS;
     feature = "ts-bindings",
     ts(
         export,
-        export_to = "bindings/src/datafold_node/static-react/src/types/generated.ts"
+        export_to = "bindings/src/fold_node/static-react/src/types/generated.ts"
     )
 )]
 // Used in two ways, one to set the field_names which will be used to resolve the keys, and one to pass key values in a mutation.

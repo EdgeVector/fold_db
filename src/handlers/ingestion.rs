@@ -3,7 +3,7 @@
 //! Framework-agnostic handlers for ingestion operations.
 //! These can be called by both HTTP server routes and Lambda handlers.
 
-use crate::datafold_node::node::DataFoldNode;
+use crate::fold_node::node::FoldNode;
 use crate::handlers::response::{ApiResponse, HandlerError, HandlerResult};
 use crate::ingestion::config::{IngestionConfig, SavedConfig};
 use crate::ingestion::progress::{IngestionProgress, ProgressService, ProgressTracker};
@@ -30,7 +30,7 @@ pub type ProcessJsonRequest = IngestionRequest;
 #[cfg_attr(feature = "ts-bindings", derive(TS))]
 #[cfg_attr(
     feature = "ts-bindings",
-    ts(export, export_to = "src/datafold_node/static-react/src/types/")
+    ts(export, export_to = "src/fold_node/static-react/src/types/")
 )]
 pub struct ProcessJsonResponse {
     pub success: bool,
@@ -50,7 +50,7 @@ pub struct ProgressListResponse {
 #[cfg_attr(feature = "ts-bindings", derive(TS))]
 #[cfg_attr(
     feature = "ts-bindings",
-    ts(export, export_to = "src/datafold_node/static-react/src/types/")
+    ts(export, export_to = "src/fold_node/static-react/src/types/")
 )]
 pub struct IngestionStatusResponse {
     pub enabled: bool,
@@ -64,7 +64,7 @@ pub struct IngestionStatusResponse {
 #[cfg_attr(feature = "ts-bindings", derive(TS))]
 #[cfg_attr(
     feature = "ts-bindings",
-    ts(export, export_to = "src/datafold_node/static-react/src/types/")
+    ts(export, export_to = "src/fold_node/static-react/src/types/")
 )]
 pub struct ConfigSaveResponse {
     pub success: bool,
@@ -260,7 +260,7 @@ pub async fn process_json(
     request: IngestionRequest,
     user_hash: &str,
     tracker: &ProgressTracker,
-    node: &DataFoldNode,
+    node: &FoldNode,
     service: Arc<IngestionService>,
 ) -> HandlerResult<ProcessJsonResponse> {
     // Validate data is not empty

@@ -83,7 +83,7 @@ impl ApiResponse<()> {
 #[cfg_attr(feature = "ts-bindings", derive(TS))]
 #[cfg_attr(
     feature = "ts-bindings",
-    ts(export, export_to = "src/datafold_node/static-react/src/types/")
+    ts(export, export_to = "src/fold_node/static-react/src/types/")
 )]
 pub enum HandlerError {
     /// Request validation failed

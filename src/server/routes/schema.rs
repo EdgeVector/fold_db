@@ -149,7 +149,7 @@ pub async fn get_backfill_status(
     };
     let _user_hash = user_hash; // For logging/context if needed
     let node = node_arc.read().await;
-    let processor = crate::datafold_node::OperationProcessor::new((*node).clone());
+    let processor = crate::fold_node::OperationProcessor::new((*node).clone());
 
     match processor.get_backfill(&backfill_hash).await {
         Ok(Some(info)) => HttpResponse::Ok().json(info),

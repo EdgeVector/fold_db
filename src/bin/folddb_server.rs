@@ -1,9 +1,9 @@
 use clap::Parser;
 use fold_db::{
     constants::DEFAULT_HTTP_PORT,
-    datafold_node::load_node_config,
+    fold_node::load_node_config,
     server::{
-        http_server::DataFoldHttpServer,
+        http_server::FoldHttpServer,
         node_manager::{NodeManager, NodeManagerConfig},
     },
 };
@@ -96,7 +96,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // If using DynamoDB backend, enable DynamoDB logging
     #[cfg(feature = "aws-backend")]
-    if let fold_db::datafold_node::config::DatabaseConfig::Cloud(ref mut db_config) =
+    if let fold_db::fold_node::config::DatabaseConfig::Cloud(ref mut db_config) =
         config.database
     {
         // Note: user_id is NOT set here - it comes from per-request headers
@@ -134,7 +134,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Starting server on http://localhost:{}", http_port);
     println!("Waiting for authenticated requests with X-User-Hash header...\n");
 
-    let http_server = DataFoldHttpServer::new(node_manager, &bind_address).await?;
+    let http_server = FoldHttpServer::new(node_manager, &bind_address).await?;
 
     http_server
         .run()

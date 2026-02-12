@@ -37,7 +37,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn generate_new_identity(path: &Path) -> Result<NodeIdentity, Box<dyn std::error::Error>> {
-    let keypair = DataFoldKeyPair::generate()?;
+    let keypair = FoldKeyPair::generate()?;
     let identity = NodeIdentity {
         private_key: keypair.secret_key_base64(),
         public_key: keypair.public_key_base64(),
@@ -50,12 +50,12 @@ fn generate_new_identity(path: &Path) -> Result<NodeIdentity, Box<dyn std::error
 }
 
 // Wrapper to use library key generation
-struct DataFoldKeyPair(Ed25519KeyPair);
+struct FoldKeyPair(Ed25519KeyPair);
 
-impl DataFoldKeyPair {
+impl FoldKeyPair {
     fn generate() -> Result<Self, Box<dyn std::error::Error>> {
         Ed25519KeyPair::generate()
-            .map(DataFoldKeyPair)
+            .map(FoldKeyPair)
             .map_err(|e| format!("Failed to generate keypair: {}", e).into())
     }
 

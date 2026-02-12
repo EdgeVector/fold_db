@@ -11,7 +11,7 @@ pub mod transform;
 use crate::cli::{Command, ConfigCommand};
 use crate::error::CliError;
 use crate::output::OutputMode;
-use fold_db::datafold_node::OperationProcessor;
+use fold_db::fold_node::OperationProcessor;
 use fold_db::db_operations::native_index::IndexResult;
 use fold_db::fold_db_core::infrastructure::backfill_tracker::BackfillStatistics;
 use fold_db::fold_db_core::infrastructure::event_statistics::EventStatistics;
@@ -60,7 +60,7 @@ pub enum CommandOutput {
     },
     AskAnswer {
         answer: String,
-        tool_calls: Vec<fold_db::datafold_node::llm_query::types::ToolCallRecord>,
+        tool_calls: Vec<fold_db::fold_node::llm_query::types::ToolCallRecord>,
     },
     Status {
         pub_key: String,

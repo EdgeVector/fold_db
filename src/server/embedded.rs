@@ -4,9 +4,9 @@
 //! be integrated into desktop applications (e.g., Tauri, Electron) without blocking
 //! the main thread.
 
-use super::http_server::DataFoldHttpServer;
+use super::http_server::FoldHttpServer;
 use super::node_manager::{NodeManager, NodeManagerConfig};
-use crate::datafold_node::DataFoldNode;
+use crate::fold_node::FoldNode;
 use crate::error::FoldDbResult;
 use std::sync::Arc;
 use tokio::task::JoinHandle;
@@ -53,7 +53,7 @@ impl EmbeddedServerHandle {
 ///
 /// # Arguments
 ///
-/// * `node` - The DataFoldNode instance to use
+/// * `node` - The FoldNode instance to use
 /// * `port` - The port to bind to (e.g., 9001)
 ///
 /// # Returns
@@ -64,14 +64,14 @@ impl EmbeddedServerHandle {
 ///
 /// ```no_run
 /// use std::path::PathBuf;
-/// use fold_db::datafold_node::{DataFoldNode, start_embedded_server};
-/// use fold_db::datafold_node::config::NodeConfig;
+/// use fold_db::fold_node::{FoldNode, start_embedded_server};
+/// use fold_db::fold_node::config::NodeConfig;
 ///
 /// #[tokio::main]
 /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
 ///     // Build a NodeConfig and create the node with the current API:
 ///     let config = NodeConfig::new(PathBuf::from("./data"));
-///     let node = DataFoldNode::new(config).await?;
+///     let node = FoldNode::new(config).await?;
 ///     let handle = start_embedded_server(node, 9001).await?;
 ///
 ///     println!("Server running on {}", handle.bind_address());
@@ -84,7 +84,7 @@ impl EmbeddedServerHandle {
 /// }
 /// ```
 pub async fn start_embedded_server(
-    node: DataFoldNode,
+    node: FoldNode,
     port: u16,
 ) -> FoldDbResult<EmbeddedServerHandle> {
     let bind_address = format!("127.0.0.1:{}", port);
@@ -99,7 +99,7 @@ pub async fn start_embedded_server(
     // Pre-populate the NodeManager with the provided node using a default embedded user
     node_manager.set_node("embedded_user", node).await;
 
-    let server = DataFoldHttpServer::new(node_manager, &bind_address).await?;
+    let server = FoldHttpServer::new(node_manager, &bind_address).await?;
 
     let address = bind_address.clone();
     let task_handle = tokio::spawn(async move { server.run().await });
@@ -117,19 +117,19 @@ pub async fn start_embedded_server(
 ///
 /// # Arguments
 ///
-/// * `node` - Arc-wrapped RwLock-wrapped DataFoldNode
+/// * `node` - Arc-wrapped RwLock-wrapped FoldNode
 /// * `port` - The port to bind to
 ///
 /// # Returns
 ///
 /// Returns an `EmbeddedServerHandle` that can be used to manage the server.
 pub async fn start_embedded_server_shared(
-    node: Arc<tokio::sync::RwLock<DataFoldNode>>,
+    node: Arc<tokio::sync::RwLock<FoldNode>>,
     port: u16,
 ) -> FoldDbResult<EmbeddedServerHandle> {
     let node_instance = {
         let guard = node.read().await;
-        // Clone the node since DataFoldNode implements Clone
+        // Clone the node since FoldNode implements Clone
         guard.clone()
     };
 
@@ -148,7 +148,7 @@ mod tests {
 
         // Create a config with a mock schema service URL
         let mut config =
-            crate::datafold_node::config::NodeConfig::new(temp_dir.path().to_path_buf());
+            crate::fold_node::config::NodeConfig::new(temp_dir.path().to_path_buf());
         config.schema_service_url = Some("mock://test".to_string());
 
         let keypair = crate::security::Ed25519KeyPair::generate().unwrap();
@@ -156,7 +156,7 @@ mod tests {
         config.private_key = Some(keypair.secret_key_base64());
 
         // Create the node
-        let node = DataFoldNode::new(config).await.unwrap();
+        let node = FoldNode::new(config).await.unwrap();
 
         // Use a random high port to avoid conflicts
         use rand::Rng;

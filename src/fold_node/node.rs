@@ -4,14 +4,14 @@ use serde::Serialize;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-use crate::datafold_node::config::NodeConfig;
+use crate::fold_node::config::NodeConfig;
 use crate::error::{FoldDbError, FoldDbResult};
 use crate::fold_db_core::FoldDB;
 use crate::security::{EncryptionManager, SecurityConfig, SecurityManager};
 
-/// A node in the DataFold distributed database system.
+/// A node in the Fold distributed database system.
 ///
-/// DataFoldNode combines database storage, schema management, and networking
+/// FoldNode combines database storage, schema management, and networking
 /// capabilities into a complete node implementation. It can operate independently
 /// or as part of a network of nodes, with trust relationships defining data access.
 ///
@@ -24,7 +24,7 @@ use crate::security::{EncryptionManager, SecurityConfig, SecurityManager};
 /// * Request forwarding to trusted nodes
 ///
 #[derive(Clone)]
-pub struct DataFoldNode {
+pub struct FoldNode {
     /// The underlying database instance for data storage and operations
     pub(super) db: Arc<Mutex<FoldDB>>,
     /// Configuration settings for this node
@@ -47,8 +47,8 @@ pub struct NetworkStatus {
     pub connected_nodes_count: usize,
 }
 
-impl DataFoldNode {
-    /// Creates a new DataFoldNode with the specified configuration.
+impl FoldNode {
+    /// Creates a new FoldNode with the specified configuration.
     ///
     /// Now fully async to support storage abstraction!
     pub async fn new(#[allow(unused_mut)] mut config: NodeConfig) -> FoldDbResult<Self> {
@@ -73,7 +73,7 @@ impl DataFoldNode {
 
         // Update config with public key as user_id if not set (for DynamoDB)
         #[cfg(feature = "aws-backend")]
-        if let crate::datafold_node::config::DatabaseConfig::Cloud(ref mut d) = config.database {
+        if let crate::fold_node::config::DatabaseConfig::Cloud(ref mut d) = config.database {
             if d.user_id.is_none() {
                 d.user_id = Some(public_key.clone());
             }
@@ -126,12 +126,12 @@ impl DataFoldNode {
         log_feature!(
             LogFeature::Database,
             info,
-            "DataFoldNode created successfully with schema system initialized"
+            "FoldNode created successfully with schema system initialized"
         );
         Ok(node)
     }
 
-    /// Creates a new DataFoldNode with a pre-created FoldDB instance.
+    /// Creates a new FoldNode with a pre-created FoldDB instance.
     ///
     /// This is useful when you need to control the storage backend (e.g., S3)
     /// before creating the node.
@@ -203,7 +203,7 @@ impl DataFoldNode {
         log_feature!(
             LogFeature::Database,
             info,
-            "DataFoldNode created successfully with pre-created database"
+            "FoldNode created successfully with pre-created database"
         );
         Ok(node)
     }
@@ -236,7 +236,7 @@ impl DataFoldNode {
             ));
         }
 
-        let client = crate::datafold_node::SchemaServiceClient::new(&schema_service_url);
+        let client = crate::fold_node::SchemaServiceClient::new(&schema_service_url);
         client.get_available_schemas().await
     }
 
@@ -256,7 +256,7 @@ impl DataFoldNode {
             ));
         }
 
-        let client = crate::datafold_node::SchemaServiceClient::new(&schema_service_url);
+        let client = crate::fold_node::SchemaServiceClient::new(&schema_service_url);
         client
             .add_schema(schema, std::collections::HashMap::new())
             .await
@@ -279,7 +279,7 @@ impl DataFoldNode {
             ));
         }
 
-        let client = crate::datafold_node::SchemaServiceClient::new(&schema_service_url);
+        let client = crate::fold_node::SchemaServiceClient::new(&schema_service_url);
         client.get_schema(schema_name).await
     }
 
@@ -429,7 +429,7 @@ impl DataFoldNode {
     }
 }
 
-impl DataFoldNode {
+impl FoldNode {
     /// Gets the node's private key.
     pub fn get_node_private_key(&self) -> &str {
         &self.private_key
@@ -446,13 +446,13 @@ impl DataFoldNode {
     }
 
     /// Get a schema service client for communicating with the schema service
-    pub fn get_schema_client(&self) -> crate::datafold_node::schema_client::SchemaServiceClient {
+    pub fn get_schema_client(&self) -> crate::fold_node::schema_client::SchemaServiceClient {
         let url = self
             .config
             .schema_service_url
             .as_deref()
             .unwrap_or("http://localhost:9002");
-        crate::datafold_node::schema_client::SchemaServiceClient::new(url)
+        crate::fold_node::schema_client::SchemaServiceClient::new(url)
     }
 
     /// Get the unified progress tracker
@@ -514,7 +514,7 @@ mod tests {
             .with_schema_service_url("test://mock")
             .with_identity(&pub_key, &priv_key);
 
-        let node = DataFoldNode::new(config).await.unwrap();
+        let node = FoldNode::new(config).await.unwrap();
 
         // Verify that private and public keys were generated (or rather, loaded correctly)
         let private_key = node.get_node_private_key();

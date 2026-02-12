@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use fold_db::datafold_node::DataFoldNode;
+use fold_db::fold_node::FoldNode;
 use fold_db::load_node_config;
 use fold_db::server::{start_embedded_server, EmbeddedServerHandle};
 use tauri::{Manager, State};
@@ -94,15 +94,15 @@ pub fn run() {
         )?;
       }
 
-      // Initialize DataFold server
+      // Initialize Fold server
       let server_port = 9001;
       
       // Start the server in a background task
       let app_handle = app.handle().clone();
       tauri::async_runtime::spawn(async move {
-        match start_datafold_server(server_port).await {
+        match start_fold_server(server_port).await {
           Ok(handle) => {
-            log::info!("DataFold server started successfully on port {}", server_port);
+            log::info!("Fold server started successfully on port {}", server_port);
             
             // Store the server handle in app state
             if let Some(state) = app_handle.try_state::<AppState>() {
@@ -111,7 +111,7 @@ pub fn run() {
             }
           }
           Err(e) => {
-            log::error!("Failed to start DataFold server: {}", e);
+            log::error!("Failed to start Fold server: {}", e);
             // Continue running the app even if server fails to start
             // This allows the user to see error messages
           }
@@ -124,7 +124,7 @@ pub fn run() {
         server_port,
       });
 
-      log::info!("DataFold desktop app initialized. Server will be available at http://localhost:{}", server_port);
+      log::info!("Fold desktop app initialized. Server will be available at http://localhost:{}", server_port);
 
       Ok(())
     })
@@ -132,8 +132,8 @@ pub fn run() {
     .expect("error while running tauri application");
 }
 
-/// Start the DataFold embedded server
-async fn start_datafold_server(port: u16) -> Result<EmbeddedServerHandle, String> {
+/// Start the Fold embedded server
+async fn start_fold_server(port: u16) -> Result<EmbeddedServerHandle, String> {
     // Determine the data directory for the app
     // Use a dedicated directory in the user's home folder
     let data_dir = dirs::home_dir()
@@ -165,7 +165,7 @@ async fn start_datafold_server(port: u16) -> Result<EmbeddedServerHandle, String
     }
 
     // Create the node (async)
-    let node = DataFoldNode::new(config).await
+    let node = FoldNode::new(config).await
         .map_err(|e| format!("Failed to create node: {}", e))?;
 
     // Start the embedded server

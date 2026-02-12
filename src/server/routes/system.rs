@@ -232,7 +232,7 @@ pub async fn reset_database(
 
             // Create processor
             let temp_processor_node = node_arc.read().await.clone();
-            let processor = crate::datafold_node::OperationProcessor::new(temp_processor_node);
+            let processor = crate::fold_node::OperationProcessor::new(temp_processor_node);
 
             // Step 2: Perform the storage reset
             if let Err(e) = processor.perform_database_reset(Some(&user_id_clone)).await {
@@ -511,7 +511,7 @@ pub async fn update_database_config(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::datafold_node::{DataFoldNode, NodeConfig};
+    use crate::fold_node::{FoldNode, NodeConfig};
     use crate::server::node_manager::{NodeManager, NodeManagerConfig};
     use actix_web::test;
     use std::sync::Arc;
@@ -522,7 +522,7 @@ mod tests {
         let config = NodeConfig::new(temp_dir.path().to_path_buf())
             .with_schema_service_url("test://mock")
             .with_identity(&keypair.public_key_base64(), &keypair.secret_key_base64());
-        let node = DataFoldNode::new(config.clone()).await.unwrap();
+        let node = FoldNode::new(config.clone()).await.unwrap();
 
         // Create NodeManager and pre-populate with test node
         let node_manager_config = NodeManagerConfig {

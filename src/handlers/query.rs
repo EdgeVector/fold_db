@@ -3,8 +3,8 @@
 //! Framework-agnostic handlers for query operations.
 //! These can be called by both HTTP server routes and Lambda handlers.
 
-use crate::datafold_node::node::DataFoldNode;
-use crate::datafold_node::OperationProcessor;
+use crate::fold_node::node::FoldNode;
+use crate::fold_node::OperationProcessor;
 use crate::handlers::response::{ApiResponse, HandlerError, HandlerResult};
 use crate::schema::types::operations::Query;
 use serde::{Deserialize, Serialize};
@@ -17,7 +17,7 @@ use ts_rs::TS;
 #[cfg_attr(feature = "ts-bindings", derive(TS))]
 #[cfg_attr(
     feature = "ts-bindings",
-    ts(export, export_to = "src/datafold_node/static-react/src/types/")
+    ts(export, export_to = "src/fold_node/static-react/src/types/")
 )]
 pub struct QueryResponse {
     /// Query results
@@ -29,7 +29,7 @@ pub struct QueryResponse {
 #[cfg_attr(feature = "ts-bindings", derive(TS))]
 #[cfg_attr(
     feature = "ts-bindings",
-    ts(export, export_to = "src/datafold_node/static-react/src/types/")
+    ts(export, export_to = "src/fold_node/static-react/src/types/")
 )]
 pub struct IndexSearchResponse {
     /// Search results
@@ -40,7 +40,7 @@ pub struct IndexSearchResponse {
 pub async fn execute_query(
     query: Query,
     user_hash: &str,
-    node: &DataFoldNode,
+    node: &FoldNode,
 ) -> HandlerResult<QueryResponse> {
     let processor = OperationProcessor::new(node.clone());
 
@@ -66,7 +66,7 @@ pub async fn execute_query(
 pub async fn native_index_search(
     query_string: &str,
     user_hash: &str,
-    node: &DataFoldNode,
+    node: &FoldNode,
 ) -> HandlerResult<IndexSearchResponse> {
     let processor = OperationProcessor::new(node.clone());
 

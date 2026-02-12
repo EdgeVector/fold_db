@@ -3,8 +3,8 @@
 //! Framework-agnostic handlers for schema operations.
 //! These can be called by both HTTP server routes and Lambda handlers.
 
-use crate::datafold_node::node::DataFoldNode;
-use crate::datafold_node::OperationProcessor;
+use crate::fold_node::node::FoldNode;
+use crate::fold_node::OperationProcessor;
 use crate::handlers::response::{ApiResponse, HandlerError, HandlerResult};
 use serde::{Deserialize, Serialize};
 
@@ -16,7 +16,7 @@ use ts_rs::TS;
 #[cfg_attr(feature = "ts-bindings", derive(TS))]
 #[cfg_attr(
     feature = "ts-bindings",
-    ts(export, export_to = "src/datafold_node/static-react/src/types/")
+    ts(export, export_to = "src/fold_node/static-react/src/types/")
 )]
 pub struct SchemaListResponse {
     /// List of schemas with their states
@@ -30,7 +30,7 @@ pub struct SchemaListResponse {
 #[cfg_attr(feature = "ts-bindings", derive(TS))]
 #[cfg_attr(
     feature = "ts-bindings",
-    ts(export, export_to = "src/datafold_node/static-react/src/types/")
+    ts(export, export_to = "src/fold_node/static-react/src/types/")
 )]
 pub struct SchemaResponse {
     /// The schema data
@@ -42,7 +42,7 @@ pub struct SchemaResponse {
 #[cfg_attr(feature = "ts-bindings", derive(TS))]
 #[cfg_attr(
     feature = "ts-bindings",
-    ts(export, export_to = "src/datafold_node/static-react/src/types/")
+    ts(export, export_to = "src/fold_node/static-react/src/types/")
 )]
 pub struct SchemaLoadResponse {
     /// Number of available schemas found
@@ -58,7 +58,7 @@ pub struct SchemaLoadResponse {
 #[cfg_attr(feature = "ts-bindings", derive(TS))]
 #[cfg_attr(
     feature = "ts-bindings",
-    ts(export, export_to = "src/datafold_node/static-react/src/types/")
+    ts(export, export_to = "src/fold_node/static-react/src/types/")
 )]
 pub struct SchemaApproveResponse {
     /// Backfill hash if transform, null otherwise
@@ -70,7 +70,7 @@ pub struct SchemaApproveResponse {
 #[cfg_attr(feature = "ts-bindings", derive(TS))]
 #[cfg_attr(
     feature = "ts-bindings",
-    ts(export, export_to = "src/datafold_node/static-react/src/types/")
+    ts(export, export_to = "src/fold_node/static-react/src/types/")
 )]
 pub struct SuccessResponse {
     pub success: bool,
@@ -79,7 +79,7 @@ pub struct SuccessResponse {
 /// List all schemas
 pub async fn list_schemas(
     user_hash: &str,
-    node: &DataFoldNode,
+    node: &FoldNode,
 ) -> HandlerResult<SchemaListResponse> {
     let processor = OperationProcessor::new(node.clone());
 
@@ -107,7 +107,7 @@ pub async fn list_schemas(
 /// List schemas with auto-load if empty (for ephemeral environments)
 pub async fn list_schemas_with_autoload(
     user_hash: &str,
-    node: &DataFoldNode,
+    node: &FoldNode,
 ) -> HandlerResult<SchemaListResponse> {
     let processor = OperationProcessor::new(node.clone());
 
@@ -149,7 +149,7 @@ pub async fn list_schemas_with_autoload(
 pub async fn get_schema(
     schema_name: &str,
     user_hash: &str,
-    node: &DataFoldNode,
+    node: &FoldNode,
 ) -> HandlerResult<SchemaResponse> {
     let processor = OperationProcessor::new(node.clone());
 
@@ -180,7 +180,7 @@ pub async fn get_schema(
 pub async fn approve_schema(
     schema_name: &str,
     user_hash: &str,
-    node: &DataFoldNode,
+    node: &FoldNode,
 ) -> HandlerResult<SchemaApproveResponse> {
     let processor = OperationProcessor::new(node.clone());
 
@@ -200,7 +200,7 @@ pub async fn approve_schema(
 pub async fn block_schema(
     schema_name: &str,
     user_hash: &str,
-    node: &DataFoldNode,
+    node: &FoldNode,
 ) -> HandlerResult<SuccessResponse> {
     let processor = OperationProcessor::new(node.clone());
 
@@ -219,7 +219,7 @@ pub async fn block_schema(
 /// Load schemas from standard directories
 pub async fn load_schemas(
     user_hash: &str,
-    node: &DataFoldNode,
+    node: &FoldNode,
 ) -> HandlerResult<SchemaLoadResponse> {
     let processor = OperationProcessor::new(node.clone());
 
@@ -244,7 +244,7 @@ pub async fn load_schemas(
 #[cfg_attr(feature = "ts-bindings", derive(TS))]
 #[cfg_attr(
     feature = "ts-bindings",
-    ts(export, export_to = "src/datafold_node/static-react/src/types/")
+    ts(export, export_to = "src/fold_node/static-react/src/types/")
 )]
 pub struct BackfillStatusResponse {
     /// Backfill information
@@ -255,7 +255,7 @@ pub struct BackfillStatusResponse {
 pub async fn get_backfill_status(
     backfill_hash: &str,
     user_hash: &str,
-    node: &DataFoldNode,
+    node: &FoldNode,
 ) -> HandlerResult<BackfillStatusResponse> {
     let processor = OperationProcessor::new(node.clone());
 

@@ -7,7 +7,7 @@ use std::path::PathBuf;
 
 pub use crate::storage::config::DatabaseConfig;
 
-/// Configuration for a DataFoldNode instance.
+/// Configuration for a FoldNode instance.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NodeConfig {
     /// Database storage configuration

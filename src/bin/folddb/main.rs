@@ -7,7 +7,7 @@ use clap::Parser;
 use cli::Cli;
 use error::CliError;
 use fold_db::{
-    datafold_node::{load_node_config, DataFoldNode, OperationProcessor},
+    fold_node::{load_node_config, FoldNode, OperationProcessor},
     storage::DatabaseConfig,
 };
 use output::OutputMode;
@@ -51,7 +51,7 @@ async fn main() {
         config.schema_service_url = Some(url.clone());
     }
 
-    let node = match DataFoldNode::new(config).await {
+    let node = match FoldNode::new(config).await {
         Ok(n) => n,
         Err(e) => {
             CliError::new(format!("Failed to create node: {}", e)).exit(json_mode);

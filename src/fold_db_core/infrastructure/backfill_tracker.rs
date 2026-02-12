@@ -38,7 +38,7 @@ fn current_timestamp_nanos() -> u128 {
     feature = "ts-bindings",
     ts(
         export,
-        export_to = "bindings/src/datafold_node/static-react/src/types/generated.ts"
+        export_to = "bindings/src/fold_node/static-react/src/types/generated.ts"
     )
 )]
 pub enum BackfillStatus {
@@ -57,7 +57,7 @@ pub enum BackfillStatus {
     feature = "ts-bindings",
     ts(
         export,
-        export_to = "bindings/src/datafold_node/static-react/src/types/generated.ts"
+        export_to = "bindings/src/fold_node/static-react/src/types/generated.ts"
     )
 )]
 pub struct BackfillInfo {
@@ -98,7 +98,7 @@ pub struct BackfillInfo {
     feature = "ts-bindings",
     ts(
         export,
-        export_to = "bindings/src/datafold_node/static-react/src/types/generated.ts"
+        export_to = "bindings/src/fold_node/static-react/src/types/generated.ts"
     )
 )]
 pub struct BackfillStatistics {

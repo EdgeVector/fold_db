@@ -74,7 +74,7 @@ fn validate_folder(path: &Path) -> Result<(), HttpResponse> {
 fn spawn_file_ingestion_tasks(
     files_with_progress: impl IntoIterator<Item = (std::path::PathBuf, String)>,
     progress_tracker: &ProgressTracker,
-    node_arc: &std::sync::Arc<tokio::sync::RwLock<crate::datafold_node::DataFoldNode>>,
+    node_arc: &std::sync::Arc<tokio::sync::RwLock<crate::fold_node::FoldNode>>,
     user_id: &str,
     auto_execute: bool,
     ingestion_service: Arc<IngestionService>,
@@ -696,7 +696,7 @@ async fn process_single_file_via_smart_folder(
     file_path: &std::path::Path,
     progress_id: &str,
     progress_service: &ProgressService,
-    node_arc: &std::sync::Arc<tokio::sync::RwLock<crate::datafold_node::DataFoldNode>>,
+    node_arc: &std::sync::Arc<tokio::sync::RwLock<crate::fold_node::FoldNode>>,
     auto_execute: bool,
     service: &IngestionService,
 ) -> Result<(), String> {

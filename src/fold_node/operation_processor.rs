@@ -5,9 +5,9 @@ use serde_json::Value;
 use std::collections::HashMap;
 
 use super::response_types::QueryResultMap;
-use super::DataFoldNode;
-use crate::datafold_node::config::DatabaseConfig;
-use crate::datafold_node::NodeConfig;
+use super::FoldNode;
+use crate::fold_node::config::DatabaseConfig;
+use crate::fold_node::NodeConfig;
 use crate::db_operations::IndexResult;
 use crate::fold_db_core::infrastructure::backfill_tracker::{
     BackfillInfo, BackfillStatistics, BackfillStatus,
@@ -24,12 +24,12 @@ use std::io::Write;
 /// This eliminates code duplication across HTTP routes, TCP server, CLI, and direct API usage.
 /// All operation execution goes through this single processor to ensure consistent behavior.
 pub struct OperationProcessor {
-    node: DataFoldNode,
+    node: FoldNode,
 }
 
 impl OperationProcessor {
-    /// Creates a new operation processor with a DataFoldNode instance.
-    pub fn new(node: DataFoldNode) -> Self {
+    /// Creates a new operation processor with a FoldNode instance.
+    pub fn new(node: FoldNode) -> Self {
         Self { node }
     }
 
@@ -800,9 +800,9 @@ impl OperationProcessor {
         max_iterations: usize,
     ) -> FoldDbResult<(
         String,
-        Vec<crate::datafold_node::llm_query::types::ToolCallRecord>,
+        Vec<crate::fold_node::llm_query::types::ToolCallRecord>,
     )> {
-        use crate::datafold_node::llm_query::service::LlmQueryService;
+        use crate::fold_node::llm_query::service::LlmQueryService;
         use crate::ingestion::config::IngestionConfig;
 
         let config = IngestionConfig::from_env_allow_empty();
@@ -863,17 +863,17 @@ impl OperationProcessor {
 mod tests {
     #[tokio::test]
     async fn test_operation_processor_creation() {
-        // This test would require a mock DataFoldNode
+        // This test would require a mock FoldNode
         // For now, just test that the struct can be created
-        // In a real test, you'd create a test DataFoldNode instance
+        // In a real test, you'd create a test FoldNode instance
     }
 
     #[tokio::test]
     async fn test_logging_methods_signature() {
         // This test ensures the logging methods are available on OperationProcessor
-        // without needing to instantiate a full DataFoldNode (which is complex).
+        // without needing to instantiate a full FoldNode (which is complex).
         // It relies on the fact that if this compiles, the methods exist.
-        async fn check_methods(processor: &crate::datafold_node::OperationProcessor) {
+        async fn check_methods(processor: &crate::fold_node::OperationProcessor) {
             let _ = processor.list_logs(None, None).await;
             let _ = processor.get_log_config().await;
             let _ = processor.get_log_features().await;

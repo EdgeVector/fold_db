@@ -1,7 +1,7 @@
 use crate::cli::{BackfillCommand, TransformCommand};
 use crate::commands::CommandOutput;
 use crate::error::CliError;
-use fold_db::datafold_node::OperationProcessor;
+use fold_db::fold_node::OperationProcessor;
 
 pub async fn run(
     action: &TransformCommand,

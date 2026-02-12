@@ -1,4 +1,4 @@
-use super::DataFoldNode;
+use super::FoldNode;
 use crate::error::{FoldDbError, FoldDbResult};
 use serde::Serialize;
 
@@ -9,7 +9,7 @@ pub struct TransformQueueInfo {
     pub is_empty: bool,
 }
 
-impl DataFoldNode {
+impl FoldNode {
     /// Add a transform to the queue
     pub async fn add_transform_to_queue(&self, transform_id: &str) -> FoldDbResult<()> {
         let db = self.db.lock().await;
@@ -90,7 +90,7 @@ impl DataFoldNode {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::datafold_node::config::NodeConfig;
+    use crate::fold_node::config::NodeConfig;
 
     use tempfile::tempdir;
 
@@ -98,7 +98,7 @@ mod tests {
     async fn queue_info_works() {
         let dir = tempdir().unwrap();
         let config = NodeConfig {
-            database: crate::datafold_node::config::DatabaseConfig::Local {
+            database: crate::fold_node::config::DatabaseConfig::Local {
                 path: dir.path().to_path_buf(),
             },
             default_trust_distance: 1,
@@ -116,7 +116,7 @@ mod tests {
                     .secret_key_base64(),
             ),
         };
-        let node = DataFoldNode::new(config).await.unwrap();
+        let node = FoldNode::new(config).await.unwrap();
         let info = node.get_transform_queue_info().await.unwrap();
         assert!(info.is_empty);
         assert_eq!(info.length, 0);

@@ -3,8 +3,8 @@
 //! Framework-agnostic handlers for logging operations.
 //! These can be called by both HTTP server routes and Lambda handlers.
 
-use crate::datafold_node::node::DataFoldNode;
-use crate::datafold_node::OperationProcessor;
+use crate::fold_node::node::FoldNode;
+use crate::fold_node::OperationProcessor;
 use crate::handlers::response::{ApiResponse, HandlerError, HandlerResult};
 use crate::logging::core::{LogEntry, Logger};
 use serde::{Deserialize, Serialize};
@@ -239,7 +239,7 @@ pub async fn test_logger<L: Logger>(
 pub async fn list_logs(
     since: Option<i64>,
     user_hash: &str,
-    node: &DataFoldNode,
+    node: &FoldNode,
 ) -> HandlerResult<LogListResponse> {
     let processor = OperationProcessor::new(node.clone());
 
@@ -266,7 +266,7 @@ pub async fn list_logs(
 /// Get log configuration
 pub async fn get_log_config(
     user_hash: &str,
-    node: &DataFoldNode,
+    node: &FoldNode,
 ) -> HandlerResult<LogConfigResponse> {
     let processor = OperationProcessor::new(node.clone());
 
@@ -294,7 +294,7 @@ pub async fn get_log_config(
 /// Get available log features
 pub async fn get_log_features(
     user_hash: &str,
-    node: &DataFoldNode,
+    node: &FoldNode,
 ) -> HandlerResult<LogFeaturesResponse> {
     let processor = OperationProcessor::new(node.clone());
     let available_levels = vec![
@@ -341,7 +341,7 @@ pub async fn update_log_feature_level(
     feature: &str,
     level: &str,
     user_hash: &str,
-    node: &DataFoldNode,
+    node: &FoldNode,
 ) -> HandlerResult<SuccessResponse> {
     let processor = OperationProcessor::new(node.clone());
 
@@ -364,7 +364,7 @@ pub async fn update_log_feature_level(
 pub async fn reload_log_config(
     config_path: &str,
     user_hash: &str,
-    node: &DataFoldNode,
+    node: &FoldNode,
 ) -> HandlerResult<SuccessResponse> {
     let processor = OperationProcessor::new(node.clone());
 

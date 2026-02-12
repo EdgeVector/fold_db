@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**Datafold** is a distributed, schema-based database platform with AI-powered data ingestion, designed for personal data sovereignty. It runs both locally (using Sled) and as a serverless AWS application (using DynamoDB + S3).
+**FoldDB** is a distributed, schema-based database platform with AI-powered data ingestion, designed for personal data sovereignty. It runs both locally (using Sled) and as a serverless AWS application (using DynamoDB + S3).
 
 ## Build & Test Commands
 
@@ -78,7 +78,7 @@ Handlers in `src/handlers/` are framework-agnostic, shared between HTTP server a
 pub async fn handle_query(
     query: Query,
     user_hash: &str,
-    node: &DataFoldNode,
+    node: &FoldNode,
 ) -> HandlerResult<QueryResponse>
 ```
 
@@ -125,7 +125,7 @@ log_feature!(LogFeature::HttpServer, info, "Server started on {}", addr);
 
 | File | Purpose |
 |------|---------|
-| `src/datafold_node/node.rs` | Main DataFoldNode - combines DB, security, config |
+| `src/fold_node/node.rs` | Main FoldNode - combines DB, security, config |
 | `src/fold_db_core/fold_db.rs` | Core database logic |
 | `src/storage/traits.rs` | `KvStore` trait abstraction for storage backends |
 | `src/handlers/mod.rs` | Shared handler layer for HTTP/Lambda |

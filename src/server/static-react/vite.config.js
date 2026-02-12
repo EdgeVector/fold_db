@@ -11,7 +11,7 @@ export default defineConfig({
       // Import TypeScript bindings directly from where ts-rs generates them
       "@generated": path.resolve(
         __dirname,
-        "../../../bindings/src/datafold_node/static-react/src/types",
+        "../../../bindings/src/fold_node/static-react/src/types",
       ),
     },
   },

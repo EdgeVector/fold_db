@@ -3,8 +3,8 @@
 //! Framework-agnostic handlers for mutation operations.
 //! These can be called by both HTTP server routes and Lambda handlers.
 
-use crate::datafold_node::node::DataFoldNode;
-use crate::datafold_node::OperationProcessor;
+use crate::fold_node::node::FoldNode;
+use crate::fold_node::OperationProcessor;
 use crate::handlers::response::{ApiResponse, HandlerError, HandlerResult};
 use crate::schema::types::key_value::KeyValue;
 use crate::schema::types::operations::{Mutation, MutationType};
@@ -24,7 +24,7 @@ const DEFAULT_BACKGROUND_TASK_TIMEOUT: Duration = Duration::from_secs(5);
 #[cfg_attr(feature = "ts-bindings", derive(TS))]
 #[cfg_attr(
     feature = "ts-bindings",
-    ts(export, export_to = "src/datafold_node/static-react/src/types/")
+    ts(export, export_to = "src/fold_node/static-react/src/types/")
 )]
 pub struct MutationResponse {
     /// The mutation IDs that were executed
@@ -38,7 +38,7 @@ pub struct MutationResponse {
 #[cfg_attr(feature = "ts-bindings", derive(TS))]
 #[cfg_attr(
     feature = "ts-bindings",
-    ts(export, export_to = "src/datafold_node/static-react/src/types/")
+    ts(export, export_to = "src/fold_node/static-react/src/types/")
 )]
 pub struct SingleMutationResponse {
     /// The mutation ID
@@ -51,7 +51,7 @@ pub struct SingleMutationResponse {
 pub async fn execute_mutation(
     mutation: Mutation,
     user_hash: &str,
-    node: &DataFoldNode,
+    node: &FoldNode,
 ) -> HandlerResult<MutationResponse> {
     execute_mutations_batch(vec![mutation], user_hash, node).await
 }
@@ -63,7 +63,7 @@ pub async fn execute_mutation_from_components(
     key_value: KeyValue,
     mutation_type: MutationType,
     user_hash: &str,
-    node: &DataFoldNode,
+    node: &FoldNode,
 ) -> HandlerResult<SingleMutationResponse> {
     let processor = OperationProcessor::new(node.clone());
 
@@ -86,7 +86,7 @@ pub async fn execute_mutation_from_components(
 pub async fn execute_mutations_batch(
     mutations: Vec<Mutation>,
     user_hash: &str,
-    node: &DataFoldNode,
+    node: &FoldNode,
 ) -> HandlerResult<MutationResponse> {
     let count = mutations.len();
 
@@ -112,7 +112,7 @@ pub async fn execute_mutations_batch(
 pub async fn execute_mutations_batch_from_json(
     mutations_data: Vec<Value>,
     user_hash: &str,
-    node: &DataFoldNode,
+    node: &FoldNode,
 ) -> HandlerResult<MutationResponse> {
     let processor = OperationProcessor::new(node.clone());
     let count = mutations_data.len();

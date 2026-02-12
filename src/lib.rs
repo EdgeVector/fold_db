@@ -1,12 +1,12 @@
-//! # DataFold Node Library
+//! # Fold Node Library
 //!
-//! This library implements the core functionality of the DataFold distributed data platform.
+//! This library implements the core functionality of the Fold distributed data platform.
 //! It provides a schema-based data storage and query system with distributed networking capabilities.
 //!
 //! ## Core Components
 //!
 //! * `atom` - Atomic data storage units that form the foundation of the database
-//! * `datafold_node` - Node implementation with TCP server and configuration
+//! * `fold_node` - Node implementation with TCP server and configuration
 //! * `db_operations` - Database operation handlers
 //! * `error` - Error types and handling
 //! * `fees` - Payment and fee calculation system
@@ -16,7 +16,7 @@
 //!
 //! ## Architecture
 //!
-//! DataFold uses a distributed architecture where each node can store and process data
+//! Fold uses a distributed architecture where each node can store and process data
 //! according to defined schemas. Nodes can communicate with each other to share and
 //! replicate data, with permissions controlling access to different schemas and operations.
 //!
@@ -28,7 +28,7 @@ pub mod atom;
 pub mod config_utils;
 pub mod constants;
 pub mod crypto;
-pub mod datafold_node;
+pub mod fold_node;
 pub mod db_operations;
 pub mod error;
 pub mod fold_db_core;
@@ -46,9 +46,9 @@ pub mod transform;
 pub mod utils;
 
 // Re-export main types for convenience
-pub use datafold_node::config::load_node_config;
-pub use datafold_node::config::NodeConfig;
-pub use datafold_node::DataFoldNode;
+pub use fold_node::config::load_node_config;
+pub use fold_node::config::NodeConfig;
+pub use fold_node::FoldNode;
 pub use error::{FoldDbError, FoldDbResult};
 pub use fold_db_core::FoldDB;
 

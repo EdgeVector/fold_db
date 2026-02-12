@@ -1,6 +1,6 @@
 use crate::commands::CommandOutput;
 use crate::error::CliError;
-use fold_db::datafold_node::OperationProcessor;
+use fold_db::fold_node::OperationProcessor;
 use fold_db::schema::types::field::HashRangeFilter;
 use fold_db::schema::types::operations::Query;
 
