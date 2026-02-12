@@ -11,7 +11,7 @@ pub mod structural_prefixes {
     /// General word-based search entries: `word:term`
     pub const WORD: &str = "word:";
 
-    /// Reverse lookup entries for cleanup: `record:schema:field:key_value`
+    /// Record-level index entries: `record:schema:field:key_value`
     pub const RECORD: &str = "record:";
 
     /// Field name index entries: `field:fieldname`

@@ -130,13 +130,6 @@ impl IndexOrchestrator {
 
         // If keyword extractor is available, use LLM-powered extraction
         if let Some(extractor) = keyword_extractor {
-            // Delete old index entries before reindexing
-            if let Err(e) = native_index_mgr
-                .delete_record_index(schema_name, &key_value)
-                .await
-            {
-                warn!("Failed to delete old index entries: {}", e);
-            }
             // Merge all rows into a single HashMap for one LLM call
             let mut merged_fields: HashMap<String, Value> = HashMap::new();
             for row in data {

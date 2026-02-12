@@ -14,9 +14,6 @@ const EXCLUDED_FIELDS: &[&str] = &["uuid", "id", "password", "token"];
 
 /// Index entry prefix for index storage
 const INDEX_ENTRY_PREFIX: &str = "idx:";
-/// Reverse mapping prefix for cleanup on record deletion
-const REVERSE_INDEX_PREFIX: &str = "rev:";
-
 /// Compact index entry - reference only, no value duplication
 ///
 /// This is ~89% smaller than IndexResult because it doesn't store the value.
@@ -103,30 +100,6 @@ impl IndexEntry {
             (None, None) => "empty".to_string(),
         }
     }
-}
-
-/// Generate reverse index key for cleanup
-/// Format: rev:{schema}:{key_hash}:{term}
-fn reverse_index_key(schema: &str, key: &KeyValue, term: &str) -> String {
-    let key_hash = match (&key.hash, &key.range) {
-        (Some(h), Some(r)) => format!("{}_{}", h, r),
-        (Some(h), None) => h.clone(),
-        (None, Some(r)) => format!("_{}", r),
-        (None, None) => "empty".to_string(),
-    };
-    format!("{}{}:{}:{}", REVERSE_INDEX_PREFIX, schema, key_hash, term)
-}
-
-/// Generate prefix for reverse index lookup
-/// Format: rev:{schema}:{key_hash}:
-fn reverse_index_prefix(schema: &str, key: &KeyValue) -> String {
-    let key_hash = match (&key.hash, &key.range) {
-        (Some(h), Some(r)) => format!("{}_{}", h, r),
-        (Some(h), None) => h.clone(),
-        (None, Some(r)) => format!("_{}", r),
-        (None, None) => "empty".to_string(),
-    };
-    format!("{}{}:{}:", REVERSE_INDEX_PREFIX, schema, key_hash)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
@@ -1110,7 +1083,6 @@ impl NativeIndexManager {
         }
 
         let mut index_entries: Vec<(Vec<u8>, Vec<u8>)> = Vec::new();
-        let mut reverse_entries: Vec<(Vec<u8>, Vec<u8>)> = Vec::new();
 
         for keyword in &keywords {
             let entry = IndexEntry::new(
@@ -1127,18 +1099,13 @@ impl NativeIndexManager {
                 SchemaError::InvalidData(format!("Failed to serialize IndexEntry: {}", e))
             })?;
 
-            let rev_key = reverse_index_key(schema_name, key_value, &term);
-            reverse_entries.push((rev_key.into_bytes(), storage_key.as_bytes().to_vec()));
             index_entries.push((storage_key.into_bytes(), entry_bytes));
         }
 
         // Write all entries
         if let Some(ref store) = self.store {
-            let mut all_entries = index_entries;
-            all_entries.extend(reverse_entries);
-
             let mut seen_keys = std::collections::HashSet::new();
-            let deduped_entries: Vec<(Vec<u8>, Vec<u8>)> = all_entries
+            let deduped_entries: Vec<(Vec<u8>, Vec<u8>)> = index_entries
                 .into_iter()
                 .filter(|(key, _)| seen_keys.insert(key.clone()))
                 .collect();
@@ -1149,9 +1116,6 @@ impl NativeIndexManager {
         } else if let Some(ref tree) = self.tree {
             let mut batch = sled::Batch::default();
             for (key, value) in index_entries {
-                batch.insert(key, value);
-            }
-            for (key, value) in reverse_entries {
                 batch.insert(key, value);
             }
             tree.apply_batch(batch)
@@ -1178,9 +1142,7 @@ impl NativeIndexManager {
             ));
         }
 
-        // Collect all index entries and reverse mappings
         let mut index_entries: Vec<(Vec<u8>, Vec<u8>)> = Vec::new();
-        let mut reverse_entries: Vec<(Vec<u8>, Vec<u8>)> = Vec::new();
 
         for (schema_name, field_name, key_value, value, classifications) in index_operations {
             if !Self::should_index_field(field_name) {
@@ -1206,16 +1168,10 @@ impl NativeIndexManager {
                     classification.clone(),
                 );
 
-                // Create storage key and serialize entry
                 let storage_key = entry.storage_key(term);
                 let entry_bytes = serde_json::to_vec(&entry).map_err(|e| {
                     SchemaError::InvalidData(format!("Failed to serialize IndexEntry: {}", e))
                 })?;
-
-                // Create reverse mapping for cleanup
-                let rev_key = reverse_index_key(schema_name, key_value, term);
-                // Store minimal data - just the storage key for deletion
-                reverse_entries.push((rev_key.into_bytes(), storage_key.as_bytes().to_vec()));
 
                 index_entries.push((storage_key.into_bytes(), entry_bytes));
             }
@@ -1232,29 +1188,20 @@ impl NativeIndexManager {
             let field_entry_bytes = serde_json::to_vec(&field_entry).map_err(|e| {
                 SchemaError::InvalidData(format!("Failed to serialize field IndexEntry: {}", e))
             })?;
-            index_entries.push((field_storage_key.clone().into_bytes(), field_entry_bytes));
-
-            let field_rev_key =
-                reverse_index_key(schema_name, key_value, &format!("field:{}", field_term));
-            reverse_entries.push((field_rev_key.into_bytes(), field_storage_key.into_bytes()));
+            index_entries.push((field_storage_key.into_bytes(), field_entry_bytes));
         }
 
         log::info!(
-            "[NativeIndex] batch_index: Writing {} index entries and {} reverse mappings",
-            index_entries.len(),
-            reverse_entries.len()
+            "[NativeIndex] batch_index: Writing {} index entries",
+            index_entries.len()
         );
 
         // Write all entries using batch operations
         if let Some(ref store) = self.store {
-            // Combine index entries and reverse entries
-            let mut all_entries = index_entries;
-            all_entries.extend(reverse_entries);
-
             // Deduplicate by key - DynamoDB batch_write_item doesn't allow duplicate keys
             // This can happen when entries are created within the same millisecond
             let mut seen_keys = std::collections::HashSet::new();
-            let deduped_entries: Vec<(Vec<u8>, Vec<u8>)> = all_entries
+            let deduped_entries: Vec<(Vec<u8>, Vec<u8>)> = index_entries
                 .into_iter()
                 .filter(|(key, _)| seen_keys.insert(key.clone()))
                 .collect();
@@ -1270,9 +1217,6 @@ impl NativeIndexManager {
         } else if let Some(ref tree) = self.tree {
             let mut batch = sled::Batch::default();
             for (key, value) in index_entries {
-                batch.insert(key, value);
-            }
-            for (key, value) in reverse_entries {
                 batch.insert(key, value);
             }
             tree.apply_batch(batch)
@@ -1595,79 +1539,6 @@ impl NativeIndexManager {
         Ok(entries)
     }
 
-    /// Delete all index entries for a record using the reverse mapping.
-    pub async fn delete_record_index(
-        &self,
-        schema_name: &str,
-        key_value: &KeyValue,
-    ) -> Result<(), SchemaError> {
-        // Find all reverse mappings for this record
-        let rev_prefix = reverse_index_prefix(schema_name, key_value);
-
-        log::debug!(
-            "[NativeIndex] delete_record_index: Scanning reverse prefix '{}'",
-            rev_prefix
-        );
-
-        let reverse_entries = if let Some(ref store) = self.store {
-            store
-                .scan_prefix(rev_prefix.as_bytes())
-                .await
-                .map_err(|e| {
-                    SchemaError::InvalidData(format!("Failed to scan reverse prefix: {}", e))
-                })?
-        } else if let Some(ref tree) = self.tree {
-            tree.scan_prefix(rev_prefix.as_bytes())
-                .filter_map(|r| r.ok())
-                .map(|(k, v)| (k.to_vec(), v.to_vec()))
-                .collect()
-        } else {
-            return Err(SchemaError::InvalidData(
-                "NativeIndexManager not properly initialized".to_string(),
-            ));
-        };
-
-        if reverse_entries.is_empty() {
-            log::debug!(
-                "[NativeIndex] delete_record_index: No entries to delete for {:?}:{}",
-                schema_name,
-                key_value
-            );
-            return Ok(());
-        }
-
-        // Collect all keys to delete (index entries + reverse mappings)
-        let mut keys_to_delete: Vec<Vec<u8>> = Vec::new();
-
-        for (rev_key, index_key) in &reverse_entries {
-            // The value of reverse entry is the index key to delete
-            keys_to_delete.push(index_key.clone());
-            // Also delete the reverse entry itself
-            keys_to_delete.push(rev_key.clone());
-        }
-
-        log::info!(
-            "[NativeIndex] delete_record_index: Deleting {} entries",
-            keys_to_delete.len()
-        );
-
-        // Batch delete all keys
-        if let Some(ref store) = self.store {
-            store.batch_delete(keys_to_delete).await.map_err(|e| {
-                SchemaError::InvalidData(format!("Failed to batch delete index entries: {}", e))
-            })?;
-        } else if let Some(ref tree) = self.tree {
-            let mut batch = sled::Batch::default();
-            for key in keys_to_delete {
-                batch.remove(key);
-            }
-            tree.apply_batch(batch)
-                .map_err(|e| SchemaError::InvalidData(format!("Batch delete failed: {}", e)))?;
-        }
-
-        Ok(())
-    }
-
     /// Convert IndexEntry results to IndexResult for backward compatibility
     pub fn entries_to_results(&self, entries: Vec<IndexEntry>) -> Vec<IndexResult> {
         entries
@@ -1914,65 +1785,6 @@ mod tests {
             .await
             .expect("search failed");
         assert_eq!(results.len(), 3, "Should find 3 results for tweet");
-    }
-
-    #[tokio::test]
-    async fn test_append_only_delete_record() {
-        let db = sled::Config::new().temporary(true).open().unwrap();
-        let store = std::sync::Arc::new(SledNamespacedStore::new(db));
-        let kv_store = store.open_namespace("native_index").await.unwrap();
-
-        let manager = NativeIndexManager::new_with_store(kv_store);
-
-        let key1 = KeyValue::new(Some("key1".to_string()), None);
-        let key2 = KeyValue::new(Some("key2".to_string()), None);
-
-        let operations = vec![
-            (
-                "TestSchema".to_string(),
-                "content".to_string(),
-                key1.clone(),
-                serde_json::Value::String("hello world".to_string()),
-                None,
-            ),
-            (
-                "TestSchema".to_string(),
-                "content".to_string(),
-                key2.clone(),
-                serde_json::Value::String("hello universe".to_string()),
-                None,
-            ),
-        ];
-
-        manager
-            .batch_index(&operations)
-            .await
-            .expect("append-only indexing failed");
-
-        // Verify both are indexed
-        let results = manager
-            .search("hello")
-            .await
-            .expect("search failed");
-        assert_eq!(results.len(), 2, "Should find 2 results for hello");
-
-        // Delete first record's index
-        manager
-            .delete_record_index("TestSchema", &key1)
-            .await
-            .expect("delete failed");
-
-        // Verify only one remains
-        let results = manager
-            .search("hello")
-            .await
-            .expect("search failed");
-        assert_eq!(
-            results.len(),
-            1,
-            "Should find 1 result for hello after deletion"
-        );
-        assert_eq!(results[0].key, key2);
     }
 
     #[tokio::test]
