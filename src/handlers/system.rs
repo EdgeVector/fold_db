@@ -289,6 +289,94 @@ pub async fn reset_database(
     ))
 }
 
+/// Reset database synchronously (awaits completion before returning)
+///
+/// Same as `reset_database()` but runs the reset inline instead of spawning a
+/// background task. Use this in Lambda where `tokio::spawn` tasks get frozen
+/// after the handler responds.
+pub async fn reset_database_sync(
+    request: ResetDatabaseRequest,
+    user_hash: &str,
+    tracker: &ProgressTracker,
+    node: &FoldNode,
+) -> HandlerResult<ResetDatabaseResponse> {
+    // Require explicit confirmation
+    if !request.confirm {
+        return Err(HandlerError::BadRequest(
+            "Reset confirmation required. Set 'confirm' to true.".to_string(),
+        ));
+    }
+
+    // Generate a unique job ID
+    let job_id = format!("reset_{}", uuid::Uuid::new_v4());
+
+    // Create the job entry
+    let mut job = Job::new(job_id.clone(), JobType::Other("database_reset".to_string()));
+    job = job.with_user(user_hash.to_string());
+    job.update_progress(5, "Initializing database reset...".to_string());
+
+    // Save initial job state
+    tracker
+        .save(&job)
+        .await
+        .map_err(|e| HandlerError::Internal(format!("Failed to create reset job: {}", e)))?;
+
+    // Run reset inline (no tokio::spawn)
+    let result = crate::logging::core::run_with_user(user_hash, {
+        let job_id = job_id.clone();
+        let tracker = tracker.clone();
+        let node = node.clone();
+        let user_hash = user_hash.to_string();
+        async move {
+            // Update progress
+            if let Ok(Some(mut job)) = tracker.load(&job_id).await {
+                job.update_progress(10, "Clearing user data from storage...".to_string());
+                let _ = tracker.save(&job).await;
+            }
+
+            let processor = OperationProcessor::new(node);
+
+            // Perform the storage reset
+            if let Err(e) = processor
+                .perform_database_reset(Some(&user_hash))
+                .await
+            {
+                log::error!("Database reset failed: {}", e);
+                if let Ok(Some(mut job)) = tracker.load(&job_id).await {
+                    job.fail(format!("Database reset failed: {}", e));
+                    let _ = tracker.save(&job).await;
+                }
+                return Err(format!("Database reset failed: {}", e));
+            }
+
+            // Mark job as complete
+            if let Ok(Some(mut job)) = tracker.load(&job_id).await {
+                job.complete(Some(serde_json::json!({
+                    "user_id": user_hash,
+                    "message": "Database reset successfully. All data has been cleared."
+                })));
+                let _ = tracker.save(&job).await;
+            }
+
+            Ok(())
+        }
+    })
+    .await;
+
+    match result {
+        Ok(()) => Ok(ApiResponse::success_with_user(
+            ResetDatabaseResponse {
+                success: true,
+                message: "Database reset completed successfully. All data has been cleared."
+                    .to_string(),
+                job_id: Some(job_id),
+            },
+            user_hash,
+        )),
+        Err(e) => Err(HandlerError::Internal(e)),
+    }
+}
+
 /// Reset schema service
 pub async fn reset_schema_service(
     request: ResetDatabaseRequest,
