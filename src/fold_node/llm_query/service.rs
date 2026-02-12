@@ -466,36 +466,20 @@ impl LlmQueryService {
         let mut all_results = Vec::new();
         if let Some(native_index_mgr) = db_ops.native_index_manager() {
             for term in &search_terms {
-                if native_index_mgr.is_async() {
-                    match native_index_mgr
-                        .search_all_classifications_async(term)
-                        .await
-                    {
-                        Ok(mut results) => {
-                            log::debug!(
-                                "LLM Query: Term '{}' returned {} results (async)",
-                                term,
-                                results.len()
-                            );
-                            all_results.append(&mut results);
-                        }
-                        Err(e) => {
-                            log::warn!("Native index search failed for term '{}': {}", term, e);
-                        }
+                match native_index_mgr
+                    .search_all_classifications(term)
+                    .await
+                {
+                    Ok(mut results) => {
+                        log::debug!(
+                            "LLM Query: Term '{}' returned {} results",
+                            term,
+                            results.len()
+                        );
+                        all_results.append(&mut results);
                     }
-                } else {
-                    match native_index_mgr.search_all_classifications(term) {
-                        Ok(mut results) => {
-                            log::debug!(
-                                "LLM Query: Term '{}' returned {} results (sync)",
-                                term,
-                                results.len()
-                            );
-                            all_results.append(&mut results);
-                        }
-                        Err(e) => {
-                            log::warn!("Native index search failed for term '{}': {}", term, e);
-                        }
+                    Err(e) => {
+                        log::warn!("Native index search failed for term '{}': {}", term, e);
                     }
                 }
             }
@@ -530,36 +514,20 @@ impl LlmQueryService {
         let mut all_results = Vec::new();
         if let Some(native_index_mgr) = db_ops.native_index_manager() {
             for term in &search_terms {
-                if native_index_mgr.is_async() {
-                    match native_index_mgr
-                        .search_all_classifications_async(term)
-                        .await
-                    {
-                        Ok(mut results) => {
-                            log::debug!(
-                                "LLM Query: Term '{}' returned {} results (async)",
-                                term,
-                                results.len()
-                            );
-                            all_results.append(&mut results);
-                        }
-                        Err(e) => {
-                            log::warn!("Native index search failed for term '{}': {}", term, e);
-                        }
+                match native_index_mgr
+                    .search_all_classifications(term)
+                    .await
+                {
+                    Ok(mut results) => {
+                        log::debug!(
+                            "LLM Query: Term '{}' returned {} results",
+                            term,
+                            results.len()
+                        );
+                        all_results.append(&mut results);
                     }
-                } else {
-                    match native_index_mgr.search_all_classifications(term) {
-                        Ok(mut results) => {
-                            log::debug!(
-                                "LLM Query: Term '{}' returned {} results (sync)",
-                                term,
-                                results.len()
-                            );
-                            all_results.append(&mut results);
-                        }
-                        Err(e) => {
-                            log::warn!("Native index search failed for term '{}': {}", term, e);
-                        }
+                    Err(e) => {
+                        log::warn!("Native index search failed for term '{}': {}", term, e);
                     }
                 }
             }

@@ -13,6 +13,6 @@ mod transform_operations;
 // Re-export the main DbOperations struct and error utilities
 pub use core::DbOperations;
 pub use error_utils::ErrorUtils;
-pub use native_index::{BatchIndexOperation, ClassificationType, IndexResult, NativeIndexManager};
+pub use native_index::{BatchIndexOperation, IndexResult, NativeIndexManager};
 pub use sync_wrapper::DbOperationsSync;
 pub use atom_operations::MoleculeData;

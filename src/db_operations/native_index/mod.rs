@@ -1,4 +1,3 @@
-mod classification;
 mod extraction;
 mod indexing;
 mod search;
@@ -7,7 +6,6 @@ mod types;
 #[cfg(test)]
 mod tests;
 
-pub use classification::ClassificationType;
 pub use types::{BatchIndexOperation, IndexEntry, IndexResult};
 
 use crate::storage::traits::KvStore;
