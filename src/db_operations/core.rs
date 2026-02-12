@@ -27,9 +27,6 @@ pub struct DbOperations {
     public_keys_store: Arc<TypedKvStore<dyn KvStore>>,
     transform_queue_store: Arc<TypedKvStore<dyn KvStore>>,
 
-    /// Raw KV store for native index (doesn't need typed operations)
-    _native_index_store: Arc<dyn KvStore>,
-
     native_index_manager: Option<NativeIndexManager>,
 
     /// Optional reference to underlying orchestrator tree for TransformOrchestrator
@@ -66,7 +63,7 @@ impl DbOperations {
         let transform_queue_store = Arc::new(TypedKvStore::new(transform_queue_kv));
 
         // Create native index manager with the store
-        let native_index_manager = NativeIndexManager::new(native_index_kv.clone());
+        let native_index_manager = NativeIndexManager::new(native_index_kv);
 
         Ok(Self {
             main_store,
@@ -78,7 +75,6 @@ impl DbOperations {
             schemas_store,
             public_keys_store,
             transform_queue_store,
-            _native_index_store: native_index_kv,
             native_index_manager: Some(native_index_manager),
             orchestrator_tree: None,
         })

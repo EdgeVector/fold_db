@@ -31,7 +31,7 @@ impl NativeIndexManager {
     /// For multi-word queries like "alice johnson", tries the full phrase first
     /// (direct index match), then falls back to intersecting individual word results.
     pub async fn search(&self, term: &str) -> Result<Vec<IndexEntry>, SchemaError> {
-        let Some(normalized) = self.normalize_search_term(term) else {
+        let Some(normalized) = Self::normalize_search_term(term) else {
             return Ok(Vec::new());
         };
 
@@ -45,7 +45,7 @@ impl NativeIndexManager {
         // Multi-word with no direct match — intersect individual words
         let words: Vec<String> = term
             .split_whitespace()
-            .filter_map(|w| self.normalize_search_term(w))
+            .filter_map(Self::normalize_search_term)
             .collect();
 
         if words.len() < 2 {
@@ -96,21 +96,19 @@ impl NativeIndexManager {
         let mut all_entries = Vec::new();
         let mut seen = HashSet::new();
 
-        if let Ok(entries) = word_result {
-            for entry in entries {
-                let key = format!("{:?}:{:?}:{}", entry.schema, entry.key, entry.field);
-                if seen.insert(key) {
-                    all_entries.push(entry);
-                }
+        let entries = word_result?;
+        for entry in entries {
+            let key = format!("{:?}:{:?}:{}", entry.schema, entry.key, entry.field);
+            if seen.insert(key) {
+                all_entries.push(entry);
             }
         }
 
-        if let Ok(field_entries) = field_result {
-            for entry in field_entries {
-                let key = format!("{:?}:{:?}:{}", entry.schema, entry.key, entry.field);
-                if seen.insert(key) {
-                    all_entries.push(entry);
-                }
+        let field_entries = field_result?;
+        for entry in field_entries {
+            let key = format!("{:?}:{:?}:{}", entry.schema, entry.key, entry.field);
+            if seen.insert(key) {
+                all_entries.push(entry);
             }
         }
 

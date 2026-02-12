@@ -33,31 +33,23 @@ impl NativeIndexManager {
 
         let mut index_entries: Vec<(Vec<u8>, Vec<u8>)> = Vec::new();
 
-        for (schema_name, field_name, key_value, value, classifications) in index_operations {
+        for (schema_name, field_name, key_value, value, _classifications) in index_operations {
             if !Self::should_index_field(field_name) {
                 continue;
             }
 
-            let classifications = classifications.clone().unwrap_or_default();
-            let effective_classifications = if classifications.is_empty() {
-                vec!["word".to_string()]
-            } else {
-                classifications
-            };
+            let words = self.extract_words(value);
 
-            // Extract terms and create index entries
-            let terms_with_classification =
-                self.extract_terms(&effective_classifications, value);
-
-            for (term, classification) in &terms_with_classification {
+            for word in &words {
                 let entry = IndexEntry::new(
                     schema_name.clone(),
                     key_value.clone(),
                     field_name.clone(),
-                    classification.clone(),
+                    "word".to_string(),
                 );
 
-                let storage_key = entry.storage_key(term);
+                let term = format!("word:{}", word);
+                let storage_key = entry.storage_key(&term);
                 let entry_bytes = serde_json::to_vec(&entry).map_err(|e| {
                     SchemaError::InvalidData(format!("Failed to serialize IndexEntry: {}", e))
                 })?;
