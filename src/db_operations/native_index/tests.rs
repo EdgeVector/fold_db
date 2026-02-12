@@ -9,8 +9,7 @@ async fn test_async_indexing_flow() {
     let store = std::sync::Arc::new(SledNamespacedStore::new(db));
     let kv_store = store.open_namespace("native_index").await.unwrap();
 
-    let manager = NativeIndexManager::new_with_store(kv_store);
-    assert!(manager.is_async());
+    let manager = NativeIndexManager::new(kv_store);
 
     let operations = vec![(
         "AsyncSchema".to_string(),
@@ -56,7 +55,7 @@ async fn test_indexing_with_empty_classifications() {
     let store = std::sync::Arc::new(SledNamespacedStore::new(db));
     let kv_store = store.open_namespace("native_index").await.unwrap();
 
-    let manager = NativeIndexManager::new_with_store(kv_store);
+    let manager = NativeIndexManager::new(kv_store);
 
     let operations = vec![(
         "TestSchema".to_string(),
@@ -94,7 +93,7 @@ async fn test_async_indexing_complex_tweet() {
     let store = std::sync::Arc::new(SledNamespacedStore::new(db));
     let kv_store = store.open_namespace("native_index").await.unwrap();
 
-    let manager = NativeIndexManager::new_with_store(kv_store);
+    let manager = NativeIndexManager::new(kv_store);
 
     let tweet_content = "RT @TwitterDev: Hello world! ... https://t.co/123456";
     let operations = vec![(
@@ -144,7 +143,7 @@ async fn test_append_only_basic_indexing() {
     let store = std::sync::Arc::new(SledNamespacedStore::new(db));
     let kv_store = store.open_namespace("native_index").await.unwrap();
 
-    let manager = NativeIndexManager::new_with_store(kv_store);
+    let manager = NativeIndexManager::new(kv_store);
 
     let operations = vec![(
         "TestSchema".to_string(),
@@ -181,7 +180,7 @@ async fn test_append_only_multiple_records() {
     let store = std::sync::Arc::new(SledNamespacedStore::new(db));
     let kv_store = store.open_namespace("native_index").await.unwrap();
 
-    let manager = NativeIndexManager::new_with_store(kv_store);
+    let manager = NativeIndexManager::new(kv_store);
 
     let operations = vec![
         (
@@ -240,7 +239,7 @@ async fn test_append_only_field_name_search() {
     let store = std::sync::Arc::new(SledNamespacedStore::new(db));
     let kv_store = store.open_namespace("native_index").await.unwrap();
 
-    let manager = NativeIndexManager::new_with_store(kv_store);
+    let manager = NativeIndexManager::new(kv_store);
 
     let operations = vec![(
         "User".to_string(),

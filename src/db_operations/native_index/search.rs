@@ -133,21 +133,11 @@ impl NativeIndexManager {
 
     /// Scan index entries by prefix
     async fn scan_index_prefix(&self, prefix: &str) -> Result<Vec<IndexEntry>, SchemaError> {
-        let results = if let Some(ref store) = self.store {
-            store
-                .scan_prefix(prefix.as_bytes())
-                .await
-                .map_err(|e| SchemaError::InvalidData(format!("Failed to scan prefix: {}", e)))?
-        } else if let Some(ref tree) = self.tree {
-            tree.scan_prefix(prefix.as_bytes())
-                .filter_map(|r| r.ok())
-                .map(|(k, v)| (k.to_vec(), v.to_vec()))
-                .collect()
-        } else {
-            return Err(SchemaError::InvalidData(
-                "NativeIndexManager not properly initialized".to_string(),
-            ));
-        };
+        let results = self
+            .store
+            .scan_prefix(prefix.as_bytes())
+            .await
+            .map_err(|e| SchemaError::InvalidData(format!("Failed to scan prefix: {}", e)))?;
 
         let mut entries = Vec::new();
         for (_key, value) in results {

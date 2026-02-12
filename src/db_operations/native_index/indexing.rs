@@ -5,6 +5,22 @@ use super::types::{BatchIndexOperation, IndexEntry};
 use super::NativeIndexManager;
 
 impl NativeIndexManager {
+    /// Deduplicate index entries by key and write them via the KvStore.
+    ///
+    /// DynamoDB batch_write_item doesn't allow duplicate keys, and entries
+    /// created within the same millisecond can collide.
+    async fn write_index_entries(&self, entries: Vec<(Vec<u8>, Vec<u8>)>) -> Result<(), SchemaError> {
+        let mut seen_keys = std::collections::HashSet::new();
+        let deduped: Vec<(Vec<u8>, Vec<u8>)> = entries
+            .into_iter()
+            .filter(|(key, _)| seen_keys.insert(key.clone()))
+            .collect();
+
+        self.store.batch_put(deduped).await.map_err(|e| {
+            SchemaError::InvalidData(format!("Failed to batch write index entries: {}", e))
+        })
+    }
+
     /// Batch index a record's fields by extracting terms and writing index entries.
     pub async fn batch_index(
         &self,
@@ -14,12 +30,6 @@ impl NativeIndexManager {
             "[NativeIndex] batch_index: Starting with {} operations",
             index_operations.len()
         );
-
-        if self.tree.is_none() && self.store.is_none() {
-            return Err(SchemaError::InvalidData(
-                "NativeIndexManager not properly initialized".to_string(),
-            ));
-        }
 
         let mut index_entries: Vec<(Vec<u8>, Vec<u8>)> = Vec::new();
 
@@ -75,32 +85,7 @@ impl NativeIndexManager {
             index_entries.len()
         );
 
-        // Write all entries using batch operations
-        if let Some(ref store) = self.store {
-            // Deduplicate by key - DynamoDB batch_write_item doesn't allow duplicate keys
-            // This can happen when entries are created within the same millisecond
-            let mut seen_keys = std::collections::HashSet::new();
-            let deduped_entries: Vec<(Vec<u8>, Vec<u8>)> = index_entries
-                .into_iter()
-                .filter(|(key, _)| seen_keys.insert(key.clone()))
-                .collect();
-
-            log::info!(
-                "[NativeIndex] batch_index: After dedup: {} entries",
-                deduped_entries.len()
-            );
-
-            store.batch_put(deduped_entries).await.map_err(|e| {
-                SchemaError::InvalidData(format!("Failed to batch write index entries: {}", e))
-            })?;
-        } else if let Some(ref tree) = self.tree {
-            let mut batch = sled::Batch::default();
-            for (key, value) in index_entries {
-                batch.insert(key, value);
-            }
-            tree.apply_batch(batch)
-                .map_err(|e| SchemaError::InvalidData(format!("Batch apply failed: {}", e)))?;
-        }
+        self.write_index_entries(index_entries).await?;
 
         log::info!("[NativeIndex] batch_index: Completed successfully");
         Ok(())
@@ -122,12 +107,6 @@ impl NativeIndexManager {
             schema_name
         );
 
-        if self.tree.is_none() && self.store.is_none() {
-            return Err(SchemaError::InvalidData(
-                "NativeIndexManager not properly initialized".to_string(),
-            ));
-        }
-
         let mut index_entries: Vec<(Vec<u8>, Vec<u8>)> = Vec::new();
 
         for keyword in &keywords {
@@ -148,39 +127,17 @@ impl NativeIndexManager {
             index_entries.push((storage_key.into_bytes(), entry_bytes));
         }
 
-        // Write all entries
-        if let Some(ref store) = self.store {
-            let mut seen_keys = std::collections::HashSet::new();
-            let deduped_entries: Vec<(Vec<u8>, Vec<u8>)> = index_entries
-                .into_iter()
-                .filter(|(key, _)| seen_keys.insert(key.clone()))
-                .collect();
-
-            store.batch_put(deduped_entries).await.map_err(|e| {
-                SchemaError::InvalidData(format!("Failed to batch write keyword entries: {}", e))
-            })?;
-        } else if let Some(ref tree) = self.tree {
-            let mut batch = sled::Batch::default();
-            for (key, value) in index_entries {
-                batch.insert(key, value);
-            }
-            tree.apply_batch(batch)
-                .map_err(|e| SchemaError::InvalidData(format!("Batch apply failed: {}", e)))?;
-        }
+        self.write_index_entries(index_entries).await?;
 
         log::info!("[NativeIndex] batch_index_from_keywords: Completed successfully");
         Ok(())
     }
 
-    /// Explicitly flush the index tree to disk
-    ///
-    /// This should only be called for non-batch operations.
-    /// Batch operations handle flushing internally.
-    pub fn flush(&self) -> Result<(), SchemaError> {
-        if let Some(ref tree) = self.tree {
-            tree.flush()
-                .map_err(|e| SchemaError::InvalidData(format!("Flush failed: {}", e)))?;
-        }
-        Ok(())
+    /// Flush pending writes to durable storage.
+    pub async fn flush(&self) -> Result<(), SchemaError> {
+        self.store
+            .flush()
+            .await
+            .map_err(|e| SchemaError::InvalidData(format!("Flush failed: {}", e)))
     }
 }

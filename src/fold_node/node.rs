@@ -379,10 +379,7 @@ impl FoldNode {
                         "Synchronous indexing completed successfully for {} fields",
                         index_operations.len()
                     );
-                    // Flush if sync backend
-                    if !native_index_mgr.is_async() {
-                        let _ = native_index_mgr.flush();
-                    }
+                    let _ = native_index_mgr.flush().await;
                 }
             }
         }

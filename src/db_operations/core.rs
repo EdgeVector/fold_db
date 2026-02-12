@@ -30,10 +30,6 @@ pub struct DbOperations {
     /// Raw KV store for native index (doesn't need typed operations)
     _native_index_store: Arc<dyn KvStore>,
 
-    /// Optional reference to underlying sled tree for NativeIndexManager
-    /// This is a temporary bridge until NativeIndexManager is also abstracted
-    native_index_tree: Option<sled::Tree>,
-
     native_index_manager: Option<NativeIndexManager>,
 
     /// Optional reference to underlying orchestrator tree for TransformOrchestrator
@@ -70,7 +66,7 @@ impl DbOperations {
         let transform_queue_store = Arc::new(TypedKvStore::new(transform_queue_kv));
 
         // Create native index manager with the store
-        let native_index_manager = NativeIndexManager::new_with_store(native_index_kv.clone());
+        let native_index_manager = NativeIndexManager::new(native_index_kv.clone());
 
         Ok(Self {
             main_store,
@@ -83,7 +79,6 @@ impl DbOperations {
             public_keys_store,
             transform_queue_store,
             _native_index_store: native_index_kv,
-            native_index_tree: None,
             native_index_manager: Some(native_index_manager),
             orchestrator_tree: None,
         })
@@ -91,21 +86,12 @@ impl DbOperations {
 
     /// Convenience constructor for Sled backend (backward compatible)
     pub async fn from_sled(db: sled::Db) -> Result<Self, crate::storage::StorageError> {
-        let native_index_tree = db
-            .open_tree("native_index")
-            .map_err(|e| crate::storage::StorageError::SledError(e.to_string()))?;
-        let native_index_manager = NativeIndexManager::new(native_index_tree.clone());
-
         let orchestrator_tree = db
             .open_tree("orchestrator_state")
             .map_err(|e| crate::storage::StorageError::SledError(e.to_string()))?;
 
         let store = Arc::new(SledNamespacedStore::new(db)) as Arc<dyn NamespacedStore>;
         let mut db_ops = Self::from_namespaced_store(store).await?;
-
-        // Set the native index and orchestrator components (temporary bridges)
-        db_ops.native_index_tree = Some(native_index_tree);
-        db_ops.native_index_manager = Some(native_index_manager);
         db_ops.orchestrator_tree = Some(orchestrator_tree);
 
         Ok(db_ops)

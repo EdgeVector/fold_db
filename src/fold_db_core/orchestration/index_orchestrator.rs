@@ -183,9 +183,6 @@ impl IndexOrchestrator {
             return;
         }
 
-        // Flush for sync backends (Sled)
-        if !native_index_mgr.is_async() {
-            let _ = native_index_mgr.flush();
-        }
+        let _ = native_index_mgr.flush().await;
     }
 }
