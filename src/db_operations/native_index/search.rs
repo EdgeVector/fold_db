@@ -1,4 +1,4 @@
-use crate::db_operations::native_index_classification::ClassificationType;
+use super::classification::ClassificationType;
 use crate::schema::SchemaError;
 use std::collections::HashSet;
 
