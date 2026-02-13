@@ -1,7 +1,7 @@
 use crate::schema::types::key_value::KeyValue;
 use crate::schema::SchemaError;
 
-use super::types::IndexEntry;
+use super::types::{IndexClassification, IndexEntry};
 use super::NativeIndexManager;
 
 impl NativeIndexManager {
@@ -47,7 +47,7 @@ impl NativeIndexManager {
                 schema_name.to_string(),
                 key_value.clone(),
                 field_name.to_string(),
-                "word".to_string(),
+                IndexClassification::Word,
             );
             entry.molecule_versions = molecule_versions.cloned();
 
@@ -102,7 +102,7 @@ impl NativeIndexManager {
                 schema_name.to_string(),
                 key_value.clone(),
                 field_name.clone(),
-                "field".to_string(),
+                IndexClassification::Field,
             );
             entry.molecule_versions = molecule_versions.cloned();
 

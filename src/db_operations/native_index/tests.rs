@@ -1,4 +1,5 @@
 use super::*;
+use crate::db_operations::native_index::types::IndexClassification;
 use crate::schema::types::key_value::KeyValue;
 use crate::storage::{NamespacedStore, SledNamespacedStore};
 
@@ -8,7 +9,7 @@ fn test_index_entry_storage_key() {
         "Tweet".to_string(),
         KeyValue::new(Some("abc123".to_string()), None),
         "content".to_string(),
-        "word".to_string(),
+        IndexClassification::Word,
         1705312200000,
     );
 
@@ -24,7 +25,7 @@ fn test_index_entry_to_result_conversion() {
         "Tweet".to_string(),
         KeyValue::new(Some("abc123".to_string()), None),
         "content".to_string(),
-        "word".to_string(),
+        IndexClassification::Word,
     );
 
     let result = entry.to_index_result(Some(serde_json::json!("test value")));
@@ -183,7 +184,7 @@ async fn test_batch_index_field_names() {
     for field in &["username", "email", "bio"] {
         let results = manager.search_all(field).await.expect("search_all failed");
         assert_eq!(results.len(), 1, "Should find 1 result for field '{}'", field);
-        assert_eq!(results[0].classification, "field");
+        assert_eq!(results[0].classification, IndexClassification::Field);
     }
 
     // Excluded fields should not be indexed
@@ -226,10 +227,10 @@ async fn test_search_all_combines_words_and_fields() {
     let results = manager.search_all("email").await.expect("search_all failed");
     assert_eq!(results.len(), 2, "Should find both word and field entries");
 
-    let classifications: std::collections::HashSet<String> =
-        results.iter().map(|r| r.classification.clone()).collect();
-    assert!(classifications.contains("word"), "Should include word classification");
-    assert!(classifications.contains("field"), "Should include field classification");
+    let classifications: std::collections::HashSet<IndexClassification> =
+        results.iter().map(|r| r.classification).collect();
+    assert!(classifications.contains(&IndexClassification::Word), "Should include word classification");
+    assert!(classifications.contains(&IndexClassification::Field), "Should include field classification");
 }
 
 #[tokio::test]
@@ -266,7 +267,7 @@ async fn test_matched_term_populated_in_search() {
         .expect("field indexing failed");
 
     let field_entries = manager.search_all("content").await.expect("search failed");
-    let field_entry = field_entries.iter().find(|e| e.classification == "field").unwrap();
+    let field_entry = field_entries.iter().find(|e| e.classification == IndexClassification::Field).unwrap();
     assert_eq!(field_entry.matched_term, Some("content".to_string()));
 }
 

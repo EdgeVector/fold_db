@@ -5,7 +5,7 @@ mod types;
 #[cfg(test)]
 mod tests;
 
-pub use types::{IndexEntry, IndexResult};
+pub use types::{IndexClassification, IndexEntry, IndexResult};
 
 use crate::crypto::E2eKeys;
 use crate::storage::traits::KvStore;

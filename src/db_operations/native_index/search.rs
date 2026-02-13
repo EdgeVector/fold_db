@@ -5,6 +5,10 @@ use std::collections::HashSet;
 use super::types::{IndexEntry, IndexResult, INDEX_ENTRY_PREFIX};
 use super::NativeIndexManager;
 
+/// Maximum number of entries returned from a single prefix scan.
+/// Prevents unbounded memory growth on large indexes.
+const SCAN_LIMIT: usize = 500;
+
 impl NativeIndexManager {
     pub(super) fn normalize_search_term(term: &str) -> Option<String> {
         let lowered = term.trim().to_lowercase();
@@ -62,28 +66,38 @@ impl NativeIndexManager {
             return Ok(Vec::new());
         }
 
-        // Search the first word, then filter to records that also match all other words
-        let first_blinded = self.blind_token(&words[0]);
-        let first_prefix = format!("{}word:{}:", INDEX_ENTRY_PREFIX, first_blinded);
-        let candidates = self.scan_index_prefix(&first_prefix, Some(&words[0])).await?;
+        // Fire all word scans concurrently
+        let futures: Vec<_> = words
+            .iter()
+            .map(|word| {
+                let blinded = self.blind_token(word);
+                let prefix = format!("{}word:{}:", INDEX_ENTRY_PREFIX, blinded);
+                let word_clone = word.clone();
+                async move { (word_clone, self.scan_index_prefix(&prefix, None).await) }
+            })
+            .collect();
 
-        // Collect record keys that appear for every other word
-        let mut required_keys: Option<HashSet<(String, KeyValue)>> = None;
-        for word in &words[1..] {
-            let word_blinded = self.blind_token(word);
-            let p = format!("{}word:{}:", INDEX_ENTRY_PREFIX, word_blinded);
-            let word_entries = self.scan_index_prefix(&p, Some(word)).await?;
-            let keys: HashSet<(String, KeyValue)> = word_entries
+        let scan_results = futures::future::join_all(futures).await;
+
+        // First result set provides the candidates; remaining sets narrow via intersection
+        let mut iter = scan_results.into_iter();
+        let (_, first_result) = iter.next().unwrap();
+        let candidates = first_result?;
+
+        let mut required_keys: HashSet<(String, KeyValue)> = candidates
+            .iter()
+            .map(|e| (e.schema.clone(), e.key.clone()))
+            .collect();
+
+        for (_, result) in iter {
+            let entries = result?;
+            let keys: HashSet<(String, KeyValue)> = entries
                 .into_iter()
                 .map(|e| (e.schema.clone(), e.key.clone()))
                 .collect();
-            required_keys = Some(match required_keys {
-                Some(existing) => existing.intersection(&keys).cloned().collect(),
-                None => keys,
-            });
+            required_keys = required_keys.intersection(&keys).cloned().collect();
         }
 
-        let required_keys = required_keys.unwrap_or_default();
         let mut seen = HashSet::new();
         let results: Vec<IndexEntry> = candidates
             .into_iter()
@@ -145,16 +159,18 @@ impl NativeIndexManager {
         self.scan_index_prefix(&prefix, Some(&normalized)).await
     }
 
-    /// Scan index entries by prefix, setting `matched_term` on each result
+    /// Scan index entries by prefix, setting `matched_term` on each result.
+    /// Results are capped at `SCAN_LIMIT` to prevent unbounded memory growth.
     async fn scan_index_prefix(&self, prefix: &str, matched_term: Option<&str>) -> Result<Vec<IndexEntry>, SchemaError> {
-        let results = self
+        let raw = self
             .store
             .scan_prefix(prefix.as_bytes())
             .await
             .map_err(|e| SchemaError::InvalidData(format!("Failed to scan prefix: {}", e)))?;
 
-        let mut entries = Vec::new();
-        for (_key, value) in results {
+        let total = raw.len();
+        let mut entries = Vec::with_capacity(total.min(SCAN_LIMIT));
+        for (_key, value) in raw.into_iter().take(SCAN_LIMIT) {
             match serde_json::from_slice::<IndexEntry>(&value) {
                 Ok(mut entry) => {
                     entry.matched_term = matched_term.map(String::from);
@@ -164,6 +180,13 @@ impl NativeIndexManager {
                     log::warn!("Failed to deserialize IndexEntry: {}", e);
                 }
             }
+        }
+
+        if total > SCAN_LIMIT {
+            log::warn!(
+                "scan_index_prefix: truncated {} → {} entries for prefix '{}'",
+                total, SCAN_LIMIT, prefix
+            );
         }
 
         Ok(entries)

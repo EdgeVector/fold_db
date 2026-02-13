@@ -5,6 +5,23 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 pub(super) const EXCLUDED_FIELDS: &[&str] = &["uuid", "id", "password", "token"];
 
+/// Classification of an index entry.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[serde(rename_all = "lowercase")]
+pub enum IndexClassification {
+    Word,
+    Field,
+}
+
+impl std::fmt::Display for IndexClassification {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Word => write!(f, "word"),
+            Self::Field => write!(f, "field"),
+        }
+    }
+}
+
 /// Index entry prefix for index storage
 pub(super) const INDEX_ENTRY_PREFIX: &str = "idx:";
 
@@ -20,8 +37,8 @@ pub struct IndexEntry {
     pub key: KeyValue,
     /// Which field matched the search term
     pub field: String,
-    /// Index type (e.g. "word", "field")
-    pub classification: String,
+    /// Index type
+    pub classification: IndexClassification,
     /// When indexed (milliseconds since epoch, for sorting/dedup)
     pub timestamp: i64,
     /// The search term that matched (populated during search, not stored)
@@ -34,7 +51,7 @@ pub struct IndexEntry {
 
 impl IndexEntry {
     /// Create a new index entry with current timestamp
-    pub fn new(schema: String, key: KeyValue, field: String, classification: String) -> Self {
+    pub fn new(schema: String, key: KeyValue, field: String, classification: IndexClassification) -> Self {
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_millis() as i64)
@@ -55,7 +72,7 @@ impl IndexEntry {
         schema: String,
         key: KeyValue,
         field: String,
-        classification: String,
+        classification: IndexClassification,
         timestamp: i64,
     ) -> Self {
         Self {
