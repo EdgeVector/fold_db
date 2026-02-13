@@ -1,6 +1,7 @@
 use super::{key_value::KeyValue, operations::MutationType};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use sha2::{Sha256, Digest};
 use std::collections::HashMap;
 use uuid::Uuid;
 
@@ -55,6 +56,27 @@ impl Mutation {
         self.source_file_name = Some(file_name);
         self
     }
+
+    /// Compute a deterministic content hash of this mutation's semantic fields.
+    /// Excludes uuid (random), synchronous (execution mode), backfill_hash, source_file_name (metadata).
+    #[must_use]
+    pub fn content_hash(&self) -> String {
+        let mut hasher = Sha256::new();
+        hasher.update(self.schema_name.as_bytes());
+        hasher.update(serde_json::to_string(&self.mutation_type).unwrap().as_bytes());
+        hasher.update(serde_json::to_string(&self.key_value).unwrap().as_bytes());
+        // Sort keys for deterministic ordering of HashMap
+        let mut sorted_fields: Vec<_> = self.fields_and_values.iter().collect();
+        sorted_fields.sort_by_key(|(k, _)| (*k).clone());
+        for (k, v) in sorted_fields {
+            hasher.update(k.as_bytes());
+            hasher.update(serde_json::to_string(v).unwrap().as_bytes());
+        }
+        hasher.update(self.pub_key.as_bytes());
+        hasher.update(self.trust_distance.to_le_bytes());
+        let result = hasher.finalize();
+        format!("{:x}", result)
+    }
 }
 
 #[cfg(test)]
@@ -94,5 +116,147 @@ mod tests {
 
         assert_eq!(mutation.backfill_hash, Some("test_hash_456".to_string()));
         println!("✅ with_backfill_hash sets the field correctly");
+    }
+
+    #[test]
+    fn test_content_hash_deterministic() {
+        let mut fields = HashMap::new();
+        fields.insert("name".to_string(), serde_json::json!("Alice"));
+        fields.insert("age".to_string(), serde_json::json!(30));
+
+        let m1 = Mutation::new(
+            "Person".to_string(),
+            fields.clone(),
+            KeyValue::new(None, None),
+            "pub_key_abc".to_string(),
+            1,
+            MutationType::Update,
+        );
+
+        let m2 = Mutation::new(
+            "Person".to_string(),
+            fields,
+            KeyValue::new(None, None),
+            "pub_key_abc".to_string(),
+            1,
+            MutationType::Update,
+        );
+
+        assert_eq!(m1.content_hash(), m2.content_hash());
+        // UUIDs are different but hash should be same
+        assert_ne!(m1.uuid, m2.uuid);
+    }
+
+    #[test]
+    fn test_content_hash_field_order_independent() {
+        let mut fields_a = HashMap::new();
+        fields_a.insert("z_field".to_string(), serde_json::json!(1));
+        fields_a.insert("a_field".to_string(), serde_json::json!(2));
+
+        let mut fields_b = HashMap::new();
+        fields_b.insert("a_field".to_string(), serde_json::json!(2));
+        fields_b.insert("z_field".to_string(), serde_json::json!(1));
+
+        let m1 = Mutation::new(
+            "Schema".to_string(),
+            fields_a,
+            KeyValue::new(None, None),
+            "key".to_string(),
+            0,
+            MutationType::Update,
+        );
+
+        let m2 = Mutation::new(
+            "Schema".to_string(),
+            fields_b,
+            KeyValue::new(None, None),
+            "key".to_string(),
+            0,
+            MutationType::Update,
+        );
+
+        assert_eq!(m1.content_hash(), m2.content_hash());
+    }
+
+    #[test]
+    fn test_content_hash_different_content() {
+        let mut fields_a = HashMap::new();
+        fields_a.insert("name".to_string(), serde_json::json!("Alice"));
+
+        let mut fields_b = HashMap::new();
+        fields_b.insert("name".to_string(), serde_json::json!("Bob"));
+
+        let m1 = Mutation::new(
+            "Schema".to_string(),
+            fields_a,
+            KeyValue::new(None, None),
+            "key".to_string(),
+            0,
+            MutationType::Update,
+        );
+
+        let m2 = Mutation::new(
+            "Schema".to_string(),
+            fields_b,
+            KeyValue::new(None, None),
+            "key".to_string(),
+            0,
+            MutationType::Update,
+        );
+
+        assert_ne!(m1.content_hash(), m2.content_hash());
+    }
+
+    #[test]
+    fn test_content_hash_different_pub_keys() {
+        let fields = HashMap::new();
+
+        let m1 = Mutation::new(
+            "Schema".to_string(),
+            fields.clone(),
+            KeyValue::new(None, None),
+            "user_a_key".to_string(),
+            0,
+            MutationType::Update,
+        );
+
+        let m2 = Mutation::new(
+            "Schema".to_string(),
+            fields,
+            KeyValue::new(None, None),
+            "user_b_key".to_string(),
+            0,
+            MutationType::Update,
+        );
+
+        assert_ne!(m1.content_hash(), m2.content_hash());
+    }
+
+    #[test]
+    fn test_content_hash_excludes_metadata() {
+        let fields = HashMap::new();
+
+        let m1 = Mutation::new(
+            "Schema".to_string(),
+            fields.clone(),
+            KeyValue::new(None, None),
+            "key".to_string(),
+            0,
+            MutationType::Update,
+        );
+
+        let m2 = Mutation::new(
+            "Schema".to_string(),
+            fields,
+            KeyValue::new(None, None),
+            "key".to_string(),
+            0,
+            MutationType::Update,
+        )
+        .with_backfill_hash("some_hash".to_string())
+        .with_source_file_name("file.json".to_string());
+
+        // backfill_hash and source_file_name should not affect the content hash
+        assert_eq!(m1.content_hash(), m2.content_hash());
     }
 }

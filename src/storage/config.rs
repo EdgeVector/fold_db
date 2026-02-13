@@ -91,6 +91,8 @@ pub struct ExplicitTables {
     pub process: String,
     /// System logs table
     pub logs: String,
+    /// Idempotency tracking table (mutation content hashes)
+    pub idempotency: String,
 }
 
 #[cfg(feature = "aws-backend")]
@@ -111,6 +113,7 @@ impl ExplicitTables {
             native_index: format!("{}-native_index", prefix),
             process: format!("{}-process", prefix),
             logs: format!("{}-logs", prefix),
+            idempotency: format!("{}-idempotency", prefix),
         }
     }
 }

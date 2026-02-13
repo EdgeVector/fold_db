@@ -67,6 +67,7 @@ impl DynamoDbResetManager {
             &self.tables.permissions,
             &self.tables.main,
             &self.tables.process,
+            &self.tables.idempotency,
         ];
 
         for table in tables_to_clean {

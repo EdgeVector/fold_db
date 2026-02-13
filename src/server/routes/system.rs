@@ -376,6 +376,7 @@ pub struct ExplicitTablesDto {
     pub native_index: String,
     pub process: String,
     pub logs: String,
+    pub idempotency: String,
 }
 
 /// DTO for CloudConfig (formerly DynamoDbConfig)
@@ -433,6 +434,7 @@ pub async fn get_database_config(state: web::Data<AppState>) -> impl Responder {
                 native_index: config.tables.native_index.clone(),
                 process: config.tables.process.clone(),
                 logs: config.tables.logs.clone(),
+                idempotency: config.tables.idempotency.clone(),
             },
         })),
     };

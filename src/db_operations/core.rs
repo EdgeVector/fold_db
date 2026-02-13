@@ -26,6 +26,7 @@ pub struct DbOperations {
     schemas_store: Arc<TypedKvStore<dyn KvStore>>,
     public_keys_store: Arc<TypedKvStore<dyn KvStore>>,
     transform_queue_store: Arc<TypedKvStore<dyn KvStore>>,
+    idempotency_store: Arc<TypedKvStore<dyn KvStore>>,
 
     native_index_manager: Option<NativeIndexManager>,
 
@@ -50,6 +51,7 @@ impl DbOperations {
         let schemas_kv = store.open_namespace("schemas").await?;
         let public_keys_kv = store.open_namespace("public_keys").await?;
         let transform_queue_kv = store.open_namespace("transform_queue_tree").await?;
+        let idempotency_kv = store.open_namespace("idempotency").await?;
         let native_index_kv = store.open_namespace("native_index").await?;
 
         // Wrap KvStores in TypedKvStore adapters
@@ -62,6 +64,7 @@ impl DbOperations {
         let schemas_store = Arc::new(TypedKvStore::new(schemas_kv));
         let public_keys_store = Arc::new(TypedKvStore::new(public_keys_kv));
         let transform_queue_store = Arc::new(TypedKvStore::new(transform_queue_kv));
+        let idempotency_store = Arc::new(TypedKvStore::new(idempotency_kv));
 
         // Create native index manager with the store and optional E2E index key
         let native_index_manager = NativeIndexManager::new(native_index_kv, e2e_index_key);
@@ -76,6 +79,7 @@ impl DbOperations {
             schemas_store,
             public_keys_store,
             transform_queue_store,
+            idempotency_store,
             native_index_manager: Some(native_index_manager),
             orchestrator_tree: None,
         })
@@ -261,6 +265,10 @@ impl DbOperations {
         &self.transform_queue_store
     }
 
+    pub fn idempotency_store(&self) -> &Arc<TypedKvStore<dyn KvStore>> {
+        &self.idempotency_store
+    }
+
     pub fn native_index_manager(&self) -> Option<&NativeIndexManager> {
         self.native_index_manager.as_ref()
     }
@@ -379,6 +387,7 @@ impl DbOperations {
             "schemas" => Ok(&self.schemas_store),
             "public_keys" => Ok(&self.public_keys_store),
             "transform_queue" | "transform_queue_tree" => Ok(&self.transform_queue_store),
+            "idempotency" => Ok(&self.idempotency_store),
             "main" => Ok(&self.main_store),
             _ => Err(SchemaError::InvalidData(format!(
                 "Unknown namespace: {}",

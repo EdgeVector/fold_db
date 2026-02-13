@@ -132,6 +132,10 @@ pub async fn create_fold_db(
                     cloud_config.tables.native_index.clone(),
                 ),
                 ("process".to_string(), cloud_config.tables.process.clone()),
+                (
+                    "idempotency".to_string(),
+                    cloud_config.tables.idempotency.clone(),
+                ),
             ]);
 
             let resolver = TableNameResolver::Explicit(map);

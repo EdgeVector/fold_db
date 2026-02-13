@@ -15,6 +15,7 @@ use super::orchestration::index_status::IndexStatusTracker;
 use chrono::Utc;
 use crate::atom::{Atom, FieldKey, MutationEvent};
 use crate::db_operations::{DbOperations, MoleculeData};
+use crate::storage::traits::TypedStore;
 use crate::schema::types::field::{Field, FieldVariant};
 use crate::schema::types::{KeyValue, Mutation};
 use crate::schema::{SchemaCore, SchemaError};
@@ -93,9 +94,49 @@ impl MutationManager {
         let start_time = std::time::Instant::now();
         let mut timing_breakdown = std::collections::HashMap::new();
 
+        // Idempotency: filter out already-processed mutations
+        let idem_start = std::time::Instant::now();
+        let mut already_seen_ids: Vec<String> = Vec::new();
+        let mut new_mutations: Vec<Mutation> = Vec::new();
+        let mut new_hashes: Vec<String> = Vec::new();
+
+        for mutation in mutations {
+            let hash = mutation.content_hash();
+            let key = format!("idem:{}", hash);
+            match self.db_ops.idempotency_store().get_item::<String>(&key).await {
+                Ok(Some(cached_id)) => {
+                    log::debug!("Idempotency hit for mutation hash {}, returning cached id {}", hash, cached_id);
+                    already_seen_ids.push(cached_id);
+                }
+                _ => {
+                    new_hashes.push(hash);
+                    new_mutations.push(mutation);
+                }
+            }
+        }
+        timing_breakdown.insert("idempotency_check", idem_start.elapsed());
+
+        if new_mutations.is_empty() {
+            log::info!("All {} mutations were idempotency duplicates, skipping processing", already_seen_ids.len());
+            return Ok(already_seen_ids);
+        }
+
+        log::debug!(
+            "Idempotency: {} new, {} duplicates",
+            new_mutations.len(),
+            already_seen_ids.len()
+        );
+
+        // Build hash->uuid map before grouping (uuid is stable, set at creation time)
+        let hash_to_uuid: Vec<(String, String)> = new_mutations
+            .iter()
+            .zip(new_hashes.iter())
+            .map(|(m, h)| (h.clone(), m.uuid.clone()))
+            .collect();
+
         // Group mutations by schema to minimize schema reloads
         let group_start = std::time::Instant::now();
-        let grouped_mutations = self.group_mutations_by_schema(mutations);
+        let grouped_mutations = self.group_mutations_by_schema(new_mutations);
         timing_breakdown.insert("grouping", group_start.elapsed());
 
         let mut mutation_ids = Vec::new();
@@ -391,6 +432,23 @@ impl MutationManager {
         timing_breakdown.insert("flush", flush_start.elapsed());
         log::debug!("✅ Database flushed in {:?}", flush_start.elapsed());
 
+        // Store idempotency entries for successfully processed mutations
+        let idem_store_start = std::time::Instant::now();
+        let idem_entries: Vec<(String, String)> = hash_to_uuid
+            .iter()
+            .map(|(hash, uuid)| (format!("idem:{}", hash), uuid.clone()))
+            .collect();
+        if !idem_entries.is_empty() {
+            self.db_ops
+                .batch_store_in_namespace("idempotency", &idem_entries)
+                .await
+                .map_err(|e| {
+                    log::error!("Failed to store idempotency entries: {}", e);
+                    SchemaError::InvalidData(format!("Idempotency store failed: {}", e))
+                })?;
+        }
+        timing_breakdown.insert("idempotency_store", idem_store_start.elapsed());
+
         // Batch publish events
         let publish_start = std::time::Instant::now();
         self.publish_batch_events_async(batch_events).await?;
@@ -398,9 +456,15 @@ impl MutationManager {
 
         let total_time = start_time.elapsed();
 
+        // Combine already-seen ids with newly processed mutation ids
+        let mut all_ids = already_seen_ids;
+        all_ids.extend(mutation_ids.iter().cloned());
+
         log::info!(
-            "✅ write_mutations_batch_async: Completed {} mutations in {:.2}ms",
+            "✅ write_mutations_batch_async: Completed {} mutations ({} new, {} cached) in {:.2}ms",
+            all_ids.len(),
             mutation_ids.len(),
+            all_ids.len() - mutation_ids.len(),
             total_time.as_millis()
         );
 
@@ -427,7 +491,7 @@ impl MutationManager {
             );
         }
 
-        Ok(mutation_ids)
+        Ok(all_ids)
     }
 
     /// Groups mutations by schema name for efficient batch processing
