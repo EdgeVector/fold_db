@@ -79,12 +79,37 @@ impl JsonTopology {
     }
 
     /// Compute a SHA256 hash of this topology
-    /// This creates a unique fingerprint of the topology structure
+    /// This creates a unique fingerprint of the topology structure.
+    /// Keys are sorted recursively to ensure deterministic hashing
+    /// regardless of HashMap iteration order.
     pub fn compute_hash(&self) -> String {
-        let canonical = serde_json::to_string(&self.root).unwrap_or_else(|_| "{}".to_string());
+        let value = serde_json::to_value(&self.root)
+            .unwrap_or_else(|_| serde_json::Value::Object(Default::default()));
+        let sorted = sort_json_keys(&value);
+        let canonical =
+            serde_json::to_string(&sorted).unwrap_or_else(|_| "{}".to_string());
         let mut hasher = Sha256::new();
         hasher.update(canonical.as_bytes());
         format!("{:x}", hasher.finalize())
+    }
+}
+
+/// Recursively sort all object keys in a JSON value so that serialization
+/// is deterministic regardless of HashMap iteration order.
+fn sort_json_keys(value: &JsonValue) -> JsonValue {
+    match value {
+        JsonValue::Object(map) => {
+            let mut entries: Vec<_> = map
+                .iter()
+                .map(|(k, v)| (k.clone(), sort_json_keys(v)))
+                .collect();
+            entries.sort_by(|(a, _), (b, _)| a.cmp(b));
+            JsonValue::Object(entries.into_iter().collect())
+        }
+        JsonValue::Array(arr) => {
+            JsonValue::Array(arr.iter().map(sort_json_keys).collect())
+        }
+        other => other.clone(),
     }
 }
 

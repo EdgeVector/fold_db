@@ -213,13 +213,17 @@ mod tests {
 
     #[test]
     fn test_structure_hash_consistency() {
-        // Decomposing the same structure twice should produce the same hash
-        let data = json!({
+        // Two arrays with the same field structure should produce the same hash,
+        // even though they have different parent field names and different values.
+        let data1 = json!({
             "items": [{"a": 1, "b": "x"}]
         });
+        let data2 = json!({
+            "things": [{"a": 2, "b": "y"}]
+        });
 
-        let r1 = decompose(&data);
-        let r2 = decompose(&data);
+        let r1 = decompose(&data1);
+        let r2 = decompose(&data2);
 
         assert_eq!(r1.children[0].structure_hash, r2.children[0].structure_hash);
     }

@@ -245,34 +245,27 @@ impl IngestionService {
                 vec![flattened_data.clone()]
             };
 
-            // Resolve schemas for the representative's structure tree
+            // Resolve schemas for the representative's structure tree.
+            // The top-level item's own structure hash is used to cache its
+            // flat-parent schema (after array-of-object fields are removed).
             let rep = representative_for_decompose.as_ref().unwrap();
-            let rep_decomp = decomposer::decompose(rep);
-            for group in &rep_decomp.children {
-                self.resolve_schema_for_structure(
-                    &group.structure_hash,
-                    &group.items[0],
-                    &mut schema_cache,
-                    node,
-                )
-                .await?;
-            }
-            // Also resolve schema for the parent (top-level flat object)
-            let parent_topology = crate::schema::types::topology::JsonTopology::infer_from_value(&rep_decomp.parent);
-            let parent_hash = parent_topology.compute_hash();
+            let top_level_topology = crate::schema::types::topology::JsonTopology::infer_from_value(rep);
+            let top_level_hash = top_level_topology.compute_hash();
             self.resolve_schema_for_structure(
-                &parent_hash,
-                &rep_decomp.parent,
+                &top_level_hash,
+                rep,
                 &mut schema_cache,
                 node,
             )
             .await?;
 
-            // Process each item: recursively handle children, then generate parent mutation
+            // Process each item: recursively handle children, then generate parent mutation.
+            // Pass the top-level structure hash so the cache lookup matches.
             for item in &items {
                 let (gen, exec) = self
                     .ingest_decomposed_item(
                         item,
+                        &top_level_hash,
                         &mut schema_cache,
                         node,
                         trust_distance,
@@ -287,7 +280,7 @@ impl IngestionService {
 
             // Determine the top-level schema name for the response
             let top_schema_name = schema_cache
-                .get(&parent_hash)
+                .get(&top_level_hash)
                 .map(|c| c.schema_name.clone())
                 .unwrap_or_default();
 
@@ -856,11 +849,15 @@ impl IngestionService {
     /// Process a single item through decomposition: recursively handle its
     /// children, then generate and execute a mutation for the flat parent.
     ///
+    /// `structure_hash` is the topology hash of the full item (before decomposition),
+    /// matching the key used in `resolve_schema_for_structure`.
+    ///
     /// Returns (mutations_generated, mutations_executed).
     #[allow(clippy::too_many_arguments)]
     async fn ingest_decomposed_item(
         &self,
         item: &Value,
+        structure_hash: &str,
         schema_cache: &mut HashMap<String, CachedSchema>,
         node: &FoldNode,
         trust_distance: u32,
@@ -872,11 +869,14 @@ impl IngestionService {
         let mut total_gen: usize = 0;
         let mut total_exec: usize = 0;
 
-        // Recursively process each child group's items
+        // Recursively process each child group's items.
+        // The child_group.structure_hash is the hash of the full child item
+        // (before its own decomposition), matching the resolve cache key.
         for child_group in &item_decomp.children {
             for child_item in &child_group.items {
                 let (gen, exec) = Box::pin(self.ingest_decomposed_item(
                     child_item,
+                    &child_group.structure_hash,
                     schema_cache,
                     node,
                     trust_distance,
@@ -890,21 +890,19 @@ impl IngestionService {
             }
         }
 
-        // Generate and execute mutation for this item's flat parent
+        // Generate and execute mutation for this item's flat parent.
+        // Use the structure_hash passed in (hash of full item before decomposition)
+        // to look up the cached schema — this matches the key from resolve_schema_for_structure.
         let parent = &item_decomp.parent;
         if let Some(parent_obj) = parent.as_object() {
             if parent_obj.is_empty() {
                 return Ok((total_gen, total_exec));
             }
 
-            let parent_topology =
-                crate::schema::types::topology::JsonTopology::infer_from_value(parent);
-            let parent_hash = parent_topology.compute_hash();
-
-            let cached = schema_cache.get(&parent_hash).ok_or_else(|| {
+            let cached = schema_cache.get(structure_hash).ok_or_else(|| {
                 IngestionError::SchemaCreationError(format!(
                     "No cached schema for structure hash {}",
-                    parent_hash
+                    structure_hash
                 ))
             })?;
 
