@@ -1,5 +1,3 @@
-use crate::atom::molecule_behavior::MoleculeBehavior;
-use crate::atom::molecule_types::{apply_status_update, MoleculeStatus, MoleculeUpdate};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -12,8 +10,6 @@ pub struct MoleculeRange {
     pub(crate) atom_uuids: BTreeMap<String, String>,
     #[schema(value_type = String, format = "date-time")]
     updated_at: DateTime<Utc>,
-    status: MoleculeStatus,
-    update_history: Vec<MoleculeUpdate>,
     #[serde(default)]
     version: u64,
 }
@@ -21,19 +17,25 @@ pub struct MoleculeRange {
 impl MoleculeRange {
     /// Creates a new empty MoleculeRange.
     #[must_use]
-    pub fn new(source_pub_key: String) -> Self {
+    pub fn new(_source_pub_key: String) -> Self {
         Self {
             uuid: Uuid::new_v4().to_string(),
             atom_uuids: BTreeMap::new(),
             updated_at: Utc::now(),
-            status: MoleculeStatus::Active,
-            update_history: vec![MoleculeUpdate {
-                timestamp: Utc::now(),
-                status: MoleculeStatus::Active,
-                source_pub_key,
-            }],
             version: 0,
         }
+    }
+
+    /// Returns the unique identifier of this molecule.
+    #[must_use]
+    pub fn uuid(&self) -> &str {
+        &self.uuid
+    }
+
+    /// Returns the timestamp of the last update.
+    #[must_use]
+    pub fn updated_at(&self) -> DateTime<Utc> {
+        self.updated_at
     }
 
     /// Updates or adds a reference at the specified key.
@@ -67,38 +69,6 @@ impl MoleculeRange {
     /// Returns the version counter for this molecule.
     #[must_use]
     pub fn version(&self) -> u64 {
-        self.version
-    }
-}
-
-impl MoleculeBehavior for MoleculeRange {
-    fn uuid(&self) -> &str {
-        &self.uuid
-    }
-
-    fn updated_at(&self) -> DateTime<Utc> {
-        self.updated_at
-    }
-
-    fn status(&self) -> &MoleculeStatus {
-        &self.status
-    }
-
-    fn set_status(&mut self, status: &MoleculeStatus, source_pub_key: String) {
-        apply_status_update(
-            &mut self.status,
-            &mut self.updated_at,
-            &mut self.update_history,
-            status,
-            source_pub_key,
-        );
-    }
-
-    fn update_history(&self) -> &Vec<MoleculeUpdate> {
-        &self.update_history
-    }
-
-    fn version(&self) -> u64 {
         self.version
     }
 }

@@ -3,7 +3,7 @@ use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::atom::{MoleculeBehavior, MoleculeRange};
+use crate::atom::MoleculeRange;
 // Removed unused impl_field import
 use crate::db_operations::DbOperations;
 use crate::schema::types::declarative_schemas::FieldMapper;

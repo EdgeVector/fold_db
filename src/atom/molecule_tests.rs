@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use super::super::{Atom, Molecule, MoleculeBehavior, MoleculeRange};
+    use super::super::{Atom, Molecule, MoleculeRange};
     use chrono::Utc;
     use serde_json::json;
 

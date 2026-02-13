@@ -3,8 +3,6 @@
 //! Provides a molecule type that combines hash and range functionality
 //! for efficient indexing with complex fan-out operations.
 
-use crate::atom::molecule_behavior::MoleculeBehavior;
-use crate::atom::molecule_types::{apply_status_update, MoleculeStatus, MoleculeUpdate};
 use crate::schema::types::key_config::KeyConfig;
 use crate::schema::types::key_value::KeyValue;
 use chrono::{DateTime, Utc};
@@ -29,10 +27,6 @@ pub struct MoleculeHashRange {
     /// Timestamp when this molecule was last updated
     #[schema(value_type = String, format = "date-time")]
     updated_at: DateTime<Utc>,
-    /// Current status of this molecule
-    status: MoleculeStatus,
-    /// History of status updates
-    update_history: Vec<MoleculeUpdate>,
     /// Order in which atoms were added (for deterministic sampling)
     #[serde(default)]
     update_order: Vec<KeyValue>,
@@ -44,17 +38,11 @@ pub struct MoleculeHashRange {
 impl MoleculeHashRange {
     /// Creates a new empty MoleculeHashRange.
     #[must_use]
-    pub fn new(source_pub_key: String) -> Self {
+    pub fn new(_source_pub_key: String) -> Self {
         Self {
             uuid: Uuid::new_v4().to_string(),
             atom_uuids: HashMap::new(),
             updated_at: Utc::now(),
-            status: MoleculeStatus::Active,
-            update_history: vec![MoleculeUpdate {
-                timestamp: Utc::now(),
-                status: MoleculeStatus::Active,
-                source_pub_key,
-            }],
             update_order: vec![],
             version: 0,
         }
@@ -63,7 +51,7 @@ impl MoleculeHashRange {
     /// Creates a new MoleculeHashRange with existing atom UUIDs.
     #[must_use]
     pub fn with_atoms(
-        source_pub_key: String,
+        _source_pub_key: String,
         atom_uuids: HashMap<String, BTreeMap<String, String>>,
     ) -> Self {
         let update_order = atom_uuids
@@ -79,15 +67,21 @@ impl MoleculeHashRange {
             uuid: Uuid::new_v4().to_string(),
             atom_uuids,
             updated_at: Utc::now(),
-            status: MoleculeStatus::Active,
-            update_history: vec![MoleculeUpdate {
-                timestamp: Utc::now(),
-                status: MoleculeStatus::Active,
-                source_pub_key,
-            }],
             update_order,
             version: 0,
         }
+    }
+
+    /// Returns the unique identifier of this molecule.
+    #[must_use]
+    pub fn uuid(&self) -> &str {
+        &self.uuid
+    }
+
+    /// Returns the timestamp of the last update.
+    #[must_use]
+    pub fn updated_at(&self) -> DateTime<Utc> {
+        self.updated_at
     }
 
     /// Adds an atom UUID using a KeyConfig for field mapping.
@@ -98,14 +92,15 @@ impl MoleculeHashRange {
     pub fn set_atom_uuid(&mut self, key_config: &KeyConfig, atom_uuid: String) {
         let hash = key_config.hash_field.clone().unwrap();
         let range = key_config.range_field.clone().unwrap();
-        if self.get_atom_uuid(&hash, &range) != Some(&atom_uuid) {
+        let changed = self.get_atom_uuid(&hash, &range) != Some(&atom_uuid);
+        if changed {
             self.version += 1;
+            let key_value = KeyValue::new(
+                key_config.hash_field.clone(),
+                key_config.range_field.clone(),
+            );
+            self.update_order.push(key_value);
         }
-        let key_value = KeyValue::new(
-            key_config.hash_field.clone(),
-            key_config.range_field.clone(),
-        );
-        self.update_order.push(key_value);
         self.atom_uuids
             .entry(hash)
             .or_default()
@@ -114,18 +109,19 @@ impl MoleculeHashRange {
     }
 
     /// Adds an atom UUID using explicit hash and range values.
-    /// Bumps the version counter only when the atom actually changes.
+    /// Bumps the version counter and update_order only when the atom actually changes.
     pub fn set_atom_uuid_from_values(
         &mut self,
         hash_value: String,
         range_value: String,
         atom_uuid: String,
     ) {
-        if self.get_atom_uuid(&hash_value, &range_value) != Some(&atom_uuid) {
+        let changed = self.get_atom_uuid(&hash_value, &range_value) != Some(&atom_uuid);
+        if changed {
             self.version += 1;
+            let key_value = KeyValue::new(Some(hash_value.clone()), Some(range_value.clone()));
+            self.update_order.push(key_value);
         }
-        let key_value = KeyValue::new(Some(hash_value.clone()), Some(range_value.clone()));
-        self.update_order.push(key_value);
         self.atom_uuids
             .entry(hash_value)
             .or_default()
@@ -225,38 +221,6 @@ impl MoleculeHashRange {
     #[must_use]
     pub fn sample(&self, n: usize) -> Vec<KeyValue> {
         self.update_order.iter().take(n).cloned().collect()
-    }
-}
-
-impl MoleculeBehavior for MoleculeHashRange {
-    fn uuid(&self) -> &str {
-        &self.uuid
-    }
-
-    fn updated_at(&self) -> DateTime<Utc> {
-        self.updated_at
-    }
-
-    fn status(&self) -> &MoleculeStatus {
-        &self.status
-    }
-
-    fn set_status(&mut self, status: &MoleculeStatus, source_pub_key: String) {
-        apply_status_update(
-            &mut self.status,
-            &mut self.updated_at,
-            &mut self.update_history,
-            status,
-            source_pub_key,
-        );
-    }
-
-    fn update_history(&self) -> &Vec<MoleculeUpdate> {
-        &self.update_history
-    }
-
-    fn version(&self) -> u64 {
-        self.version
     }
 }
 

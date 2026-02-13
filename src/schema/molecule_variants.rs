@@ -1,4 +1,4 @@
-use crate::atom::{Molecule, MoleculeBehavior, MoleculeHashRange, MoleculeRange};
+use crate::atom::{Molecule, MoleculeHashRange, MoleculeRange};
 use serde::{Deserialize, Serialize};
 
 /// Enum to hold different types of molecules
@@ -9,8 +9,8 @@ pub enum MoleculeVariant {
     HashRange(MoleculeHashRange),
 }
 
-impl MoleculeBehavior for MoleculeVariant {
-    fn uuid(&self) -> &str {
+impl MoleculeVariant {
+    pub fn uuid(&self) -> &str {
         match self {
             MoleculeVariant::Single(m) => m.uuid(),
             MoleculeVariant::Range(m) => m.uuid(),
@@ -18,7 +18,7 @@ impl MoleculeBehavior for MoleculeVariant {
         }
     }
 
-    fn updated_at(&self) -> chrono::DateTime<chrono::Utc> {
+    pub fn updated_at(&self) -> chrono::DateTime<chrono::Utc> {
         match self {
             MoleculeVariant::Single(m) => m.updated_at(),
             MoleculeVariant::Range(m) => m.updated_at(),
@@ -26,52 +26,24 @@ impl MoleculeBehavior for MoleculeVariant {
         }
     }
 
-    fn status(&self) -> &crate::atom::MoleculeStatus {
-        match self {
-            MoleculeVariant::Single(m) => m.status(),
-            MoleculeVariant::Range(m) => m.status(),
-            MoleculeVariant::HashRange(m) => m.status(),
-        }
-    }
-
-    fn set_status(&mut self, status: &crate::atom::MoleculeStatus, source_pub_key: String) {
-        match self {
-            MoleculeVariant::Single(m) => m.set_status(status, source_pub_key),
-            MoleculeVariant::Range(m) => m.set_status(status, source_pub_key),
-            MoleculeVariant::HashRange(m) => m.set_status(status, source_pub_key),
-        }
-    }
-
-    fn update_history(&self) -> &Vec<crate::atom::MoleculeUpdate> {
-        match self {
-            MoleculeVariant::Single(m) => m.update_history(),
-            MoleculeVariant::HashRange(m) => m.update_history(),
-            MoleculeVariant::Range(m) => m.update_history(),
-        }
-    }
-
-    fn version(&self) -> u64 {
+    pub fn version(&self) -> u64 {
         match self {
             MoleculeVariant::Single(m) => m.version(),
             MoleculeVariant::Range(m) => m.version(),
             MoleculeVariant::HashRange(m) => m.version(),
         }
     }
-}
 
-impl MoleculeVariant {
     /// Returns the atom UUID for this molecule variant
     /// Note: For Range and HashRange, this returns the molecule's own UUID, not a contained atom UUID
     pub fn get_atom_uuid(&self) -> &String {
         match self {
             MoleculeVariant::Single(m) => m.get_atom_uuid(),
             MoleculeVariant::Range(m) => {
-                // Convert &str to &String by using the molecule's own UUID
                 static RANGE_UUID: std::sync::OnceLock<String> = std::sync::OnceLock::new();
                 RANGE_UUID.get_or_init(|| m.uuid().to_string())
             }
             MoleculeVariant::HashRange(m) => {
-                // Convert &str to &String by using the molecule's own UUID
                 static HASH_RANGE_UUID: std::sync::OnceLock<String> = std::sync::OnceLock::new();
                 HASH_RANGE_UUID.get_or_init(|| m.uuid().to_string())
             }

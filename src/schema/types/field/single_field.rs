@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 // Removed unused impl_field import
-use crate::atom::{Molecule, MoleculeBehavior};
+use crate::atom::Molecule;
 use crate::db_operations::DbOperations;
 use crate::schema::types::declarative_schemas::FieldMapper;
 use crate::schema::types::field::base::FieldBase;

@@ -23,13 +23,6 @@ pub struct Atom {
     source_file_name: Option<String>,
     created_at: DateTime<Utc>,
     content: Value,
-    status: AtomStatus,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum AtomStatus {
-    Active,
-    Deleted,
 }
 
 impl Atom {
@@ -73,7 +66,6 @@ impl Atom {
             source_file_name: None,
             created_at: Utc::now(),
             content,
-            status: AtomStatus::Active,
         }
     }
 
@@ -84,11 +76,6 @@ impl Atom {
         self
     }
 
-    pub fn with_status(mut self, status: AtomStatus) -> Self {
-        self.status = status;
-        self
-    }
-
     /// Returns a reference to the Atom's content.
     ///
     /// This method provides read-only access to the stored data,
@@ -96,10 +83,6 @@ impl Atom {
     #[must_use]
     pub const fn content(&self) -> &Value {
         &self.content
-    }
-
-    pub fn set_status(&mut self, status: AtomStatus) {
-        self.status = status;
     }
 
     /// Applies a transformation to the Atom's content and returns the result.
@@ -200,7 +183,6 @@ mod tests {
     #[test]
     fn test_molecule_creation_and_update() {
         use crate::atom::Molecule;
-        use crate::atom::MoleculeBehavior;
 
         let atom = Atom::new(
             "test_schema".to_string(),

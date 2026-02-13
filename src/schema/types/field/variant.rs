@@ -196,7 +196,7 @@ mod tests {
 
     // Helper to create a SingleField with a molecule pointing to a given atom_uuid
     fn make_single_field(atom_uuid: &str, mol_uuid: &str) -> FieldVariant {
-        let mut mol = Molecule::new(atom_uuid.to_string(), "test_key".to_string());
+        let mol = Molecule::new(atom_uuid.to_string(), "test_key".to_string());
         // Override the molecule UUID to a known value for event matching
         // We can't set it directly, so we use FieldCommon to track it
         let mut field = SingleField::new(HashMap::<String, FieldMapper>::new(), Some(mol));

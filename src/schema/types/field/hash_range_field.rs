@@ -13,7 +13,7 @@ use crate::schema::types::key_value::KeyValue;
 use crate::schema::types::SchemaError;
 use serde::{Deserialize, Serialize};
 // Removed unused JsonValue import
-use crate::atom::{MoleculeBehavior, MoleculeHashRange};
+use crate::atom::MoleculeHashRange;
 use crate::schema::types::field::base::FieldBase;
 use std::collections::HashMap;
 use std::sync::Arc;

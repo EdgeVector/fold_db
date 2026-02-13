@@ -61,8 +61,6 @@ use utoipa::OpenApi;
             crate::atom::Molecule,
             crate::atom::MoleculeRange,
             crate::atom::MoleculeHashRange,
-            crate::atom::MoleculeStatus,
-            crate::atom::MoleculeUpdate,
             crate::ingestion::config::IngestionConfig,
             crate::ingestion::config::SavedConfig,
             crate::ingestion::config::AIProvider,
