@@ -45,7 +45,7 @@ async fn test_batch_index_from_keywords() {
     let store = std::sync::Arc::new(SledNamespacedStore::new(db));
     let kv_store = store.open_namespace("native_index").await.unwrap();
 
-    let manager = NativeIndexManager::new(kv_store);
+    let manager = NativeIndexManager::new(kv_store, None);
 
     let key = KeyValue::new(Some("rec1".to_string()), None);
     let keywords = vec![
@@ -55,7 +55,7 @@ async fn test_batch_index_from_keywords() {
     ];
 
     manager
-        .batch_index_from_keywords("AiSchema", &key, keywords)
+        .batch_index_from_keywords("AiSchema", &key, keywords, None)
         .await
         .expect("batch_index_from_keywords failed");
 
@@ -77,7 +77,7 @@ async fn test_multi_word_search_intersection() {
     let store = std::sync::Arc::new(SledNamespacedStore::new(db));
     let kv_store = store.open_namespace("native_index").await.unwrap();
 
-    let manager = NativeIndexManager::new(kv_store);
+    let manager = NativeIndexManager::new(kv_store, None);
 
     // Index keywords for two "people" records using batch_index_from_keywords
     let key_p1 = KeyValue::new(Some("p1".to_string()), None);
@@ -86,6 +86,7 @@ async fn test_multi_word_search_intersection() {
             "People",
             &key_p1,
             vec!["alice".to_string(), "johnson".to_string()],
+            None,
         )
         .await
         .expect("indexing p1 failed");
@@ -96,6 +97,7 @@ async fn test_multi_word_search_intersection() {
             "People",
             &key_p2,
             vec!["alice".to_string(), "smith".to_string()],
+            None,
         )
         .await
         .expect("indexing p2 failed");
@@ -161,7 +163,7 @@ async fn test_batch_index_field_names() {
     let store = std::sync::Arc::new(SledNamespacedStore::new(db));
     let kv_store = store.open_namespace("native_index").await.unwrap();
 
-    let manager = NativeIndexManager::new(kv_store);
+    let manager = NativeIndexManager::new(kv_store, None);
 
     let key = KeyValue::new(Some("rec1".to_string()), None);
     let field_names = vec![
@@ -171,7 +173,7 @@ async fn test_batch_index_field_names() {
     ];
 
     manager
-        .batch_index_field_names("UserSchema", &key, &field_names)
+        .batch_index_field_names("UserSchema", &key, &field_names, None)
         .await
         .expect("batch_index_field_names failed");
 
@@ -186,7 +188,7 @@ async fn test_batch_index_field_names() {
     let key2 = KeyValue::new(Some("rec2".to_string()), None);
     let with_excluded = vec!["password".to_string(), "display_name".to_string()];
     manager
-        .batch_index_field_names("UserSchema", &key2, &with_excluded)
+        .batch_index_field_names("UserSchema", &key2, &with_excluded, None)
         .await
         .expect("batch_index_field_names failed");
 
@@ -203,18 +205,18 @@ async fn test_search_all_combines_words_and_fields() {
     let store = std::sync::Arc::new(SledNamespacedStore::new(db));
     let kv_store = store.open_namespace("native_index").await.unwrap();
 
-    let manager = NativeIndexManager::new(kv_store);
+    let manager = NativeIndexManager::new(kv_store, None);
 
     let key = KeyValue::new(Some("rec1".to_string()), None);
 
     // Index "email" as both a keyword and a field name
     manager
-        .batch_index_from_keywords("Schema1", &key, vec!["email".to_string()])
+        .batch_index_from_keywords("Schema1", &key, vec!["email".to_string()], None)
         .await
         .expect("keyword indexing failed");
 
     manager
-        .batch_index_field_names("Schema1", &key, &["email".to_string()])
+        .batch_index_field_names("Schema1", &key, &["email".to_string()], None)
         .await
         .expect("field indexing failed");
 
@@ -235,11 +237,11 @@ async fn test_matched_term_populated_in_search() {
     let store = std::sync::Arc::new(SledNamespacedStore::new(db));
     let kv_store = store.open_namespace("native_index").await.unwrap();
 
-    let manager = NativeIndexManager::new(kv_store);
+    let manager = NativeIndexManager::new(kv_store, None);
 
     let key = KeyValue::new(Some("rec1".to_string()), None);
     manager
-        .batch_index_from_keywords("Tweet", &key, vec!["hello".to_string()])
+        .batch_index_from_keywords("Tweet", &key, vec!["hello".to_string()], None)
         .await
         .expect("indexing failed");
 
@@ -258,7 +260,7 @@ async fn test_matched_term_populated_in_search() {
 
     // Field-name entries also get matched_term
     manager
-        .batch_index_field_names("Tweet", &key, &["content".to_string()])
+        .batch_index_field_names("Tweet", &key, &["content".to_string()], None)
         .await
         .expect("field indexing failed");
 
@@ -266,3 +268,55 @@ async fn test_matched_term_populated_in_search() {
     let field_entry = field_entries.iter().find(|e| e.classification == "field").unwrap();
     assert_eq!(field_entry.matched_term, Some("content".to_string()));
 }
+
+#[tokio::test]
+async fn test_molecule_versions_preserved_through_index_roundtrip() {
+    let db = sled::Config::new().temporary(true).open().unwrap();
+    let store = std::sync::Arc::new(SledNamespacedStore::new(db));
+    let kv_store = store.open_namespace("native_index").await.unwrap();
+
+    let manager = NativeIndexManager::new(kv_store, None);
+
+    let key = KeyValue::new(Some("rec1".to_string()), None);
+    let mol_versions = std::collections::HashMap::from([
+        ("content".to_string(), 3u64),
+        ("title".to_string(), 1u64),
+    ]);
+
+    // Index with molecule versions
+    manager
+        .batch_index_from_keywords("Tweet", &key, vec!["rust".to_string()], Some(&mol_versions))
+        .await
+        .expect("indexing failed");
+
+    // Search and verify molecule_versions are preserved
+    let entries = manager.search("rust").await.expect("search failed");
+    assert_eq!(entries.len(), 1);
+    let entry = &entries[0];
+    assert!(entry.molecule_versions.is_some());
+    let versions = entry.molecule_versions.as_ref().unwrap();
+    assert_eq!(versions.get("content"), Some(&3u64));
+    assert_eq!(versions.get("title"), Some(&1u64));
+}
+
+#[tokio::test]
+async fn test_molecule_versions_none_by_default() {
+    let db = sled::Config::new().temporary(true).open().unwrap();
+    let store = std::sync::Arc::new(SledNamespacedStore::new(db));
+    let kv_store = store.open_namespace("native_index").await.unwrap();
+
+    let manager = NativeIndexManager::new(kv_store, None);
+
+    let key = KeyValue::new(Some("rec1".to_string()), None);
+
+    // Index without molecule versions
+    manager
+        .batch_index_from_keywords("Tweet", &key, vec!["hello".to_string()], None)
+        .await
+        .expect("indexing failed");
+
+    let entries = manager.search("hello").await.expect("search failed");
+    assert_eq!(entries.len(), 1);
+    assert!(entries[0].molecule_versions.is_none());
+}
+

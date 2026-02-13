@@ -166,7 +166,7 @@ impl FoldDB {
     /// Common initialization logic that creates all FoldDB components from DbOperations
     ///
     /// This is used by both initialize_from_db (Sled) and new_with_db_ops (custom backends)
-    async fn initialize_from_db_ops(
+    pub(crate) async fn initialize_from_db_ops(
         db_ops: Arc<DbOperations>,
         _db_path: &str,
         job_store: Option<Arc<dyn JobStore>>,

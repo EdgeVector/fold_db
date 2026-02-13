@@ -102,6 +102,16 @@ impl Field for FieldVariant {
 }
 
 impl FieldVariant {
+    /// Returns the current molecule version, if a molecule is present.
+    #[must_use]
+    pub fn molecule_version(&self) -> Option<u64> {
+        match self {
+            Self::Single(f) => f.base.molecule.as_ref().map(|m| m.version()),
+            Self::Range(f) => f.base.molecule.as_ref().map(|m| m.version()),
+            Self::HashRange(f) => f.base.molecule.as_ref().map(|m| m.version()),
+        }
+    }
+
     /// Rewinds the in-memory molecule to its state at the given point in time
     /// by undoing all mutation events that occurred after `as_of`.
     async fn rewind_to(
@@ -247,6 +257,7 @@ mod tests {
                 field_key: FieldKey::Single,
                 old_atom_uuid: None,
                 new_atom_uuid: "atom-v1".to_string(),
+                version: 0,
             },
             MutationEvent {
                 molecule_uuid: mol_uuid.to_string(),
@@ -254,6 +265,7 @@ mod tests {
                 field_key: FieldKey::Single,
                 old_atom_uuid: Some("atom-v1".to_string()),
                 new_atom_uuid: "atom-v2".to_string(),
+                version: 0,
             },
         ];
         db_ops.batch_store_mutation_events(events).await.unwrap();
@@ -291,6 +303,7 @@ mod tests {
             field_key: FieldKey::Single,
             old_atom_uuid: None,
             new_atom_uuid: "atom-v1".to_string(),
+            version: 0,
         }];
         db_ops.batch_store_mutation_events(events).await.unwrap();
 
@@ -327,6 +340,7 @@ mod tests {
                 field_key: FieldKey::Range { range: "key1".to_string() },
                 old_atom_uuid: None,
                 new_atom_uuid: "atom-k1".to_string(),
+                version: 0,
             },
             MutationEvent {
                 molecule_uuid: mol_uuid.to_string(),
@@ -334,6 +348,7 @@ mod tests {
                 field_key: FieldKey::Range { range: "key2".to_string() },
                 old_atom_uuid: None,
                 new_atom_uuid: "atom-k2".to_string(),
+                version: 0,
             },
         ];
         db_ops.batch_store_mutation_events(events).await.unwrap();
@@ -381,6 +396,7 @@ mod tests {
                 },
                 old_atom_uuid: None,
                 new_atom_uuid: "atom-v1".to_string(),
+                version: 0,
             },
             MutationEvent {
                 molecule_uuid: mol_uuid.to_string(),
@@ -391,6 +407,7 @@ mod tests {
                 },
                 old_atom_uuid: Some("atom-v1".to_string()),
                 new_atom_uuid: "atom-v2".to_string(),
+                version: 0,
             },
         ];
         db_ops.batch_store_mutation_events(events).await.unwrap();
@@ -439,6 +456,7 @@ mod tests {
                 field_key: FieldKey::Single,
                 old_atom_uuid: None,
                 new_atom_uuid: "atom-hello".to_string(),
+                version: 0,
             },
             MutationEvent {
                 molecule_uuid: mol_uuid.to_string(),
@@ -446,6 +464,7 @@ mod tests {
                 field_key: FieldKey::Single,
                 old_atom_uuid: Some("atom-hello".to_string()),
                 new_atom_uuid: "atom-world".to_string(),
+                version: 0,
             },
             MutationEvent {
                 molecule_uuid: mol_uuid.to_string(),
@@ -453,6 +472,7 @@ mod tests {
                 field_key: FieldKey::Single,
                 old_atom_uuid: Some("atom-world".to_string()),
                 new_atom_uuid: "atom-hello".to_string(),
+                version: 0,
             },
         ];
         db_ops.batch_store_mutation_events(events).await.unwrap();

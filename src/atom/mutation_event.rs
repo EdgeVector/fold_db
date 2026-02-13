@@ -10,6 +10,9 @@ pub struct MutationEvent {
     pub field_key: FieldKey,
     pub old_atom_uuid: Option<String>,
     pub new_atom_uuid: String,
+    /// Molecule version at the time this event was recorded
+    #[serde(default)]
+    pub version: u64,
 }
 
 /// Identifies which slot in the molecule was changed
@@ -32,6 +35,7 @@ mod tests {
             field_key: FieldKey::Single,
             old_atom_uuid: None,
             new_atom_uuid: "atom-456".to_string(),
+            version: 0,
         };
 
         let json = serde_json::to_string(&event).unwrap();
@@ -69,6 +73,7 @@ mod tests {
             },
             old_atom_uuid: Some("old-atom".to_string()),
             new_atom_uuid: "new-atom".to_string(),
+            version: 0,
         };
 
         let json = serde_json::to_string(&event).unwrap();
@@ -86,6 +91,7 @@ mod tests {
             field_key: FieldKey::Single,
             old_atom_uuid: None,
             new_atom_uuid: "atom-1".to_string(),
+            version: 0,
         };
 
         let ts = event.timestamp.timestamp_nanos_opt().unwrap_or(0);

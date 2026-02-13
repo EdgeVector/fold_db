@@ -1,4 +1,4 @@
-#[cfg(feature = "aws-backend")]
+use crate::crypto::E2eKeys;
 use crate::db_operations::DbOperations;
 use crate::error::{FoldDbError, FoldDbResult};
 use crate::fold_db_core::FoldDB;
@@ -22,19 +22,62 @@ use crate::log_feature;
 /// - Progress tracking (ProgressStore)
 /// - Connection pooling and configuration
 /// - Encryption at rest (via EncryptingNamespacedStore decorator)
-pub async fn create_fold_db(config: &DatabaseConfig) -> FoldDbResult<Arc<Mutex<FoldDB>>> {
+/// - E2E encryption (atom content via EncryptingNamespacedStore, index keywords via HMAC)
+pub async fn create_fold_db(
+    config: &DatabaseConfig,
+    e2e_keys: &E2eKeys,
+) -> FoldDbResult<Arc<Mutex<FoldDB>>> {
     match config {
         DatabaseConfig::Local { path } => {
             let path_str = path
                 .to_str()
                 .ok_or_else(|| FoldDbError::Config("Invalid storage path".to_string()))?;
 
-            // For local backend, we use the simple new() constructor which handles
-            // Sled initialization and uses InMemoryProgressStore
+            // Open sled database
+            let db = sled::open(path)
+                .map_err(|e| FoldDbError::Config(format!("Failed to open sled database: {}", e)))?;
+            let orchestrator_tree = db
+                .open_tree("orchestrator_state")
+                .map_err(|e| FoldDbError::Config(format!("Failed to open orchestrator tree: {}", e)))?;
+            let progress_tree = db
+                .open_tree("progress")
+                .map_err(|e| FoldDbError::Config(format!("Failed to open progress tree: {}", e)))?;
+
+            // Build base namespaced store from sled
+            let base_store: Arc<dyn crate::storage::traits::NamespacedStore> =
+                Arc::new(crate::storage::SledNamespacedStore::new(db));
+
+            // Wrap with E2E encryption (atom content via AES-256-GCM)
+            let crypto = Arc::new(
+                crate::crypto::LocalCryptoProvider::from_key(e2e_keys.encryption_key()),
+            );
+            let enc_store = crate::storage::EncryptingNamespacedStore::new(
+                base_store,
+                crypto,
+                true, // migration_mode: tolerate existing plaintext data
+            );
+            let store = Arc::new(enc_store) as Arc<dyn crate::storage::traits::NamespacedStore>;
+
+            // Build DbOperations with E2E index key for keyword blinding
+            let mut db_ops = DbOperations::from_namespaced_store(
+                store,
+                Some(e2e_keys.index_key()),
+            )
+            .await
+            .map_err(|e| FoldDbError::Config(e.to_string()))?;
+            db_ops.orchestrator_tree = Some(orchestrator_tree);
+
+            let job_store = crate::progress::create_tracker_with_sled(progress_tree);
+
             Ok(Arc::new(Mutex::new(
-                FoldDB::new(path_str)
-                    .await
-                    .map_err(|e| FoldDbError::Config(e.to_string()))?,
+                FoldDB::initialize_from_db_ops(
+                    Arc::new(db_ops),
+                    path_str,
+                    Some(job_store),
+                    "local".to_string(),
+                )
+                .await
+                .map_err(|e| FoldDbError::Config(e.to_string()))?,
             )))
         }
         #[cfg(feature = "aws-backend")]
@@ -141,7 +184,7 @@ pub async fn create_fold_db(config: &DatabaseConfig) -> FoldDbResult<Arc<Mutex<F
             };
 
             let db_ops = Arc::new(
-                DbOperations::from_namespaced_store(namespaced_store)
+                DbOperations::from_namespaced_store(namespaced_store, None)
                     .await
                     .map_err(|e| {
                         FoldDbError::Config(format!("Failed to initialize DynamoDB backend: {}", e))

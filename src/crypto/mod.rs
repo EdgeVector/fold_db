@@ -7,12 +7,14 @@
 //! - **`KmsCryptoProvider`** — AWS KMS envelope encryption for cloud deployments
 //! - **`envelope`** — self-describing binary ciphertext format
 
+pub mod e2e;
 pub mod envelope;
 pub mod error;
 #[cfg(feature = "aws-backend")]
 pub mod kms_provider;
 pub mod provider;
 
+pub use e2e::E2eKeys;
 pub use error::{CryptoError, CryptoResult};
 #[cfg(feature = "aws-backend")]
 pub use kms_provider::KmsCryptoProvider;

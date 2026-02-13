@@ -37,6 +37,10 @@ pub struct FoldNode {
     pub(super) private_key: String,
     /// The node's public key for verification
     pub(super) public_key: String,
+    /// E2E encryption keys (content encryption + index blinding).
+    /// Stored for future passkey integration where the key may need to be refreshed.
+    #[allow(dead_code)]
+    pub(super) e2e_keys: crate::crypto::E2eKeys,
 }
 
 /// Basic status information about the network layer
@@ -79,7 +83,16 @@ impl FoldNode {
             }
         }
 
-        let db = crate::fold_db_core::factory::create_fold_db(&config.database).await?;
+        // Load or generate E2E encryption keys
+        let home = std::env::var("HOME")
+            .map(std::path::PathBuf::from)
+            .map_err(|_| FoldDbError::Config("HOME environment variable not set".to_string()))?;
+        let e2e_key_path = home.join(".fold_db/e2e.key");
+        let e2e_keys = crate::crypto::E2eKeys::load_or_generate(&e2e_key_path)
+            .await
+            .map_err(|e| FoldDbError::Config(format!("Failed to load E2E keys: {}", e)))?;
+
+        let db = crate::fold_db_core::factory::create_fold_db(&config.database, &e2e_keys).await?;
 
         let (node_id, security_manager, security_config) =
             Self::init_internals(&config, &db).await?;
@@ -94,6 +107,7 @@ impl FoldNode {
             security_manager,
             private_key,
             public_key,
+            e2e_keys,
         };
 
         // Require schema service to be configured
@@ -160,6 +174,15 @@ impl FoldNode {
                 }
             };
 
+        // Load or generate E2E encryption keys
+        let home = std::env::var("HOME")
+            .map(std::path::PathBuf::from)
+            .map_err(|_| FoldDbError::Config("HOME environment variable not set".to_string()))?;
+        let e2e_key_path = home.join(".fold_db/e2e.key");
+        let e2e_keys = crate::crypto::E2eKeys::load_or_generate(&e2e_key_path)
+            .await
+            .map_err(|e| FoldDbError::Config(format!("Failed to load E2E keys: {}", e)))?;
+
         let (node_id, security_manager, security_config) =
             Self::init_internals(&config, &db).await?;
 
@@ -173,6 +196,7 @@ impl FoldNode {
             security_manager,
             private_key,
             public_key,
+            e2e_keys,
         };
 
         // Require schema service to be configured

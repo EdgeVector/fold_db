@@ -158,9 +158,18 @@ impl NodeManager {
         node_config =
             node_config.with_identity(&keypair.public_key_base64(), &keypair.secret_key_base64());
 
+        // Load or generate E2E encryption keys
+        let home = std::env::var("HOME")
+            .map(std::path::PathBuf::from)
+            .map_err(|_| NodeManagerError::ConfigurationError("HOME environment variable not set".to_string()))?;
+        let e2e_key_path = home.join(".fold_db/e2e.key");
+        let e2e_keys = crate::crypto::E2eKeys::load_or_generate(&e2e_key_path)
+            .await
+            .map_err(|e| NodeManagerError::ConfigurationError(format!("Failed to load E2E keys: {}", e)))?;
+
         // Create FoldDB with user context set
         let db = crate::logging::core::run_with_user(user_id, async {
-            factory::create_fold_db(&node_config.database).await
+            factory::create_fold_db(&node_config.database, &e2e_keys).await
         })
         .await
         .map_err(|e| NodeManagerError::StorageError(e.to_string()))?;

@@ -44,8 +44,9 @@ impl NativeIndexManager {
             return Ok(Vec::new());
         };
 
-        // Try the full term as-is
-        let prefix = format!("{}word:{}:", INDEX_ENTRY_PREFIX, normalized);
+        // Blind the full term and try as-is
+        let blinded = self.blind_token(&normalized);
+        let prefix = format!("{}word:{}:", INDEX_ENTRY_PREFIX, blinded);
         let entries = self.scan_index_prefix(&prefix, Some(&normalized)).await?;
         if !entries.is_empty() || !normalized.contains(' ') {
             return Ok(entries);
@@ -62,13 +63,15 @@ impl NativeIndexManager {
         }
 
         // Search the first word, then filter to records that also match all other words
-        let first_prefix = format!("{}word:{}:", INDEX_ENTRY_PREFIX, words[0]);
+        let first_blinded = self.blind_token(&words[0]);
+        let first_prefix = format!("{}word:{}:", INDEX_ENTRY_PREFIX, first_blinded);
         let candidates = self.scan_index_prefix(&first_prefix, Some(&words[0])).await?;
 
         // Collect record keys that appear for every other word
         let mut required_keys: Option<HashSet<(String, KeyValue)>> = None;
         for word in &words[1..] {
-            let p = format!("{}word:{}:", INDEX_ENTRY_PREFIX, word);
+            let word_blinded = self.blind_token(word);
+            let p = format!("{}word:{}:", INDEX_ENTRY_PREFIX, word_blinded);
             let word_entries = self.scan_index_prefix(&p, Some(word)).await?;
             let keys: HashSet<(String, KeyValue)> = word_entries
                 .into_iter()
@@ -137,7 +140,8 @@ impl NativeIndexManager {
             return Ok(Vec::new());
         };
 
-        let prefix = format!("{}field:{}:", INDEX_ENTRY_PREFIX, normalized);
+        let blinded = self.blind_token(&normalized);
+        let prefix = format!("{}field:{}:", INDEX_ENTRY_PREFIX, blinded);
         self.scan_index_prefix(&prefix, Some(&normalized)).await
     }
 

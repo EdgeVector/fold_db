@@ -142,10 +142,13 @@ impl IndexOrchestrator {
             return;
         }
 
+        // Extract molecule versions from the event
+        let mol_versions = event.molecule_versions.as_ref();
+
         // Step 1: Always index field names (no LLM needed)
         let field_names: Vec<String> = merged_fields.keys().cloned().collect();
         if let Err(e) = native_index_mgr
-            .batch_index_field_names(schema_name, &key_value, &field_names)
+            .batch_index_field_names(schema_name, &key_value, &field_names, mol_versions)
             .await
         {
             error!("IndexOrchestrator: Field-name indexing failed: {}", e);
@@ -168,6 +171,7 @@ impl IndexOrchestrator {
                                 schema_name,
                                 &key_value,
                                 keywords,
+                                mol_versions,
                             )
                             .await
                         {

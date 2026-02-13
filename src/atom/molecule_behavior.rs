@@ -20,4 +20,7 @@ pub trait MoleculeBehavior {
 
     /// Returns the update history
     fn update_history(&self) -> &Vec<MoleculeUpdate>;
+
+    /// Returns the monotonic version counter
+    fn version(&self) -> u64;
 }

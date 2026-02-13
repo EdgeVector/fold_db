@@ -49,6 +49,14 @@ impl MoleculeBehavior for MoleculeVariant {
             MoleculeVariant::Range(m) => m.update_history(),
         }
     }
+
+    fn version(&self) -> u64 {
+        match self {
+            MoleculeVariant::Single(m) => m.version(),
+            MoleculeVariant::Range(m) => m.version(),
+            MoleculeVariant::HashRange(m) => m.version(),
+        }
+    }
 }
 
 impl MoleculeVariant {

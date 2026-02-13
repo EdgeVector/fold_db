@@ -14,6 +14,8 @@ pub struct MoleculeRange {
     updated_at: DateTime<Utc>,
     status: MoleculeStatus,
     update_history: Vec<MoleculeUpdate>,
+    #[serde(default)]
+    version: u64,
 }
 
 impl MoleculeRange {
@@ -30,12 +32,17 @@ impl MoleculeRange {
                 status: MoleculeStatus::Active,
                 source_pub_key,
             }],
+            version: 0,
         }
     }
 
     /// Updates or adds a reference at the specified key.
     /// If the key already exists, the atom_uuid replaces the existing value.
+    /// Bumps the version counter only when the atom actually changes.
     pub fn set_atom_uuid(&mut self, key: String, atom_uuid: String) {
+        if self.atom_uuids.get(&key) != Some(&atom_uuid) {
+            self.version += 1;
+        }
         self.atom_uuids.insert(key, atom_uuid);
         self.updated_at = Utc::now();
     }
@@ -47,12 +54,20 @@ impl MoleculeRange {
     }
 
     /// Removes the reference at the specified key.
+    /// Bumps the version counter if an entry was actually removed.
     #[allow(clippy::manual_inspect)]
     pub fn remove_atom_uuid(&mut self, key: &str) -> Option<String> {
         self.atom_uuids.remove(key).map(|uuid| {
+            self.version += 1;
             self.updated_at = Utc::now();
             uuid
         })
+    }
+
+    /// Returns the version counter for this molecule.
+    #[must_use]
+    pub fn version(&self) -> u64 {
+        self.version
     }
 }
 
@@ -81,5 +96,51 @@ impl MoleculeBehavior for MoleculeRange {
 
     fn update_history(&self) -> &Vec<MoleculeUpdate> {
         &self.update_history
+    }
+
+    fn version(&self) -> u64 {
+        self.version
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_version_starts_at_zero() {
+        let mol = MoleculeRange::new("key".to_string());
+        assert_eq!(mol.version(), 0);
+    }
+
+    #[test]
+    fn test_version_bumps_on_insert() {
+        let mut mol = MoleculeRange::new("key".to_string());
+        mol.set_atom_uuid("k1".to_string(), "atom-1".to_string());
+        assert_eq!(mol.version(), 1);
+    }
+
+    #[test]
+    fn test_version_no_bump_on_same_value() {
+        let mut mol = MoleculeRange::new("key".to_string());
+        mol.set_atom_uuid("k1".to_string(), "atom-1".to_string());
+        mol.set_atom_uuid("k1".to_string(), "atom-1".to_string());
+        assert_eq!(mol.version(), 1);
+    }
+
+    #[test]
+    fn test_version_bumps_on_remove() {
+        let mut mol = MoleculeRange::new("key".to_string());
+        mol.set_atom_uuid("k1".to_string(), "atom-1".to_string());
+        assert_eq!(mol.version(), 1);
+        mol.remove_atom_uuid("k1");
+        assert_eq!(mol.version(), 2);
+    }
+
+    #[test]
+    fn test_version_no_bump_on_remove_missing() {
+        let mut mol = MoleculeRange::new("key".to_string());
+        mol.remove_atom_uuid("nonexistent");
+        assert_eq!(mol.version(), 0);
     }
 }

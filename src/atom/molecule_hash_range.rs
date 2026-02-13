@@ -36,6 +36,9 @@ pub struct MoleculeHashRange {
     /// Order in which atoms were added (for deterministic sampling)
     #[serde(default)]
     update_order: Vec<KeyValue>,
+    /// Monotonic version counter, bumped on each actual change
+    #[serde(default)]
+    version: u64,
 }
 
 impl MoleculeHashRange {
@@ -53,6 +56,7 @@ impl MoleculeHashRange {
                 source_pub_key,
             }],
             update_order: vec![],
+            version: 0,
         }
     }
 
@@ -82,6 +86,7 @@ impl MoleculeHashRange {
                 source_pub_key,
             }],
             update_order,
+            version: 0,
         }
     }
 
@@ -91,25 +96,34 @@ impl MoleculeHashRange {
     /// * `atom_uuid` - The UUID of the atom to store
     /// * `key_config` - Configuration specifying which fields to use as hash and range
     pub fn set_atom_uuid(&mut self, key_config: &KeyConfig, atom_uuid: String) {
+        let hash = key_config.hash_field.clone().unwrap();
+        let range = key_config.range_field.clone().unwrap();
+        if self.get_atom_uuid(&hash, &range) != Some(&atom_uuid) {
+            self.version += 1;
+        }
         let key_value = KeyValue::new(
             key_config.hash_field.clone(),
             key_config.range_field.clone(),
         );
         self.update_order.push(key_value);
         self.atom_uuids
-            .entry(key_config.hash_field.clone().unwrap())
+            .entry(hash)
             .or_default()
-            .insert(key_config.range_field.clone().unwrap(), atom_uuid);
+            .insert(range, atom_uuid);
         self.updated_at = Utc::now();
     }
 
     /// Adds an atom UUID using explicit hash and range values.
+    /// Bumps the version counter only when the atom actually changes.
     pub fn set_atom_uuid_from_values(
         &mut self,
         hash_value: String,
         range_value: String,
         atom_uuid: String,
     ) {
+        if self.get_atom_uuid(&hash_value, &range_value) != Some(&atom_uuid) {
+            self.version += 1;
+        }
         let key_value = KeyValue::new(Some(hash_value.clone()), Some(range_value.clone()));
         self.update_order.push(key_value);
         self.atom_uuids
@@ -134,10 +148,12 @@ impl MoleculeHashRange {
     }
 
     /// Removes the reference at the specified hash and range values.
+    /// Bumps the version counter if an entry was actually removed.
     pub fn remove_atom_uuid(&mut self, hash_value: &str, range_value: &str) -> Option<String> {
         if let Some(range_map) = self.atom_uuids.get_mut(hash_value) {
             let result = range_map.remove(range_value);
             if result.is_some() {
+                self.version += 1;
                 self.updated_at = Utc::now();
             }
             // Clean up empty hash entries
@@ -198,6 +214,12 @@ impl MoleculeHashRange {
         })
     }
 
+    /// Returns the version counter for this molecule.
+    #[must_use]
+    pub fn version(&self) -> u64 {
+        self.version
+    }
+
     /// Returns a deterministic sample of n KeyValues from the update order.
     /// If n is greater than the number of KeyValues, returns all KeyValues.
     #[must_use]
@@ -231,5 +253,60 @@ impl MoleculeBehavior for MoleculeHashRange {
 
     fn update_history(&self) -> &Vec<MoleculeUpdate> {
         &self.update_history
+    }
+
+    fn version(&self) -> u64 {
+        self.version
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_version_starts_at_zero() {
+        let mol = MoleculeHashRange::new("key".to_string());
+        assert_eq!(mol.version(), 0);
+    }
+
+    #[test]
+    fn test_version_bumps_on_insert() {
+        let mut mol = MoleculeHashRange::new("key".to_string());
+        mol.set_atom_uuid_from_values("h1".to_string(), "r1".to_string(), "atom-1".to_string());
+        assert_eq!(mol.version(), 1);
+    }
+
+    #[test]
+    fn test_version_no_bump_on_same_value() {
+        let mut mol = MoleculeHashRange::new("key".to_string());
+        mol.set_atom_uuid_from_values("h1".to_string(), "r1".to_string(), "atom-1".to_string());
+        mol.set_atom_uuid_from_values("h1".to_string(), "r1".to_string(), "atom-1".to_string());
+        assert_eq!(mol.version(), 1);
+    }
+
+    #[test]
+    fn test_version_bumps_on_remove() {
+        let mut mol = MoleculeHashRange::new("key".to_string());
+        mol.set_atom_uuid_from_values("h1".to_string(), "r1".to_string(), "atom-1".to_string());
+        assert_eq!(mol.version(), 1);
+        mol.remove_atom_uuid("h1", "r1");
+        assert_eq!(mol.version(), 2);
+    }
+
+    #[test]
+    fn test_version_no_bump_on_remove_missing() {
+        let mut mol = MoleculeHashRange::new("key".to_string());
+        mol.remove_atom_uuid("h1", "r1");
+        assert_eq!(mol.version(), 0);
+    }
+
+    #[test]
+    fn test_with_atoms_starts_at_zero() {
+        let mol = MoleculeHashRange::with_atoms(
+            "key".to_string(),
+            HashMap::from([("h1".to_string(), std::collections::BTreeMap::from([("r1".to_string(), "a1".to_string())]))]),
+        );
+        assert_eq!(mol.version(), 0);
     }
 }

@@ -3,6 +3,7 @@ use crate::schema::SchemaError;
 
 use super::types::IndexEntry;
 use super::NativeIndexManager;
+use std::collections::HashMap;
 
 impl NativeIndexManager {
     /// Deduplicate index entries by key and write them via the KvStore.
@@ -30,6 +31,7 @@ impl NativeIndexManager {
         schema_name: &str,
         key_value: &KeyValue,
         keywords: Vec<String>,
+        molecule_versions: Option<&HashMap<String, u64>>,
     ) -> Result<(), SchemaError> {
         log::info!(
             "[NativeIndex] batch_index_from_keywords: {} keywords for schema '{}'",
@@ -40,15 +42,17 @@ impl NativeIndexManager {
         let mut index_entries: Vec<(Vec<u8>, Vec<u8>)> = Vec::new();
 
         for keyword in &keywords {
-            let entry = IndexEntry::new(
+            let mut entry = IndexEntry::new(
                 schema_name.to_string(),
                 key_value.clone(),
                 "llm_keyword".to_string(),
                 "word".to_string(),
             );
+            entry.molecule_versions = molecule_versions.cloned();
 
-            // Term is stored as "word:{keyword}" to match the search prefix format
-            let term = format!("word:{}", keyword);
+            // Blind the keyword (HMAC if E2E key present, passthrough otherwise)
+            let blinded = self.blind_token(keyword);
+            let term = format!("word:{}", blinded);
             let storage_key = entry.storage_key(&term);
             let entry_bytes = serde_json::to_vec(&entry).map_err(|e| {
                 SchemaError::InvalidData(format!("Failed to serialize IndexEntry: {}", e))
@@ -72,6 +76,7 @@ impl NativeIndexManager {
         schema_name: &str,
         key_value: &KeyValue,
         field_names: &[String],
+        molecule_versions: Option<&HashMap<String, u64>>,
     ) -> Result<(), SchemaError> {
         let indexable: Vec<&String> = field_names
             .iter()
@@ -92,14 +97,16 @@ impl NativeIndexManager {
 
         for field_name in indexable {
             let normalized = field_name.to_ascii_lowercase();
-            let entry = IndexEntry::new(
+            let mut entry = IndexEntry::new(
                 schema_name.to_string(),
                 key_value.clone(),
                 field_name.clone(),
                 "field".to_string(),
             );
+            entry.molecule_versions = molecule_versions.cloned();
 
-            let term = format!("field:{}", normalized);
+            let blinded = self.blind_token(&normalized);
+            let term = format!("field:{}", blinded);
             let storage_key = entry.storage_key(&term);
             let entry_bytes = serde_json::to_vec(&entry).map_err(|e| {
                 SchemaError::InvalidData(format!("Failed to serialize IndexEntry: {}", e))

@@ -38,6 +38,7 @@ impl DbOperations {
     /// Create from a NamespacedStore (works with any backend)
     pub async fn from_namespaced_store(
         store: Arc<dyn NamespacedStore>,
+        e2e_index_key: Option<[u8; 32]>,
     ) -> Result<Self, crate::storage::StorageError> {
         // Open all required namespaces
         let main_kv = store.open_namespace("main").await?;
@@ -62,8 +63,8 @@ impl DbOperations {
         let public_keys_store = Arc::new(TypedKvStore::new(public_keys_kv));
         let transform_queue_store = Arc::new(TypedKvStore::new(transform_queue_kv));
 
-        // Create native index manager with the store
-        let native_index_manager = NativeIndexManager::new(native_index_kv);
+        // Create native index manager with the store and optional E2E index key
+        let native_index_manager = NativeIndexManager::new(native_index_kv, e2e_index_key);
 
         Ok(Self {
             main_store,
@@ -80,20 +81,19 @@ impl DbOperations {
         })
     }
 
-    /// Convenience constructor for Sled backend (backward compatible)
+    /// Convenience constructor for Sled backend (backward compatible, no E2E)
     pub async fn from_sled(db: sled::Db) -> Result<Self, crate::storage::StorageError> {
         let orchestrator_tree = db
             .open_tree("orchestrator_state")
             .map_err(|e| crate::storage::StorageError::SledError(e.to_string()))?;
 
         let store = Arc::new(SledNamespacedStore::new(db)) as Arc<dyn NamespacedStore>;
-        let mut db_ops = Self::from_namespaced_store(store).await?;
+        let mut db_ops = Self::from_namespaced_store(store, None).await?;
         db_ops.orchestrator_tree = Some(orchestrator_tree);
 
         Ok(db_ops)
     }
 
-    /// Convenience constructor for DynamoDB backend with simplified config
     /// Convenience constructor for Cloud backend with simplified config
     #[cfg(feature = "aws-backend")]
     pub async fn from_cloud(
@@ -104,7 +104,7 @@ impl DbOperations {
         // Note: user_id is no longer passed to the store - it's obtained from request context
         let _ = user_id; // Suppress unused warning - user_id will be obtained from request context
         let store = DynamoDbNamespacedStore::new_with_prefix(client, table_name);
-        Self::from_namespaced_store(Arc::new(store)).await
+        Self::from_namespaced_store(Arc::new(store), None).await
     }
 
     /// Constructor for Cloud backend with detailed configuration
@@ -118,7 +118,7 @@ impl DbOperations {
         // Note: user_id is no longer passed to the store - it's obtained from request context
         let _ = user_id; // Suppress unused warning - user_id will be obtained from request context
         let store = DynamoDbNamespacedStore::new(client, resolver, auto_create);
-        Self::from_namespaced_store(Arc::new(store)).await
+        Self::from_namespaced_store(Arc::new(store), None).await
     }
 
     // ===== Generic storage operations (async API) =====

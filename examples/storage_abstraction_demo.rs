@@ -64,7 +64,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("────────────────────────────────────────────");
 
     let mem_store = Arc::new(InMemoryNamespacedStore::new());
-    let db_ops_mem = DbOperations::from_namespaced_store(mem_store).await?;
+    let db_ops_mem = DbOperations::from_namespaced_store(mem_store, None).await?;
 
     // Batch insert
     let users = vec![
@@ -110,7 +110,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("────────────────────────────────────────────");
 
     let store = Arc::new(InMemoryNamespacedStore::new());
-    let db_ops = DbOperations::from_namespaced_store(store.clone()).await?;
+    let db_ops = DbOperations::from_namespaced_store(store.clone(), None).await?;
 
     // Store in different namespaces
     db_ops

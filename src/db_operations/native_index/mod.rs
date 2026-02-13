@@ -7,6 +7,7 @@ mod tests;
 
 pub use types::{IndexEntry, IndexResult};
 
+use crate::crypto::E2eKeys;
 use crate::storage::traits::KvStore;
 use std::sync::Arc;
 
@@ -15,12 +16,25 @@ use types::EXCLUDED_FIELDS;
 #[derive(Clone)]
 pub struct NativeIndexManager {
     store: Arc<dyn KvStore>,
+    e2e_index_key: Option<[u8; 32]>,
 }
 
 impl NativeIndexManager {
     /// Create with KvStore (works with any backend)
-    pub fn new(store: Arc<dyn KvStore>) -> Self {
-        Self { store }
+    pub fn new(store: Arc<dyn KvStore>, e2e_index_key: Option<[u8; 32]>) -> Self {
+        Self {
+            store,
+            e2e_index_key,
+        }
+    }
+
+    /// Blind a search/index term using HMAC if an E2E index key is configured.
+    /// Returns the term unchanged when no key is present (backward compat).
+    fn blind_token(&self, term: &str) -> String {
+        match &self.e2e_index_key {
+            Some(key) => E2eKeys::blind_token(key, term),
+            None => term.to_string(),
+        }
     }
 
     pub fn should_index_field(field_name: &str) -> bool {

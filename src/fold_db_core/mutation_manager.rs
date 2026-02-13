@@ -239,6 +239,7 @@ impl MutationManager {
                             field_key,
                             old_atom_uuid,
                             new_atom_uuid: atom.uuid().to_string(),
+                            version: schema_field.molecule_version().unwrap_or(0),
                         });
                     }
                 }
@@ -299,13 +300,21 @@ impl MutationManager {
                     .or_insert(std::time::Duration::ZERO) += phase4_start.elapsed();
             }
 
+            // Collect molecule versions for each mutated field
+            let mut mol_versions: HashMap<String, u64> = HashMap::new();
+            for (field_name, schema_field) in &schema.runtime_fields {
+                if let Some(v) = schema_field.molecule_version() {
+                    mol_versions.insert(field_name.clone(), v);
+                }
+            }
+
             // Populate mutation contexts for events
             for (idx, mutation) in schema_mutations.iter().enumerate() {
                 let mutation_id = mutation.uuid.clone();
                 let backfill_hash = mutation.backfill_hash.clone();
                 let key_value = mutation_key_values[idx].clone();
                 let data = mutation.fields_and_values.clone();
-                mutation_contexts.push((mutation_id, backfill_hash, key_value, data));
+                mutation_contexts.push((mutation_id, backfill_hash, key_value, data, mol_versions.clone()));
             }
 
             *timing_breakdown
@@ -341,13 +350,15 @@ impl MutationManager {
                 .or_insert(std::time::Duration::ZERO) += reload_start.elapsed();
 
             // Create events for batch publishing
-            for (mutation_id, backfill_hash, key_value, data) in mutation_contexts {
+            for (mutation_id, backfill_hash, key_value, data, versions) in mutation_contexts {
                 let mutation_context = Some(crate::fold_db_core::infrastructure::message_bus::atom_events::MutationContext {
                     key_value: Some(key_value),
                     mutation_hash: Some(mutation_id.clone()),
                     incremental: true,
                     backfill_hash,
                 });
+
+                let mol_versions = if versions.is_empty() { None } else { Some(versions) };
 
                 let event = MutationExecuted {
                     operation: "write_mutations_batch".to_string(),
@@ -357,6 +368,7 @@ impl MutationManager {
                     mutation_context,
                     data: Some(vec![data]), // Single data row for this mutation
                     user_id: crate::logging::core::get_current_user_id(),
+                    molecule_versions: mol_versions,
                 };
 
                 batch_events.push((event, mutation_id.clone()));

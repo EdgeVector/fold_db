@@ -1,6 +1,7 @@
 use crate::schema::types::key_value::KeyValue;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub(super) const EXCLUDED_FIELDS: &[&str] = &["uuid", "id", "password", "token"];
@@ -27,6 +28,9 @@ pub struct IndexEntry {
     /// The search term that matched (populated during search, not stored)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub matched_term: Option<String>,
+    /// Molecule versions at the time this entry was indexed (field_name → version)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub molecule_versions: Option<HashMap<String, u64>>,
 }
 
 impl IndexEntry {
@@ -43,6 +47,7 @@ impl IndexEntry {
             classification,
             timestamp,
             matched_term: None,
+            molecule_versions: None,
         }
     }
 
@@ -61,6 +66,7 @@ impl IndexEntry {
             classification,
             timestamp,
             matched_term: None,
+            molecule_versions: None,
         }
     }
 
@@ -83,6 +89,7 @@ impl IndexEntry {
                 "classification": self.classification,
                 "timestamp": self.timestamp
             })),
+            molecule_versions: self.molecule_versions.clone(),
         }
     }
 
@@ -115,5 +122,8 @@ pub struct IndexResult {
     pub key_value: KeyValue,
     pub value: Value,
     pub metadata: Option<Value>,
+    /// Molecule versions at the time this entry was indexed (field_name → version)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub molecule_versions: Option<HashMap<String, u64>>,
 }
 
