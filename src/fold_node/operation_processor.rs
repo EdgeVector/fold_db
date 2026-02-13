@@ -116,7 +116,7 @@ impl OperationProcessor {
 
             // Collect all schema metadata we need upfront, then drop the db guard
             // before making recursive queries (which also need the guard).
-            let (ref_fields, child_field_map) = {
+            let (ref_fields, child_field_map, child_key_config_map) = {
                 let db = self
                     .node
                     .get_fold_db()
@@ -149,8 +149,9 @@ impl OperationProcessor {
                     return Ok(());
                 }
 
-                // Pre-fetch queryable fields for each referenced child schema
+                // Pre-fetch queryable fields and key configs for each referenced child schema
                 let mut child_field_map: HashMap<String, Vec<String>> = HashMap::new();
+                let mut child_key_config_map: HashMap<String, (Option<String>, Option<String>)> = HashMap::new();
                 for (_, child_schema_name) in &ref_fields {
                     if child_field_map.contains_key(child_schema_name) {
                         continue;
@@ -160,10 +161,17 @@ impl OperationProcessor {
                         if !fields.is_empty() {
                             child_field_map.insert(child_schema_name.clone(), fields);
                         }
+                        // Store key config so we can extract KeyValue from field values
+                        if let Some(key_cfg) = &child_schema.key {
+                            child_key_config_map.insert(
+                                child_schema_name.clone(),
+                                (key_cfg.hash_field.clone(), key_cfg.range_field.clone()),
+                            );
+                        }
                     }
                 }
 
-                (ref_fields, child_field_map)
+                (ref_fields, child_field_map, child_key_config_map)
             }; // db guard dropped here
 
             // --- Batch rehydration: collect → batch query → distribute ---
@@ -252,21 +260,32 @@ impl OperationProcessor {
                         .await;
                 }
 
-                // Build index: map KeyValue → hydrated record
+                // Build index: map KeyValue → hydrated record.
+                // Extract key from field values using the child schema's key config,
+                // because the JSON "key" object may have nulls even when the record
+                // has the actual values in its fields.
+                let key_config = child_key_config_map.get(child_schema_name);
                 let mut index: HashMap<KeyValue, Value> = HashMap::new();
                 for record in child_results {
-                    if let Some(key_obj) = record.get("key") {
-                        let hash = key_obj
-                            .get("hash")
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string());
-                        let range = key_obj
-                            .get("range")
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string());
-                        let kv = KeyValue::new(hash, range);
-                        index.insert(kv, record);
-                    }
+                    let fields_obj = record.get("fields");
+                    let hash = key_config
+                        .and_then(|(h, _)| h.as_ref())
+                        .and_then(|hash_field| {
+                            fields_obj
+                                .and_then(|f| f.get(hash_field))
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string())
+                        });
+                    let range = key_config
+                        .and_then(|(_, r)| r.as_ref())
+                        .and_then(|range_field| {
+                            fields_obj
+                                .and_then(|f| f.get(range_field))
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string())
+                        });
+                    let kv = KeyValue::new(hash, range);
+                    index.insert(kv, record);
                 }
 
                 hydrated_index.insert(child_schema_name.clone(), index);
