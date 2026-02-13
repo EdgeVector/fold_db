@@ -40,31 +40,77 @@ async fn extract_key_values_from_data(
 ) -> IngestionResult<HashMap<String, String>> {
     let mut keys_and_values = HashMap::new();
 
-    if let Ok(Some(schema)) = schema_manager.get_schema(schema_name) {
-        if let Some(key_def) = &schema.key {
-            // Extract hash field value if present
-            if let Some(hash_field) = &key_def.hash_field {
-                if let Some(hash_value) = fields_and_values.get(hash_field) {
-                    if let Some(hash_str) = hash_value.as_str() {
-                        keys_and_values.insert("hash_field".to_string(), hash_str.to_string());
-                    } else if let Some(hash_num) = hash_value.as_f64() {
-                        keys_and_values.insert("hash_field".to_string(), hash_num.to_string());
+    match schema_manager.get_schema(schema_name) {
+        Ok(Some(schema)) => {
+            if let Some(key_def) = &schema.key {
+                // Extract hash field value if present
+                if let Some(hash_field) = &key_def.hash_field {
+                    if let Some(hash_value) = fields_and_values.get(hash_field) {
+                        if let Some(hash_str) = hash_value.as_str() {
+                            keys_and_values.insert("hash_field".to_string(), hash_str.to_string());
+                        } else if let Some(hash_num) = hash_value.as_f64() {
+                            keys_and_values.insert("hash_field".to_string(), hash_num.to_string());
+                        } else {
+                            log_feature!(
+                                LogFeature::Ingestion,
+                                warn,
+                                "Hash field '{}' in schema '{}' has unsupported type (not string or number): {:?}",
+                                hash_field, schema_name, hash_value
+                            );
+                        }
+                    } else {
+                        log_feature!(
+                            LogFeature::Ingestion,
+                            warn,
+                            "Hash field '{}' not found in data for schema '{}'",
+                            hash_field, schema_name
+                        );
                     }
                 }
-            }
 
-            // Extract range field value if present
-            if let Some(range_field) = &key_def.range_field {
-                if let Some(range_value) =
-                    extract_nested_field_value(fields_and_values, range_field)
-                {
-                    if let Some(range_str) = range_value.as_str() {
-                        keys_and_values.insert("range_field".to_string(), range_str.to_string());
-                    } else if let Some(range_num) = range_value.as_f64() {
-                        keys_and_values.insert("range_field".to_string(), range_num.to_string());
+                // Extract range field value if present
+                if let Some(range_field) = &key_def.range_field {
+                    if let Some(range_value) =
+                        extract_nested_field_value(fields_and_values, range_field)
+                    {
+                        if let Some(range_str) = range_value.as_str() {
+                            keys_and_values.insert("range_field".to_string(), range_str.to_string());
+                        } else if let Some(range_num) = range_value.as_f64() {
+                            keys_and_values.insert("range_field".to_string(), range_num.to_string());
+                        } else {
+                            log_feature!(
+                                LogFeature::Ingestion,
+                                warn,
+                                "Range field '{}' in schema '{}' has unsupported type (not string or number): {:?}",
+                                range_field, schema_name, range_value
+                            );
+                        }
+                    } else {
+                        log_feature!(
+                            LogFeature::Ingestion,
+                            warn,
+                            "Range field '{}' not found in data for schema '{}'",
+                            range_field, schema_name
+                        );
                     }
                 }
             }
+        }
+        Ok(None) => {
+            log_feature!(
+                LogFeature::Ingestion,
+                warn,
+                "Schema '{}' not found — cannot extract key values",
+                schema_name
+            );
+        }
+        Err(e) => {
+            log_feature!(
+                LogFeature::Ingestion,
+                error,
+                "Failed to get schema '{}' for key extraction: {}",
+                schema_name, e
+            );
         }
     }
 
@@ -857,37 +903,56 @@ impl IngestionService {
                 manager
             };
 
-            if let Ok(Some(mut schema)) = schema_manager.get_schema(&schema_name) {
-                for child_group in &rep_decomp.children {
-                    let child_schema_name = schema_cache
-                        .get(&child_group.structure_hash)
-                        .map(|c| c.schema_name.clone())
-                        .unwrap_or_default();
-                    schema.set_field_topology(
-                        child_group.field_name.clone(),
-                        JsonTopology::new(TopologyNode::Reference {
-                            schema_name: child_schema_name,
-                        }),
-                    );
+            match schema_manager.get_schema(&schema_name) {
+                Ok(Some(mut schema)) => {
+                    for child_group in &rep_decomp.children {
+                        let child_schema_name = schema_cache
+                            .get(&child_group.structure_hash)
+                            .map(|c| c.schema_name.clone())
+                            .unwrap_or_default();
+                        schema.set_field_topology(
+                            child_group.field_name.clone(),
+                            JsonTopology::new(TopologyNode::Reference {
+                                schema_name: child_schema_name,
+                            }),
+                        );
 
-                    // Register the Reference field as a queryable schema field
-                    if let Some(ref mut fields) = schema.fields {
-                        if !fields.contains(&child_group.field_name) {
-                            fields.push(child_group.field_name.clone());
+                        // Register the Reference field as a queryable schema field
+                        if let Some(ref mut fields) = schema.fields {
+                            if !fields.contains(&child_group.field_name) {
+                                fields.push(child_group.field_name.clone());
+                            }
+                        } else {
+                            schema.fields = Some(vec![child_group.field_name.clone()]);
                         }
-                    } else {
-                        schema.fields = Some(vec![child_group.field_name.clone()]);
                     }
+
+                    let _ = schema.populate_runtime_fields();
+
+                    schema_manager.update_schema(&schema).await.map_err(|e| {
+                        IngestionError::SchemaCreationError(format!(
+                            "Failed to update schema with Reference topologies: {}",
+                            e
+                        ))
+                    })?;
                 }
-
-                let _ = schema.populate_runtime_fields();
-
-                schema_manager.update_schema(&schema).await.map_err(|e| {
-                    IngestionError::SchemaCreationError(format!(
-                        "Failed to update schema with Reference topologies: {}",
+                Ok(None) => {
+                    log_feature!(
+                        LogFeature::Ingestion,
+                        warn,
+                        "Schema '{}' not found when updating Reference topologies — child references will not be linked",
+                        schema_name
+                    );
+                }
+                Err(e) => {
+                    log_feature!(
+                        LogFeature::Ingestion,
+                        error,
+                        "Failed to get schema '{}' for Reference topology update: {}",
+                        schema_name,
                         e
-                    ))
-                })?;
+                    );
+                }
             }
         }
 
@@ -950,6 +1015,14 @@ impl IngestionService {
                         "schema": child_schema_name,
                         "key": kv,
                     }));
+                } else {
+                    log_feature!(
+                        LogFeature::Ingestion,
+                        warn,
+                        "Child item in field '{}' (structure hash {}) produced no key_value — reference will be missing",
+                        child_group.field_name,
+                        child_group.structure_hash
+                    );
                 }
             }
 

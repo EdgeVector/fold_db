@@ -1,10 +1,11 @@
 use crate::error::{FoldDbError, FoldDbResult};
 use crate::ingestion::ingestion_service::IngestionService;
 use crate::schema::types::{KeyValue, Mutation, Query};
+#[cfg(test)]
 use crate::schema::types::field::HashRangeFilter;
 use crate::schema::types::topology::TopologyNode;
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use super::response_types::QueryResultMap;
 use super::FoldNode;
@@ -51,6 +52,15 @@ impl OperationProcessor {
     /// When `rehydrate_depth` is set on the query, Reference fields are automatically
     /// resolved to their actual child records up to the specified depth.
     pub async fn execute_query_json(&self, query: Query) -> FoldDbResult<Vec<Value>> {
+        self.execute_query_json_internal(query, HashSet::new()).await
+    }
+
+    /// Internal implementation that threads a visited-schema set to detect circular references.
+    async fn execute_query_json_internal(
+        &self,
+        query: Query,
+        visited: HashSet<String>,
+    ) -> FoldDbResult<Vec<Value>> {
         let schema_name = query.schema_name.clone();
         let rehydrate_depth = query.rehydrate_depth;
 
@@ -70,7 +80,7 @@ impl OperationProcessor {
 
         if let Some(depth) = rehydrate_depth {
             if depth > 0 {
-                self.rehydrate_references(&mut results, &schema_name, depth).await?;
+                self.rehydrate_references(&mut results, &schema_name, depth, visited).await?;
             }
         }
 
@@ -81,14 +91,29 @@ impl OperationProcessor {
 
     /// Post-processes query results to resolve Reference fields into actual child records.
     /// Recurses up to `remaining_depth` levels deep.
-    /// Uses `Box::pin` to handle async recursion through `execute_query_json`.
+    /// Uses `Box::pin` to handle async recursion through `execute_query_json_internal`.
+    /// The `visited` set tracks ancestor schemas to prevent infinite loops on circular references.
     fn rehydrate_references<'a>(
         &'a self,
         results: &'a mut [Value],
         schema_name: &'a str,
         remaining_depth: u32,
+        visited: HashSet<String>,
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = FoldDbResult<()>> + 'a>> {
         Box::pin(async move {
+            // Circular reference guard: if we've already visited this schema in the
+            // current ancestor chain, stop recursion to avoid infinite loops.
+            if visited.contains(schema_name) {
+                log::debug!(
+                    "Circular reference detected for schema '{}', stopping rehydration",
+                    schema_name
+                );
+                return Ok(());
+            }
+
+            let mut visited = visited;
+            visited.insert(schema_name.to_string());
+
             // Collect all schema metadata we need upfront, then drop the db guard
             // before making recursive queries (which also need the guard).
             let (ref_fields, child_field_map) = {
@@ -141,65 +166,145 @@ impl OperationProcessor {
                 (ref_fields, child_field_map)
             }; // db guard dropped here
 
-            for result in results.iter_mut() {
-                let fields_obj = match result.get_mut("fields") {
-                    Some(Value::Object(obj)) => obj,
-                    _ => continue,
+            // --- Batch rehydration: collect → batch query → distribute ---
+
+            // 1. Collect: Walk all results and ref fields, recording each reference's position.
+            struct RefLocation {
+                result_idx: usize,
+                field_name: String,
+                ref_idx: usize,
+                key_value: KeyValue,
+            }
+
+            let mut ref_locations: Vec<RefLocation> = Vec::new();
+            // Track unique keys needed per child schema
+            let mut keys_by_schema: HashMap<String, HashSet<KeyValue>> = HashMap::new();
+
+            for (result_idx, result) in results.iter().enumerate() {
+                let fields_obj = match result.get("fields").and_then(|v| v.as_object()) {
+                    Some(obj) => obj,
+                    None => continue,
                 };
 
                 for (field_name, child_schema_name) in &ref_fields {
-                    let child_fields = match child_field_map.get(child_schema_name) {
-                        Some(f) => f,
+                    if !child_field_map.contains_key(child_schema_name) {
+                        continue;
+                    }
+
+                    let refs_array = match fields_obj
+                        .get(field_name)
+                        .and_then(|v| v.as_array())
+                    {
+                        Some(arr) => arr,
                         None => continue,
                     };
 
-                    let refs_value = match fields_obj.get(field_name) {
-                        Some(v) => v.clone(),
-                        None => continue,
-                    };
-
-                    let refs_array = match refs_value.as_array() {
-                        Some(arr) => arr.clone(),
-                        None => continue,
-                    };
-
-                    let mut hydrated = Vec::new();
-
-                    for ref_obj in &refs_array {
-                        let key_value = match Self::parse_ref_key(ref_obj) {
-                            Some(kv) => kv,
-                            None => {
-                                hydrated.push(ref_obj.clone());
-                                continue;
-                            }
-                        };
-
-                        let filter = Self::filter_from_key_value(&key_value);
-
-                        let mut child_query = Query::new_with_filter(
-                            child_schema_name.clone(),
-                            child_fields.clone(),
-                            filter,
-                        );
-                        if remaining_depth > 1 {
-                            child_query.rehydrate_depth = Some(remaining_depth - 1);
+                    for (ref_idx, ref_obj) in refs_array.iter().enumerate() {
+                        if let Some(kv) = Self::parse_ref_key(ref_obj) {
+                            keys_by_schema
+                                .entry(child_schema_name.clone())
+                                .or_default()
+                                .insert(kv.clone());
+                            ref_locations.push(RefLocation {
+                                result_idx,
+                                field_name: field_name.clone(),
+                                ref_idx,
+                                key_value: kv,
+                            });
                         }
+                    }
+                }
+            }
 
-                        match self.execute_query_json(child_query).await {
-                            Ok(child_results) if !child_results.is_empty() => {
-                                if child_results.len() == 1 {
-                                    hydrated.push(child_results.into_iter().next().unwrap());
-                                } else {
-                                    hydrated.extend(child_results);
-                                }
-                            }
-                            _ => {
-                                hydrated.push(ref_obj.clone());
+            // 2. Batch query: For each child schema, execute ONE unfiltered query.
+            //    Then recursively rehydrate child results if depth > 1.
+            //    Build a HashMap<KeyValue, Value> index for fast lookup.
+            let mut hydrated_index: HashMap<String, HashMap<KeyValue, Value>> = HashMap::new();
+
+            for child_schema_name in keys_by_schema.keys() {
+                let child_fields = match child_field_map.get(child_schema_name) {
+                    Some(f) => f,
+                    None => continue,
+                };
+
+                let child_query = Query::new(
+                    child_schema_name.clone(),
+                    child_fields.clone(),
+                );
+
+                let mut child_results = match self
+                    .execute_query_json_internal(child_query, HashSet::new())
+                    .await
+                {
+                    Ok(r) => r,
+                    Err(_) => continue,
+                };
+
+                // Recursively rehydrate child results if depth > 1
+                if remaining_depth > 1 {
+                    let _ = self
+                        .rehydrate_references(
+                            &mut child_results,
+                            child_schema_name,
+                            remaining_depth - 1,
+                            visited.clone(),
+                        )
+                        .await;
+                }
+
+                // Build index: map KeyValue → hydrated record
+                let mut index: HashMap<KeyValue, Value> = HashMap::new();
+                for record in child_results {
+                    if let Some(key_obj) = record.get("key") {
+                        let hash = key_obj
+                            .get("hash")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string());
+                        let range = key_obj
+                            .get("range")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string());
+                        let kv = KeyValue::new(hash, range);
+                        index.insert(kv, record);
+                    }
+                }
+
+                hydrated_index.insert(child_schema_name.clone(), index);
+            }
+
+            // 3. Distribute: Walk results again, replacing raw references with hydrated records.
+            //    Build a map of (result_idx, field_name) → Vec<(ref_idx, hydrated_value)>
+            //    so we can batch-replace per field.
+            let mut replacements: HashMap<(usize, String), Vec<(usize, Value)>> = HashMap::new();
+
+            for loc in &ref_locations {
+                let child_schema_name = ref_fields
+                    .iter()
+                    .find(|(f, _)| f == &loc.field_name)
+                    .map(|(_, s)| s);
+
+                if let Some(child_schema_name) = child_schema_name {
+                    if let Some(index) = hydrated_index.get(child_schema_name) {
+                        if let Some(hydrated) = index.get(&loc.key_value) {
+                            replacements
+                                .entry((loc.result_idx, loc.field_name.clone()))
+                                .or_default()
+                                .push((loc.ref_idx, hydrated.clone()));
+                        }
+                    }
+                }
+            }
+
+            // Apply replacements
+            for ((result_idx, field_name), ref_replacements) in &replacements {
+                if let Some(Value::Object(fields_obj)) = results[*result_idx].get_mut("fields") {
+                    if let Some(Value::Array(arr)) = fields_obj.get_mut(field_name) {
+                        for (ref_idx, hydrated_value) in ref_replacements {
+                            if *ref_idx < arr.len() {
+                                arr[*ref_idx] = hydrated_value.clone();
                             }
                         }
                     }
-
-                    fields_obj.insert(field_name.clone(), Value::Array(hydrated));
                 }
             }
 
@@ -208,6 +313,7 @@ impl OperationProcessor {
     }
 
     /// Build a HashRangeFilter from a KeyValue.
+    #[cfg(test)]
     fn filter_from_key_value(kv: &KeyValue) -> Option<HashRangeFilter> {
         match (&kv.hash, &kv.range) {
             (Some(h), Some(r)) => Some(HashRangeFilter::HashRangeKey {
