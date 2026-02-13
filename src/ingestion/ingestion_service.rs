@@ -869,7 +869,19 @@ impl IngestionService {
                             schema_name: child_schema_name,
                         }),
                     );
+
+                    // Register the Reference field as a queryable schema field
+                    if let Some(ref mut fields) = schema.fields {
+                        if !fields.contains(&child_group.field_name) {
+                            fields.push(child_group.field_name.clone());
+                        }
+                    } else {
+                        schema.fields = Some(vec![child_group.field_name.clone()]);
+                    }
                 }
+
+                let _ = schema.populate_runtime_fields();
+
                 schema_manager.update_schema(&schema).await.map_err(|e| {
                     IngestionError::SchemaCreationError(format!(
                         "Failed to update schema with Reference topologies: {}",
@@ -911,11 +923,6 @@ impl IngestionService {
         let mut child_references: HashMap<String, Vec<Value>> = HashMap::new();
 
         for child_group in &item_decomp.children {
-            let child_schema_name = schema_cache
-                .get(&child_group.structure_hash)
-                .map(|c| c.schema_name.clone())
-                .unwrap_or_default();
-
             let mut refs_for_field = Vec::new();
 
             for child_item in &child_group.items {
@@ -935,6 +942,10 @@ impl IngestionService {
 
                 // Build reference matching the indexing system's (schema, key) pattern
                 if let Some(kv) = child_key_value {
+                    let child_schema_name = schema_cache
+                        .get(&child_group.structure_hash)
+                        .map(|c| c.schema_name.clone())
+                        .unwrap_or_default();
                     refs_for_field.push(serde_json::json!({
                         "schema": child_schema_name,
                         "key": kv,
@@ -966,6 +977,19 @@ impl IngestionService {
                 return Ok((total_gen, total_exec, None));
             }
 
+            // If this item's structure differs from the representative (e.g., empty
+            // vs. non-empty nested arrays), the structure hash won't be cached yet.
+            // Resolve it on the fly so the schema and mutation mappers are available.
+            if !schema_cache.contains_key(structure_hash) {
+                Box::pin(self.resolve_schema_for_structure(
+                    structure_hash,
+                    item,
+                    schema_cache,
+                    node,
+                ))
+                .await?;
+            }
+
             let cached = schema_cache.get(structure_hash).ok_or_else(|| {
                 IngestionError::SchemaCreationError(format!(
                     "No cached schema for structure hash {}",
@@ -974,7 +998,14 @@ impl IngestionService {
             })?;
 
             let schema_name = cached.schema_name.clone();
-            let mutation_mappers = cached.mutation_mappers.clone();
+            let mut mutation_mappers = cached.mutation_mappers.clone();
+
+            // Add identity mappers for Reference fields so generate_mutations includes them
+            for (field_name, refs) in &child_references {
+                if !refs.is_empty() && !mutation_mappers.contains_key(field_name) {
+                    mutation_mappers.insert(field_name.clone(), field_name.clone());
+                }
+            }
 
             let fields_and_values: HashMap<String, Value> = parent_obj
                 .iter()
