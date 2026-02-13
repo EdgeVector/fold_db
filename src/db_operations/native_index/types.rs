@@ -24,6 +24,9 @@ pub struct IndexEntry {
     pub classification: String,
     /// When indexed (milliseconds since epoch, for sorting/dedup)
     pub timestamp: i64,
+    /// The search term that matched (populated during search, not stored)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub matched_term: Option<String>,
 }
 
 impl IndexEntry {
@@ -39,6 +42,7 @@ impl IndexEntry {
             field,
             classification,
             timestamp,
+            matched_term: None,
         }
     }
 
@@ -56,17 +60,25 @@ impl IndexEntry {
             field,
             classification,
             timestamp,
+            matched_term: None,
         }
     }
 
     /// Convert to IndexResult for backward compatibility
-    /// Note: value will be None since IndexEntry doesn't store values
     pub fn to_index_result(&self, value: Option<Value>) -> IndexResult {
+        // Use matched_term as the value when no explicit value is provided
+        let result_value = value.unwrap_or_else(|| {
+            self.matched_term
+                .as_ref()
+                .map(|t| Value::String(t.clone()))
+                .unwrap_or(Value::Null)
+        });
+
         IndexResult {
             schema_name: self.schema.clone(),
             field: self.field.clone(),
             key_value: self.key.clone(),
-            value: value.unwrap_or(Value::Null),
+            value: result_value,
             metadata: Some(json!({
                 "classification": self.classification,
                 "timestamp": self.timestamp
@@ -74,13 +86,13 @@ impl IndexEntry {
         }
     }
 
-    /// Generate a unique storage key for this entry
-    /// Format: idx:{term}:{timestamp}:{schema}:{field}:{key_hash}
+    /// Generate a deterministic storage key for this entry
+    /// Format: idx:{term}:{schema}:{field}:{key_hash}
     pub fn storage_key(&self, term: &str) -> String {
         let key_hash = self.key_hash();
         format!(
-            "{}{}:{}:{}:{}:{}",
-            INDEX_ENTRY_PREFIX, term, self.timestamp, self.schema, self.field, key_hash
+            "{}{}:{}:{}:{}",
+            INDEX_ENTRY_PREFIX, term, self.schema, self.field, key_hash
         )
     }
 

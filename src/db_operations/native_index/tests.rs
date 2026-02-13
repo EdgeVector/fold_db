@@ -13,8 +13,8 @@ fn test_index_entry_storage_key() {
     );
 
     let key = entry.storage_key("hello");
-    // Format: idx:{term}:{timestamp}:{schema}:{field}:{key_hash}
-    assert!(key.starts_with("idx:hello:1705312200000:Tweet:content:"));
+    // Format: idx:{term}:{schema}:{field}:{key_hash}
+    assert!(key.starts_with("idx:hello:Tweet:content:"));
     assert!(key.contains("abc123"));
 }
 
@@ -129,4 +129,140 @@ async fn test_multi_word_search_intersection() {
         0,
         "Should find 0 results for 'johnson smith'"
     );
+}
+
+#[test]
+fn test_normalize_search_term_edge_cases() {
+    // Empty string
+    assert_eq!(NativeIndexManager::normalize_search_term(""), None);
+
+    // Single character (below min length of 2)
+    assert_eq!(NativeIndexManager::normalize_search_term("a"), None);
+
+    // Whitespace only
+    assert_eq!(NativeIndexManager::normalize_search_term("   "), None);
+
+    // Exactly 2 characters (minimum)
+    assert_eq!(
+        NativeIndexManager::normalize_search_term("ab"),
+        Some("ab".to_string())
+    );
+
+    // Normal term with mixed case
+    assert_eq!(
+        NativeIndexManager::normalize_search_term("  Hello World  "),
+        Some("hello world".to_string())
+    );
+}
+
+#[tokio::test]
+async fn test_batch_index_field_names() {
+    let db = sled::Config::new().temporary(true).open().unwrap();
+    let store = std::sync::Arc::new(SledNamespacedStore::new(db));
+    let kv_store = store.open_namespace("native_index").await.unwrap();
+
+    let manager = NativeIndexManager::new(kv_store);
+
+    let key = KeyValue::new(Some("rec1".to_string()), None);
+    let field_names = vec![
+        "username".to_string(),
+        "email".to_string(),
+        "bio".to_string(),
+    ];
+
+    manager
+        .batch_index_field_names("UserSchema", &key, &field_names)
+        .await
+        .expect("batch_index_field_names failed");
+
+    // Each field name should be searchable via search_all
+    for field in &["username", "email", "bio"] {
+        let results = manager.search_all(field).await.expect("search_all failed");
+        assert_eq!(results.len(), 1, "Should find 1 result for field '{}'", field);
+        assert_eq!(results[0].classification, "field");
+    }
+
+    // Excluded fields should not be indexed
+    let key2 = KeyValue::new(Some("rec2".to_string()), None);
+    let with_excluded = vec!["password".to_string(), "display_name".to_string()];
+    manager
+        .batch_index_field_names("UserSchema", &key2, &with_excluded)
+        .await
+        .expect("batch_index_field_names failed");
+
+    let results = manager.search_all("password").await.expect("search failed");
+    assert!(results.is_empty(), "Excluded field 'password' should not be indexed");
+
+    let results = manager.search_all("display_name").await.expect("search failed");
+    assert_eq!(results.len(), 1, "Non-excluded field should be indexed");
+}
+
+#[tokio::test]
+async fn test_search_all_combines_words_and_fields() {
+    let db = sled::Config::new().temporary(true).open().unwrap();
+    let store = std::sync::Arc::new(SledNamespacedStore::new(db));
+    let kv_store = store.open_namespace("native_index").await.unwrap();
+
+    let manager = NativeIndexManager::new(kv_store);
+
+    let key = KeyValue::new(Some("rec1".to_string()), None);
+
+    // Index "email" as both a keyword and a field name
+    manager
+        .batch_index_from_keywords("Schema1", &key, vec!["email".to_string()])
+        .await
+        .expect("keyword indexing failed");
+
+    manager
+        .batch_index_field_names("Schema1", &key, &["email".to_string()])
+        .await
+        .expect("field indexing failed");
+
+    // search_all should return both, but dedup by (schema, key, field)
+    let results = manager.search_all("email").await.expect("search_all failed");
+    // word entry has field="llm_keyword", field entry has field="email" — both unique
+    assert_eq!(results.len(), 2, "Should find both word and field entries");
+
+    let classifications: std::collections::HashSet<String> =
+        results.iter().map(|r| r.classification.clone()).collect();
+    assert!(classifications.contains("word"), "Should include word classification");
+    assert!(classifications.contains("field"), "Should include field classification");
+}
+
+#[tokio::test]
+async fn test_matched_term_populated_in_search() {
+    let db = sled::Config::new().temporary(true).open().unwrap();
+    let store = std::sync::Arc::new(SledNamespacedStore::new(db));
+    let kv_store = store.open_namespace("native_index").await.unwrap();
+
+    let manager = NativeIndexManager::new(kv_store);
+
+    let key = KeyValue::new(Some("rec1".to_string()), None);
+    manager
+        .batch_index_from_keywords("Tweet", &key, vec!["hello".to_string()])
+        .await
+        .expect("indexing failed");
+
+    // Search returns entries with matched_term populated
+    let entries = manager.search("hello").await.expect("search failed");
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].matched_term, Some("hello".to_string()));
+
+    // to_index_result should use matched_term as value when no explicit value given
+    let result = entries[0].to_index_result(None);
+    assert_eq!(result.value, serde_json::json!("hello"));
+
+    // Explicit value takes precedence
+    let result_with_value = entries[0].to_index_result(Some(serde_json::json!("override")));
+    assert_eq!(result_with_value.value, serde_json::json!("override"));
+
+    // Field-name entries also get matched_term
+    manager
+        .batch_index_field_names("Tweet", &key, &["content".to_string()])
+        .await
+        .expect("field indexing failed");
+
+    let field_entries = manager.search_all("content").await.expect("search failed");
+    let field_entry = field_entries.iter().find(|e| e.classification == "field").unwrap();
+    assert_eq!(field_entry.matched_term, Some("content".to_string()));
 }

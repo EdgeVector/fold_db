@@ -45,7 +45,7 @@ impl NativeIndexManager {
 
         // Try the full term as-is
         let prefix = format!("{}word:{}:", INDEX_ENTRY_PREFIX, normalized);
-        let entries = self.scan_index_prefix(&prefix).await?;
+        let entries = self.scan_index_prefix(&prefix, Some(&normalized)).await?;
         if !entries.is_empty() || !normalized.contains(' ') {
             return Ok(entries);
         }
@@ -62,13 +62,13 @@ impl NativeIndexManager {
 
         // Search the first word, then filter to records that also match all other words
         let first_prefix = format!("{}word:{}:", INDEX_ENTRY_PREFIX, words[0]);
-        let candidates = self.scan_index_prefix(&first_prefix).await?;
+        let candidates = self.scan_index_prefix(&first_prefix, Some(&words[0])).await?;
 
         // Collect record keys that appear for every other word
         let mut required_keys: Option<HashSet<(String, crate::schema::types::key_value::KeyValue)>> = None;
         for word in &words[1..] {
             let p = format!("{}word:{}:", INDEX_ENTRY_PREFIX, word);
-            let word_entries = self.scan_index_prefix(&p).await?;
+            let word_entries = self.scan_index_prefix(&p, Some(word)).await?;
             let keys: HashSet<(String, crate::schema::types::key_value::KeyValue)> = word_entries
                 .into_iter()
                 .map(|e| (e.schema.clone(), e.key.clone()))
@@ -134,11 +134,11 @@ impl NativeIndexManager {
         }
 
         let prefix = format!("{}field:{}:", INDEX_ENTRY_PREFIX, normalized);
-        self.scan_index_prefix(&prefix).await
+        self.scan_index_prefix(&prefix, Some(&normalized)).await
     }
 
-    /// Scan index entries by prefix
-    async fn scan_index_prefix(&self, prefix: &str) -> Result<Vec<IndexEntry>, SchemaError> {
+    /// Scan index entries by prefix, setting `matched_term` on each result
+    async fn scan_index_prefix(&self, prefix: &str, matched_term: Option<&str>) -> Result<Vec<IndexEntry>, SchemaError> {
         let results = self
             .store
             .scan_prefix(prefix.as_bytes())
@@ -148,7 +148,10 @@ impl NativeIndexManager {
         let mut entries = Vec::new();
         for (_key, value) in results {
             match serde_json::from_slice::<IndexEntry>(&value) {
-                Ok(entry) => entries.push(entry),
+                Ok(mut entry) => {
+                    entry.matched_term = matched_term.map(String::from);
+                    entries.push(entry);
+                }
                 Err(e) => {
                     log::warn!("Failed to deserialize IndexEntry: {}", e);
                 }
