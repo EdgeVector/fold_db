@@ -1,3 +1,4 @@
+use crate::schema::types::key_value::KeyValue;
 use crate::schema::SchemaError;
 use std::collections::HashSet;
 
@@ -65,11 +66,11 @@ impl NativeIndexManager {
         let candidates = self.scan_index_prefix(&first_prefix, Some(&words[0])).await?;
 
         // Collect record keys that appear for every other word
-        let mut required_keys: Option<HashSet<(String, crate::schema::types::key_value::KeyValue)>> = None;
+        let mut required_keys: Option<HashSet<(String, KeyValue)>> = None;
         for word in &words[1..] {
             let p = format!("{}word:{}:", INDEX_ENTRY_PREFIX, word);
             let word_entries = self.scan_index_prefix(&p, Some(word)).await?;
-            let keys: HashSet<(String, crate::schema::types::key_value::KeyValue)> = word_entries
+            let keys: HashSet<(String, KeyValue)> = word_entries
                 .into_iter()
                 .map(|e| (e.schema.clone(), e.key.clone()))
                 .collect();
@@ -87,6 +88,10 @@ impl NativeIndexManager {
                 let rk = (e.schema.clone(), e.key.clone());
                 required_keys.contains(&rk) && seen.insert(rk)
             })
+            .map(|mut e| {
+                e.matched_term = Some(normalized.clone());
+                e
+            })
             .collect();
 
         Ok(results)
@@ -102,20 +107,20 @@ impl NativeIndexManager {
         );
 
         let mut all_entries = Vec::new();
-        let mut seen = HashSet::new();
+        let mut seen: HashSet<(String, KeyValue, String)> = HashSet::new();
 
         let entries = word_result?;
         for entry in entries {
-            let key = format!("{:?}:{:?}:{}", entry.schema, entry.key, entry.field);
-            if seen.insert(key) {
+            let dedup_key = (entry.schema.clone(), entry.key.clone(), entry.field.clone());
+            if seen.insert(dedup_key) {
                 all_entries.push(entry);
             }
         }
 
         let field_entries = field_result?;
         for entry in field_entries {
-            let key = format!("{:?}:{:?}:{}", entry.schema, entry.key, entry.field);
-            if seen.insert(key) {
+            let dedup_key = (entry.schema.clone(), entry.key.clone(), entry.field.clone());
+            if seen.insert(dedup_key) {
                 all_entries.push(entry);
             }
         }
@@ -128,10 +133,9 @@ impl NativeIndexManager {
         &self,
         term: &str,
     ) -> Result<Vec<IndexEntry>, SchemaError> {
-        let normalized = term.trim().to_ascii_lowercase();
-        if normalized.is_empty() {
+        let Some(normalized) = Self::normalize_search_term(term) else {
             return Ok(Vec::new());
-        }
+        };
 
         let prefix = format!("{}field:{}:", INDEX_ENTRY_PREFIX, normalized);
         self.scan_index_prefix(&prefix, Some(&normalized)).await

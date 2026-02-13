@@ -7,8 +7,8 @@ use super::NativeIndexManager;
 impl NativeIndexManager {
     /// Deduplicate index entries by key and write them via the KvStore.
     ///
-    /// DynamoDB batch_write_item doesn't allow duplicate keys, and entries
-    /// created within the same millisecond can collide.
+    /// DynamoDB batch_write_item doesn't allow duplicate keys in a single
+    /// request, and the LLM may return duplicate keywords in one batch.
     async fn write_index_entries(&self, entries: Vec<(Vec<u8>, Vec<u8>)>) -> Result<(), SchemaError> {
         let mut seen_keys = std::collections::HashSet::new();
         let deduped: Vec<(Vec<u8>, Vec<u8>)> = entries
