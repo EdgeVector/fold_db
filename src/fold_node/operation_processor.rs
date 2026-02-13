@@ -1,6 +1,8 @@
 use crate::error::{FoldDbError, FoldDbResult};
 use crate::ingestion::ingestion_service::IngestionService;
 use crate::schema::types::{KeyValue, Mutation, Query};
+use crate::schema::types::field::HashRangeFilter;
+use crate::schema::types::topology::TopologyNode;
 use serde_json::Value;
 use std::collections::HashMap;
 
@@ -46,11 +48,16 @@ impl OperationProcessor {
 
     /// Executes a query and returns formatted JSON records.
     /// This provides a consistent JSON representation for API responses.
+    /// When `rehydrate_depth` is set on the query, Reference fields are automatically
+    /// resolved to their actual child records up to the specified depth.
     pub async fn execute_query_json(&self, query: Query) -> FoldDbResult<Vec<Value>> {
+        let schema_name = query.schema_name.clone();
+        let rehydrate_depth = query.rehydrate_depth;
+
         let result_map = self.execute_query_map(query).await?;
         let records_map = crate::fold_db_core::query::records_from_field_map(&result_map);
 
-        let results: Vec<Value> = records_map
+        let mut results: Vec<Value> = records_map
             .into_iter()
             .map(|(key, record)| {
                 serde_json::json!({
@@ -61,7 +68,172 @@ impl OperationProcessor {
             })
             .collect();
 
+        if let Some(depth) = rehydrate_depth {
+            if depth > 0 {
+                self.rehydrate_references(&mut results, &schema_name, depth).await?;
+            }
+        }
+
         Ok(results)
+    }
+
+    // --- Reference Rehydration ---
+
+    /// Post-processes query results to resolve Reference fields into actual child records.
+    /// Recurses up to `remaining_depth` levels deep.
+    /// Uses `Box::pin` to handle async recursion through `execute_query_json`.
+    fn rehydrate_references<'a>(
+        &'a self,
+        results: &'a mut [Value],
+        schema_name: &'a str,
+        remaining_depth: u32,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = FoldDbResult<()>> + 'a>> {
+        Box::pin(async move {
+            // Collect all schema metadata we need upfront, then drop the db guard
+            // before making recursive queries (which also need the guard).
+            let (ref_fields, child_field_map) = {
+                let db = self
+                    .node
+                    .get_fold_db()
+                    .await
+                    .map_err(|e| FoldDbError::Database(e.to_string()))?;
+
+                let schema = match db
+                    .schema_manager
+                    .get_schema(schema_name)
+                    .map_err(|e| FoldDbError::Database(e.to_string()))?
+                {
+                    Some(s) => s,
+                    None => return Ok(()),
+                };
+
+                // Find fields with Reference topology
+                let ref_fields: Vec<(String, String)> = schema
+                    .field_topologies
+                    .iter()
+                    .filter_map(|(field_name, topo)| {
+                        if let TopologyNode::Reference { schema_name } = &topo.root {
+                            Some((field_name.clone(), schema_name.clone()))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+
+                if ref_fields.is_empty() {
+                    return Ok(());
+                }
+
+                // Pre-fetch queryable fields for each referenced child schema
+                let mut child_field_map: HashMap<String, Vec<String>> = HashMap::new();
+                for (_, child_schema_name) in &ref_fields {
+                    if child_field_map.contains_key(child_schema_name) {
+                        continue;
+                    }
+                    if let Ok(Some(child_schema)) = db.schema_manager.get_schema(child_schema_name) {
+                        let fields = Self::get_queryable_fields(&child_schema);
+                        if !fields.is_empty() {
+                            child_field_map.insert(child_schema_name.clone(), fields);
+                        }
+                    }
+                }
+
+                (ref_fields, child_field_map)
+            }; // db guard dropped here
+
+            for result in results.iter_mut() {
+                let fields_obj = match result.get_mut("fields") {
+                    Some(Value::Object(obj)) => obj,
+                    _ => continue,
+                };
+
+                for (field_name, child_schema_name) in &ref_fields {
+                    let child_fields = match child_field_map.get(child_schema_name) {
+                        Some(f) => f,
+                        None => continue,
+                    };
+
+                    let refs_value = match fields_obj.get(field_name) {
+                        Some(v) => v.clone(),
+                        None => continue,
+                    };
+
+                    let refs_array = match refs_value.as_array() {
+                        Some(arr) => arr.clone(),
+                        None => continue,
+                    };
+
+                    let mut hydrated = Vec::new();
+
+                    for ref_obj in &refs_array {
+                        let key_value = match Self::parse_ref_key(ref_obj) {
+                            Some(kv) => kv,
+                            None => {
+                                hydrated.push(ref_obj.clone());
+                                continue;
+                            }
+                        };
+
+                        let filter = Self::filter_from_key_value(&key_value);
+
+                        let mut child_query = Query::new_with_filter(
+                            child_schema_name.clone(),
+                            child_fields.clone(),
+                            filter,
+                        );
+                        if remaining_depth > 1 {
+                            child_query.rehydrate_depth = Some(remaining_depth - 1);
+                        }
+
+                        match self.execute_query_json(child_query).await {
+                            Ok(child_results) if !child_results.is_empty() => {
+                                if child_results.len() == 1 {
+                                    hydrated.push(child_results.into_iter().next().unwrap());
+                                } else {
+                                    hydrated.extend(child_results);
+                                }
+                            }
+                            _ => {
+                                hydrated.push(ref_obj.clone());
+                            }
+                        }
+                    }
+
+                    fields_obj.insert(field_name.clone(), Value::Array(hydrated));
+                }
+            }
+
+            Ok(())
+        })
+    }
+
+    /// Build a HashRangeFilter from a KeyValue.
+    fn filter_from_key_value(kv: &KeyValue) -> Option<HashRangeFilter> {
+        match (&kv.hash, &kv.range) {
+            (Some(h), Some(r)) => Some(HashRangeFilter::HashRangeKey {
+                hash: h.clone(),
+                range: r.clone(),
+            }),
+            (Some(h), None) => Some(HashRangeFilter::HashKey(h.clone())),
+            _ => None,
+        }
+    }
+
+    /// Get the list of queryable field names from a schema.
+    fn get_queryable_fields(schema: &crate::schema::types::schema::Schema) -> Vec<String> {
+        schema.fields.clone().unwrap_or_default()
+    }
+
+    /// Parse a reference JSON object into a KeyValue.
+    /// Expected format: `{"schema": "...", "key": {"hash": "...", "range": "..."}}`
+    fn parse_ref_key(ref_obj: &Value) -> Option<KeyValue> {
+        let key_obj = ref_obj.get("key")?;
+        let hash = key_obj.get("hash").and_then(|v| v.as_str()).map(|s| s.to_string());
+        let range = key_obj.get("range").and_then(|v| v.as_str()).map(|s| s.to_string());
+        if hash.is_none() && range.is_none() {
+            return None;
+        }
+        Some(KeyValue::new(hash, range))
     }
 
     // --- Logging Operations ---
@@ -861,6 +1033,42 @@ impl OperationProcessor {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate::fold_node::NodeConfig;
+    use crate::schema::types::declarative_schemas::DeclarativeSchemaDefinition;
+    use crate::schema::types::key_config::KeyConfig;
+    use crate::schema::types::operations::MutationType;
+    use crate::schema::types::schema::DeclarativeSchemaType as SchemaType;
+    use crate::schema::types::topology::{JsonTopology, TopologyNode, PrimitiveValueType};
+    use crate::schema::SchemaState;
+    use crate::security::Ed25519KeyPair;
+    use serde_json::json;
+    use tempfile::tempdir;
+
+    /// Helper: create a FoldNode + OperationProcessor backed by a temp directory.
+    async fn setup_processor() -> (OperationProcessor, FoldNode) {
+        let temp_dir = tempdir().unwrap();
+        let keypair = Ed25519KeyPair::generate().unwrap();
+        let config = NodeConfig::new(temp_dir.path().to_path_buf())
+            .with_schema_service_url("test://mock")
+            .with_identity(&keypair.public_key_base64(), &keypair.secret_key_base64());
+        let node = FoldNode::new(config).await.unwrap();
+        let processor = OperationProcessor::new(node.clone());
+        (processor, node)
+    }
+
+    /// Helper: create a schema, load it, and approve it so mutations work.
+    async fn load_and_approve_schema(node: &FoldNode, mut schema: DeclarativeSchemaDefinition) {
+        schema.populate_runtime_fields().unwrap();
+        let db = node.get_fold_db().await.unwrap();
+        db.schema_manager.load_schema_internal(schema).await.unwrap();
+    }
+
+    async fn approve_schema(node: &FoldNode, name: &str) {
+        let db = node.get_fold_db().await.unwrap();
+        db.schema_manager.set_schema_state(name, SchemaState::Approved).await.unwrap();
+    }
+
     #[tokio::test]
     async fn test_operation_processor_creation() {
         // This test would require a mock FoldNode
@@ -878,10 +1086,262 @@ mod tests {
             let _ = processor.get_log_config().await;
             let _ = processor.get_log_features().await;
         }
-        // check_methods is defined but not called, which satisfies the compiler checking the body.
-        // To strictly avoid "unused" warnings we might want to use it in a phantom way?
-        // But the original code was: let _ = |...| ...
-        // We can just define it. The compiler checks the body of the function.
         let _ = check_methods;
+    }
+
+    fn string_topology() -> JsonTopology {
+        JsonTopology::new(TopologyNode::Primitive {
+            value: PrimitiveValueType::String,
+            classifications: None,
+        })
+    }
+
+    /// Helper: create a child HashRange schema with hash+range keys and one data field.
+    /// Uses `field` as hash key and `_rk` as range key, both included in `fields`.
+    fn make_child_schema(name: &str, field: &str) -> DeclarativeSchemaDefinition {
+        let mut schema = DeclarativeSchemaDefinition::new(
+            name.to_string(),
+            SchemaType::HashRange,
+            Some(KeyConfig {
+                hash_field: Some(field.to_string()),
+                range_field: Some("_rk".to_string()),
+            }),
+            Some(vec![field.to_string(), "_rk".to_string()]),
+            None,
+            None,
+        );
+        schema.field_topologies.insert(field.to_string(), string_topology());
+        schema.field_topologies.insert("_rk".to_string(), string_topology());
+        schema
+    }
+
+    /// Helper: create a parent HashRange schema with a name field and a Reference field.
+    fn make_parent_schema(name: &str, ref_field: &str, child_schema_name: &str) -> DeclarativeSchemaDefinition {
+        let mut schema = DeclarativeSchemaDefinition::new(
+            name.to_string(),
+            SchemaType::HashRange,
+            Some(KeyConfig {
+                hash_field: Some("name".to_string()),
+                range_field: Some("_rk".to_string()),
+            }),
+            Some(vec!["name".to_string(), "_rk".to_string(), ref_field.to_string()]),
+            None,
+            None,
+        );
+        schema.field_topologies.insert("name".to_string(), string_topology());
+        schema.field_topologies.insert("_rk".to_string(), string_topology());
+        schema.field_topologies.insert(
+            ref_field.to_string(),
+            JsonTopology::new(TopologyNode::Reference {
+                schema_name: child_schema_name.to_string(),
+            }),
+        );
+        schema
+    }
+
+    #[tokio::test]
+    async fn test_query_without_rehydrate_depth_returns_raw_references() {
+        let (processor, node) = setup_processor().await;
+        let pub_key = processor.get_node_public_key();
+
+        let child_schema = make_child_schema("PostSchema", "title");
+        let parent_schema = make_parent_schema("UserSchema", "posts", "PostSchema");
+
+        load_and_approve_schema(&node, child_schema).await;
+        approve_schema(&node, "PostSchema").await;
+        load_and_approve_schema(&node, parent_schema).await;
+        approve_schema(&node, "UserSchema").await;
+
+        // Create a child record with hash+range key
+        let mut child_fields = HashMap::new();
+        child_fields.insert("title".to_string(), json!("Hello World"));
+        child_fields.insert("_rk".to_string(), json!("r1"));
+        processor.execute_mutation_op(Mutation::new(
+            "PostSchema".to_string(), child_fields,
+            KeyValue::new(Some("Hello World".to_string()), Some("r1".to_string())),
+            pub_key.clone(), 0, MutationType::Create,
+        )).await.unwrap();
+
+        // Create a parent record with reference to the child
+        let mut parent_fields = HashMap::new();
+        parent_fields.insert("name".to_string(), json!("Alice"));
+        parent_fields.insert("_rk".to_string(), json!("r1"));
+        parent_fields.insert("posts".to_string(), json!([
+            {"schema": "PostSchema", "key": {"hash": "Hello World", "range": "r1"}}
+        ]));
+        processor.execute_mutation_op(Mutation::new(
+            "UserSchema".to_string(), parent_fields,
+            KeyValue::new(Some("Alice".to_string()), Some("r1".to_string())),
+            pub_key.clone(), 0, MutationType::Create,
+        )).await.unwrap();
+
+        // Query WITHOUT rehydration - should return raw reference objects
+        let query = Query::new(
+            "UserSchema".to_string(),
+            vec!["name".to_string(), "posts".to_string()],
+        );
+        let results = processor.execute_query_json(query).await.unwrap();
+
+        assert_eq!(results.len(), 1);
+        let record = &results[0];
+        assert_eq!(record["fields"]["name"], json!("Alice"));
+
+        // posts field should contain raw reference objects (no rehydration)
+        let posts = record["fields"]["posts"].as_array().unwrap();
+        assert_eq!(posts.len(), 1);
+        assert_eq!(posts[0]["schema"], json!("PostSchema"));
+    }
+
+    #[tokio::test]
+    async fn test_query_with_rehydrate_depth_resolves_references() {
+        let (processor, node) = setup_processor().await;
+        let pub_key = processor.get_node_public_key();
+
+        let child_schema = make_child_schema("PostSchema", "title");
+        let parent_schema = make_parent_schema("UserSchema", "posts", "PostSchema");
+
+        load_and_approve_schema(&node, child_schema).await;
+        approve_schema(&node, "PostSchema").await;
+        load_and_approve_schema(&node, parent_schema).await;
+        approve_schema(&node, "UserSchema").await;
+
+        // Create child record with hash+range key
+        let mut child_fields = HashMap::new();
+        child_fields.insert("title".to_string(), json!("Hello World"));
+        child_fields.insert("_rk".to_string(), json!("r1"));
+        processor.execute_mutation_op(Mutation::new(
+            "PostSchema".to_string(), child_fields,
+            KeyValue::new(Some("Hello World".to_string()), Some("r1".to_string())),
+            pub_key.clone(), 0, MutationType::Create,
+        )).await.unwrap();
+
+        // Create parent record with reference to child
+        let mut parent_fields = HashMap::new();
+        parent_fields.insert("name".to_string(), json!("Alice"));
+        parent_fields.insert("_rk".to_string(), json!("r1"));
+        parent_fields.insert("posts".to_string(), json!([
+            {"schema": "PostSchema", "key": {"hash": "Hello World", "range": "r1"}}
+        ]));
+        processor.execute_mutation_op(Mutation::new(
+            "UserSchema".to_string(), parent_fields,
+            KeyValue::new(Some("Alice".to_string()), Some("r1".to_string())),
+            pub_key.clone(), 0, MutationType::Create,
+        )).await.unwrap();
+
+        // Query WITH rehydration depth 1 - should resolve references
+        let mut query = Query::new(
+            "UserSchema".to_string(),
+            vec!["name".to_string(), "posts".to_string()],
+        );
+        query.rehydrate_depth = Some(1);
+        let results = processor.execute_query_json(query).await.unwrap();
+
+        assert_eq!(results.len(), 1);
+        let record = &results[0];
+        assert_eq!(record["fields"]["name"], json!("Alice"));
+
+        // posts field should now contain hydrated child records
+        let posts = record["fields"]["posts"].as_array().unwrap();
+        assert_eq!(posts.len(), 1);
+
+        // Hydrated record should have "fields" with the child's data
+        let hydrated_post = &posts[0];
+        assert!(hydrated_post.get("fields").is_some(), "Hydrated post should have 'fields': {}", hydrated_post);
+        assert_eq!(hydrated_post["fields"]["title"], json!("Hello World"));
+        // Should also have a "key"
+        assert!(hydrated_post.get("key").is_some(), "Hydrated post should have 'key'");
+    }
+
+    #[tokio::test]
+    async fn test_rehydrate_depth_zero_does_not_resolve() {
+        let (processor, node) = setup_processor().await;
+        let pub_key = processor.get_node_public_key();
+
+        let child_schema = make_child_schema("ItemSchema", "label");
+        let parent_schema = make_parent_schema("ContainerSchema", "items", "ItemSchema");
+
+        load_and_approve_schema(&node, child_schema).await;
+        approve_schema(&node, "ItemSchema").await;
+        load_and_approve_schema(&node, parent_schema).await;
+        approve_schema(&node, "ContainerSchema").await;
+
+        // Create child
+        let mut child_fields = HashMap::new();
+        child_fields.insert("label".to_string(), json!("Widget"));
+        child_fields.insert("_rk".to_string(), json!("r1"));
+        processor.execute_mutation_op(Mutation::new(
+            "ItemSchema".to_string(), child_fields,
+            KeyValue::new(Some("Widget".to_string()), Some("r1".to_string())),
+            pub_key.clone(), 0, MutationType::Create,
+        )).await.unwrap();
+
+        // Create parent with reference
+        let mut parent_fields = HashMap::new();
+        parent_fields.insert("name".to_string(), json!("c1"));
+        parent_fields.insert("_rk".to_string(), json!("r1"));
+        parent_fields.insert("items".to_string(), json!([
+            {"schema": "ItemSchema", "key": {"hash": "Widget", "range": "r1"}}
+        ]));
+        processor.execute_mutation_op(Mutation::new(
+            "ContainerSchema".to_string(), parent_fields,
+            KeyValue::new(Some("c1".to_string()), Some("r1".to_string())),
+            pub_key.clone(), 0, MutationType::Create,
+        )).await.unwrap();
+
+        // Query with depth 0 - should NOT resolve references
+        let mut query = Query::new(
+            "ContainerSchema".to_string(),
+            vec!["name".to_string(), "items".to_string()],
+        );
+        query.rehydrate_depth = Some(0);
+        let results = processor.execute_query_json(query).await.unwrap();
+
+        assert_eq!(results.len(), 1);
+        let items = results[0]["fields"]["items"].as_array().unwrap();
+        assert_eq!(items.len(), 1);
+        // Should still be raw reference - has "schema" key, not "fields" key
+        assert!(items[0].get("schema").is_some(), "depth=0 should leave raw references");
+    }
+
+    #[test]
+    fn test_parse_ref_key_with_hash_only() {
+        let ref_obj = json!({"schema": "SomeSchema", "key": {"hash": "abc"}});
+        let kv = OperationProcessor::parse_ref_key(&ref_obj).unwrap();
+        assert_eq!(kv.hash, Some("abc".to_string()));
+        assert_eq!(kv.range, None);
+    }
+
+    #[test]
+    fn test_parse_ref_key_with_hash_and_range() {
+        let ref_obj = json!({"schema": "S", "key": {"hash": "h1", "range": "r1"}});
+        let kv = OperationProcessor::parse_ref_key(&ref_obj).unwrap();
+        assert_eq!(kv.hash, Some("h1".to_string()));
+        assert_eq!(kv.range, Some("r1".to_string()));
+    }
+
+    #[test]
+    fn test_parse_ref_key_missing_key_returns_none() {
+        let ref_obj = json!({"schema": "S"});
+        assert!(OperationProcessor::parse_ref_key(&ref_obj).is_none());
+    }
+
+    #[test]
+    fn test_filter_from_key_value_hash_only() {
+        let kv = KeyValue::new(Some("abc".to_string()), None);
+        let filter = OperationProcessor::filter_from_key_value(&kv);
+        assert!(matches!(filter, Some(HashRangeFilter::HashKey(ref h)) if h == "abc"));
+    }
+
+    #[test]
+    fn test_filter_from_key_value_hash_and_range() {
+        let kv = KeyValue::new(Some("h".to_string()), Some("r".to_string()));
+        let filter = OperationProcessor::filter_from_key_value(&kv);
+        assert!(matches!(filter, Some(HashRangeFilter::HashRangeKey { ref hash, ref range }) if hash == "h" && range == "r"));
+    }
+
+    #[test]
+    fn test_filter_from_key_value_no_keys_returns_none() {
+        let kv = KeyValue::new(None, None);
+        assert!(OperationProcessor::filter_from_key_value(&kv).is_none());
     }
 }

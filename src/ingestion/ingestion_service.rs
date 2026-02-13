@@ -17,7 +17,8 @@ use crate::ingestion::{
 };
 use crate::log_feature;
 use crate::logging::features::LogFeature;
-use crate::schema::types::Mutation;
+use crate::schema::types::topology::{JsonTopology, TopologyNode};
+use crate::schema::types::{KeyValue, Mutation};
 use crate::schema::SchemaCore;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -262,7 +263,7 @@ impl IngestionService {
             // Process each item: recursively handle children, then generate parent mutation.
             // Pass the top-level structure hash so the cache lookup matches.
             for item in &items {
-                let (gen, exec) = self
+                let (gen, exec, _key_value) = self
                     .ingest_decomposed_item(
                         item,
                         &top_level_hash,
@@ -843,6 +844,41 @@ impl IngestionService {
             },
         );
 
+        // Update the parent schema with Reference topologies for each decomposed child field.
+        // Children are resolved depth-first above, so their schema names are already in the cache.
+        if !rep_decomp.children.is_empty() {
+            let schema_manager = {
+                let db_guard = node
+                    .get_fold_db()
+                    .await
+                    .map_err(|error| IngestionError::SchemaCreationError(error.to_string()))?;
+                let manager = db_guard.schema_manager.clone();
+                drop(db_guard);
+                manager
+            };
+
+            if let Ok(Some(mut schema)) = schema_manager.get_schema(&schema_name) {
+                for child_group in &rep_decomp.children {
+                    let child_schema_name = schema_cache
+                        .get(&child_group.structure_hash)
+                        .map(|c| c.schema_name.clone())
+                        .unwrap_or_default();
+                    schema.set_field_topology(
+                        child_group.field_name.clone(),
+                        JsonTopology::new(TopologyNode::Reference {
+                            schema_name: child_schema_name,
+                        }),
+                    );
+                }
+                schema_manager.update_schema(&schema).await.map_err(|e| {
+                    IngestionError::SchemaCreationError(format!(
+                        "Failed to update schema with Reference topologies: {}",
+                        e
+                    ))
+                })?;
+            }
+        }
+
         Ok(schema_name)
     }
 
@@ -852,7 +888,9 @@ impl IngestionService {
     /// `structure_hash` is the topology hash of the full item (before decomposition),
     /// matching the key used in `resolve_schema_for_structure`.
     ///
-    /// Returns (mutations_generated, mutations_executed).
+    /// Returns (mutations_generated, mutations_executed, own_key_value).
+    /// The third element is the `key_value` from the mutation generated for this item
+    /// (None if item was empty). This lets the caller (parent) build references to this child.
     #[allow(clippy::too_many_arguments)]
     async fn ingest_decomposed_item(
         &self,
@@ -864,17 +902,24 @@ impl IngestionService {
         pub_key: &str,
         source_file_name: Option<String>,
         auto_execute: bool,
-    ) -> IngestionResult<(usize, usize)> {
+    ) -> IngestionResult<(usize, usize, Option<KeyValue>)> {
         let item_decomp = decomposer::decompose(item);
         let mut total_gen: usize = 0;
         let mut total_exec: usize = 0;
 
-        // Recursively process each child group's items.
-        // The child_group.structure_hash is the hash of the full child item
-        // (before its own decomposition), matching the resolve cache key.
+        // Recursively process each child group's items and collect references.
+        let mut child_references: HashMap<String, Vec<Value>> = HashMap::new();
+
         for child_group in &item_decomp.children {
+            let child_schema_name = schema_cache
+                .get(&child_group.structure_hash)
+                .map(|c| c.schema_name.clone())
+                .unwrap_or_default();
+
+            let mut refs_for_field = Vec::new();
+
             for child_item in &child_group.items {
-                let (gen, exec) = Box::pin(self.ingest_decomposed_item(
+                let (gen, exec, child_key_value) = Box::pin(self.ingest_decomposed_item(
                     child_item,
                     &child_group.structure_hash,
                     schema_cache,
@@ -887,16 +932,38 @@ impl IngestionService {
                 .await?;
                 total_gen += gen;
                 total_exec += exec;
+
+                // Build reference matching the indexing system's (schema, key) pattern
+                if let Some(kv) = child_key_value {
+                    refs_for_field.push(serde_json::json!({
+                        "schema": child_schema_name,
+                        "key": kv,
+                    }));
+                }
             }
+
+            child_references.insert(child_group.field_name.clone(), refs_for_field);
         }
 
         // Generate and execute mutation for this item's flat parent.
         // Use the structure_hash passed in (hash of full item before decomposition)
         // to look up the cached schema — this matches the key from resolve_schema_for_structure.
-        let parent = &item_decomp.parent;
+        let mut parent = item_decomp.parent;
+
+        // Inject child references into the parent data before mutation generation
+        if let Some(parent_obj) = parent.as_object_mut() {
+            for (field_name, refs) in &child_references {
+                if !refs.is_empty() {
+                    parent_obj.insert(field_name.clone(), Value::Array(refs.clone()));
+                }
+            }
+        }
+
+        let mut own_key_value: Option<KeyValue> = None;
+
         if let Some(parent_obj) = parent.as_object() {
             if parent_obj.is_empty() {
-                return Ok((total_gen, total_exec));
+                return Ok((total_gen, total_exec, None));
             }
 
             let cached = schema_cache.get(structure_hash).ok_or_else(|| {
@@ -939,6 +1006,9 @@ impl IngestionService {
                 source_file_name,
             )?;
 
+            // Extract the key_value from the first mutation before execution
+            own_key_value = mutations.first().map(|m| m.key_value.clone());
+
             let gen_count = mutations.len();
             total_gen += gen_count;
 
@@ -956,6 +1026,6 @@ impl IngestionService {
             }
         }
 
-        Ok((total_gen, total_exec))
+        Ok((total_gen, total_exec, own_key_value))
     }
 }

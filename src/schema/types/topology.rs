@@ -35,6 +35,11 @@ pub enum TopologyNode {
     },
     /// Array of a specific type
     Array { value: Box<TopologyNode> },
+    /// Reference to records in another schema (created during decomposition).
+    /// Mirrors the indexing system's (schema, key) reference pattern.
+    Reference {
+        schema_name: String,
+    },
     /// Any type (no validation)
     Any,
 }
@@ -160,6 +165,9 @@ impl TopologyNode {
                     )))
                 }
             }
+
+            // Reference fields accept any value (the reference JSON objects)
+            TopologyNode::Reference { .. } => Ok(()),
 
             // Array validation
             TopologyNode::Array {
@@ -466,6 +474,52 @@ mod tests {
         assert!(topology.validate(&json!(true)).is_ok());
         assert!(topology.validate(&json!({"key": "value"})).is_ok());
         assert!(topology.validate(&json!([1, 2, 3])).is_ok());
+    }
+
+    #[test]
+    fn test_reference_validation_accepts_any_value() {
+        let topology = JsonTopology::new(TopologyNode::Reference {
+            schema_name: "abc123".to_string(),
+        });
+
+        assert!(topology.validate(&json!("string")).is_ok());
+        assert!(topology.validate(&json!(42)).is_ok());
+        assert!(topology.validate(&json!(null)).is_ok());
+        assert!(topology.validate(&json!({"schema": "abc", "key": {"hash": "x"}})).is_ok());
+        assert!(topology.validate(&json!([1, 2, 3])).is_ok());
+    }
+
+    #[test]
+    fn test_reference_serde_roundtrip() {
+        let topology = JsonTopology::new(TopologyNode::Reference {
+            schema_name: "my_schema_hash".to_string(),
+        });
+
+        let json_str = serde_json::to_string(&topology).unwrap();
+        let deserialized: JsonTopology = serde_json::from_str(&json_str).unwrap();
+        assert_eq!(topology, deserialized);
+
+        if let TopologyNode::Reference { schema_name } = &deserialized.root {
+            assert_eq!(schema_name, "my_schema_hash");
+        } else {
+            panic!("Expected Reference variant");
+        }
+    }
+
+    #[test]
+    fn test_reference_compute_hash_deterministic() {
+        let t1 = JsonTopology::new(TopologyNode::Reference {
+            schema_name: "schema_a".to_string(),
+        });
+        let t2 = JsonTopology::new(TopologyNode::Reference {
+            schema_name: "schema_a".to_string(),
+        });
+        let t3 = JsonTopology::new(TopologyNode::Reference {
+            schema_name: "schema_b".to_string(),
+        });
+
+        assert_eq!(t1.compute_hash(), t2.compute_hash());
+        assert_ne!(t1.compute_hash(), t3.compute_hash());
     }
 
     #[test]

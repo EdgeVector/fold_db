@@ -346,6 +346,7 @@ impl LlmQueryService {
                     fields,
                     filter: filter.and_then(|f| serde_json::from_value(f).ok()),
                     as_of: None,
+                    rehydrate_depth: None,
                 };
 
                 let results = processor

@@ -278,6 +278,18 @@ impl SchemaCore {
         Arc::clone(&self.message_bus)
     }
 
+    /// Update an existing schema in both the database and in-memory cache.
+    /// Used by ingestion to add Reference topologies after child schemas are resolved.
+    pub async fn update_schema(&self, schema: &Schema) -> Result<(), SchemaError> {
+        let name = &schema.name;
+        self.db_ops.store_schema(name, schema).await?;
+        let mut schemas = self.schemas.lock().map_err(|_| {
+            SchemaError::InvalidData("Failed to acquire schemas lock".to_string())
+        })?;
+        schemas.insert(name.clone(), schema.clone());
+        Ok(())
+    }
+
     pub fn get_schema(&self, schema_name: &str) -> Result<Option<Schema>, SchemaError> {
         Ok(self
             .schemas

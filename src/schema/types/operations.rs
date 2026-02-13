@@ -11,6 +11,8 @@ pub struct Query {
     pub filter: Option<HashRangeFilter>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub as_of: Option<DateTime<Utc>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rehydrate_depth: Option<u32>,
 }
 
 impl Query {
@@ -21,6 +23,7 @@ impl Query {
             fields,
             filter: None,
             as_of: None,
+            rehydrate_depth: None,
         }
     }
 
@@ -35,6 +38,7 @@ impl Query {
             fields,
             filter,
             as_of: None,
+            rehydrate_depth: None,
         }
     }
 }

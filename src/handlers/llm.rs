@@ -752,6 +752,7 @@ async fn hydrate_index_results(
             fields: fields_needed,
             filter,
             as_of: None,
+            rehydrate_depth: None,
         };
 
         // Execute the query
