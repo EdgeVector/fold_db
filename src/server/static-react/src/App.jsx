@@ -20,6 +20,7 @@ import { initializeSystemKey, fetchNodePrivateKey, restoreSession } from './stor
 import LoginPage from './components/LoginPage'
 import { useEffect } from 'react'
 import { DEFAULT_TAB } from './constants'
+import { BROWSER_CONFIG } from './constants/config'
 
 // Single lookup for URL hash → tab ID (prevents duplication)
 const HASH_TO_TAB = {
@@ -64,8 +65,8 @@ export function AppContent() {
   // Restore session on mount FIRST - this must run before other effects
   // If no saved credentials, auto-authenticate using the node's public key
   useEffect(() => {
-    const userId = localStorage.getItem('fold_user_id')
-    const userHash = localStorage.getItem('fold_user_hash')
+    const userId = localStorage.getItem(BROWSER_CONFIG.STORAGE_KEYS.USER_ID)
+    const userHash = localStorage.getItem(BROWSER_CONFIG.STORAGE_KEYS.USER_HASH)
     if (userId && userHash) {
       dispatch(restoreSession({ id: userId, hash: userHash }))
     } else {
@@ -74,8 +75,8 @@ export function AppContent() {
         .then(res => res.json())
         .then(data => {
           if (data.user_id && data.user_hash) {
-            localStorage.setItem('fold_user_id', data.user_id)
-            localStorage.setItem('fold_user_hash', data.user_hash)
+            localStorage.setItem(BROWSER_CONFIG.STORAGE_KEYS.USER_ID, data.user_id)
+            localStorage.setItem(BROWSER_CONFIG.STORAGE_KEYS.USER_HASH, data.user_hash)
             dispatch(restoreSession({ id: data.user_id, hash: data.user_hash }))
           }
         })
@@ -97,7 +98,6 @@ export function AppContent() {
     }
   }, [dispatch, isAuthenticated])
 
-  // Use the new useApprovedSchemas hook (TASK-001)
   // Only fetch schemas when authenticated
   const {
     isLoading: schemasLoading,
@@ -119,7 +119,6 @@ export function AppContent() {
   }
 
   const handleSchemaUpdated = () => {
-    // Use the hook's refetch method instead of manual fetchSchemas (TASK-001)
     refetchSchemas()
   }
 

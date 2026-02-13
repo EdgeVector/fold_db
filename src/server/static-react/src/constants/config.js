@@ -1,7 +1,5 @@
 /**
  * Application-wide Configuration Constants
- * TASK-005: Constants Extraction and Configuration Centralization
- * Section 2.1.12 - Use of Constants for Repeated or Special Values
  */
 
 // ============================================================================
@@ -94,12 +92,11 @@ export const getCurrentEnvironmentConfig = () => {
  * Browser compatibility and device settings
  */
 export const BROWSER_CONFIG = {
-  // Local storage keys
+  // Local storage keys (single source of truth)
   STORAGE_KEYS: {
-    AUTH_TOKEN: 'datafold_auth_token',
-    USER_PREFERENCES: 'datafold_user_preferences',
-    SCHEMA_CACHE: 'datafold_schema_cache',
-    FORM_DATA: 'datafold_form_data'
+    USER_ID: 'fold_user_id',
+    USER_HASH: 'fold_user_hash',
+    SCHEMA_SERVICE_ENV: 'schemaServiceEnvironment',
   },
   
   // Viewport and responsive settings

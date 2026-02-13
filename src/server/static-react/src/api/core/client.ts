@@ -13,6 +13,7 @@ import {
   RETRY_CONFIG,
   CACHE_CONFIG,
 } from "../../constants/api";
+import { BROWSER_CONFIG } from "../../constants/config";
 
 import {
   ApiError,
@@ -450,7 +451,7 @@ export class ApiClient implements ApiClientInstance {
       // Add User ID header (Strict User Isolation)
       // Send both x-user-hash (for exemem cloud) and x-user-id (for legacy)
       if (typeof window !== "undefined") {
-        const userHash = localStorage.getItem("fold_user_hash");
+        const userHash = localStorage.getItem(BROWSER_CONFIG.STORAGE_KEYS.USER_HASH);
         if (userHash) {
           headers["x-user-hash"] = userHash; // Primary: for exemem cloud
           headers["x-user-id"] = userHash; // Fallback: for standalone

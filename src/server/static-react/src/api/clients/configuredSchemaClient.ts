@@ -9,14 +9,14 @@
 import { createApiClient } from "../core/client";
 import { UnifiedSchemaClient } from "./schemaClient";
 import { SCHEMA_SERVICE_ENVIRONMENTS } from "../../contexts/SchemaServiceConfigContext";
+import { BROWSER_CONFIG } from "../../constants/config";
 
 /**
  * Get the current schema service base URL from localStorage
  * This function is synchronous and reads from localStorage directly
  */
 export function getSchemaServiceBaseUrl(): string {
-  const STORAGE_KEY = "schemaServiceEnvironment";
-  const stored = localStorage.getItem(STORAGE_KEY);
+  const stored = localStorage.getItem(BROWSER_CONFIG.STORAGE_KEYS.SCHEMA_SERVICE_ENV);
 
   // Build environments map from the single source of truth
   const environments: Record<string, string> = Object.fromEntries(

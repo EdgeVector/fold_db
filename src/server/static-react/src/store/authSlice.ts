@@ -1,6 +1,7 @@
 import { createSlice, createAsyncThunk, PayloadAction } from "@reduxjs/toolkit";
 import { getNodePrivateKey } from "../api/clients/systemClient";
 import { base64ToBytes } from "../utils/cryptoUtils";
+import { BROWSER_CONFIG } from "../constants/config";
 import * as ed from "@noble/ed25519";
 import { sha512 } from "@noble/hashes/sha512";
 
@@ -211,8 +212,8 @@ export const loginUser = createAsyncThunk(
 
       // Set localStorage BEFORE returning so credentials are available
       // when Redux state change triggers component re-renders and API calls
-      localStorage.setItem("fold_user_id", userId);
-      localStorage.setItem("fold_user_hash", userHash);
+      localStorage.setItem(BROWSER_CONFIG.STORAGE_KEYS.USER_ID, userId);
+      localStorage.setItem(BROWSER_CONFIG.STORAGE_KEYS.USER_HASH, userHash);
 
       return { id: userId, hash: userHash };
     } catch {

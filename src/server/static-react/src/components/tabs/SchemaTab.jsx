@@ -15,7 +15,7 @@ import TopologyDisplay from '../schema/TopologyDisplay'
 import { SCHEMA_BADGE_COLORS } from '../../constants/ui'
 
 function SchemaTab({ onResult, onSchemaUpdated }) {
-  // Redux state and dispatch - TASK-003: Use Redux instead of props
+  // Redux state and dispatch
   const dispatch = useAppDispatch()
   const schemas = useAppSelector(selectAllSchemas)
   const _isLoadingSchemas = useAppSelector(selectFetchLoading)

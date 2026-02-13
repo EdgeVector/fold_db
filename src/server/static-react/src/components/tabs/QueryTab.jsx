@@ -1,13 +1,6 @@
 /**
- * QueryTab Component - Refactored for UCR-1-7
- * Orchestrates child components and Redux state management
- *
- * REFACTORED: Now uses extracted components following established patterns:
- * - useQueryState hook for state management
- * - QueryForm for form UI
- * - QueryActions for action controls
- * - useQueryBuilder for query construction
- * - QueryPreview for query visualization
+ * QueryTab Component
+ * Orchestrates query form, actions, preview, and execution.
  */
 
 import { useCallback, useState, useEffect } from 'react';
@@ -17,11 +10,9 @@ import { useQueryBuilder } from '../../hooks/useQueryBuilder';
 import QueryForm from '../query/QueryForm';
 import QueryActions from '../query/QueryActions';
 import QueryPreview from '../query/QueryPreview';
-// import { useAppSelector } from '../../store/hooks';
 
 function QueryTab({ onResult }) {
-  // UCR-1-7: Refactored to use extracted components and hooks
-  // Use the extracted query state management hook
+  // Query state management
   const {
     state: queryState,
     handleSchemaChange,
@@ -97,40 +88,6 @@ function QueryTab({ onResult }) {
     }
   }, [onResult, isValid]);
 
-  /**
-   * Handle query validation (optional feature)
-   */
-  const handleValidateQuery = useCallback(async (queryData) => {
-    // Future enhancement: add query validation endpoint
-  }, []);
-
-  /**
-   * Handle save query functionality
-   */
-  const handleSaveQuery = useCallback(async (queryData) => {
-    if (!queryData || !isValid) {
-      console.warn('Cannot save invalid query');
-      return;
-    }
-
-    try {
-      // Future enhancement: implement save query API endpoint
-      
-      // For now, just store in localStorage as a demo
-      const savedQueries = JSON.parse(localStorage.getItem('savedQueries') || '[]');
-      const newQuery = {
-        id: Date.now(),
-        name: `Query ${savedQueries.length + 1}`,
-        data: queryData,
-        createdAt: new Date().toISOString()
-      };
-      savedQueries.push(newQuery);
-      localStorage.setItem('savedQueries', JSON.stringify(savedQueries));
-      
-    } catch (error) {
-      console.error('Failed to save query:', error);
-    }
-  }, [isValid]);
 
   // UI does not require authentication
 
@@ -157,14 +114,12 @@ function QueryTab({ onResult }) {
           {/* Query Actions */}
           <QueryActions
             onExecute={() => handleExecuteQuery(query)}
-            onValidate={() => handleValidateQuery(query)}
-            onSave={() => handleSaveQuery(query)}
             onClear={clearState}
             queryData={query}
             disabled={!isValid}
             isExecuting={isExecuting}
-            showValidation={false} // Can be enabled for debugging
-            showSave={true}
+            showValidation={false}
+            showSave={false}
             showClear={true}
           />
         </div>

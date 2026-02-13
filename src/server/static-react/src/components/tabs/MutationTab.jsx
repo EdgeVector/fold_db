@@ -5,7 +5,6 @@ import ResultViewer from './mutation/ResultViewer'
 import TextField from '../form/TextField'
 import { mutationClient } from '../../api'
 import { MUTATION_TYPE_API_MAP, BUTTON_TEXT, FORM_LABELS, RANGE_SCHEMA_CONFIG } from '../../constants/ui.js'
-// Removed hook dependencies - using Redux state management instead (TASK-003)
 const VALIDATION_MESSAGES = { RANGE_KEY_REQUIRED: 'Range key is required for range schema mutations', RANGE_KEY_EMPTY: 'Range key cannot be empty' };
 import {
   isRangeSchema,
@@ -18,7 +17,7 @@ import { selectApprovedSchemas } from '../../store/schemaSlice'
 import { Buffer } from 'buffer'
 
 function MutationTab({ onResult }) {
-  // Redux state - TASK-003: Use approved schemas for SCHEMA-002 compliance
+  // Redux state
   const schemas = useAppSelector(selectApprovedSchemas)
   const _authState = useAppSelector(state => state.auth)
   const [selectedSchema, setSelectedSchema] = useState('')
@@ -27,7 +26,7 @@ function MutationTab({ onResult }) {
   const [result, setResult] = useState(null)
   const [rangeKeyValue, setRangeKeyValue] = useState('')
 
-  // Local validation state - replaced hook with Redux state management (TASK-003)
+  // Local validation state
   const [errors, setErrors] = useState({})
 
   const handleSchemaChange = (schemaName) => {
@@ -45,7 +44,7 @@ function MutationTab({ onResult }) {
     const value = e.target.value
     setRangeKeyValue(value)
     
-    // Simple local validation - replaced hook with Redux state management (TASK-003)
+    // Validate range key
     const selectedSchemaObj = schemas.find(s => s.name === selectedSchema)
     if (selectedSchemaObj && isRangeSchema(selectedSchemaObj)) {
       const error = validateRangeKey(value, mutationType !== 'Delete')

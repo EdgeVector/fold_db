@@ -5,7 +5,7 @@ import { useAppSelector } from '../../../store/hooks'
 import { selectApprovedSchemas } from '../../../store/schemaSlice'
 
 function SchemaSelector({ selectedSchema, mutationType, onSchemaChange, onTypeChange }) {
-  // Redux state - TASK-003: Use Redux approved schemas for SCHEMA-002 compliance
+  // Redux state
   const approvedSchemas = useAppSelector(selectApprovedSchemas)
 
   return (

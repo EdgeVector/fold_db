@@ -1,6 +1,7 @@
 import { useAppDispatch, useAppSelector } from '../store/hooks'
 import { logoutUser } from '../store/authSlice'
 import { useIngestionStatus } from '../hooks/useIngestionStatus'
+import { BROWSER_CONFIG } from '../constants/config'
 import HeaderProgress from './HeaderProgress'
 
 function Header({ onSettingsClick }) {
@@ -10,8 +11,8 @@ function Header({ onSettingsClick }) {
 
   const handleLogout = () => {
     dispatch(logoutUser())
-    localStorage.removeItem('fold_user_id')
-    localStorage.removeItem('fold_user_hash')
+    localStorage.removeItem(BROWSER_CONFIG.STORAGE_KEYS.USER_ID)
+    localStorage.removeItem(BROWSER_CONFIG.STORAGE_KEYS.USER_HASH)
   }
 
   const aiReady = ingestionStatus?.enabled && ingestionStatus?.configured

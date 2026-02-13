@@ -1,5 +1,6 @@
 import { createContext, useContext, useState } from 'react'
 import { resetSchemaClient } from '../api/clients/configuredSchemaClient'
+import { BROWSER_CONFIG } from '../constants/config'
 
 // Schema service environment configurations
 export const SCHEMA_SERVICE_ENVIRONMENTS = {
@@ -23,7 +24,7 @@ export const SCHEMA_SERVICE_ENVIRONMENTS = {
   }
 }
 
-const STORAGE_KEY = 'schemaServiceEnvironment'
+const STORAGE_KEY = BROWSER_CONFIG.STORAGE_KEYS.SCHEMA_SERVICE_ENV
 
 const SchemaServiceConfigContext = createContext({
   environment: SCHEMA_SERVICE_ENVIRONMENTS.LOCAL,
