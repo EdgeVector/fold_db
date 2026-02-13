@@ -243,8 +243,16 @@ pub fn extract_json_from_response(response_text: &str) -> IngestionResult<String
         }
     }
 
-    // If all else fails, return trimmed text and let the caller try to parse it
-    Ok(response_text.trim().to_string())
+    // All extraction strategies failed — return an error instead of passing garbage
+    let preview = if response_text.len() > 200 {
+        format!("{}...", &response_text[..200])
+    } else {
+        response_text.to_string()
+    };
+    Err(IngestionError::ai_response_validation_error(format!(
+        "Could not extract valid JSON from AI response: {}",
+        preview
+    )))
 }
 
 /// Validate that a schema has classifications on all primitive fields.
