@@ -1,7 +1,7 @@
 use actix_cors::Cors;
 use actix_web::{web, App, HttpResponse, HttpServer as ActixHttpServer, Responder};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 
 use crate::error::{FoldDbError, FoldDbResult};
@@ -77,6 +77,21 @@ pub struct ConflictResponse {
     pub error: String,
     pub similarity: f64,
     pub closest_schema: Schema,
+}
+
+/// A schema entry with its similarity score
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SimilarSchemaEntry {
+    pub schema: Schema,
+    pub similarity: f64,
+}
+
+/// Response for the find-similar-schemas endpoint
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SimilarSchemasResponse {
+    pub query_schema: String,
+    pub threshold: f64,
+    pub similar_schemas: Vec<SimilarSchemaEntry>,
 }
 
 /// Storage backend for the schema service
@@ -334,8 +349,7 @@ impl SchemaServiceState {
                 FoldDbError::Config("Failed to acquire schemas read lock".to_string())
             })?;
 
-            if schemas.contains_key(&schema_name) {
-                let existing_schema = schemas.get(&schema_name).unwrap();
+            if let Some(existing_schema) = schemas.get(&schema_name) {
                 log_feature!(
                     LogFeature::Schema,
                     info,
@@ -445,6 +459,75 @@ impl SchemaServiceState {
     pub fn get_schema_count(&self) -> usize {
         self.schemas.read().map(|s| s.len()).unwrap_or(0)
     }
+
+    /// Find schemas similar to the given schema using Jaccard index on field name sets
+    pub fn find_similar_schemas(
+        &self,
+        name: &str,
+        threshold: f64,
+    ) -> FoldDbResult<SimilarSchemasResponse> {
+        let schemas = self
+            .schemas
+            .read()
+            .map_err(|_| FoldDbError::Config("Failed to acquire schemas read lock".to_string()))?;
+
+        let target = schemas.get(name).ok_or_else(|| {
+            FoldDbError::Config(format!("Schema '{}' not found", name))
+        })?;
+
+        let target_fields = collect_field_names(target);
+
+        let mut similar: Vec<SimilarSchemaEntry> = schemas
+            .iter()
+            .filter(|(k, _)| k.as_str() != name)
+            .filter_map(|(_, schema)| {
+                let other_fields = collect_field_names(schema);
+                let similarity = jaccard_index(&target_fields, &other_fields);
+                if similarity >= threshold {
+                    Some(SimilarSchemaEntry {
+                        schema: schema.clone(),
+                        similarity,
+                    })
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        similar.sort_by(|a, b| b.similarity.partial_cmp(&a.similarity).unwrap_or(std::cmp::Ordering::Equal));
+
+        Ok(SimilarSchemasResponse {
+            query_schema: name.to_string(),
+            threshold,
+            similar_schemas: similar,
+        })
+    }
+}
+
+/// Collect all field names from a schema (union of fields and transform_fields keys)
+fn collect_field_names(schema: &Schema) -> HashSet<String> {
+    let mut names = HashSet::new();
+    if let Some(ref fields) = schema.fields {
+        for f in fields {
+            names.insert(f.clone());
+        }
+    }
+    if let Some(ref tf) = schema.transform_fields {
+        for key in tf.keys() {
+            names.insert(key.clone());
+        }
+    }
+    names
+}
+
+/// Compute Jaccard index: |A ∩ B| / |A ∪ B|
+fn jaccard_index(a: &HashSet<String>, b: &HashSet<String>) -> f64 {
+    if a.is_empty() && b.is_empty() {
+        return 1.0;
+    }
+    let intersection = a.intersection(b).count();
+    let union = a.union(b).count();
+    intersection as f64 / union as f64
 }
 
 /// List all available schemas
@@ -535,6 +618,52 @@ async fn get_schema(
             HttpResponse::NotFound().json(ErrorResponse {
                 error: "Schema not found".to_string(),
             })
+        }
+    }
+}
+
+/// Query parameters for the find-similar endpoint
+#[derive(Debug, Deserialize)]
+struct SimilarQuery {
+    threshold: Option<f64>,
+}
+
+/// Find schemas similar to the given schema
+async fn find_similar(
+    path: web::Path<String>,
+    query: web::Query<SimilarQuery>,
+    state: web::Data<SchemaServiceState>,
+) -> impl Responder {
+    let schema_name = path.into_inner();
+    let threshold = query.threshold.unwrap_or(0.5);
+
+    if !(0.0..=1.0).contains(&threshold) {
+        return HttpResponse::BadRequest().json(ErrorResponse {
+            error: "Threshold must be between 0.0 and 1.0".to_string(),
+        });
+    }
+
+    log_feature!(
+        LogFeature::Schema,
+        info,
+        "Schema service: finding schemas similar to '{}' with threshold {}",
+        schema_name,
+        threshold
+    );
+
+    match state.find_similar_schemas(&schema_name, threshold) {
+        Ok(response) => HttpResponse::Ok().json(response),
+        Err(e) => {
+            let error_msg = format!("{}", e);
+            if error_msg.contains("not found") {
+                HttpResponse::NotFound().json(ErrorResponse {
+                    error: format!("Schema '{}' not found", schema_name),
+                })
+            } else {
+                HttpResponse::InternalServerError().json(ErrorResponse {
+                    error: format!("Failed to find similar schemas: {}", e),
+                })
+            }
         }
     }
 }
@@ -666,7 +795,21 @@ async fn reset_database(
 
     // Clear the in-memory schemas map
     {
-        let mut schemas = state.schemas.write().unwrap();
+        let mut schemas = match state.schemas.write() {
+            Ok(s) => s,
+            Err(e) => {
+                log_feature!(
+                    LogFeature::Schema,
+                    error,
+                    "Failed to acquire schemas write lock: {}",
+                    e
+                );
+                return HttpResponse::InternalServerError().json(ResetResponse {
+                    success: false,
+                    message: "Failed to acquire schemas write lock".to_string(),
+                });
+            }
+        };
         schemas.clear();
     }
 
@@ -784,6 +927,7 @@ impl SchemaServiceServer {
                     )
                     .route("/schemas/reload", web::post().to(reload_schemas))
                     .route("/schemas/available", web::get().to(get_available_schemas))
+                    .route("/schemas/similar/{name}", web::get().to(find_similar))
                     .route("/schema/{name}", web::get().to(get_schema))
                     .route("/system/reset", web::post().to(reset_database)),
             )
@@ -1278,5 +1422,153 @@ mod tests {
 
         // Different topologies should produce different names
         assert_ne!(schema1_name, schema2_name);
+    }
+
+    // ========== find_similar_schemas tests ==========
+
+    fn make_string_topology() -> crate::schema::types::JsonTopology {
+        crate::schema::types::JsonTopology::new(
+            crate::schema::types::TopologyNode::Primitive {
+                value: crate::schema::types::PrimitiveType::String,
+                classifications: Some(vec!["word".to_string()]),
+            },
+        )
+    }
+
+    /// Helper: create a schema with the given fields, add topologies, and insert it via state.add_schema
+    async fn add_test_schema(
+        state: &SchemaServiceState,
+        name: &str,
+        fields: Vec<&str>,
+    ) -> String {
+        let field_strings: Vec<String> = fields.iter().map(|f| f.to_string()).collect();
+        let mut schema = Schema::new(
+            name.to_string(),
+            crate::schema::types::SchemaType::Single,
+            None,
+            Some(field_strings.clone()),
+            None,
+            None,
+        );
+        for f in &field_strings {
+            schema.set_field_topology(f.clone(), make_string_topology());
+        }
+        let outcome = state
+            .add_schema(schema, HashMap::new())
+            .await
+            .expect("failed to add test schema");
+        match outcome {
+            SchemaAddOutcome::Added(s, _) => s.name,
+            SchemaAddOutcome::TooSimilar(c) => c.closest_schema.name,
+        }
+    }
+
+    fn make_test_state() -> SchemaServiceState {
+        let temp_dir = tempdir().expect("failed to create temp directory");
+        let db_path = temp_dir
+            .path()
+            .join("test_schema_db")
+            .to_string_lossy()
+            .to_string();
+        // Leak the tempdir so it isn't deleted while state is in use
+        std::mem::forget(temp_dir);
+        SchemaServiceState::new(db_path).expect("failed to create state")
+    }
+
+    #[tokio::test]
+    async fn find_similar_identical_fields_returns_similarity_1() {
+        let state = make_test_state();
+        // Two schemas with identical fields produce the same topology_hash,
+        // so only one gets stored. We need schemas with different topologies
+        // but same field names. Instead, test with overlapping but not identical schemas.
+        // Schema A: {a, b}  Schema B: {a, b, c}  → Jaccard = 2/3
+        let name_a = add_test_schema(&state, "SchemaA", vec!["a", "b"]).await;
+        let _name_b = add_test_schema(&state, "SchemaB", vec!["a", "b", "c"]).await;
+
+        let result = state.find_similar_schemas(&name_a, 0.0).unwrap();
+        assert_eq!(result.similar_schemas.len(), 1);
+        let entry = &result.similar_schemas[0];
+        // Jaccard({a,b}, {a,b,c}) = 2/3
+        let expected = 2.0 / 3.0;
+        assert!((entry.similarity - expected).abs() < 1e-10);
+    }
+
+    #[tokio::test]
+    async fn find_similar_partial_overlap() {
+        let state = make_test_state();
+        // A: {x, y, z}, B: {y, z, w} → Jaccard = 2/4 = 0.5
+        let name_a = add_test_schema(&state, "A", vec!["x", "y", "z"]).await;
+        let _name_b = add_test_schema(&state, "B", vec!["y", "z", "w"]).await;
+
+        let result = state.find_similar_schemas(&name_a, 0.0).unwrap();
+        assert_eq!(result.similar_schemas.len(), 1);
+        assert!((result.similar_schemas[0].similarity - 0.5).abs() < 1e-10);
+    }
+
+    #[tokio::test]
+    async fn find_similar_no_overlap_returns_zero() {
+        let state = make_test_state();
+        // A: {a, b}, B: {c, d} → Jaccard = 0/4 = 0.0
+        let name_a = add_test_schema(&state, "A", vec!["a", "b"]).await;
+        let _name_b = add_test_schema(&state, "B", vec!["c", "d"]).await;
+
+        let result = state.find_similar_schemas(&name_a, 0.0).unwrap();
+        assert_eq!(result.similar_schemas.len(), 1);
+        assert!((result.similar_schemas[0].similarity - 0.0).abs() < 1e-10);
+    }
+
+    #[tokio::test]
+    async fn find_similar_threshold_filters() {
+        let state = make_test_state();
+        // A: {a, b, c}, B: {a, b, d} → Jaccard = 2/4 = 0.5
+        let name_a = add_test_schema(&state, "A", vec!["a", "b", "c"]).await;
+        let _name_b = add_test_schema(&state, "B", vec!["a", "b", "d"]).await;
+
+        // Threshold 0.6 should filter out B (similarity = 0.5)
+        let result = state.find_similar_schemas(&name_a, 0.6).unwrap();
+        assert!(result.similar_schemas.is_empty());
+
+        // Threshold 0.5 should include B
+        let result = state.find_similar_schemas(&name_a, 0.5).unwrap();
+        assert_eq!(result.similar_schemas.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn find_similar_nonexistent_schema_returns_error() {
+        let state = make_test_state();
+        let result = state.find_similar_schemas("nonexistent", 0.5);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(format!("{}", err).contains("not found"));
+    }
+
+    #[tokio::test]
+    async fn find_similar_sorted_by_similarity_descending() {
+        let state = make_test_state();
+        // A: {a, b, c, d}
+        // B: {a, b, c, e}       → Jaccard = 3/5 = 0.6
+        // C: {a, e, f, g}       → Jaccard = 1/7 ≈ 0.143
+        let name_a = add_test_schema(&state, "A", vec!["a", "b", "c", "d"]).await;
+        let _name_b = add_test_schema(&state, "B", vec!["a", "b", "c", "e"]).await;
+        let _name_c = add_test_schema(&state, "C", vec!["a", "e", "f", "g"]).await;
+
+        let result = state.find_similar_schemas(&name_a, 0.0).unwrap();
+        assert_eq!(result.similar_schemas.len(), 2);
+        // First entry should have higher similarity
+        assert!(result.similar_schemas[0].similarity >= result.similar_schemas[1].similarity);
+    }
+
+    #[test]
+    fn jaccard_index_both_empty_returns_one() {
+        let a: HashSet<String> = HashSet::new();
+        let b: HashSet<String> = HashSet::new();
+        assert!((jaccard_index(&a, &b) - 1.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn jaccard_index_one_empty_returns_zero() {
+        let a: HashSet<String> = ["x".to_string()].into_iter().collect();
+        let b: HashSet<String> = HashSet::new();
+        assert!((jaccard_index(&a, &b) - 0.0).abs() < 1e-10);
     }
 }

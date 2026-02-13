@@ -128,22 +128,31 @@ impl IndexOrchestrator {
             return;
         };
 
-        // If keyword extractor is available, use LLM-powered extraction
-        if let Some(extractor) = keyword_extractor {
-            // Merge all rows into a single HashMap for one LLM call
-            let mut merged_fields: HashMap<String, Value> = HashMap::new();
-            for row in data {
-                for (field_name, value) in row {
-                    if NativeIndexManager::should_index_field(field_name) {
-                        merged_fields.insert(field_name.clone(), value.clone());
-                    }
+        // Merge all rows into a single HashMap
+        let mut merged_fields: HashMap<String, Value> = HashMap::new();
+        for row in data {
+            for (field_name, value) in row {
+                if NativeIndexManager::should_index_field(field_name) {
+                    merged_fields.insert(field_name.clone(), value.clone());
                 }
             }
+        }
 
-            if merged_fields.is_empty() {
-                return;
-            }
+        if merged_fields.is_empty() {
+            return;
+        }
 
+        // Step 1: Always index field names (no LLM needed)
+        let field_names: Vec<String> = merged_fields.keys().cloned().collect();
+        if let Err(e) = native_index_mgr
+            .batch_index_field_names(schema_name, &key_value, &field_names)
+            .await
+        {
+            error!("IndexOrchestrator: Field-name indexing failed: {}", e);
+        }
+
+        // Step 2: If keyword extractor is available, use LLM-powered keyword extraction
+        if let Some(extractor) = keyword_extractor {
             // Update tracker
             if let Some(idx_tracker) = tracker {
                 idx_tracker.start_batch(merged_fields.len()).await;
@@ -178,9 +187,7 @@ impl IndexOrchestrator {
                     .await;
             }
         } else {
-            // No keyword extractor - skip indexing (LLM not configured)
-            debug!("IndexOrchestrator: No keyword extractor available, skipping indexing");
-            return;
+            debug!("IndexOrchestrator: No keyword extractor available, skipping keyword indexing");
         }
 
         let _ = native_index_mgr.flush().await;

@@ -60,7 +60,6 @@ export {
   approveSchema,
   blockSchema,
   getApprovedSchemas,
-  validateSchemaForOperation
 } from './clients/schemaClient';
 
 export {

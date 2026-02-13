@@ -327,46 +327,6 @@ export class UnifiedSchemaClient {
   }
 
   /**
-   * Validate if a schema can be used for mutations/queries (SCHEMA-002 compliance)
-   */
-  async validateSchemaForOperation(
-    schemaName: string,
-    operation: 'mutation' | 'query'
-  ): Promise<{ isValid: boolean; error?: string; schema?: Schema }> {
-    try {
-      const response = await this.getSchema(schemaName);
-      
-      if (!response.success || !response.data) {
-        return {
-          isValid: false,
-          error: `Schema '${schemaName}' not found`
-        };
-      }
-
-      const schema = response.data;
-      
-      // SCHEMA-002: Only approved schemas can be used for mutations and queries
-      if (schema.state !== SCHEMA_STATES.APPROVED) {
-        return {
-          isValid: false,
-          error: `Schema '${schemaName}' is not approved. Current state: ${schema.state}. Only approved schemas can be used for ${operation}s.`,
-          schema
-        };
-      }
-
-      return {
-        isValid: true,
-        schema
-      };
-    } catch (error) {
-      return {
-        isValid: false,
-        error: `Failed to validate schema '${schemaName}': ${error.message}`
-      };
-    }
-  }
-
-  /**
    * Clear schema cache
    */
   clearCache(): void {
@@ -418,7 +378,6 @@ export const blockSchema = schemaClient.blockSchema.bind(schemaClient);
 export const loadSchema = schemaClient.loadSchema.bind(schemaClient);
 export const unloadSchema = schemaClient.unloadSchema.bind(schemaClient);
 export const getApprovedSchemas = schemaClient.getApprovedSchemas.bind(schemaClient);
-export const validateSchemaForOperation = schemaClient.validateSchemaForOperation.bind(schemaClient);
 export const getBackfillStatus = schemaClient.getBackfillStatus.bind(schemaClient);
 
 export default schemaClient;

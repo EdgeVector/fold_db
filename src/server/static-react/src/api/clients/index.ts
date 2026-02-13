@@ -18,7 +18,6 @@ export {
   loadSchema,
   unloadSchema,
   getApprovedSchemas,
-  validateSchemaForOperation,
 } from "./schemaClient";
 
 // Security Client

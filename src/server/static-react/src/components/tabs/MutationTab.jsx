@@ -9,7 +9,6 @@ const VALIDATION_MESSAGES = { RANGE_KEY_REQUIRED: 'Range key is required for ran
 import {
   isRangeSchema,
   formatRangeMutation,
-  validateRangeKey,
   getRangeKey
 } from '../../utils/rangeSchemaHelpers'
 import { useAppSelector } from '../../store/hooks'
@@ -19,7 +18,6 @@ import { Buffer } from 'buffer'
 function MutationTab({ onResult }) {
   // Redux state
   const schemas = useAppSelector(selectApprovedSchemas)
-  const _authState = useAppSelector(state => state.auth)
   const [selectedSchema, setSelectedSchema] = useState('')
   const [mutationData, setMutationData] = useState({})
   const [mutationType, setMutationType] = useState('Insert')
@@ -38,18 +36,6 @@ function MutationTab({ onResult }) {
 
   const handleFieldChange = (fieldName, value) => {
     setMutationData(prev => ({ ...prev, [fieldName]: value }))
-  }
-
-  const _handleRangeKeyChange = (e) => {
-    const value = e.target.value
-    setRangeKeyValue(value)
-    
-    // Validate range key
-    const selectedSchemaObj = schemas.find(s => s.name === selectedSchema)
-    if (selectedSchemaObj && isRangeSchema(selectedSchemaObj)) {
-      const error = validateRangeKey(value, mutationType !== 'Delete')
-      setErrors(prev => ({ ...prev, rangeKey: error }))
-    }
   }
 
   const handleSubmit = async (e) => {

@@ -4,8 +4,6 @@ import { getRangeSchemaInfo, getHashRangeSchemaInfo } from '../../utils/rangeSch
 import { useAppSelector, useAppDispatch } from '../../store/hooks'
 import {
   selectAllSchemas,
-  selectFetchLoading,
-  selectFetchError,
   approveSchema as approveSchemaAction,
   blockSchema as blockSchemaAction,
   fetchSchemas
@@ -18,8 +16,6 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
   // Redux state and dispatch
   const dispatch = useAppDispatch()
   const schemas = useAppSelector(selectAllSchemas)
-  const _isLoadingSchemas = useAppSelector(selectFetchLoading)
-  const _schemasError = useAppSelector(selectFetchError)
   const [expandedSchemas, setExpandedSchemas] = useState({})
 
   // Fetch schemas when component mounts
