@@ -29,9 +29,9 @@ pub struct MutationExecuted {
     pub data: Option<Vec<std::collections::HashMap<String, serde_json::Value>>>,
     /// User ID for multi-tenant isolation (used by IndexOrchestrator to set user context)
     pub user_id: Option<String>,
-    /// Maps field_name → molecule version at time of mutation
+    /// Molecule version numbers at time of mutation
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub molecule_versions: Option<std::collections::HashMap<String, u64>>,
+    pub molecule_versions: Option<Vec<u64>>,
 }
 
 impl EventType for MutationExecuted {

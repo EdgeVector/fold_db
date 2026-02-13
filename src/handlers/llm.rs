@@ -808,16 +808,16 @@ fn keep_highest_molecule_version(results: Vec<IndexResult>) -> Vec<IndexResult> 
             r.field.clone(),
             r.key_value.clone(),
         );
-        let total: u64 = r
+        let highest: u64 = r
             .molecule_versions
             .as_ref()
-            .map(|m| m.values().sum())
+            .and_then(|m| m.iter().max().copied())
             .unwrap_or(0);
 
         match best.get(&key) {
-            Some(&(existing, _)) if existing >= total => {}
+            Some(&(existing, _)) if existing >= highest => {}
             _ => {
-                best.insert(key, (total, idx));
+                best.insert(key, (highest, idx));
             }
         }
     }

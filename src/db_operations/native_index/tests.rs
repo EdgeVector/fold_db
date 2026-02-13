@@ -55,7 +55,7 @@ async fn test_batch_index_from_keywords() {
     ];
 
     manager
-        .batch_index_from_keywords("AiSchema", &key, keywords, None)
+        .batch_index_from_keywords("AiSchema", &key, "content", keywords, None)
         .await
         .expect("batch_index_from_keywords failed");
 
@@ -63,7 +63,7 @@ async fn test_batch_index_from_keywords() {
     for term in &["machine learning", "neural network", "deep learning"] {
         let results = manager.search(term).await.expect("search failed");
         assert_eq!(results.len(), 1, "Should find 1 result for '{}'", term);
-        assert_eq!(results[0].field, "llm_keyword");
+        assert_eq!(results[0].field, "content");
     }
 
     // Single-char term should return nothing (below min length)
@@ -85,6 +85,7 @@ async fn test_multi_word_search_intersection() {
         .batch_index_from_keywords(
             "People",
             &key_p1,
+            "name",
             vec!["alice".to_string(), "johnson".to_string()],
             None,
         )
@@ -96,6 +97,7 @@ async fn test_multi_word_search_intersection() {
         .batch_index_from_keywords(
             "People",
             &key_p2,
+            "name",
             vec!["alice".to_string(), "smith".to_string()],
             None,
         )
@@ -209,9 +211,9 @@ async fn test_search_all_combines_words_and_fields() {
 
     let key = KeyValue::new(Some("rec1".to_string()), None);
 
-    // Index "email" as both a keyword and a field name
+    // Index "email" as both a keyword (on "bio" field) and a field name
     manager
-        .batch_index_from_keywords("Schema1", &key, vec!["email".to_string()], None)
+        .batch_index_from_keywords("Schema1", &key, "bio", vec!["email".to_string()], None)
         .await
         .expect("keyword indexing failed");
 
@@ -220,9 +222,8 @@ async fn test_search_all_combines_words_and_fields() {
         .await
         .expect("field indexing failed");
 
-    // search_all should return both, but dedup by (schema, key, field)
+    // search_all should return both: word entry (field="bio") and field entry (field="email")
     let results = manager.search_all("email").await.expect("search_all failed");
-    // word entry has field="llm_keyword", field entry has field="email" — both unique
     assert_eq!(results.len(), 2, "Should find both word and field entries");
 
     let classifications: std::collections::HashSet<String> =
@@ -241,7 +242,7 @@ async fn test_matched_term_populated_in_search() {
 
     let key = KeyValue::new(Some("rec1".to_string()), None);
     manager
-        .batch_index_from_keywords("Tweet", &key, vec!["hello".to_string()], None)
+        .batch_index_from_keywords("Tweet", &key, "content", vec!["hello".to_string()], None)
         .await
         .expect("indexing failed");
 
@@ -278,14 +279,11 @@ async fn test_molecule_versions_preserved_through_index_roundtrip() {
     let manager = NativeIndexManager::new(kv_store, None);
 
     let key = KeyValue::new(Some("rec1".to_string()), None);
-    let mol_versions = std::collections::HashMap::from([
-        ("content".to_string(), 3u64),
-        ("title".to_string(), 1u64),
-    ]);
+    let mol_versions = vec![3u64, 1u64];
 
     // Index with molecule versions
     manager
-        .batch_index_from_keywords("Tweet", &key, vec!["rust".to_string()], Some(&mol_versions))
+        .batch_index_from_keywords("Tweet", &key, "content", vec!["rust".to_string()], Some(&mol_versions))
         .await
         .expect("indexing failed");
 
@@ -295,8 +293,7 @@ async fn test_molecule_versions_preserved_through_index_roundtrip() {
     let entry = &entries[0];
     assert!(entry.molecule_versions.is_some());
     let versions = entry.molecule_versions.as_ref().unwrap();
-    assert_eq!(versions.get("content"), Some(&3u64));
-    assert_eq!(versions.get("title"), Some(&1u64));
+    assert_eq!(versions, &vec![3u64, 1u64]);
 }
 
 #[tokio::test]
@@ -311,7 +308,7 @@ async fn test_molecule_versions_none_by_default() {
 
     // Index without molecule versions
     manager
-        .batch_index_from_keywords("Tweet", &key, vec!["hello".to_string()], None)
+        .batch_index_from_keywords("Tweet", &key, "content", vec!["hello".to_string()], None)
         .await
         .expect("indexing failed");
 

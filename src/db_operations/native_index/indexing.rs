@@ -3,7 +3,6 @@ use crate::schema::SchemaError;
 
 use super::types::IndexEntry;
 use super::NativeIndexManager;
-use std::collections::HashMap;
 
 impl NativeIndexManager {
     /// Deduplicate index entries by key and write them via the KvStore.
@@ -30,12 +29,14 @@ impl NativeIndexManager {
         &self,
         schema_name: &str,
         key_value: &KeyValue,
+        field_name: &str,
         keywords: Vec<String>,
-        molecule_versions: Option<&HashMap<String, u64>>,
+        molecule_versions: Option<&Vec<u64>>,
     ) -> Result<(), SchemaError> {
         log::info!(
-            "[NativeIndex] batch_index_from_keywords: {} keywords for schema '{}'",
+            "[NativeIndex] batch_index_from_keywords: {} keywords for field '{}' in schema '{}'",
             keywords.len(),
+            field_name,
             schema_name
         );
 
@@ -45,7 +46,7 @@ impl NativeIndexManager {
             let mut entry = IndexEntry::new(
                 schema_name.to_string(),
                 key_value.clone(),
-                "llm_keyword".to_string(),
+                field_name.to_string(),
                 "word".to_string(),
             );
             entry.molecule_versions = molecule_versions.cloned();
@@ -76,7 +77,7 @@ impl NativeIndexManager {
         schema_name: &str,
         key_value: &KeyValue,
         field_names: &[String],
-        molecule_versions: Option<&HashMap<String, u64>>,
+        molecule_versions: Option<&Vec<u64>>,
     ) -> Result<(), SchemaError> {
         let indexable: Vec<&String> = field_names
             .iter()

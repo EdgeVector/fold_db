@@ -142,7 +142,7 @@ impl IndexOrchestrator {
             return;
         }
 
-        // Extract molecule versions from the event
+        // Extract molecule version numbers from the event
         let mol_versions = event.molecule_versions.as_ref();
 
         // Step 1: Always index field names (no LLM needed)
@@ -155,6 +155,7 @@ impl IndexOrchestrator {
         }
 
         // Step 2: If keyword extractor is available, use LLM-powered keyword extraction
+        // Single LLM call extracts keywords grouped by field name
         if let Some(extractor) = keyword_extractor {
             // Update tracker
             if let Some(idx_tracker) = tracker {
@@ -163,19 +164,20 @@ impl IndexOrchestrator {
 
             let start = std::time::Instant::now();
 
-            match extractor.extract_keywords(&merged_fields).await {
-                Ok(keywords) => {
-                    if !keywords.is_empty() {
+            match extractor.extract_keywords_per_field(&merged_fields).await {
+                Ok(keywords_by_field) => {
+                    for (field_name, keywords) in keywords_by_field {
                         if let Err(e) = native_index_mgr
                             .batch_index_from_keywords(
                                 schema_name,
                                 &key_value,
+                                &field_name,
                                 keywords,
                                 mol_versions,
                             )
                             .await
                         {
-                            error!("IndexOrchestrator: Keyword indexing failed: {}", e);
+                            error!("IndexOrchestrator: Keyword indexing for field '{}' failed: {}", field_name, e);
                         }
                     }
                 }

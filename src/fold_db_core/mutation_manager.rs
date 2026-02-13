@@ -301,10 +301,10 @@ impl MutationManager {
             }
 
             // Collect molecule versions for each mutated field
-            let mut mol_versions: HashMap<String, u64> = HashMap::new();
-            for (field_name, schema_field) in &schema.runtime_fields {
+            let mut mol_versions: Vec<u64> = Vec::new();
+            for schema_field in schema.runtime_fields.values() {
                 if let Some(v) = schema_field.molecule_version() {
-                    mol_versions.insert(field_name.clone(), v);
+                    mol_versions.push(v);
                 }
             }
 
