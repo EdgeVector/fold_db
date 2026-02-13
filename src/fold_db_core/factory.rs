@@ -183,8 +183,20 @@ pub async fn create_fold_db(
                 base_store
             };
 
+            // Layer E2E encryption on top (works with or without KMS)
+            let e2e_crypto = Arc::new(
+                crate::crypto::LocalCryptoProvider::from_key(e2e_keys.encryption_key()),
+            );
+            let e2e_store = crate::storage::EncryptingNamespacedStore::new(
+                namespaced_store,
+                e2e_crypto,
+                true, // migration_mode: tolerate existing plaintext/KMS-only data
+            );
+            let final_store =
+                Arc::new(e2e_store) as Arc<dyn crate::storage::traits::NamespacedStore>;
+
             let db_ops = Arc::new(
-                DbOperations::from_namespaced_store(namespaced_store, None)
+                DbOperations::from_namespaced_store(final_store, Some(e2e_keys.index_key()))
                     .await
                     .map_err(|e| {
                         FoldDbError::Config(format!("Failed to initialize DynamoDB backend: {}", e))
