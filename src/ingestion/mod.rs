@@ -29,6 +29,7 @@
 pub mod ai_helpers;
 pub mod ai_schema_response;
 pub mod config;
+pub mod decomposer;
 pub mod error;
 pub mod file_upload;
 pub mod ingestion_service;
