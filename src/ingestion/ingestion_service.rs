@@ -24,6 +24,9 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
 
+/// Maximum recursion depth for decomposition to prevent unbounded nesting.
+const MAX_DECOMPOSITION_DEPTH: usize = 10;
+
 /// Cached result of AI schema determination for a given structure.
 struct CachedSchema {
     schema_name: String,
@@ -303,6 +306,7 @@ impl IngestionService {
                 rep,
                 &mut schema_cache,
                 node,
+                0,
             )
             .await?;
 
@@ -319,6 +323,7 @@ impl IngestionService {
                         &pub_key,
                         request.source_file_name.clone(),
                         request.auto_execute,
+                        0,
                     )
                     .await?;
                 total_mutations_generated += gen;
@@ -846,6 +851,7 @@ impl IngestionService {
         representative: &Value,
         schema_cache: &mut HashMap<String, CachedSchema>,
         node: &FoldNode,
+        depth: usize,
     ) -> IngestionResult<String> {
         // Return cached result if available
         if let Some(cached) = schema_cache.get(structure_hash) {
@@ -855,15 +861,27 @@ impl IngestionService {
         // Decompose the representative to handle its own nested children
         let rep_decomp = decomposer::decompose(representative);
 
-        // Recursively resolve schemas for the representative's children (depth-first)
-        for child_group in &rep_decomp.children {
-            Box::pin(self.resolve_schema_for_structure(
-                &child_group.structure_hash,
-                &child_group.items[0],
-                schema_cache,
-                node,
-            ))
-            .await?;
+        // Depth guard: if we've recursed too deep, skip children and treat as flat
+        if depth >= MAX_DECOMPOSITION_DEPTH {
+            log_feature!(
+                LogFeature::Ingestion,
+                warn,
+                "Decomposition depth limit ({}) reached for structure hash '{}' — treating as flat",
+                MAX_DECOMPOSITION_DEPTH,
+                structure_hash
+            );
+        } else {
+            // Recursively resolve schemas for the representative's children (depth-first)
+            for child_group in &rep_decomp.children {
+                Box::pin(self.resolve_schema_for_structure(
+                    &child_group.structure_hash,
+                    &child_group.items[0],
+                    schema_cache,
+                    node,
+                    depth + 1,
+                ))
+                .await?;
+            }
         }
 
         // Get AI recommendation for the flat parent (no array-of-object fields)
@@ -892,7 +910,8 @@ impl IngestionService {
 
         // Update the parent schema with Reference topologies for each decomposed child field.
         // Children are resolved depth-first above, so their schema names are already in the cache.
-        if !rep_decomp.children.is_empty() {
+        // Only do this when we actually resolved children (not at depth limit).
+        if !rep_decomp.children.is_empty() && depth < MAX_DECOMPOSITION_DEPTH {
             let schema_manager = {
                 let db_guard = node
                     .get_fold_db()
@@ -909,7 +928,12 @@ impl IngestionService {
                         let child_schema_name = schema_cache
                             .get(&child_group.structure_hash)
                             .map(|c| c.schema_name.clone())
-                            .unwrap_or_default();
+                            .ok_or_else(|| {
+                                IngestionError::SchemaCreationError(format!(
+                                    "No cached schema for child structure hash '{}' (field '{}')",
+                                    child_group.structure_hash, child_group.field_name
+                                ))
+                            })?;
                         schema.set_field_topology(
                             child_group.field_name.clone(),
                             JsonTopology::new(TopologyNode::Reference {
@@ -927,7 +951,15 @@ impl IngestionService {
                         }
                     }
 
-                    let _ = schema.populate_runtime_fields();
+                    if let Err(e) = schema.populate_runtime_fields() {
+                        log_feature!(
+                            LogFeature::Ingestion,
+                            warn,
+                            "Failed to populate runtime fields for schema '{}': {}",
+                            schema_name,
+                            e
+                        );
+                    }
 
                     schema_manager.update_schema(&schema).await.map_err(|e| {
                         IngestionError::SchemaCreationError(format!(
@@ -979,6 +1011,7 @@ impl IngestionService {
         pub_key: &str,
         source_file_name: Option<String>,
         auto_execute: bool,
+        depth: usize,
     ) -> IngestionResult<(usize, usize, Option<KeyValue>)> {
         let item_decomp = decomposer::decompose(item);
         let mut total_gen: usize = 0;
@@ -987,6 +1020,16 @@ impl IngestionService {
         // Recursively process each child group's items and collect references.
         let mut child_references: HashMap<String, Vec<Value>> = HashMap::new();
 
+        // Skip children if depth limit reached
+        if depth >= MAX_DECOMPOSITION_DEPTH {
+            log_feature!(
+                LogFeature::Ingestion,
+                warn,
+                "Decomposition depth limit ({}) reached during ingestion for structure hash '{}' — skipping children",
+                MAX_DECOMPOSITION_DEPTH,
+                structure_hash
+            );
+        } else {
         for child_group in &item_decomp.children {
             let mut refs_for_field = Vec::new();
 
@@ -1000,6 +1043,7 @@ impl IngestionService {
                     pub_key,
                     source_file_name.clone(),
                     auto_execute,
+                    depth + 1,
                 ))
                 .await?;
                 total_gen += gen;
@@ -1010,7 +1054,12 @@ impl IngestionService {
                     let child_schema_name = schema_cache
                         .get(&child_group.structure_hash)
                         .map(|c| c.schema_name.clone())
-                        .unwrap_or_default();
+                        .ok_or_else(|| {
+                            IngestionError::SchemaCreationError(format!(
+                                "No cached schema for child structure hash '{}' (field '{}')",
+                                child_group.structure_hash, child_group.field_name
+                            ))
+                        })?;
                     refs_for_field.push(serde_json::json!({
                         "schema": child_schema_name,
                         "key": kv,
@@ -1028,6 +1077,7 @@ impl IngestionService {
 
             child_references.insert(child_group.field_name.clone(), refs_for_field);
         }
+        } // end depth guard else
 
         // Generate and execute mutation for this item's flat parent.
         // Use the structure_hash passed in (hash of full item before decomposition)
@@ -1059,6 +1109,7 @@ impl IngestionService {
                     item,
                     schema_cache,
                     node,
+                    depth,
                 ))
                 .await?;
             }

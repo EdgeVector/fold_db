@@ -245,19 +245,31 @@ impl OperationProcessor {
                     .await
                 {
                     Ok(r) => r,
-                    Err(_) => continue,
+                    Err(e) => {
+                        log::warn!(
+                            "Rehydration: failed to query child schema '{}': {}",
+                            child_schema_name, e
+                        );
+                        continue;
+                    }
                 };
 
                 // Recursively rehydrate child results if depth > 1
                 if remaining_depth > 1 {
-                    let _ = self
+                    if let Err(e) = self
                         .rehydrate_references(
                             &mut child_results,
                             child_schema_name,
                             remaining_depth - 1,
                             visited.clone(),
                         )
-                        .await;
+                        .await
+                    {
+                        log::warn!(
+                            "Rehydration: recursive rehydration failed for child schema '{}': {}",
+                            child_schema_name, e
+                        );
+                    }
                 }
 
                 // Build index: map KeyValue → hydrated record.
@@ -273,16 +285,14 @@ impl OperationProcessor {
                         .and_then(|hash_field| {
                             fields_obj
                                 .and_then(|f| f.get(hash_field))
-                                .and_then(|v| v.as_str())
-                                .map(|s| s.to_string())
+                                .and_then(Self::value_to_key_string)
                         });
                     let range = key_config
                         .and_then(|(_, r)| r.as_ref())
                         .and_then(|range_field| {
                             fields_obj
                                 .and_then(|f| f.get(range_field))
-                                .and_then(|v| v.as_str())
-                                .map(|s| s.to_string())
+                                .and_then(Self::value_to_key_string)
                         });
                     let kv = KeyValue::new(hash, range);
                     index.insert(kv, record);
@@ -349,12 +359,20 @@ impl OperationProcessor {
         schema.fields.clone().unwrap_or_default()
     }
 
+    /// Convert a JSON value to a string suitable for use as a key component.
+    /// Handles both string and numeric values.
+    fn value_to_key_string(v: &Value) -> Option<String> {
+        v.as_str()
+            .map(|s| s.to_string())
+            .or_else(|| v.as_f64().map(|n| n.to_string()))
+    }
+
     /// Parse a reference JSON object into a KeyValue.
     /// Expected format: `{"schema": "...", "key": {"hash": "...", "range": "..."}}`
     fn parse_ref_key(ref_obj: &Value) -> Option<KeyValue> {
         let key_obj = ref_obj.get("key")?;
-        let hash = key_obj.get("hash").and_then(|v| v.as_str()).map(|s| s.to_string());
-        let range = key_obj.get("range").and_then(|v| v.as_str()).map(|s| s.to_string());
+        let hash = key_obj.get("hash").and_then(Self::value_to_key_string);
+        let range = key_obj.get("range").and_then(Self::value_to_key_string);
         if hash.is_none() && range.is_none() {
             return None;
         }

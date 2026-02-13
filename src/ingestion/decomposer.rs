@@ -74,7 +74,7 @@ pub fn decompose(data: &Value) -> DecompositionResult {
         children.push(ChildGroup {
             field_name,
             structure_hash,
-            items: arr.clone(),
+            items: arr.iter().filter(|v| v.is_object()).cloned().collect(),
         });
     }
 
