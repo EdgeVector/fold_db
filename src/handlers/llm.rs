@@ -746,6 +746,7 @@ async fn hydrate_index_results(
             schema_name: schema_name.clone(),
             fields: fields_needed,
             filter,
+            as_of: None,
         };
 
         // Execute the query

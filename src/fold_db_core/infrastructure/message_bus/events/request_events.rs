@@ -11,7 +11,6 @@ pub struct AtomCreateRequest {
     pub correlation_id: String,
     pub schema_name: String,
     pub source_pub_key: String,
-    pub prev_atom_uuid: Option<String>,
     pub content: Value,
     pub status: Option<String>,
     pub key_config: Option<KeyConfig>,

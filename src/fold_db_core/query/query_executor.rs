@@ -54,7 +54,7 @@ impl QueryExecutor {
             }
         };
         self.hash_range_processor
-            .query_with_filter(&mut schema, &query.fields, query.filter)
+            .query_with_filter(&mut schema, &query.fields, query.filter, query.as_of)
             .await
     }
 }

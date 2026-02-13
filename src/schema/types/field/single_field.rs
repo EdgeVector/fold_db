@@ -69,6 +69,7 @@ impl crate::schema::types::field::Field for SingleField {
         &mut self,
         db_ops: &Arc<DbOperations>,
         _filter: Option<HashRangeFilter>,
+        _as_of: Option<chrono::DateTime<chrono::Utc>>,
     ) -> Result<HashMap<KeyValue, FieldValue>, SchemaError> {
         self.refresh_from_db(db_ops).await;
         if let Some(molecule) = &self.base.molecule {

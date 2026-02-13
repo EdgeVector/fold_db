@@ -2,6 +2,7 @@
 //!
 //! Handles query processing for HashRange schemas using field resolution.
 
+use chrono::{DateTime, Utc};
 use crate::db_operations::DbOperations;
 use crate::schema::types::field::Field;
 use crate::schema::types::field::FieldValue;
@@ -27,6 +28,7 @@ impl HashRangeQueryProcessor {
         schema: &mut Schema,
         fields: &[String],
         filter: Option<HashRangeFilter>,
+        as_of: Option<DateTime<Utc>>,
     ) -> Result<HashMap<String, HashMap<KeyValue, FieldValue>>, SchemaError> {
         let current_user = crate::logging::core::get_current_user_id();
         log::info!(
@@ -41,7 +43,7 @@ impl HashRangeQueryProcessor {
                 continue;
             }
             log::debug!("🔍 Resolving field: {}", field_name);
-            let field_value = field.resolve_value(&self.db_ops, filter.clone()).await?;
+            let field_value = field.resolve_value(&self.db_ops, filter.clone(), as_of).await?;
             log::debug!(
                 "✅ Field '{}' resolved {} values",
                 field_name,

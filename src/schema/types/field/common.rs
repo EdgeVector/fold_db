@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -29,11 +30,13 @@ pub trait Field: Send + Sync {
     /// Writes a mutation to the field
     fn write_mutation(&mut self, key_value: &KeyValue, atom: crate::atom::Atom, pub_key: String);
 
-    /// Resolves field values by refreshing the field, applying filters, and fetching atom content
+    /// Resolves field values by refreshing the field, applying filters, and fetching atom content.
+    /// If `as_of` is provided, rewinds the molecule to that point in time before resolving.
     async fn resolve_value(
         &mut self,
         db_ops: &Arc<DbOperations>,
         filter: Option<HashRangeFilter>,
+        as_of: Option<DateTime<Utc>>,
     ) -> Result<HashMap<KeyValue, FieldValue>, SchemaError>;
 }
 
@@ -131,6 +134,7 @@ macro_rules! impl_field {
                 &mut self,
                 db_ops: &std::sync::Arc<$crate::db_operations::DbOperations>,
                 filter: Option<$crate::schema::types::field::HashRangeFilter>,
+                _as_of: Option<chrono::DateTime<chrono::Utc>>,
             ) -> Result<
                 std::collections::HashMap<
                     $crate::schema::types::key_value::KeyValue,

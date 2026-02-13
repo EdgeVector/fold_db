@@ -345,6 +345,7 @@ impl LlmQueryService {
                     schema_name: schema_name.to_string(),
                     fields,
                     filter: filter.and_then(|f| serde_json::from_value(f).ok()),
+                    as_of: None,
                 };
 
                 let results = processor

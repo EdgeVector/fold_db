@@ -1,5 +1,5 @@
 use super::core::DbOperations;
-use crate::atom::{Atom, Molecule, MoleculeHashRange, MoleculeRange};
+use crate::atom::{Atom, Molecule, MoleculeHashRange, MoleculeRange, MutationEvent};
 use crate::schema::types::field::FieldVariant;
 use crate::schema::SchemaError;
 use crate::storage::traits::TypedStore;
@@ -255,5 +255,47 @@ impl DbOperations {
             .flush()
             .await
             .map_err(|e| SchemaError::InvalidData(format!("Failed to flush molecules: {}", e)))
+    }
+
+    /// Batch store mutation events for point-in-time query support.
+    /// Events are stored with zero-padded nanosecond timestamps for lexicographic ordering.
+    pub async fn batch_store_mutation_events(
+        &self,
+        events: Vec<MutationEvent>,
+    ) -> Result<(), SchemaError> {
+        if events.is_empty() {
+            return Ok(());
+        }
+
+        let items: Vec<(String, MutationEvent)> = events
+            .into_iter()
+            .map(|e| {
+                let ts = e.timestamp.timestamp_nanos_opt().unwrap_or(0);
+                let key = format!("history:{}:{:020}", e.molecule_uuid, ts);
+                (key, e)
+            })
+            .collect();
+
+        self.atoms_store()
+            .batch_put_items(items)
+            .await
+            .map_err(|e| SchemaError::InvalidData(format!("Failed to store mutation events: {}", e)))
+    }
+
+    /// Load all mutation events for a molecule, sorted chronologically.
+    pub async fn get_mutation_events(
+        &self,
+        molecule_uuid: &str,
+    ) -> Result<Vec<MutationEvent>, SchemaError> {
+        let prefix = format!("history:{}:", molecule_uuid);
+        let items: Vec<(String, MutationEvent)> = self
+            .atoms_store()
+            .scan_items_with_prefix(&prefix)
+            .await
+            .map_err(|e| SchemaError::InvalidData(format!("Failed to load mutation events: {}", e)))?;
+
+        // Items from scan_prefix are already in lexicographic order (= chronological due to zero-padding)
+        let events: Vec<MutationEvent> = items.into_iter().map(|(_, e)| e).collect();
+        Ok(events)
     }
 }

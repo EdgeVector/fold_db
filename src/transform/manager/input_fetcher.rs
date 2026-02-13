@@ -107,7 +107,7 @@ impl InputFetcher {
             }
             None => None,
         };
-        let value = field.resolve_value(db_ops, filter).await?;
+        let value = field.resolve_value(db_ops, filter, None).await?;
         Ok(value)
     }
 }

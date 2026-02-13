@@ -164,6 +164,7 @@ impl crate::schema::types::field::Field for RangeField {
         &mut self,
         db_ops: &Arc<DbOperations>,
         filter: Option<HashRangeFilter>,
+        _as_of: Option<chrono::DateTime<chrono::Utc>>,
     ) -> Result<HashMap<KeyValue, FieldValue>, SchemaError> {
         self.refresh_from_db(db_ops).await;
 

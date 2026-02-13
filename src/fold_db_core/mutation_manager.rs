@@ -12,7 +12,8 @@ use super::infrastructure::message_bus::events::query_events::MutationExecuted;
 
 use super::infrastructure::message_bus::{AsyncMessageBus, Event};
 use super::orchestration::index_status::IndexStatusTracker;
-use crate::atom::Atom;
+use chrono::Utc;
+use crate::atom::{Atom, FieldKey, MutationEvent};
 use crate::db_operations::{DbOperations, MoleculeData};
 use crate::schema::types::field::{Field, FieldVariant};
 use crate::schema::types::{KeyValue, Mutation};
@@ -185,13 +186,11 @@ impl MutationManager {
             // Also collect molecule persistence tasks
             let phase2_start = std::time::Instant::now();
             let mut modified_fields = HashSet::new();
+            let mut mutation_events: Vec<MutationEvent> = Vec::new();
 
             for (idx, field_name, atom) in atom_results {
                 let mutation = &schema_mutations[idx];
-                let key_value = &mutation_key_values[idx]; // Unused reference kept for clarity or future use
-                                                           // value and classifications unused after indexing removal
-                                                           // let value = ...
-                                                           // let field_classifications = ...
+                let key_value = &mutation_key_values[idx];
 
                 let schema_field = schema.runtime_fields.get_mut(&field_name).ok_or_else(|| {
                     SchemaError::InvalidData(format!(
@@ -200,17 +199,54 @@ impl MutationManager {
                     ))
                 })?;
 
+                // Capture old atom UUID before write_mutation
+                let old_atom_uuid: Option<String> = match schema_field {
+                    FieldVariant::Single(f) => {
+                        f.base.molecule.as_ref().map(|m| m.get_atom_uuid().to_string())
+                    }
+                    FieldVariant::Range(f) => {
+                        key_value.range.as_ref().and_then(|r| {
+                            f.base.molecule.as_ref().and_then(|m| m.get_atom_uuid(r).cloned())
+                        })
+                    }
+                    FieldVariant::HashRange(f) => {
+                        key_value.hash.as_ref().zip(key_value.range.as_ref()).and_then(|(h, r)| {
+                            f.base.molecule.as_ref().and_then(|m| m.get_atom_uuid(h, r).cloned())
+                        })
+                    }
+                };
+
                 // Write mutation to memory
-                schema_field.write_mutation(key_value, atom, mutation.pub_key.clone());
+                schema_field.write_mutation(key_value, atom.clone(), mutation.pub_key.clone());
+
+                // Build mutation event if something actually changed
+                if old_atom_uuid.as_deref() != Some(atom.uuid()) {
+                    let field_key = match schema_field {
+                        FieldVariant::Single(_) => FieldKey::Single,
+                        FieldVariant::Range(_) => FieldKey::Range {
+                            range: key_value.range.clone().unwrap_or_default(),
+                        },
+                        FieldVariant::HashRange(_) => FieldKey::HashRange {
+                            hash: key_value.hash.clone().unwrap_or_default(),
+                            range: key_value.range.clone().unwrap_or_default(),
+                        },
+                    };
+
+                    if let Some(mol_uuid) = schema_field.common().molecule_uuid() {
+                        mutation_events.push(MutationEvent {
+                            molecule_uuid: mol_uuid.to_string(),
+                            timestamp: Utc::now(),
+                            field_key,
+                            old_atom_uuid,
+                            new_atom_uuid: atom.uuid().to_string(),
+                        });
+                    }
+                }
 
                 // Track for persistence
                 if schema_field.common().molecule_uuid().is_some() {
                     modified_fields.insert(field_name.clone());
                 }
-
-                // Collect index op
-                // Indexing removed - handled event-driven by IndexOrchestrator
-                // index_operations.push(...);
             }
             *timing_breakdown
                 .entry("  - update_memory_serial")
@@ -252,6 +288,16 @@ impl MutationManager {
             *timing_breakdown
                 .entry("  - write_molecules_batch")
                 .or_insert(std::time::Duration::ZERO) += phase3_start.elapsed();
+
+            // Phase 4: Store mutation events for point-in-time queries
+            if !mutation_events.is_empty() {
+                let phase4_start = std::time::Instant::now();
+                log::debug!("💾 Storing {} mutation events", mutation_events.len());
+                self.db_ops.batch_store_mutation_events(mutation_events).await?;
+                *timing_breakdown
+                    .entry("  - store_mutation_events")
+                    .or_insert(std::time::Duration::ZERO) += phase4_start.elapsed();
+            }
 
             // Populate mutation contexts for events
             for (idx, mutation) in schema_mutations.iter().enumerate() {

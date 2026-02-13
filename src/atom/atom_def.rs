@@ -7,16 +7,14 @@ use sha2::{Digest, Sha256};
 ///
 /// Atoms are the fundamental building blocks of the database's immutable data storage system.
 /// Each Atom contains:
-/// - A unique identifier
+/// - A unique identifier (content-addressed)
 /// - The source schema that defines its structure
 /// - The public key of the creator
 /// - Creation timestamp
-/// - Optional reference to a previous version
 /// - The actual content data
 ///
-/// Atoms form a chain of versions through their `prev_atom_uuid` references, enabling
-/// complete version history tracking. Once created, an Atom's content cannot be modified,
-/// ensuring data immutability.
+/// Version history is tracked via the delta event log (`MutationEvent`),
+/// not via atom-level chaining. Once created, an Atom's content cannot be modified.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Atom {
     uuid: String,
@@ -24,7 +22,6 @@ pub struct Atom {
     source_pub_key: String,
     source_file_name: Option<String>,
     created_at: DateTime<Utc>,
-    prev_atom_uuid: Option<String>,
     content: Value,
     status: AtomStatus,
 }
@@ -75,17 +72,9 @@ impl Atom {
             source_pub_key,
             source_file_name: None,
             created_at: Utc::now(),
-            prev_atom_uuid: None,
             content,
             status: AtomStatus::Active,
         }
-    }
-
-    /// Creates a new Atom that references a previous version
-    #[must_use]
-    pub fn with_prev_version(mut self, prev_atom_uuid: String) -> Self {
-        self.prev_atom_uuid = Some(prev_atom_uuid);
-        self
     }
 
     /// Sets the source file name for atoms created from file uploads
@@ -181,14 +170,6 @@ impl Atom {
         self.created_at
     }
 
-    /// Returns the UUID of the previous version of this data, if any.
-    ///
-    /// This forms the chain of version history, allowing traversal
-    /// through all previous versions of the data.
-    #[must_use]
-    pub const fn prev_atom_uuid(&self) -> Option<&String> {
-        self.prev_atom_uuid.as_ref()
-    }
 }
 
 #[cfg(test)]
@@ -211,27 +192,9 @@ mod tests {
 
         assert_eq!(atom.source_schema_name(), "test_schema");
         assert_eq!(atom.source_pub_key(), "test_key");
-        assert_eq!(atom.prev_atom_uuid(), None);
         assert_eq!(atom.content(), &content);
         assert!(!atom.uuid().is_empty());
         assert!(atom.created_at() <= Utc::now());
-    }
-
-    #[test]
-    fn test_atom_with_prev_reference() {
-        let first_atom = Atom::new(
-            "test_schema".to_string(),
-            "test_key".to_string(),
-            json!({"version": 1}),
-        );
-
-        let second_atom =
-            Atom::with_prev_version(first_atom.clone(), first_atom.uuid().to_string());
-
-        assert_eq!(
-            second_atom.prev_atom_uuid(),
-            Some(&first_atom.uuid().to_string())
-        );
     }
 
     #[test]
@@ -253,8 +216,7 @@ mod tests {
             "test_schema".to_string(),
             "test_key".to_string(),
             json!({"test": false}),
-        )
-        .with_prev_version(atom.uuid().to_string());
+        );
 
         let mut updated_ref = molecule.clone();
         updated_ref.set_atom_uuid(new_atom.uuid().to_string());

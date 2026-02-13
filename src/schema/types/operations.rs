@@ -1,4 +1,5 @@
 use crate::schema::types::field::HashRangeFilter;
+use chrono::{DateTime, Utc};
 use clap::ValueEnum;
 use serde::{Deserialize, Serialize};
 
@@ -8,6 +9,8 @@ pub struct Query {
     pub schema_name: String,
     pub fields: Vec<String>,
     pub filter: Option<HashRangeFilter>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub as_of: Option<DateTime<Utc>>,
 }
 
 impl Query {
@@ -17,6 +20,7 @@ impl Query {
             schema_name,
             fields,
             filter: None,
+            as_of: None,
         }
     }
 
@@ -30,6 +34,7 @@ impl Query {
             schema_name,
             fields,
             filter,
+            as_of: None,
         }
     }
 }
