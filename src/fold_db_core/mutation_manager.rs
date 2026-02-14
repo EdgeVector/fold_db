@@ -354,6 +354,8 @@ impl MutationManager {
             let mut inline_indexed_flags: Vec<bool> = vec![false; schema_mutations.len()];
 
             if let Some(native_index_mgr) = self.db_ops.native_index_manager() {
+                let mut any_inline_indexed = false;
+
                 for (idx, mutation) in schema_mutations.iter().enumerate() {
                     if let Some(ref index_terms) = mutation.index_terms {
                         let key_value = &mutation_key_values[idx];
@@ -369,8 +371,13 @@ impl MutationManager {
                             continue;
                         }
 
-                        // Index keywords per field
-                        let mut keyword_ok = true;
+                        // Field-name indexing succeeded — mark as indexed so IndexOrchestrator
+                        // doesn't redo it. (IndexOrchestrator can only do field-name indexing;
+                        // keyword indexing below is best-effort.)
+                        inline_indexed_flags[idx] = true;
+                        any_inline_indexed = true;
+
+                        // Index keywords per field (best-effort)
                         for (field_name, keywords) in index_terms {
                             if let Err(e) = native_index_mgr
                                 .batch_index_from_keywords(
@@ -383,16 +390,16 @@ impl MutationManager {
                                 .await
                             {
                                 error!("Inline indexing: keyword indexing for field '{}' failed: {}", field_name, e);
-                                keyword_ok = false;
-                                break;
                             }
                         }
 
-                        if keyword_ok {
-                            inline_indexed_flags[idx] = true;
-                            debug!("Inline indexed mutation {} for schema '{}'", mutation.uuid, schema_name);
-                        }
+                        debug!("Inline indexed mutation {} for schema '{}'", mutation.uuid, schema_name);
                     }
+                }
+
+                // Flush index entries to storage so they're visible before events are published
+                if any_inline_indexed {
+                    let _ = native_index_mgr.flush().await;
                 }
             }
 
