@@ -42,9 +42,8 @@ pub struct FoldNode {
     /// Stored for future passkey integration where the key may need to be refreshed.
     #[allow(dead_code)]
     pub(super) e2e_keys: crate::crypto::E2eKeys,
-    /// Preprocessor that enriches mutations with keyword index_terms via LLM.
-    /// None when no LLM API key is configured.
-    mutation_preprocessor: Option<MutationPreprocessor>,
+    /// Preprocessor that enriches mutations with keyword index_terms.
+    mutation_preprocessor: MutationPreprocessor,
 }
 
 /// Basic status information about the network layer
@@ -101,8 +100,6 @@ impl FoldNode {
         let (node_id, security_manager, security_config) =
             Self::init_internals(&config, &db).await?;
 
-        let mutation_preprocessor = MutationPreprocessor::from_env();
-
         let node = Self {
             db,
             config: NodeConfig {
@@ -114,7 +111,7 @@ impl FoldNode {
             private_key,
             public_key,
             e2e_keys,
-            mutation_preprocessor,
+            mutation_preprocessor: MutationPreprocessor::new(),
         };
 
         // Require schema service to be configured
@@ -193,8 +190,6 @@ impl FoldNode {
         let (node_id, security_manager, security_config) =
             Self::init_internals(&config, &db).await?;
 
-        let mutation_preprocessor = MutationPreprocessor::from_env();
-
         let node = Self {
             db,
             config: NodeConfig {
@@ -206,7 +201,7 @@ impl FoldNode {
             private_key,
             public_key,
             e2e_keys,
-            mutation_preprocessor,
+            mutation_preprocessor: MutationPreprocessor::new(),
         };
 
         // Require schema service to be configured
@@ -326,9 +321,7 @@ impl FoldNode {
         mut mutations: Vec<crate::schema::types::operations::Mutation>,
     ) -> FoldDbResult<Vec<String>> {
         // Preprocess: extract keywords for mutations missing index_terms
-        if let Some(ref preprocessor) = self.mutation_preprocessor {
-            preprocessor.preprocess(&mut mutations).await;
-        }
+        self.mutation_preprocessor.preprocess(&mut mutations);
 
         let mut db = self.db.lock().await;
         db.mutation_manager

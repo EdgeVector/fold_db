@@ -438,9 +438,10 @@ impl FoldDB {
             SchemaError::InvalidData("Native index manager not available".to_string())
         })?;
 
-        // Use append-only search for all classifications
         let entries = manager.search_all(term).await?;
-        Ok(manager.entries_to_results(entries))
+        let results = manager.entries_to_results(entries);
+        // Deduplicate stale entries from append-only index
+        Ok(IndexResult::keep_highest_molecule_version(results))
     }
 
     /// Get the transform orchestrator for managing transform execution

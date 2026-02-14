@@ -1,12 +1,105 @@
-//! Keyword normalization utilities for native indexing.
+//! Rules-based keyword extraction for native indexing.
 //!
-//! Keyword extraction is performed inline during ingestion
-//! (see `ingestion_service.rs`). This module provides the shared
-//! normalization logic used by both ingestion and tests.
+//! Tokenizes text, removes stopwords, stems words, and deduplicates.
+//! No LLM dependency — works offline, instant, deterministic.
+
+use rust_stemmers::{Algorithm, Stemmer};
+use serde_json::Value;
+use std::collections::{HashMap, HashSet};
+
+/// Lazily-initialized English stopword set.
+fn stopwords() -> &'static HashSet<String> {
+    use std::sync::OnceLock;
+    static STOP: OnceLock<HashSet<String>> = OnceLock::new();
+    STOP.get_or_init(|| {
+        stop_words::get(stop_words::LANGUAGE::English)
+            .iter()
+            .map(|w| w.to_lowercase())
+            .collect()
+    })
+}
+
+/// Extract keywords per field from a map of field values.
+///
+/// For each field, tokenizes the value text, removes stopwords,
+/// stems each token, and deduplicates. Returns only fields that
+/// produced at least one keyword.
+pub fn extract_keywords_per_field(
+    fields: &HashMap<String, Value>,
+) -> HashMap<String, Vec<String>> {
+    let stemmer = Stemmer::create(Algorithm::English);
+    let stops = stopwords();
+
+    let mut result: HashMap<String, Vec<String>> = HashMap::new();
+    for (field_name, value) in fields {
+        let text = value_to_text(value);
+        let keywords = extract_from_text(&text, &stemmer, stops);
+        if !keywords.is_empty() {
+            result.insert(field_name.clone(), keywords);
+        }
+    }
+    result
+}
+
+/// Convert a JSON value to searchable text.
+fn value_to_text(value: &Value) -> String {
+    match value {
+        Value::String(s) => s.clone(),
+        Value::Number(n) => n.to_string(),
+        Value::Bool(b) => b.to_string(),
+        Value::Array(arr) => arr
+            .iter()
+            .map(value_to_text)
+            .collect::<Vec<_>>()
+            .join(" "),
+        Value::Object(obj) => obj
+            .values()
+            .map(value_to_text)
+            .collect::<Vec<_>>()
+            .join(" "),
+        Value::Null => String::new(),
+    }
+}
+
+/// Tokenize text, filter stopwords, stem, and deduplicate.
+///
+/// Returns both the stemmed form and the original token when they differ,
+/// so searches match either form.
+fn extract_from_text(text: &str, stemmer: &Stemmer, stops: &HashSet<String>) -> Vec<String> {
+    let mut seen = HashSet::new();
+    let mut keywords = Vec::new();
+
+    for token in tokenize(text) {
+        if token.len() < 2 || stops.contains(&token) {
+            continue;
+        }
+
+        // Add the original token
+        if seen.insert(token.clone()) {
+            keywords.push(token.clone());
+        }
+
+        // Add the stemmed form if different
+        let stemmed = stemmer.stem(&token).to_string();
+        if stemmed.len() >= 2 && stemmed != token && seen.insert(stemmed.clone()) {
+            keywords.push(stemmed);
+        }
+    }
+
+    keywords
+}
+
+/// Split text into lowercase tokens on whitespace and punctuation.
+fn tokenize(text: &str) -> Vec<String> {
+    text.split(|c: char| !c.is_alphanumeric() && c != '_' && c != '@' && c != '#')
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_lowercase())
+        .collect()
+}
 
 /// Normalize a list of keywords: lowercase, deduplicate, split multi-word.
 pub fn normalize_keywords(keywords: Vec<String>) -> Vec<String> {
-    let mut seen = std::collections::HashSet::new();
+    let mut seen = HashSet::new();
     let mut normalized: Vec<String> = Vec::new();
     for raw in keywords {
         let kw = raw.to_lowercase().trim().to_string();
@@ -29,6 +122,7 @@ pub fn normalize_keywords(keywords: Vec<String>) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[test]
     fn test_normalize_keywords_basic() {
@@ -41,5 +135,109 @@ mod tests {
         ];
         let result = normalize_keywords(input);
         assert_eq!(result, vec!["rust", "alice johnson", "alice", "johnson"]);
+    }
+
+    #[test]
+    fn test_extract_keywords_per_field_basic() {
+        let fields = HashMap::from([
+            ("content".to_string(), json!("Rust is a systems programming language")),
+            ("author".to_string(), json!("Alice Johnson")),
+        ]);
+
+        let result = extract_keywords_per_field(&fields);
+
+        // "content" should have keywords (rust, systems, programming, language, etc.)
+        let content_kws = result.get("content").expect("content should have keywords");
+        assert!(content_kws.iter().any(|k| k == "rust"), "Should contain 'rust': {:?}", content_kws);
+        // "is" and "a" are stopwords, should be filtered
+        assert!(!content_kws.iter().any(|k| k == "is"), "Should not contain stopword 'is': {:?}", content_kws);
+        assert!(!content_kws.iter().any(|k| k == "a"), "Should not contain stopword 'a': {:?}", content_kws);
+
+        // "author" should have keywords
+        let author_kws = result.get("author").expect("author should have keywords");
+        assert!(author_kws.iter().any(|k| k == "alice"), "Should contain 'alice': {:?}", author_kws);
+        assert!(author_kws.iter().any(|k| k == "johnson"), "Should contain 'johnson': {:?}", author_kws);
+    }
+
+    #[test]
+    fn test_stemming_produces_both_forms() {
+        let fields = HashMap::from([
+            ("text".to_string(), json!("programming languages")),
+        ]);
+
+        let result = extract_keywords_per_field(&fields);
+        let kws = result.get("text").expect("text should have keywords");
+
+        // Should have original "programming" and stemmed "program"
+        assert!(kws.iter().any(|k| k == "programming"), "Should contain 'programming': {:?}", kws);
+        assert!(kws.iter().any(|k| k == "program"), "Should contain stemmed 'program': {:?}", kws);
+    }
+
+    #[test]
+    fn test_numbers_preserved() {
+        let fields = HashMap::from([
+            ("version".to_string(), json!("v2.0 release 2024")),
+        ]);
+
+        let result = extract_keywords_per_field(&fields);
+        let kws = result.get("version").expect("version should have keywords");
+        assert!(kws.iter().any(|k| k == "2024"), "Should preserve numbers: {:?}", kws);
+    }
+
+    #[test]
+    fn test_handles_at_and_hash() {
+        let fields = HashMap::from([
+            ("text".to_string(), json!("mention @devlead42 and #rustlang")),
+        ]);
+
+        let result = extract_keywords_per_field(&fields);
+        let kws = result.get("text").expect("text should have keywords");
+        assert!(kws.iter().any(|k| k == "@devlead42"), "Should preserve @mentions: {:?}", kws);
+        assert!(kws.iter().any(|k| k == "#rustlang"), "Should preserve #hashtags: {:?}", kws);
+    }
+
+    #[test]
+    fn test_empty_and_null_values() {
+        let fields = HashMap::from([
+            ("empty".to_string(), json!("")),
+            ("null".to_string(), Value::Null),
+        ]);
+
+        let result = extract_keywords_per_field(&fields);
+        assert!(result.is_empty(), "Empty/null values should produce no keywords");
+    }
+
+    #[test]
+    fn test_nested_json_values() {
+        let fields = HashMap::from([
+            ("data".to_string(), json!({"name": "Alice", "tags": ["rust", "programming"]})),
+        ]);
+
+        let result = extract_keywords_per_field(&fields);
+        let kws = result.get("data").expect("data should have keywords");
+        assert!(kws.iter().any(|k| k == "alice"), "Should extract from nested objects: {:?}", kws);
+        assert!(kws.iter().any(|k| k == "rust"), "Should extract from nested arrays: {:?}", kws);
+    }
+
+    #[test]
+    fn test_deduplication() {
+        let fields = HashMap::from([
+            ("text".to_string(), json!("rust Rust RUST rust")),
+        ]);
+
+        let result = extract_keywords_per_field(&fields);
+        let kws = result.get("text").expect("text should have keywords");
+        let rust_count = kws.iter().filter(|k| *k == "rust").count();
+        assert_eq!(rust_count, 1, "Should deduplicate: {:?}", kws);
+    }
+
+    #[test]
+    fn test_tokenize_punctuation() {
+        let tokens = tokenize("hello, world! foo-bar baz_qux");
+        assert!(tokens.contains(&"hello".to_string()));
+        assert!(tokens.contains(&"world".to_string()));
+        assert!(tokens.contains(&"foo".to_string()));
+        assert!(tokens.contains(&"bar".to_string()));
+        assert!(tokens.contains(&"baz_qux".to_string())); // underscore preserved
     }
 }

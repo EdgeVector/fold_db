@@ -671,10 +671,8 @@ async fn hydrate_index_results(
         return results;
     }
 
-    // For entries sharing the same (schema, field, key_value), keep only the one
-    // with the highest total molecule version.  This avoids wasting hydration
-    // budget on stale index entries left over from earlier mutations.
-    results = keep_highest_molecule_version(results);
+    // Deduplicate stale entries from append-only index
+    results = IndexResult::keep_highest_molecule_version(results);
 
     // Limit the number of results to hydrate for performance
     let hydrate_count = results.len().min(MAX_HYDRATE_RESULTS);
@@ -794,51 +792,6 @@ async fn hydrate_index_results(
 
     log::debug!("Hydration complete");
     results
-}
-
-/// For entries sharing the same `(schema_name, field, key_value)`, keep only
-/// the one whose molecule versions sum to the highest value.
-/// Entries without version info are treated as version 0 (oldest).
-fn keep_highest_molecule_version(results: Vec<IndexResult>) -> Vec<IndexResult> {
-    let mut best: HashMap<(String, String, crate::schema::types::KeyValue), (u64, usize)> =
-        HashMap::new();
-
-    for (idx, r) in results.iter().enumerate() {
-        let key = (
-            r.schema_name.clone(),
-            r.field.clone(),
-            r.key_value.clone(),
-        );
-        let highest: u64 = r
-            .molecule_versions
-            .as_ref()
-            .and_then(|m| m.iter().max().copied())
-            .unwrap_or(0);
-
-        match best.get(&key) {
-            Some(&(existing, _)) if existing >= highest => {}
-            _ => {
-                best.insert(key, (highest, idx));
-            }
-        }
-    }
-
-    let mut indices: Vec<usize> = best.into_values().map(|(_, idx)| idx).collect();
-    indices.sort_unstable();
-
-    let before = results.len();
-    let kept: Vec<IndexResult> = indices.into_iter().map(|i| results[i].clone()).collect();
-
-    if kept.len() < before {
-        log::debug!(
-            "keep_highest_molecule_version: {} → {} results (dropped {} stale)",
-            before,
-            kept.len(),
-            before - kept.len()
-        );
-    }
-
-    kept
 }
 
 /// Execute an AI-native index query workflow

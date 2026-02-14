@@ -157,14 +157,6 @@ impl MutationManager {
 
             let mut mutation_contexts = Vec::new();
             let mut validation_time = std::time::Duration::ZERO;
-            // let mut field_processing_time = std::time::Duration::ZERO; // No longer needed as phases track their own time
-            // let mut refresh_time = std::time::Duration::ZERO; // No longer needed
-            // let mut atom_time = std::time::Duration::ZERO; // No longer needed
-            // let mut molecule_time = std::time::Duration::ZERO; // No longer needed
-            // let mut index_time = std::time::Duration::ZERO;
-            // Collect all index operations for batch processing - DEPRECATED/REMOVED
-            // Indexing is now handled asynchronously via IndexOrchestrator subscribing to MutationExecuted events
-
             // Process all mutations for this schema with 3-phase optimization
             // Phase 1: Create atoms in memory, then batch store
             let phase1_start = std::time::Instant::now();
@@ -460,11 +452,6 @@ impl MutationManager {
                 mutation_ids.push(mutation_id.clone());
             }
         }
-
-        // Flush native index after all mutations in the batch - REMOVED
-        // Handled by IndexOrchestrator
-        let native_index_flush_start = std::time::Instant::now();
-        timing_breakdown.insert("native_index_flush", native_index_flush_start.elapsed());
 
         // Single flush for entire batch (async)
         log::debug!("💾 Flushing database after batch mutations");

@@ -143,3 +143,55 @@ pub struct IndexResult {
     pub molecule_versions: Option<Vec<u64>>,
 }
 
+impl IndexResult {
+    /// For entries sharing the same `(schema_name, field, key_value)`, keep only
+    /// the one whose molecule versions have the highest max value.
+    /// Entries without version info are treated as version 0 (oldest).
+    ///
+    /// This is essential for append-only indexes: old keywords produce stale
+    /// entries that still exist in storage. This function picks the freshest
+    /// entry per unique (schema, field, key) triple.
+    pub fn keep_highest_molecule_version(results: Vec<IndexResult>) -> Vec<IndexResult> {
+        use std::collections::HashMap;
+
+        let mut best: HashMap<(String, String, KeyValue), (u64, usize)> = HashMap::new();
+
+        for (idx, r) in results.iter().enumerate() {
+            let key = (
+                r.schema_name.clone(),
+                r.field.clone(),
+                r.key_value.clone(),
+            );
+            let highest: u64 = r
+                .molecule_versions
+                .as_ref()
+                .and_then(|m| m.iter().max().copied())
+                .unwrap_or(0);
+
+            match best.get(&key) {
+                Some(&(existing, _)) if existing >= highest => {}
+                _ => {
+                    best.insert(key, (highest, idx));
+                }
+            }
+        }
+
+        let mut indices: Vec<usize> = best.into_values().map(|(_, idx)| idx).collect();
+        indices.sort_unstable();
+
+        let before = results.len();
+        let kept: Vec<IndexResult> = indices.into_iter().map(|i| results[i].clone()).collect();
+
+        if kept.len() < before {
+            log::debug!(
+                "keep_highest_molecule_version: {} → {} results (dropped {} stale)",
+                before,
+                kept.len(),
+                before - kept.len()
+            );
+        }
+
+        kept
+    }
+}
+
