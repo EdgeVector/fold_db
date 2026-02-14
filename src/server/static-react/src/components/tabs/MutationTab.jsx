@@ -118,7 +118,7 @@ function MutationTab({ onResult }) {
     (isCurrentSchemaRangeSchema && mutationType !== 'Delete' && !rangeKeyValue.trim())
 
   return (
-    <div className="p-6">
+    <div>
       <form onSubmit={handleSubmit} className="space-y-6">
         <SchemaSelector
           selectedSchema={selectedSchema}

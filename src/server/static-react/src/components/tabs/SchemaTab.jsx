@@ -291,7 +291,7 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
 
 
   return (
-    <div className="p-6 space-y-4">
+    <div className="space-y-4">
       {approvedSchemas.length > 0 ? (
         approvedSchemas.map(renderSchema)
       ) : (

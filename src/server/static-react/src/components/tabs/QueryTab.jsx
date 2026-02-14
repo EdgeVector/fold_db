@@ -92,7 +92,7 @@ function QueryTab({ onResult }) {
   // UI does not require authentication
 
   return (
-    <div className="p-6">
+    <div>
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Main Query Form */}
         <div className="lg:col-span-2 space-y-6">

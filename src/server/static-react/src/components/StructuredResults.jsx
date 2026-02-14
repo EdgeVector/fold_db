@@ -25,7 +25,7 @@ function ToggleButton({ isOpen, onClick, label }) {
   )
 }
 
-function FieldsTable({ fields }) {
+export function FieldsTable({ fields }) {
   const entries = useMemo(() => Object.entries(fields || {}), [fields])
   if (entries.length === 0) {
     return (

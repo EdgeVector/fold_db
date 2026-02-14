@@ -15,8 +15,8 @@ function ResultsSection({ results }) {
     <div className="mt-6 card">
       <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-surface-secondary">
         <div className="flex items-center gap-3">
-          <span className={isError ? 'text-red-600' : 'text-green-600'}>{isError ? '✖' : '✔'}</span>
-          <span className={`font-medium ${isError ? 'text-red-600' : 'text-green-600'}`}>
+          <span className={isError ? 'text-red-600' : ''}>{isError ? '✖' : '✔'}</span>
+          <span className={`font-medium ${isError ? 'text-red-600' : ''}`}>
             {isError ? 'ERROR' : 'OUTPUT'}
           </span>
           <span className="text-xs text-secondary">
@@ -51,16 +51,12 @@ function ResultsSection({ results }) {
         )}
 
         {structured && !isError && typeof results !== 'string' ? (
-          <div className="overflow-auto max-h-[500px] p-4 card">
+          <div className="overflow-auto max-h-[500px]">
             <StructuredResults results={results} />
           </div>
         ) : (
-          <div className="overflow-auto max-h-[500px] card">
-            <div className="flex items-center justify-between px-4 py-2 bg-surface-secondary border-b border-border">
-              <span className="text-xs font-mono text-secondary">{isError ? 'error.log' : 'output.json'}</span>
-              <span className="text-xs text-tertiary">{new Date().toLocaleTimeString()}</span>
-            </div>
-            <pre className={`p-4 text-sm font-mono whitespace-pre-wrap ${isError ? 'text-red-600' : 'text-green-600'}`}>
+          <div className="overflow-auto max-h-[500px]">
+            <pre className={`text-sm font-mono whitespace-pre-wrap ${isError ? 'text-red-600' : ''}`}>
               {typeof results === 'string' ? results : JSON.stringify(hasData ? results.data : results, null, 2)}
             </pre>
           </div>

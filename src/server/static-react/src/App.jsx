@@ -180,7 +180,7 @@ export function AppContent() {
           />
 
           <main className="flex-1 overflow-y-auto bg-surface-secondary">
-            <div className="max-w-5xl mx-auto px-8 py-5 bg-surface min-h-full">
+            <div className="max-w-5xl mx-auto p-6 bg-surface min-h-full">
               {/* Schema Loading/Error States */}
               {schemasError && (
                 <div className="mb-4 p-3 bg-surface border border-red-200 border-l-4 border-l-red-600">

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useApprovedSchemas } from '../../hooks/useApprovedSchemas.js'
 import { nativeIndexClient, mutationClient } from '../../api/clients'
+import { FieldsTable } from '../StructuredResults'
 import { 
   createHashRangeKeyFilter,
   createHashKeyFilter
@@ -150,7 +151,7 @@ export default function NativeIndexTab({ onResult }) {
   }, [results, fetchAllDetails])
 
   return (
-    <div className="p-6 space-y-4">
+    <div className="space-y-4">
       <div className="flex gap-2 items-center">
         <input
           type="text"

@@ -61,7 +61,7 @@ function SmartFolderTab({ onResult }) {
   const estimatedCost = scanResult ? (scanResult.recommended_files.length * 0.02).toFixed(2) : null
 
   return (
-    <div className="p-6 space-y-4">
+    <div className="space-y-4">
       {!scanResult && !ingestionStarted && (
         <div className="flex gap-3">
           <input type="text" value={folderPath} onChange={(e) => setFolderPath(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleScan()} placeholder="/path/to/your/folder" className="input flex-1" disabled={isScanning} />
