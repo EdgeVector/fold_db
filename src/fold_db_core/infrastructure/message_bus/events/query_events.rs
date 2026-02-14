@@ -27,15 +27,11 @@ pub struct MutationExecuted {
         Option<crate::fold_db_core::infrastructure::message_bus::atom_events::MutationContext>,
     /// Actual data payload for indexing (list of rows, each row is a map of field->value)
     pub data: Option<Vec<std::collections::HashMap<String, serde_json::Value>>>,
-    /// User ID for multi-tenant isolation (used by IndexOrchestrator to set user context)
+    /// User ID for multi-tenant isolation
     pub user_id: Option<String>,
     /// Molecule version numbers at time of mutation
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub molecule_versions: Option<Vec<u64>>,
-    /// When true, index entries were already written inline during mutation —
-    /// IndexOrchestrator should skip its async keyword extraction.
-    #[serde(default)]
-    pub already_indexed: bool,
 }
 
 impl EventType for MutationExecuted {
@@ -44,24 +40,3 @@ impl EventType for MutationExecuted {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_already_indexed_serde_default() {
-        // Simulate deserializing an old event that lacks the already_indexed field
-        let json = r#"{
-            "operation": "write",
-            "schema": "TestSchema",
-            "execution_time_ms": 10,
-            "fields_affected": ["name"],
-            "mutation_context": null,
-            "data": null,
-            "user_id": null
-        }"#;
-
-        let event: MutationExecuted = serde_json::from_str(json).unwrap();
-        assert!(!event.already_indexed, "already_indexed should default to false");
-    }
-}

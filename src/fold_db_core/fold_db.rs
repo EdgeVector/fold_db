@@ -277,21 +277,7 @@ impl FoldDB {
         };
 
         // Create shared IndexStatusTracker for tracking indexing progress
-        // This is shared between MutationManager (read status) and IndexOrchestrator (write status)
         let index_status_tracker = IndexStatusTracker::new(Some(progress_tracker.clone()));
-
-        // Create and start IndexOrchestrator for event-driven native indexing
-        // (field-name indexing only — keyword extraction is handled inline during ingestion)
-        use super::orchestration::index_orchestrator::IndexOrchestrator;
-        let index_orchestrator = Arc::new(IndexOrchestrator::new(
-            Arc::clone(&db_ops),
-            Some(index_status_tracker.clone()),
-            Arc::clone(&pending_tasks),
-        ));
-        index_orchestrator
-            .start_event_listener(Arc::clone(&message_bus))
-            .await;
-        info!("Started IndexOrchestrator for event-driven native indexing");
 
         // Create MutationManager for handling all mutation operations
         let mutation_manager = MutationManager::new(

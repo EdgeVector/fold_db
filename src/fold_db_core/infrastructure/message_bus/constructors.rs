@@ -201,10 +201,9 @@ impl MutationExecuted {
             execution_time_ms,
             fields_affected,
             mutation_context: None,
-            data: None, // Use with_context to populate if needed
+            data: None,
             user_id: crate::logging::core::get_current_user_id(),
             molecule_versions: None,
-            already_indexed: false,
         }
     }
 
@@ -222,10 +221,9 @@ impl MutationExecuted {
             execution_time_ms,
             fields_affected,
             mutation_context,
-            data: None, // Use manual initialization if data payload is required
+            data: None,
             user_id: crate::logging::core::get_current_user_id(),
             molecule_versions: None,
-            already_indexed: false,
         }
     }
 }

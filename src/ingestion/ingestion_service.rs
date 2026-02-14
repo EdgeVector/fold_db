@@ -3,7 +3,6 @@
 //! Handles JSON data ingestion with AI schema recommendation, mutation generation,
 //! and execution. Refactored to take &FoldNode references for flexible locking.
 
-use crate::fold_db_core::orchestration::keyword_extractor::normalize_keywords;
 use crate::fold_node::FoldNode;
 use crate::ingestion::config::AIProvider;
 use crate::ingestion::decomposer;
@@ -163,117 +162,6 @@ fn extract_nested_field_value<'a>(
     }
 
     None
-}
-
-/// Remap index terms from JSON field names to schema field names using mutation_mappers.
-fn remap_index_terms(
-    terms: &HashMap<String, Vec<String>>,
-    mappers: &HashMap<String, String>,
-) -> HashMap<String, Vec<String>> {
-    terms
-        .iter()
-        .map(|(k, v)| {
-            let schema_field = mappers.get(k).unwrap_or(k);
-            (schema_field.clone(), v.clone())
-        })
-        .collect()
-}
-
-/// Normalize all keywords in an index_terms map.
-fn normalize_all_keywords(terms: HashMap<String, Vec<String>>) -> HashMap<String, Vec<String>> {
-    terms
-        .into_iter()
-        .map(|(field, kws)| (field, normalize_keywords(kws)))
-        .collect()
-}
-
-/// Extract keywords inline for a single item's fields.
-/// Returns None on failure (best-effort — IndexOrchestrator will handle it later).
-async fn extract_inline_index_terms(
-    ingestion_service: &IngestionService,
-    fields_and_values: &HashMap<String, Value>,
-    mutation_mappers: &HashMap<String, String>,
-) -> Option<HashMap<String, Vec<String>>> {
-    let prompt = build_keyword_prompt(fields_and_values);
-
-    let raw_response = match ingestion_service.call_ai_raw(&prompt).await {
-        Ok(resp) => resp,
-        Err(e) => {
-            log_feature!(
-                LogFeature::Ingestion,
-                warn,
-                "Inline keyword extraction failed (LLM call): {} — keywords will not be indexed for this item",
-                e
-            );
-            return None;
-        }
-    };
-
-    let json_str = match crate::ingestion::ai_helpers::extract_json_from_response(&raw_response) {
-        Ok(s) => s,
-        Err(e) => {
-            log_feature!(
-                LogFeature::Ingestion,
-                warn,
-                "Inline keyword extraction failed (parse): {} — keywords will not be indexed for this item",
-                e
-            );
-            return None;
-        }
-    };
-
-    let per_field: HashMap<String, Vec<String>> = match serde_json::from_str(&json_str) {
-        Ok(m) => m,
-        Err(e) => {
-            log_feature!(
-                LogFeature::Ingestion,
-                warn,
-                "Inline keyword extraction failed (deserialize): {} — keywords will not be indexed for this item",
-                e
-            );
-            return None;
-        }
-    };
-
-    // Filter to only fields present in input, remap to schema field names, normalize
-    let filtered: HashMap<String, Vec<String>> = per_field
-        .into_iter()
-        .filter(|(k, _)| fields_and_values.contains_key(k))
-        .collect();
-
-    let remapped = remap_index_terms(&filtered, mutation_mappers);
-    let normalized = normalize_all_keywords(remapped);
-
-    if normalized.is_empty() {
-        None
-    } else {
-        Some(normalized)
-    }
-}
-
-/// Build a keyword extraction prompt for a set of fields.
-fn build_keyword_prompt(fields: &HashMap<String, Value>) -> String {
-    let mut data_section = String::new();
-    for (field_name, value) in fields {
-        let value_str = match value {
-            Value::String(s) => s.clone(),
-            Value::Array(arr) => serde_json::to_string(arr).unwrap_or_default(),
-            other => other.to_string(),
-        };
-        data_section.push_str(&format!("{}: {}\n", field_name, value_str));
-    }
-
-    let field_names: Vec<&String> = fields.keys().collect();
-    format!(
-        "Extract search keywords from this data, grouped by field.\n\
-         Return a JSON object mapping each field name to an array of lowercase keyword strings.\n\
-         Include: important words, normalized dates (YYYY-MM-DD), numbers,\n\
-         named entities, and key phrases. Exclude stopwords and trivial terms.\n\n\
-         Data:\n{}\n\
-         Return ONLY a JSON object with these keys: {:?}\n\
-         Example: {{\"field1\": [\"keyword1\", \"keyword2\"], \"field2\": [\"keyword3\"]}}",
-        data_section, field_names
-    )
 }
 
 /// AI-powered ingestion service that works with FoldNode
@@ -539,15 +427,7 @@ impl IngestionService {
                 )
                 .await?;
 
-                // Inline keyword extraction (best-effort)
-                let index_terms = extract_inline_index_terms(
-                    self,
-                    &fields_and_values,
-                    &ai_response.mutation_mappers,
-                )
-                .await;
-
-                let mut item_mutations = mutation_generator::generate_mutations(
+                let item_mutations = mutation_generator::generate_mutations(
                     &schema_name,
                     &keys_and_values,
                     &fields_and_values,
@@ -556,13 +436,6 @@ impl IngestionService {
                     pub_key.clone(),
                     request.source_file_name.clone(),
                 )?;
-
-                // Attach pre-extracted index terms to all mutations for this item
-                if let Some(ref terms) = index_terms {
-                    for mutation in &mut item_mutations {
-                        mutation.index_terms = Some(terms.clone());
-                    }
-                }
 
                 mutations.extend(item_mutations);
 
@@ -942,7 +815,7 @@ impl IngestionService {
             .await;
 
         // Execute all mutations in a batch using FoldNode directly
-        // Use mutate_batch which publishes MutationExecuted events for the IndexOrchestrator
+        // mutate_batch runs the MutationPreprocessor (keyword extraction) then writes
         let result = node.mutate_batch(mutations)
             .await
             .map(|mutation_ids| mutation_ids.len())
@@ -1278,15 +1151,7 @@ impl IngestionService {
                 extract_key_values_from_data(&fields_and_values, &schema_name, &schema_manager)
                     .await?;
 
-            // Inline keyword extraction (best-effort)
-            let index_terms = extract_inline_index_terms(
-                self,
-                &fields_and_values,
-                &mutation_mappers,
-            )
-            .await;
-
-            let mut mutations = mutation_generator::generate_mutations(
+            let mutations = mutation_generator::generate_mutations(
                 &schema_name,
                 &keys_and_values,
                 &fields_and_values,
@@ -1295,13 +1160,6 @@ impl IngestionService {
                 pub_key.to_string(),
                 source_file_name,
             )?;
-
-            // Attach pre-extracted index terms to all mutations for this item
-            if let Some(ref terms) = index_terms {
-                for mutation in &mut mutations {
-                    mutation.index_terms = Some(terms.clone());
-                }
-            }
 
             // Extract the key_value from the first mutation before execution
             own_key_value = mutations.first().map(|m| m.key_value.clone());
@@ -1327,57 +1185,3 @@ impl IngestionService {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_remap_index_terms() {
-        let terms = HashMap::from([
-            ("user_name".to_string(), vec!["alice".to_string(), "johnson".to_string()]),
-            ("email".to_string(), vec!["alice@example.com".to_string()]),
-            ("unknown_field".to_string(), vec!["ignored".to_string()]),
-        ]);
-
-        let mappers = HashMap::from([
-            ("user_name".to_string(), "name".to_string()),
-            ("email".to_string(), "contact_email".to_string()),
-        ]);
-
-        let result = remap_index_terms(&terms, &mappers);
-
-        assert_eq!(
-            result.get("name").unwrap(),
-            &vec!["alice".to_string(), "johnson".to_string()]
-        );
-        assert_eq!(
-            result.get("contact_email").unwrap(),
-            &vec!["alice@example.com".to_string()]
-        );
-        // Fields not in mappers keep their original name
-        assert_eq!(
-            result.get("unknown_field").unwrap(),
-            &vec!["ignored".to_string()]
-        );
-    }
-
-    #[test]
-    fn test_normalize_all_keywords() {
-        let terms = HashMap::from([
-            ("name".to_string(), vec!["Alice Johnson".to_string(), "alice johnson".to_string()]),
-            ("date".to_string(), vec!["2024-03-15".to_string()]),
-        ]);
-
-        let result = normalize_all_keywords(terms);
-
-        // "Alice Johnson" → "alice johnson" + split → "alice", "johnson"
-        // Second "alice johnson" is a duplicate
-        let name_kws = result.get("name").unwrap();
-        assert!(name_kws.contains(&"alice johnson".to_string()));
-        assert!(name_kws.contains(&"alice".to_string()));
-        assert!(name_kws.contains(&"johnson".to_string()));
-
-        let date_kws = result.get("date").unwrap();
-        assert!(date_kws.contains(&"2024-03-15".to_string()));
-    }
-}

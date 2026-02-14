@@ -5,6 +5,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use crate::fold_node::config::NodeConfig;
+use crate::fold_node::mutation_preprocessor::MutationPreprocessor;
 use crate::error::{FoldDbError, FoldDbResult};
 use crate::fold_db_core::FoldDB;
 use crate::security::{EncryptionManager, SecurityConfig, SecurityManager};
@@ -41,6 +42,9 @@ pub struct FoldNode {
     /// Stored for future passkey integration where the key may need to be refreshed.
     #[allow(dead_code)]
     pub(super) e2e_keys: crate::crypto::E2eKeys,
+    /// Preprocessor that enriches mutations with keyword index_terms via LLM.
+    /// None when no LLM API key is configured.
+    mutation_preprocessor: Option<MutationPreprocessor>,
 }
 
 /// Basic status information about the network layer
@@ -97,6 +101,8 @@ impl FoldNode {
         let (node_id, security_manager, security_config) =
             Self::init_internals(&config, &db).await?;
 
+        let mutation_preprocessor = MutationPreprocessor::from_env();
+
         let node = Self {
             db,
             config: NodeConfig {
@@ -108,6 +114,7 @@ impl FoldNode {
             private_key,
             public_key,
             e2e_keys,
+            mutation_preprocessor,
         };
 
         // Require schema service to be configured
@@ -186,6 +193,8 @@ impl FoldNode {
         let (node_id, security_manager, security_config) =
             Self::init_internals(&config, &db).await?;
 
+        let mutation_preprocessor = MutationPreprocessor::from_env();
+
         let node = Self {
             db,
             config: NodeConfig {
@@ -197,6 +206,7 @@ impl FoldNode {
             private_key,
             public_key,
             e2e_keys,
+            mutation_preprocessor,
         };
 
         // Require schema service to be configured
@@ -309,13 +319,17 @@ impl FoldNode {
 
     /// Execute a batch of mutations.
     ///
-    /// This is a convenience method that delegates to the underlying FoldDB.
-    /// It is primarily used by tests and internal components that need direct
-    /// access without going through the OperationProcessor.
+    /// Runs the MutationPreprocessor (keyword extraction) on any mutations
+    /// that don't already have `index_terms`, then delegates to FoldDB.
     pub async fn mutate_batch(
         &self,
-        mutations: Vec<crate::schema::types::operations::Mutation>,
+        mut mutations: Vec<crate::schema::types::operations::Mutation>,
     ) -> FoldDbResult<Vec<String>> {
+        // Preprocess: extract keywords for mutations missing index_terms
+        if let Some(ref preprocessor) = self.mutation_preprocessor {
+            preprocessor.preprocess(&mut mutations).await;
+        }
+
         let mut db = self.db.lock().await;
         db.mutation_manager
             .write_mutations_batch_async(mutations)

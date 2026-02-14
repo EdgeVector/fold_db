@@ -12,6 +12,7 @@
 pub mod config;
 pub mod error;
 pub mod llm_query;
+pub mod mutation_preprocessor;
 pub mod node;
 mod operation_processor;
 pub mod response_types;
