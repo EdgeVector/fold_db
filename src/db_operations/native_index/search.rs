@@ -114,20 +114,21 @@ impl NativeIndexManager {
         Ok(results)
     }
 
-    /// Search all indexed keywords, field names, and emails.
+    /// Search all indexed keywords, field names, emails, and dates.
     /// Supports multi-word queries (phrase match first, then word intersection).
     pub async fn search_all(&self, term: &str) -> Result<Vec<IndexEntry>, SchemaError> {
         // Use search which handles multi-word intersection
-        let (word_result, field_result, email_result) = tokio::join!(
+        let (word_result, field_result, email_result, date_result) = tokio::join!(
             self.search(term),
             self.search_field_names(term),
-            self.search_emails(term)
+            self.search_emails(term),
+            self.search_dates(term)
         );
 
         let mut all_entries = Vec::new();
         let mut seen: HashSet<(String, KeyValue, String)> = HashSet::new();
 
-        for entries in [word_result?, field_result?, email_result?] {
+        for entries in [word_result?, field_result?, email_result?, date_result?] {
             for entry in entries {
                 let dedup_key = (entry.schema.clone(), entry.key.clone(), entry.field.clone());
                 if seen.insert(dedup_key) {
@@ -150,6 +151,20 @@ impl NativeIndexManager {
 
         let blinded = self.blind_token(&normalized);
         let prefix = format!("{}field:{}:", INDEX_ENTRY_PREFIX, blinded);
+        self.scan_index_prefix(&prefix, Some(&normalized)).await
+    }
+
+    /// Search for dates in the index
+    async fn search_dates(
+        &self,
+        term: &str,
+    ) -> Result<Vec<IndexEntry>, SchemaError> {
+        let Some(normalized) = Self::normalize_search_term(term) else {
+            return Ok(Vec::new());
+        };
+
+        let blinded = self.blind_token(&normalized);
+        let prefix = format!("{}date:{}:", INDEX_ENTRY_PREFIX, blinded);
         self.scan_index_prefix(&prefix, Some(&normalized)).await
     }
 

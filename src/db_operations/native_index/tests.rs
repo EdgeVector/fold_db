@@ -395,3 +395,74 @@ async fn test_search_all_finds_emails() {
     assert!(classifications.contains(&IndexClassification::Field));
 }
 
+#[tokio::test]
+async fn test_date_indexed_with_date_classification() {
+    let db = sled::Config::new().temporary(true).open().unwrap();
+    let store = std::sync::Arc::new(SledNamespacedStore::new(db));
+    let kv_store = store.open_namespace("native_index").await.unwrap();
+
+    let manager = NativeIndexManager::new(kv_store, None);
+
+    let key = KeyValue::new(Some("rec1".to_string()), None);
+    let keywords = vec![
+        "2024-01-05".to_string(),
+        "meeting".to_string(),
+    ];
+
+    manager
+        .batch_index_from_keywords("EventSchema", &key, "description", keywords, None)
+        .await
+        .expect("batch_index_from_keywords failed");
+
+    // Word search should find "meeting" but NOT the date
+    let word_results = manager.search("meeting").await.expect("search failed");
+    assert_eq!(word_results.len(), 1);
+    assert_eq!(word_results[0].classification, IndexClassification::Word);
+
+    let date_as_word = manager.search("2024-01-05").await.expect("search failed");
+    assert!(date_as_word.is_empty(), "Date should not be found via word search");
+
+    // search_all should find the date
+    let all_results = manager.search_all("2024-01-05").await.expect("search_all failed");
+    assert_eq!(all_results.len(), 1);
+    assert_eq!(all_results[0].classification, IndexClassification::Date);
+    assert_eq!(all_results[0].field, "description");
+}
+
+#[tokio::test]
+async fn test_search_all_finds_dates_emails_and_words() {
+    let db = sled::Config::new().temporary(true).open().unwrap();
+    let store = std::sync::Arc::new(SledNamespacedStore::new(db));
+    let kv_store = store.open_namespace("native_index").await.unwrap();
+
+    let manager = NativeIndexManager::new(kv_store, None);
+
+    let key = KeyValue::new(Some("rec1".to_string()), None);
+
+    manager
+        .batch_index_from_keywords(
+            "Schema1", &key, "notes",
+            vec![
+                "alice@example.com".to_string(),
+                "2024-06-15".to_string(),
+                "conference".to_string(),
+            ],
+            None,
+        )
+        .await
+        .expect("keyword indexing failed");
+
+    // Each type should be searchable via search_all with correct classification
+    let email_results = manager.search_all("alice@example.com").await.expect("search_all failed");
+    assert_eq!(email_results.len(), 1);
+    assert_eq!(email_results[0].classification, IndexClassification::Email);
+
+    let date_results = manager.search_all("2024-06-15").await.expect("search_all failed");
+    assert_eq!(date_results.len(), 1);
+    assert_eq!(date_results[0].classification, IndexClassification::Date);
+
+    let word_results = manager.search_all("conference").await.expect("search_all failed");
+    assert_eq!(word_results.len(), 1);
+    assert_eq!(word_results[0].classification, IndexClassification::Word);
+}
+

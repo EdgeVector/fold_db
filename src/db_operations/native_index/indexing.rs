@@ -16,6 +16,15 @@ fn is_email(keyword: &str) -> bool {
     re.is_match(keyword)
 }
 
+/// Check if a keyword is a normalized date (YYYY-MM-DD).
+fn is_date(keyword: &str) -> bool {
+    static PATTERN: OnceLock<Regex> = OnceLock::new();
+    let re = PATTERN.get_or_init(|| {
+        Regex::new(r"^\d{4}-\d{2}-\d{2}$").unwrap()
+    });
+    re.is_match(keyword)
+}
+
 impl NativeIndexManager {
     /// Deduplicate index entries by key and write them via the KvStore.
     ///
@@ -57,6 +66,8 @@ impl NativeIndexManager {
         for keyword in &keywords {
             let (classification, prefix) = if is_email(keyword) {
                 (IndexClassification::Email, "email")
+            } else if is_date(keyword) {
+                (IndexClassification::Date, "date")
             } else {
                 (IndexClassification::Word, "word")
             };

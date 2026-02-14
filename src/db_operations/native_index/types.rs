@@ -12,6 +12,7 @@ pub enum IndexClassification {
     Word,
     Field,
     Email,
+    Date,
 }
 
 impl std::fmt::Display for IndexClassification {
@@ -20,6 +21,7 @@ impl std::fmt::Display for IndexClassification {
             Self::Word => write!(f, "word"),
             Self::Field => write!(f, "field"),
             Self::Email => write!(f, "email"),
+            Self::Date => write!(f, "date"),
         }
     }
 }
