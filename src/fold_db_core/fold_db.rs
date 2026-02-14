@@ -280,32 +280,13 @@ impl FoldDB {
         // This is shared between MutationManager (read status) and IndexOrchestrator (write status)
         let index_status_tracker = IndexStatusTracker::new(Some(progress_tracker.clone()));
 
-        // Create keyword extractor from ingestion service (LLM)
-        use super::orchestration::keyword_extractor::KeywordExtractor;
-
-        #[cfg(not(test))]
-        let keyword_extractor = {
-            let svc = crate::ingestion::ingestion_service::IngestionService::from_env()
-                .map_err(|e| StorageError::ConfigurationError(format!(
-                    "AI provider not configured. Set FOLD_OPENROUTER_API_KEY (or OPENROUTER_API_KEY) environment variable for indexing. Error: {}",
-                    e
-                )))?;
-            info!("KeywordExtractor initialized - LLM-powered indexing enabled");
-            Some(Arc::new(KeywordExtractor::new(Arc::new(svc))))
-        };
-
-        #[cfg(test)]
-        let keyword_extractor = crate::ingestion::ingestion_service::IngestionService::from_env()
-            .ok()
-            .map(|svc| Arc::new(KeywordExtractor::new(Arc::new(svc))));
-
         // Create and start IndexOrchestrator for event-driven native indexing
+        // (field-name indexing only — keyword extraction is handled inline during ingestion)
         use super::orchestration::index_orchestrator::IndexOrchestrator;
         let index_orchestrator = Arc::new(IndexOrchestrator::new(
             Arc::clone(&db_ops),
             Some(index_status_tracker.clone()),
             Arc::clone(&pending_tasks),
-            keyword_extractor,
         ));
         index_orchestrator
             .start_event_listener(Arc::clone(&message_bus))

@@ -9,15 +9,17 @@ use crate::fold_db_core::infrastructure::message_bus::{
     query_events::MutationExecuted, AsyncMessageBus, Event,
 };
 use crate::fold_db_core::orchestration::index_status::IndexStatusTracker;
-use crate::fold_db_core::orchestration::keyword_extractor::KeywordExtractor;
 
-/// Orchestrator for Native Indexing operations
+/// Orchestrator for Native Indexing operations.
+///
+/// Handles field-name indexing only. Keyword extraction is performed inline
+/// during ingestion (see `ingestion_service.rs`) and written atomically
+/// with mutations (see `mutation_manager.rs`).
 pub struct IndexOrchestrator {
     db_ops: Arc<DbOperations>,
     index_status_tracker: Option<IndexStatusTracker>,
     pending_tasks:
         Arc<crate::fold_db_core::infrastructure::pending_task_tracker::PendingTaskTracker>,
-    keyword_extractor: Option<Arc<KeywordExtractor>>,
 }
 
 impl IndexOrchestrator {
@@ -28,13 +30,11 @@ impl IndexOrchestrator {
         pending_tasks: Arc<
             crate::fold_db_core::infrastructure::pending_task_tracker::PendingTaskTracker,
         >,
-        keyword_extractor: Option<Arc<KeywordExtractor>>,
     ) -> Self {
         Self {
             db_ops,
             index_status_tracker,
             pending_tasks,
-            keyword_extractor,
         }
     }
 
@@ -45,7 +45,6 @@ impl IndexOrchestrator {
         let db_ops = Arc::clone(&self.db_ops);
         let tracker = self.index_status_tracker.clone();
         let mut consumer = message_bus.subscribe("MutationExecuted").await;
-        let keyword_extractor = self.keyword_extractor.clone();
 
         let pending_tasks = self.pending_tasks.clone();
 
@@ -72,13 +71,13 @@ impl IndexOrchestrator {
                             // Process indexing within user context (critical for multi-tenant DynamoDB writes)
                             if let Some(ref user_id) = event.user_id {
                                 crate::logging::core::run_with_user(user_id, async {
-                                    Self::process_indexing(&db_ops, &tracker, &event, &keyword_extractor).await;
+                                    Self::process_indexing(&db_ops, &tracker, &event).await;
                                 })
                                 .await;
                             } else {
                                 // No user context - process anyway (will use default user_id)
                                 warn!("IndexOrchestrator: No user_id in event, using default");
-                                Self::process_indexing(&db_ops, &tracker, &event, &keyword_extractor).await;
+                                Self::process_indexing(&db_ops, &tracker, &event).await;
                             }
 
                             // Task completed
@@ -95,12 +94,14 @@ impl IndexOrchestrator {
         });
     }
 
-    /// Process indexing for a batch of data
+    /// Process field-name indexing for a batch of data.
+    ///
+    /// Keyword indexing is handled inline during ingestion — this method
+    /// only indexes field names for mutations that weren't already indexed.
     async fn process_indexing(
         db_ops: &Arc<DbOperations>,
-        tracker: &Option<IndexStatusTracker>,
+        _tracker: &Option<IndexStatusTracker>,
         event: &MutationExecuted,
-        keyword_extractor: &Option<Arc<KeywordExtractor>>,
     ) {
         if event.already_indexed {
             debug!(
@@ -153,55 +154,13 @@ impl IndexOrchestrator {
         // Extract molecule version numbers from the event
         let mol_versions = event.molecule_versions.as_ref();
 
-        // Step 1: Always index field names (no LLM needed)
+        // Index field names only (no LLM — keyword extraction is handled inline during ingestion)
         let field_names: Vec<String> = merged_fields.keys().cloned().collect();
         if let Err(e) = native_index_mgr
             .batch_index_field_names(schema_name, &key_value, &field_names, mol_versions)
             .await
         {
             error!("IndexOrchestrator: Field-name indexing failed: {}", e);
-        }
-
-        // Step 2: If keyword extractor is available, use LLM-powered keyword extraction
-        // Single LLM call extracts keywords grouped by field name
-        if let Some(extractor) = keyword_extractor {
-            // Update tracker
-            if let Some(idx_tracker) = tracker {
-                idx_tracker.start_batch(merged_fields.len()).await;
-            }
-
-            let start = std::time::Instant::now();
-
-            match extractor.extract_keywords_per_field(&merged_fields).await {
-                Ok(keywords_by_field) => {
-                    for (field_name, keywords) in keywords_by_field {
-                        if let Err(e) = native_index_mgr
-                            .batch_index_from_keywords(
-                                schema_name,
-                                &key_value,
-                                &field_name,
-                                keywords,
-                                mol_versions,
-                            )
-                            .await
-                        {
-                            error!("IndexOrchestrator: Keyword indexing for field '{}' failed: {}", field_name, e);
-                        }
-                    }
-                }
-                Err(e) => {
-                    error!("IndexOrchestrator: LLM keyword extraction failed: {}", e);
-                }
-            }
-
-            // Complete tracker
-            if let Some(idx_tracker) = tracker {
-                idx_tracker
-                    .complete_batch(merged_fields.len(), start.elapsed().as_millis())
-                    .await;
-            }
-        } else {
-            debug!("IndexOrchestrator: No keyword extractor available, skipping keyword indexing");
         }
 
         let _ = native_index_mgr.flush().await;
