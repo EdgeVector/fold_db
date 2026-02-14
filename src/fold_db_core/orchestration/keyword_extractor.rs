@@ -3,13 +3,15 @@
 //! Tokenizes text, removes stopwords, stems words, and deduplicates.
 //! No LLM dependency — works offline, instant, deterministic.
 
+use chrono::NaiveDate;
+use regex::Regex;
 use rust_stemmers::{Algorithm, Stemmer};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
+use std::sync::OnceLock;
 
 /// Lazily-initialized English stopword set.
 fn stopwords() -> &'static HashSet<String> {
-    use std::sync::OnceLock;
     static STOP: OnceLock<HashSet<String>> = OnceLock::new();
     STOP.get_or_init(|| {
         stop_words::get(stop_words::LANGUAGE::English)
@@ -61,6 +63,132 @@ fn value_to_text(value: &Value) -> String {
     }
 }
 
+/// Lazily-initialized email regex.
+fn email_pattern() -> &'static Regex {
+    static PATTERN: OnceLock<Regex> = OnceLock::new();
+    PATTERN.get_or_init(|| {
+        Regex::new(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b").unwrap()
+    })
+}
+
+/// Extract email addresses from raw text before tokenization.
+///
+/// Returns deduplicated, lowercased email strings.
+fn extract_emails(text: &str) -> Vec<String> {
+    let pattern = email_pattern();
+    let mut seen = HashSet::new();
+    let mut emails = Vec::new();
+
+    for mat in pattern.find_iter(text) {
+        let email = mat.as_str().to_lowercase();
+        if seen.insert(email.clone()) {
+            emails.push(email);
+        }
+    }
+
+    emails
+}
+
+/// Lazily-initialized date regex patterns.
+fn date_patterns() -> &'static Vec<Regex> {
+    static PATTERNS: OnceLock<Vec<Regex>> = OnceLock::new();
+    PATTERNS.get_or_init(|| {
+        vec![
+            // ISO: 2024-01-05
+            Regex::new(r"\b(\d{4})-(\d{1,2})-(\d{1,2})\b").unwrap(),
+            // US slash: 01/05/2024
+            Regex::new(r"\b(\d{1,2})/(\d{1,2})/(\d{4})\b").unwrap(),
+            // Dot: 01.05.2024
+            Regex::new(r"\b(\d{1,2})\.(\d{1,2})\.(\d{4})\b").unwrap(),
+            // Named month (long): January 5th, 2024
+            Regex::new(r"(?i)\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4})\b").unwrap(),
+            // Named month (short): Jan 5, 2024
+            Regex::new(r"(?i)\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4})\b").unwrap(),
+            // Day-first named (long): 5th January 2024
+            Regex::new(r"(?i)\b(\d{1,2})(?:st|nd|rd|th)?\s+(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{4})\b").unwrap(),
+            // Day-first named (short): 5 Jan 2024
+            Regex::new(r"(?i)\b(\d{1,2})(?:st|nd|rd|th)?\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{4})\b").unwrap(),
+        ]
+    })
+}
+
+/// Parse a month name (long or short) into a month number.
+fn month_name_to_num(name: &str) -> Option<u32> {
+    match name.to_lowercase().as_str() {
+        "january" | "jan" => Some(1),
+        "february" | "feb" => Some(2),
+        "march" | "mar" => Some(3),
+        "april" | "apr" => Some(4),
+        "may" => Some(5),
+        "june" | "jun" => Some(6),
+        "july" | "jul" => Some(7),
+        "august" | "aug" => Some(8),
+        "september" | "sep" => Some(9),
+        "october" | "oct" => Some(10),
+        "november" | "nov" => Some(11),
+        "december" | "dec" => Some(12),
+        _ => None,
+    }
+}
+
+/// Try to parse a single regex capture into a NaiveDate based on the pattern index.
+fn parse_date_capture(cap: &regex::Captures, pattern_index: usize) -> Option<NaiveDate> {
+    match pattern_index {
+        // ISO: year-month-day
+        0 => {
+            let year: i32 = cap[1].parse().ok()?;
+            let month: u32 = cap[2].parse().ok()?;
+            let day: u32 = cap[3].parse().ok()?;
+            NaiveDate::from_ymd_opt(year, month, day)
+        }
+        // US slash / dot: month/day/year or month.day.year
+        1 | 2 => {
+            let month: u32 = cap[1].parse().ok()?;
+            let day: u32 = cap[2].parse().ok()?;
+            let year: i32 = cap[3].parse().ok()?;
+            NaiveDate::from_ymd_opt(year, month, day)
+        }
+        // Named month first: Month day, year
+        3 | 4 => {
+            let month = month_name_to_num(&cap[1])?;
+            let day: u32 = cap[2].parse().ok()?;
+            let year: i32 = cap[3].parse().ok()?;
+            NaiveDate::from_ymd_opt(year, month, day)
+        }
+        // Day-first named: day Month year
+        5 | 6 => {
+            let day: u32 = cap[1].parse().ok()?;
+            let month = month_name_to_num(&cap[2])?;
+            let year: i32 = cap[3].parse().ok()?;
+            NaiveDate::from_ymd_opt(year, month, day)
+        }
+        _ => None,
+    }
+}
+
+/// Extract dates from raw text and return normalized ISO-8601 strings (YYYY-MM-DD).
+///
+/// Runs regex patterns against the raw text before tokenization would break
+/// date strings apart. Invalid dates (e.g. month 13) are silently skipped.
+fn extract_dates(text: &str) -> Vec<String> {
+    let patterns = date_patterns();
+    let mut seen = HashSet::new();
+    let mut dates = Vec::new();
+
+    for (i, pat) in patterns.iter().enumerate() {
+        for cap in pat.captures_iter(text) {
+            if let Some(date) = parse_date_capture(&cap, i) {
+                let iso = date.format("%Y-%m-%d").to_string();
+                if seen.insert(iso.clone()) {
+                    dates.push(iso);
+                }
+            }
+        }
+    }
+
+    dates
+}
+
 /// Tokenize text, filter stopwords, stem, and deduplicate.
 ///
 /// Returns both the stemmed form and the original token when they differ,
@@ -68,6 +196,20 @@ fn value_to_text(value: &Value) -> String {
 fn extract_from_text(text: &str, stemmer: &Stemmer, stops: &HashSet<String>) -> Vec<String> {
     let mut seen = HashSet::new();
     let mut keywords = Vec::new();
+
+    // Extract emails from raw text before tokenization breaks them
+    for email in extract_emails(text) {
+        if seen.insert(email.clone()) {
+            keywords.push(email);
+        }
+    }
+
+    // Extract normalized dates from raw text before tokenization breaks them
+    for date in extract_dates(text) {
+        if seen.insert(date.clone()) {
+            keywords.push(date);
+        }
+    }
 
     for token in tokenize(text) {
         if token.len() < 2 || stops.contains(&token) {
@@ -97,45 +239,10 @@ fn tokenize(text: &str) -> Vec<String> {
         .collect()
 }
 
-/// Normalize a list of keywords: lowercase, deduplicate, split multi-word.
-pub fn normalize_keywords(keywords: Vec<String>) -> Vec<String> {
-    let mut seen = HashSet::new();
-    let mut normalized: Vec<String> = Vec::new();
-    for raw in keywords {
-        let kw = raw.to_lowercase().trim().to_string();
-        if kw.len() >= 2 && seen.insert(kw.clone()) {
-            normalized.push(kw.clone());
-            // Split multi-word keywords into parts
-            if kw.contains(' ') {
-                for part in kw.split_whitespace() {
-                    let part = part.to_string();
-                    if part.len() >= 2 && seen.insert(part.clone()) {
-                        normalized.push(part);
-                    }
-                }
-            }
-        }
-    }
-    normalized
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
-
-    #[test]
-    fn test_normalize_keywords_basic() {
-        let input = vec![
-            "Rust".to_string(),
-            "alice johnson".to_string(),
-            "a".to_string(),  // too short
-            "rust".to_string(),  // duplicate
-            "".to_string(),  // empty
-        ];
-        let result = normalize_keywords(input);
-        assert_eq!(result, vec!["rust", "alice johnson", "alice", "johnson"]);
-    }
 
     #[test]
     fn test_extract_keywords_per_field_basic() {
@@ -366,5 +473,128 @@ mod tests {
             assert!(!kws.iter().any(|k| k.len() < 2), "No single-char tokens should survive: {:?}", kws);
             assert!(kws.iter().any(|k| k == "went"), "Content word 'went' should survive: {:?}", kws);
         }
+    }
+
+    // --- Email extraction tests ---
+
+    #[test]
+    fn test_extract_emails_basic() {
+        let emails = extract_emails("Contact alice@example.com for details");
+        assert_eq!(emails, vec!["alice@example.com"]);
+    }
+
+    #[test]
+    fn test_extract_emails_multiple() {
+        let emails = extract_emails("Email alice@example.com or bob@test.org");
+        assert_eq!(emails.len(), 2);
+        assert!(emails.contains(&"alice@example.com".to_string()));
+        assert!(emails.contains(&"bob@test.org".to_string()));
+    }
+
+    #[test]
+    fn test_extract_emails_dedup() {
+        let emails = extract_emails("alice@example.com and Alice@Example.com again");
+        assert_eq!(emails.len(), 1);
+        assert_eq!(emails[0], "alice@example.com");
+    }
+
+    #[test]
+    fn test_emails_and_keywords_coexist() {
+        let fields = HashMap::from([(
+            "text".to_string(),
+            json!("Meeting with alice@example.com on January 5th, 2024 about Rust"),
+        )]);
+        let result = extract_keywords_per_field(&fields);
+        let kws = result.get("text").unwrap();
+        assert!(kws.contains(&"alice@example.com".to_string()), "Should contain email: {:?}", kws);
+        assert!(kws.contains(&"2024-01-05".to_string()), "Should contain date: {:?}", kws);
+        assert!(kws.contains(&"rust".to_string()), "Should contain 'rust': {:?}", kws);
+    }
+
+    // --- Date extraction tests ---
+
+    #[test]
+    fn test_extract_dates_iso() {
+        let dates = extract_dates("Event on 2024-01-05 was great");
+        assert_eq!(dates, vec!["2024-01-05"]);
+    }
+
+    #[test]
+    fn test_extract_dates_us_slash() {
+        let dates = extract_dates("Scheduled for 01/05/2024");
+        assert_eq!(dates, vec!["2024-01-05"]);
+    }
+
+    #[test]
+    fn test_extract_dates_named_month() {
+        let dates = extract_dates("January 5th, 2024 is the date");
+        assert_eq!(dates, vec!["2024-01-05"]);
+
+        let dates = extract_dates("Jan 5, 2024 is the date");
+        assert_eq!(dates, vec!["2024-01-05"]);
+    }
+
+    #[test]
+    fn test_extract_dates_day_first() {
+        let dates = extract_dates("5th January 2024 is confirmed");
+        assert_eq!(dates, vec!["2024-01-05"]);
+
+        let dates = extract_dates("5 Jan 2024 confirmed");
+        assert_eq!(dates, vec!["2024-01-05"]);
+    }
+
+    #[test]
+    fn test_extract_dates_dot_format() {
+        let dates = extract_dates("Date: 01.05.2024");
+        assert_eq!(dates, vec!["2024-01-05"]);
+    }
+
+    #[test]
+    fn test_dates_normalized_in_extraction() {
+        let fields = HashMap::from([(
+            "text".to_string(),
+            json!("Event on 01/05/2024 confirmed for January 5th, 2024"),
+        )]);
+        let result = extract_keywords_per_field(&fields);
+        let kws = result.get("text").unwrap();
+        // "2024-01-05" should appear exactly once despite two date formats
+        assert_eq!(kws.iter().filter(|k| *k == "2024-01-05").count(), 1,
+            "Normalized date should appear exactly once: {:?}", kws);
+    }
+
+    #[test]
+    fn test_mixed_dates_and_keywords() {
+        let fields = HashMap::from([(
+            "text".to_string(),
+            json!("Meeting with Alice on January 5th, 2024 about Rust programming"),
+        )]);
+        let result = extract_keywords_per_field(&fields);
+        let kws = result.get("text").unwrap();
+        assert!(kws.contains(&"2024-01-05".to_string()), "Should contain date: {:?}", kws);
+        assert!(kws.contains(&"alice".to_string()), "Should contain 'alice': {:?}", kws);
+        assert!(kws.contains(&"rust".to_string()), "Should contain 'rust': {:?}", kws);
+        assert!(kws.contains(&"programming".to_string()) || kws.contains(&"program".to_string()),
+            "Should contain 'programming' or 'program': {:?}", kws);
+    }
+
+    #[test]
+    fn test_invalid_dates_ignored() {
+        // Invalid month/day combinations should not produce date keywords
+        let dates = extract_dates("13/45/2024 is not a valid date");
+        assert!(dates.is_empty(), "Invalid dates should be ignored: {:?}", dates);
+    }
+
+    #[test]
+    fn test_no_dates_in_plain_text() {
+        let dates = extract_dates("Hello world this is plain text without dates");
+        assert!(dates.is_empty(), "No dates should be found: {:?}", dates);
+    }
+
+    #[test]
+    fn test_multiple_different_dates() {
+        let dates = extract_dates("From 2024-01-05 to 2024-12-31");
+        assert_eq!(dates.len(), 2);
+        assert!(dates.contains(&"2024-01-05".to_string()));
+        assert!(dates.contains(&"2024-12-31".to_string()));
     }
 }

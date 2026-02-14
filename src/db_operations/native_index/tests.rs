@@ -318,3 +318,80 @@ async fn test_molecule_versions_none_by_default() {
     assert!(entries[0].molecule_versions.is_none());
 }
 
+#[tokio::test]
+async fn test_email_indexed_with_email_classification() {
+    let db = sled::Config::new().temporary(true).open().unwrap();
+    let store = std::sync::Arc::new(SledNamespacedStore::new(db));
+    let kv_store = store.open_namespace("native_index").await.unwrap();
+
+    let manager = NativeIndexManager::new(kv_store, None);
+
+    let key = KeyValue::new(Some("rec1".to_string()), None);
+    let keywords = vec![
+        "alice@example.com".to_string(),
+        "hello".to_string(),
+    ];
+
+    manager
+        .batch_index_from_keywords("ContactSchema", &key, "email_field", keywords, None)
+        .await
+        .expect("batch_index_from_keywords failed");
+
+    // Regular word search should find "hello" but NOT "alice@example.com"
+    let word_results = manager.search("hello").await.expect("search failed");
+    assert_eq!(word_results.len(), 1);
+    assert_eq!(word_results[0].classification, IndexClassification::Word);
+
+    // Word search should not find the email (it's stored under email: prefix)
+    let email_as_word = manager.search("alice@example.com").await.expect("search failed");
+    assert!(email_as_word.is_empty(), "Email should not be found via word search");
+
+    // search_all should find the email
+    let all_results = manager.search_all("alice@example.com").await.expect("search_all failed");
+    assert_eq!(all_results.len(), 1);
+    assert_eq!(all_results[0].classification, IndexClassification::Email);
+    assert_eq!(all_results[0].field, "email_field");
+}
+
+#[tokio::test]
+async fn test_search_all_finds_emails() {
+    let db = sled::Config::new().temporary(true).open().unwrap();
+    let store = std::sync::Arc::new(SledNamespacedStore::new(db));
+    let kv_store = store.open_namespace("native_index").await.unwrap();
+
+    let manager = NativeIndexManager::new(kv_store, None);
+
+    let key = KeyValue::new(Some("rec1".to_string()), None);
+
+    // Index an email, a word, and a field name
+    manager
+        .batch_index_from_keywords(
+            "Schema1", &key, "contact",
+            vec!["bob@test.org".to_string(), "engineer".to_string()],
+            None,
+        )
+        .await
+        .expect("keyword indexing failed");
+
+    manager
+        .batch_index_field_names("Schema1", &key, &["contact".to_string()], None)
+        .await
+        .expect("field indexing failed");
+
+    // search_all for the email should return the Email-classified entry
+    let email_results = manager.search_all("bob@test.org").await.expect("search_all failed");
+    assert_eq!(email_results.len(), 1);
+    assert_eq!(email_results[0].classification, IndexClassification::Email);
+
+    // search_all for "engineer" should return the Word-classified entry
+    let word_results = manager.search_all("engineer").await.expect("search_all failed");
+    assert_eq!(word_results.len(), 1);
+    assert_eq!(word_results[0].classification, IndexClassification::Word);
+
+    // search_all for "contact" should return both word and field entries
+    let contact_results = manager.search_all("contact").await.expect("search_all failed");
+    let classifications: std::collections::HashSet<IndexClassification> =
+        contact_results.iter().map(|r| r.classification).collect();
+    assert!(classifications.contains(&IndexClassification::Field));
+}
+

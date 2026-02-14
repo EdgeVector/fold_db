@@ -1,8 +1,20 @@
+use regex::Regex;
+use std::sync::OnceLock;
+
 use crate::schema::types::key_value::KeyValue;
 use crate::schema::SchemaError;
 
 use super::types::{IndexClassification, IndexEntry};
 use super::NativeIndexManager;
+
+/// Check if a keyword looks like an email address.
+fn is_email(keyword: &str) -> bool {
+    static PATTERN: OnceLock<Regex> = OnceLock::new();
+    let re = PATTERN.get_or_init(|| {
+        Regex::new(r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$").unwrap()
+    });
+    re.is_match(keyword)
+}
 
 impl NativeIndexManager {
     /// Deduplicate index entries by key and write them via the KvStore.
@@ -43,17 +55,22 @@ impl NativeIndexManager {
         let mut index_entries: Vec<(Vec<u8>, Vec<u8>)> = Vec::new();
 
         for keyword in &keywords {
+            let (classification, prefix) = if is_email(keyword) {
+                (IndexClassification::Email, "email")
+            } else {
+                (IndexClassification::Word, "word")
+            };
             let mut entry = IndexEntry::new(
                 schema_name.to_string(),
                 key_value.clone(),
                 field_name.to_string(),
-                IndexClassification::Word,
+                classification,
             );
             entry.molecule_versions = molecule_versions.cloned();
 
             // Blind the keyword (HMAC if E2E key present, passthrough otherwise)
             let blinded = self.blind_token(keyword);
-            let term = format!("word:{}", blinded);
+            let term = format!("{}:{}", prefix, blinded);
             let storage_key = entry.storage_key(&term);
             let entry_bytes = serde_json::to_vec(&entry).map_err(|e| {
                 SchemaError::InvalidData(format!("Failed to serialize IndexEntry: {}", e))

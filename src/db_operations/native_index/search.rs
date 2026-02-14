@@ -114,31 +114,25 @@ impl NativeIndexManager {
         Ok(results)
     }
 
-    /// Search all indexed keywords and field names.
+    /// Search all indexed keywords, field names, and emails.
     /// Supports multi-word queries (phrase match first, then word intersection).
     pub async fn search_all(&self, term: &str) -> Result<Vec<IndexEntry>, SchemaError> {
         // Use search which handles multi-word intersection
-        let (word_result, field_result) = tokio::join!(
+        let (word_result, field_result, email_result) = tokio::join!(
             self.search(term),
-            self.search_field_names(term)
+            self.search_field_names(term),
+            self.search_emails(term)
         );
 
         let mut all_entries = Vec::new();
         let mut seen: HashSet<(String, KeyValue, String)> = HashSet::new();
 
-        let entries = word_result?;
-        for entry in entries {
-            let dedup_key = (entry.schema.clone(), entry.key.clone(), entry.field.clone());
-            if seen.insert(dedup_key) {
-                all_entries.push(entry);
-            }
-        }
-
-        let field_entries = field_result?;
-        for entry in field_entries {
-            let dedup_key = (entry.schema.clone(), entry.key.clone(), entry.field.clone());
-            if seen.insert(dedup_key) {
-                all_entries.push(entry);
+        for entries in [word_result?, field_result?, email_result?] {
+            for entry in entries {
+                let dedup_key = (entry.schema.clone(), entry.key.clone(), entry.field.clone());
+                if seen.insert(dedup_key) {
+                    all_entries.push(entry);
+                }
             }
         }
 
@@ -156,6 +150,20 @@ impl NativeIndexManager {
 
         let blinded = self.blind_token(&normalized);
         let prefix = format!("{}field:{}:", INDEX_ENTRY_PREFIX, blinded);
+        self.scan_index_prefix(&prefix, Some(&normalized)).await
+    }
+
+    /// Search for email addresses in the index
+    async fn search_emails(
+        &self,
+        term: &str,
+    ) -> Result<Vec<IndexEntry>, SchemaError> {
+        let Some(normalized) = Self::normalize_search_term(term) else {
+            return Ok(Vec::new());
+        };
+
+        let blinded = self.blind_token(&normalized);
+        let prefix = format!("{}email:{}:", INDEX_ENTRY_PREFIX, blinded);
         self.scan_index_prefix(&prefix, Some(&normalized)).await
     }
 

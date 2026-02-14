@@ -11,6 +11,7 @@ pub(super) const EXCLUDED_FIELDS: &[&str] = &["uuid", "id", "password", "token"]
 pub enum IndexClassification {
     Word,
     Field,
+    Email,
 }
 
 impl std::fmt::Display for IndexClassification {
@@ -18,6 +19,7 @@ impl std::fmt::Display for IndexClassification {
         match self {
             Self::Word => write!(f, "word"),
             Self::Field => write!(f, "field"),
+            Self::Email => write!(f, "email"),
         }
     }
 }
