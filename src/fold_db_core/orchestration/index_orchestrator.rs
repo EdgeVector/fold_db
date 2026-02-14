@@ -102,6 +102,14 @@ impl IndexOrchestrator {
         event: &MutationExecuted,
         keyword_extractor: &Option<Arc<KeywordExtractor>>,
     ) {
+        if event.already_indexed {
+            debug!(
+                "IndexOrchestrator: Skipping '{}' — already indexed inline",
+                event.schema
+            );
+            return;
+        }
+
         let Some(native_index_mgr) = db_ops.native_index_manager() else {
             return;
         };

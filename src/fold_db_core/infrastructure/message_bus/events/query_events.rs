@@ -32,10 +32,36 @@ pub struct MutationExecuted {
     /// Molecule version numbers at time of mutation
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub molecule_versions: Option<Vec<u64>>,
+    /// When true, index entries were already written inline during mutation —
+    /// IndexOrchestrator should skip its async keyword extraction.
+    #[serde(default)]
+    pub already_indexed: bool,
 }
 
 impl EventType for MutationExecuted {
     fn type_id() -> &'static str {
         "MutationExecuted"
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_already_indexed_serde_default() {
+        // Simulate deserializing an old event that lacks the already_indexed field
+        let json = r#"{
+            "operation": "write",
+            "schema": "TestSchema",
+            "execution_time_ms": 10,
+            "fields_affected": ["name"],
+            "mutation_context": null,
+            "data": null,
+            "user_id": null
+        }"#;
+
+        let event: MutationExecuted = serde_json::from_str(json).unwrap();
+        assert!(!event.already_indexed, "already_indexed should default to false");
     }
 }

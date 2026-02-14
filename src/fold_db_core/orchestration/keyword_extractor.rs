@@ -71,7 +71,7 @@ impl KeywordExtractor {
     }
 
     /// Normalize a list of keywords: lowercase, deduplicate, split multi-word.
-    fn normalize_keywords(keywords: Vec<String>) -> Vec<String> {
+    pub fn normalize_keywords(keywords: Vec<String>) -> Vec<String> {
         let mut seen = std::collections::HashSet::new();
         let mut normalized: Vec<String> = Vec::new();
         for raw in keywords {

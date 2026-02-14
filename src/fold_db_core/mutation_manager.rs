@@ -349,26 +349,70 @@ impl MutationManager {
                 }
             }
 
+            // Inline indexing: write index entries for mutations that carry pre-extracted index_terms
+            let inline_index_start = std::time::Instant::now();
+            let mut inline_indexed_flags: Vec<bool> = vec![false; schema_mutations.len()];
+
+            if let Some(native_index_mgr) = self.db_ops.native_index_manager() {
+                for (idx, mutation) in schema_mutations.iter().enumerate() {
+                    if let Some(ref index_terms) = mutation.index_terms {
+                        let key_value = &mutation_key_values[idx];
+                        let mol_versions_ref = if mol_versions.is_empty() { None } else { Some(&mol_versions) };
+
+                        // Index field names (no LLM needed)
+                        let field_names: Vec<String> = mutation.fields_and_values.keys().cloned().collect();
+                        if let Err(e) = native_index_mgr
+                            .batch_index_field_names(&schema_name, key_value, &field_names, mol_versions_ref)
+                            .await
+                        {
+                            error!("Inline indexing: field-name indexing failed for '{}': {}", schema_name, e);
+                            continue;
+                        }
+
+                        // Index keywords per field
+                        let mut keyword_ok = true;
+                        for (field_name, keywords) in index_terms {
+                            if let Err(e) = native_index_mgr
+                                .batch_index_from_keywords(
+                                    &schema_name,
+                                    key_value,
+                                    field_name,
+                                    keywords.clone(),
+                                    mol_versions_ref,
+                                )
+                                .await
+                            {
+                                error!("Inline indexing: keyword indexing for field '{}' failed: {}", field_name, e);
+                                keyword_ok = false;
+                                break;
+                            }
+                        }
+
+                        if keyword_ok {
+                            inline_indexed_flags[idx] = true;
+                            debug!("Inline indexed mutation {} for schema '{}'", mutation.uuid, schema_name);
+                        }
+                    }
+                }
+            }
+
+            *timing_breakdown
+                .entry("inline_indexing")
+                .or_insert(std::time::Duration::ZERO) += inline_index_start.elapsed();
+
             // Populate mutation contexts for events
             for (idx, mutation) in schema_mutations.iter().enumerate() {
                 let mutation_id = mutation.uuid.clone();
                 let backfill_hash = mutation.backfill_hash.clone();
                 let key_value = mutation_key_values[idx].clone();
                 let data = mutation.fields_and_values.clone();
-                mutation_contexts.push((mutation_id, backfill_hash, key_value, data, mol_versions.clone()));
+                let already_indexed = inline_indexed_flags[idx];
+                mutation_contexts.push((mutation_id, backfill_hash, key_value, data, mol_versions.clone(), already_indexed));
             }
 
             *timing_breakdown
                 .entry("validation")
                 .or_insert(std::time::Duration::ZERO) += validation_time;
-
-            // Process batch index operations synchronously - REMOVED
-            // Indexing now handled by IndexOrchestrator via event bus
-            if false {
-                // Kept empty block structure to minimize diff churn if needed, or just allow compiler to optimize out
-            }
-
-            // Indexing timing removed
 
             // Sync molecule UUIDs to the persisted field before storing
             let sync_start = std::time::Instant::now();
@@ -391,7 +435,7 @@ impl MutationManager {
                 .or_insert(std::time::Duration::ZERO) += reload_start.elapsed();
 
             // Create events for batch publishing
-            for (mutation_id, backfill_hash, key_value, data, versions) in mutation_contexts {
+            for (mutation_id, backfill_hash, key_value, data, versions, already_indexed) in mutation_contexts {
                 let mutation_context = Some(crate::fold_db_core::infrastructure::message_bus::atom_events::MutationContext {
                     key_value: Some(key_value),
                     mutation_hash: Some(mutation_id.clone()),
@@ -410,6 +454,7 @@ impl MutationManager {
                     data: Some(vec![data]), // Single data row for this mutation
                     user_id: crate::logging::core::get_current_user_id(),
                     molecule_versions: mol_versions,
+                    already_indexed,
                 };
 
                 batch_events.push((event, mutation_id.clone()));
