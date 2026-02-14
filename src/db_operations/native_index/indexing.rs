@@ -8,7 +8,7 @@ impl NativeIndexManager {
     /// Deduplicate index entries by key and write them via the KvStore.
     ///
     /// DynamoDB batch_write_item doesn't allow duplicate keys in a single
-    /// request, and the LLM may return duplicate keywords in one batch.
+    /// request, and the extractor may return duplicate keywords in one batch.
     async fn write_index_entries(&self, entries: Vec<(Vec<u8>, Vec<u8>)>) -> Result<(), SchemaError> {
         let mut seen_keys = std::collections::HashSet::new();
         let deduped: Vec<(Vec<u8>, Vec<u8>)> = entries
@@ -21,9 +21,9 @@ impl NativeIndexManager {
         })
     }
 
-    /// Index a record using LLM-extracted keywords.
+    /// Index a record using extracted keywords.
     ///
-    /// Takes a flat list of keywords (already normalized by the LLM) and writes
+    /// Takes a flat list of keywords (already normalized) and writes
     /// index entries + reverse mappings for each keyword.
     pub async fn batch_index_from_keywords(
         &self,
@@ -68,7 +68,7 @@ impl NativeIndexManager {
         Ok(())
     }
 
-    /// Index field names for a record (no LLM needed).
+    /// Index field names for a record.
     ///
     /// Writes `idx:field:{field_name}:...` entries so that `search_field_names()`
     /// can find records by their field names.

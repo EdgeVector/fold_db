@@ -240,4 +240,131 @@ mod tests {
         assert!(tokens.contains(&"bar".to_string()));
         assert!(tokens.contains(&"baz_qux".to_string())); // underscore preserved
     }
+
+    #[test]
+    fn test_stopwords_are_filtered() {
+        let stops = stopwords();
+
+        // Common English words that SHOULD be filtered
+        let filtered = [
+            "the", "is", "a", "an", "and", "or", "but", "in", "on", "at",
+            "to", "for", "of", "with", "by", "from", "as", "into", "about",
+            "it", "he", "she", "we", "they", "this", "that", "was", "were",
+            "be", "been", "being", "have", "has", "had", "do", "does", "did",
+            "will", "would", "could", "should", "may", "might", "can",
+            "not", "no", "so", "if", "then", "than", "too", "very",
+            "just", "how", "what", "when", "where", "who", "which", "why",
+            "all", "each", "every", "both", "few", "more", "most", "some",
+            "any", "other", "its", "my", "your", "his", "her", "our", "their",
+        ];
+        for word in &filtered {
+            assert!(
+                stops.contains(*word),
+                "'{}' should be a stopword but is NOT in the list",
+                word
+            );
+        }
+
+        // Print which common words the library considers stopwords.
+        // The stop-words crate uses a broad list (~1300 words), much larger
+        // than the classic NLTK 179-word list.
+        let probe_words = [
+            // Greetings / filler
+            "hello", "hi", "hey", "goodbye", "yes", "no", "ok", "please", "thanks",
+            // Common adjectives / adverbs
+            "good", "bad", "new", "old", "big", "small", "great", "little",
+            "first", "last", "long", "right", "high", "low", "best", "next",
+            "well", "even", "back", "still", "much", "never", "always",
+            // Common nouns that might surprise
+            "world", "name", "time", "day", "way", "part", "place",
+            "computer", "science", "music", "server", "network",
+            // Domain words that should definitely survive
+            "rust", "alice", "programming", "database", "twitter",
+            "photo", "document", "project", "recipe", "travel",
+            "schema", "mutation", "molecule", "bitcoin", "ethereum",
+        ];
+
+        let mut stopped: Vec<&str> = Vec::new();
+        let mut kept: Vec<&str> = Vec::new();
+        for word in &probe_words {
+            if stops.contains(*word) {
+                stopped.push(word);
+            } else {
+                kept.push(word);
+            }
+        }
+        println!("\n--- Stopword probe results ({} total stopwords) ---", stops.len());
+        println!("FILTERED (in stopword list): {:?}", stopped);
+        println!("KEPT (not in stopword list):  {:?}", kept);
+
+        // Domain-specific words must never be stopwords
+        let must_survive = ["rust", "alice", "programming", "database", "schema", "mutation", "bitcoin"];
+        for word in &must_survive {
+            assert!(!stops.contains(*word), "'{}' is a domain word and must NOT be a stopword", word);
+        }
+    }
+
+    #[test]
+    fn test_stopwords_filtered_in_extraction() {
+        // Verify stopwords are actually removed during keyword extraction
+        let fields = HashMap::from([(
+            "text".to_string(),
+            json!("The quick brown fox jumps over the lazy dog and it was very happy"),
+        )]);
+
+        let result = extract_keywords_per_field(&fields);
+        let kws = result.get("text").expect("text should have keywords");
+
+        // Stopwords should be gone
+        let stopwords_that_should_be_absent = ["the", "over", "and", "it", "was", "very"];
+        for word in &stopwords_that_should_be_absent {
+            assert!(
+                !kws.iter().any(|k| k == word),
+                "Stopword '{}' should have been filtered but found in: {:?}",
+                word, kws
+            );
+        }
+
+        // Content words should remain
+        let content_that_should_be_present = ["quick", "brown", "fox", "jumps", "lazy", "dog", "happy"];
+        for word in &content_that_should_be_present {
+            assert!(
+                kws.iter().any(|k| k == word),
+                "Content word '{}' should be present but missing from: {:?}",
+                word, kws
+            );
+        }
+    }
+
+    #[test]
+    fn test_stopword_list_size() {
+        let stops = stopwords();
+        // The NLTK English stopword list has ~179 words.
+        // Verify we have a substantial list loaded, not an empty or tiny set.
+        assert!(
+            stops.len() > 100,
+            "Stopword list should have 100+ entries, got {}",
+            stops.len()
+        );
+        println!("Stopword list contains {} words", stops.len());
+    }
+
+    #[test]
+    fn test_single_char_tokens_filtered() {
+        // Single-character tokens are filtered by the len < 2 check,
+        // even if they aren't in the stopword list
+        let fields = HashMap::from([(
+            "text".to_string(),
+            json!("I went to a B and B"),
+        )]);
+
+        let result = extract_keywords_per_field(&fields);
+        let kws = result.get("text");
+        // "I", "a" are single chars; "to", "and" are stopwords
+        // "went" should survive; "B" is single char
+        if let Some(kws) = kws {
+            assert!(!kws.iter().any(|k| k.len() < 2), "No single-char tokens should survive: {:?}", kws);
+            assert!(kws.iter().any(|k| k == "went"), "Content word 'went' should survive: {:?}", kws);
+        }
+    }
 }
