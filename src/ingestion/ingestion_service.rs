@@ -3,7 +3,7 @@
 //! Handles JSON data ingestion with AI schema recommendation, mutation generation,
 //! and execution. Refactored to take &FoldNode references for flexible locking.
 
-use crate::fold_db_core::orchestration::keyword_extractor::KeywordExtractor;
+use crate::fold_db_core::orchestration::keyword_extractor::normalize_keywords;
 use crate::fold_node::FoldNode;
 use crate::ingestion::config::AIProvider;
 use crate::ingestion::decomposer;
@@ -179,11 +179,11 @@ fn remap_index_terms(
         .collect()
 }
 
-/// Normalize all keywords in an index_terms map using KeywordExtractor's normalizer.
+/// Normalize all keywords in an index_terms map.
 fn normalize_all_keywords(terms: HashMap<String, Vec<String>>) -> HashMap<String, Vec<String>> {
     terms
         .into_iter()
-        .map(|(field, kws)| (field, KeywordExtractor::normalize_keywords(kws)))
+        .map(|(field, kws)| (field, normalize_keywords(kws)))
         .collect()
 }
 
@@ -202,7 +202,7 @@ async fn extract_inline_index_terms(
             log_feature!(
                 LogFeature::Ingestion,
                 warn,
-                "Inline keyword extraction failed (LLM call): {} — will fall back to async indexing",
+                "Inline keyword extraction failed (LLM call): {} — keywords will not be indexed for this item",
                 e
             );
             return None;
@@ -215,7 +215,7 @@ async fn extract_inline_index_terms(
             log_feature!(
                 LogFeature::Ingestion,
                 warn,
-                "Inline keyword extraction failed (parse): {} — will fall back to async indexing",
+                "Inline keyword extraction failed (parse): {} — keywords will not be indexed for this item",
                 e
             );
             return None;
@@ -228,7 +228,7 @@ async fn extract_inline_index_terms(
             log_feature!(
                 LogFeature::Ingestion,
                 warn,
-                "Inline keyword extraction failed (deserialize): {} — will fall back to async indexing",
+                "Inline keyword extraction failed (deserialize): {} — keywords will not be indexed for this item",
                 e
             );
             return None;
@@ -251,7 +251,7 @@ async fn extract_inline_index_terms(
     }
 }
 
-/// Build a keyword extraction prompt for a set of fields (mirrors KeywordExtractor::build_prompt).
+/// Build a keyword extraction prompt for a set of fields.
 fn build_keyword_prompt(fields: &HashMap<String, Value>) -> String {
     let mut data_section = String::new();
     for (field_name, value) in fields {
