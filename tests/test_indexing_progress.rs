@@ -48,10 +48,6 @@ async fn test_indexing_progress_tracking() {
         db.schema_manager().approve("test_schema").await.unwrap();
     }
 
-    // Check initial status - must be within user context
-    let status = run_with_user(&user_id, async { node.get_indexing_status().await }).await;
-    assert_eq!(status.total_operations_processed, 0);
-
     // Perform mutation within user context
     let fields_and_values = {
         let mut map = HashMap::new();
@@ -64,7 +60,7 @@ async fn test_indexing_progress_tracking() {
 
     let key_value = KeyValue::new(Some("1".to_string()), None);
 
-    // Execute mutation within user context so IndexStatusTracker can save status
+    // Execute mutation within user context
     run_with_user(&user_id, async {
         processor
             .execute_mutation(
@@ -78,37 +74,23 @@ async fn test_indexing_progress_tracking() {
     })
     .await;
 
-    // Poll for status update - also within user context
-    let start = std::time::Instant::now();
-    // Increased timeout for CI reliability
-    let timeout = std::time::Duration::from_secs(15);
+    // Indexing is now rules-based and inline (happens synchronously during mutation write).
+    // Field names are always indexed during write_mutations_batch_async.
+    // Verify by searching for indexed field names.
+    let db = node.get_fold_db().await.unwrap();
 
-    let mut processed = 0;
-    while start.elapsed() < timeout {
-        let status = run_with_user(&user_id, async { node.get_indexing_status().await }).await;
-        if status.total_operations_processed > 0 {
-            processed = status.total_operations_processed;
-            break;
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-    }
+    // Field name "content" should be indexed (inline field-name indexing)
+    let field_results = db
+        .native_search_all_classifications("content")
+        .await
+        .expect("Field name search failed");
+    assert!(
+        !field_results.is_empty(),
+        "Field name 'content' should be indexed after mutation"
+    );
 
-    println!("Total operations processed: {}", processed);
-
-    // Progress tracking requires LLM-powered keyword extraction (IndexOrchestrator)
-    // Skip assertion if no LLM is configured (CI environment)
-    let has_llm = std::env::var("FOLD_OPENROUTER_API_KEY")
-        .map(|v| !v.is_empty())
-        .unwrap_or(false)
-        || std::env::var("OPENROUTER_API_KEY")
-            .map(|v| !v.is_empty())
-            .unwrap_or(false);
-    if has_llm {
-        assert!(
-            processed > 0,
-            "Should have processed indexing operations within timeout"
-        );
-    } else if processed == 0 {
-        println!("Skipping index progress assertion: no LLM configured");
-    }
+    println!(
+        "Indexing verified: content field-name results={}",
+        field_results.len()
+    );
 }
