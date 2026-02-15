@@ -1,37 +1,113 @@
 import { useState, useEffect, useCallback } from 'react'
 import { ingestionClient, systemClient } from '../api/clients'
 import { BROWSER_CONFIG } from '../constants/config'
-import SelectField from './form/SelectField'
 
 const TOTAL_STEPS = 4
 
 const OPENROUTER_MODELS = [
-  { value: 'google/gemini-2.0-flash-001', label: 'Gemini 2.0 Flash (Recommended)' },
+  { value: 'google/gemini-2.0-flash-001', label: 'Gemini 2.0 Flash' },
   { value: 'anthropic/claude-sonnet-4', label: 'Claude Sonnet 4' },
   { value: 'openai/gpt-4o-mini', label: 'GPT-4o Mini' },
   { value: 'meta-llama/llama-3.1-8b-instruct', label: 'Llama 3.1 8B' },
 ]
 
 const OLLAMA_MODELS = [
-  { value: 'llama3.1:8b', label: 'Llama 3.1 8B (Recommended)' },
+  { value: 'llama3.1:8b', label: 'Llama 3.1 8B' },
   { value: 'mistral:7b', label: 'Mistral 7B' },
   { value: 'gemma2:9b', label: 'Gemma 2 9B' },
 ]
 
+// Gruvbox-warm palette matching fold_db_website
+const colors = {
+  bg: '#282828',
+  bgElevated: '#3c3836',
+  border: '#504945',
+  text: '#ebdbb2',
+  textBright: '#fbf1c7',
+  dim: '#928374',
+  orange: '#fe8019',
+  yellow: '#fabd2f',
+  green: '#b8bb26',
+  blue: '#83a598',
+  purple: '#d3869b',
+  red: '#fb4934',
+  link: '#8ec07c',
+}
+
+const styles = {
+  overlay: {
+    position: 'fixed', top: 0, left: 0, width: '100%', height: '100%',
+    background: 'rgba(0,0,0,0.7)', zIndex: 1000,
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+  },
+  modal: {
+    background: colors.bgElevated, border: `1px solid ${colors.border}`,
+    padding: 0, maxWidth: '520px', width: '90%', maxHeight: '85vh',
+    overflowY: 'auto', color: colors.text,
+    fontFamily: "'IBM Plex Mono', monospace", fontSize: '14px', lineHeight: '1.5',
+  },
+  header: {
+    padding: '24px 24px 0',
+  },
+  body: {
+    padding: '0 24px 24px',
+  },
+  footer: {
+    padding: '12px 24px', borderTop: `1px solid ${colors.border}`,
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+  },
+  card: {
+    border: `1px solid ${colors.border}`, padding: '12px', marginBottom: '8px',
+  },
+  label: {
+    padding: '1px 6px', fontWeight: 700, color: colors.bg, display: 'inline-block',
+    fontSize: '12px', marginBottom: '4px',
+  },
+  btnPrimary: {
+    background: 'none', border: `1px solid ${colors.orange}`, color: colors.orange,
+    padding: '6px 16px', cursor: 'pointer', fontFamily: 'inherit', fontSize: 'inherit',
+    width: '100%', textAlign: 'center',
+  },
+  btnSecondary: {
+    background: 'none', border: `1px solid ${colors.border}`, color: colors.dim,
+    padding: '6px 16px', cursor: 'pointer', fontFamily: 'inherit', fontSize: 'inherit',
+  },
+  btnLink: {
+    background: 'none', border: 'none', color: colors.dim, cursor: 'pointer',
+    fontFamily: 'inherit', fontSize: '12px', padding: 0,
+  },
+  input: {
+    background: colors.bg, border: `1px solid ${colors.border}`, color: colors.text,
+    padding: '6px 8px', width: '100%', fontFamily: 'inherit', fontSize: 'inherit',
+    outline: 'none',
+  },
+  select: {
+    background: colors.bg, border: `1px solid ${colors.border}`, color: colors.text,
+    padding: '6px 8px', width: '100%', fontFamily: 'inherit', fontSize: 'inherit',
+    outline: 'none', appearance: 'auto',
+  },
+  pre: {
+    background: colors.bg, border: `1px solid ${colors.border}`,
+    padding: '8px', margin: '8px 0', fontFamily: 'inherit', fontSize: '12px',
+  },
+}
+
 function ProgressBar({ currentStep }) {
+  const segments = Array.from({ length: TOTAL_STEPS }, (_, i) => (
+    <div
+      key={i}
+      style={{
+        flex: 1, height: '3px',
+        background: i < currentStep ? colors.yellow : colors.border,
+      }}
+    />
+  ))
   return (
-    <div className="px-6 pt-5 pb-2">
-      <div className="flex gap-1.5">
-        {Array.from({ length: TOTAL_STEPS }, (_, i) => (
-          <div
-            key={i}
-            className={`h-1.5 flex-1 rounded-full ${
-              i < currentStep ? 'bg-primary' : 'bg-border'
-            }`}
-          />
-        ))}
-      </div>
-      <p className="text-xs text-tertiary mt-2">Step {currentStep} of {TOTAL_STEPS}</p>
+    <div style={styles.header}>
+      <div style={{ display: 'flex', gap: '4px' }}>{segments}</div>
+      <p style={{ fontSize: '12px', color: colors.dim, marginTop: '8px' }}>
+        Step {currentStep} of {TOTAL_STEPS}
+      </p>
     </div>
   )
 }
@@ -39,22 +115,31 @@ function ProgressBar({ currentStep }) {
 function WelcomeStep({ onNext }) {
   return (
     <div>
-      <h2 className="text-xl font-semibold mb-3">Welcome to FoldDB</h2>
-      <p className="text-secondary mb-4">
-        FoldDB is a schema-based database with AI-powered data ingestion. Let's get you set up in a few quick steps.
+      <p style={{ fontSize: '1.4em', fontWeight: 700, color: colors.orange, margin: '0.3em 0' }}>
+        Welcome to Fold DB
       </p>
-      <ul className="space-y-2 text-sm text-secondary mb-6">
-        <li className="flex items-start gap-2">
-          <span className="text-primary mt-0.5">1.</span>
-          <span>Configure your AI provider for ingestion and search</span>
-        </li>
-        <li className="flex items-start gap-2">
-          <span className="text-primary mt-0.5">2.</span>
-          <span>Review your storage configuration</span>
-        </li>
-      </ul>
-      <button onClick={onNext} className="btn-primary w-full">
-        Get Started
+      <p>
+        Your personal data node with AI-powered ingestion. Let&apos;s get you set up.
+      </p>
+
+      <div style={{ margin: '16px 0' }}>
+        <div style={styles.card}>
+          <p><span style={{ ...styles.label, background: colors.green }}>01 AI PROVIDER</span></p>
+          <p style={{ margin: '4px 0' }}>Configure OpenRouter or local Ollama for ingestion and search</p>
+        </div>
+        <div style={styles.card}>
+          <p><span style={{ ...styles.label, background: colors.blue }}>02 STORAGE</span></p>
+          <p style={{ margin: '4px 0' }}>Review your current storage configuration</p>
+        </div>
+      </div>
+
+      <button
+        onClick={onNext}
+        style={styles.btnPrimary}
+        onMouseEnter={e => { e.target.style.color = colors.yellow; e.target.style.borderColor = colors.yellow }}
+        onMouseLeave={e => { e.target.style.color = colors.orange; e.target.style.borderColor = colors.orange }}
+      >
+        [Get Started]
       </button>
     </div>
   )
@@ -65,6 +150,7 @@ function ConfigureAiStep({ onNext, onSkip, onConfigSaved }) {
   const [model, setModel] = useState('')
   const [apiKey, setApiKey] = useState('')
   const [ollamaModel, setOllamaModel] = useState('')
+  const [ollamaUrl, setOllamaUrl] = useState('http://localhost:11434')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [saveResult, setSaveResult] = useState(null)
@@ -79,6 +165,7 @@ function ConfigureAiStep({ onNext, onSkip, onConfigSaved }) {
         setProvider(cfg.provider || 'OpenRouter')
         if (cfg.openrouter?.model) setModel(cfg.openrouter.model)
         if (cfg.ollama?.model) setOllamaModel(cfg.ollama.model)
+        if (cfg.ollama?.base_url) setOllamaUrl(cfg.ollama.base_url)
         if (cfg.openrouter?.api_key && cfg.openrouter.api_key.includes('configured')) {
           setAlreadyConfigured(true)
         }
@@ -102,7 +189,7 @@ function ConfigureAiStep({ onNext, onSkip, onConfigSaved }) {
       },
       ollama: {
         model: provider === 'Ollama' ? (ollamaModel || OLLAMA_MODELS[0].value) : '',
-        base_url: 'http://localhost:11434',
+        base_url: ollamaUrl,
       },
     }
     try {
@@ -122,110 +209,121 @@ function ConfigureAiStep({ onNext, onSkip, onConfigSaved }) {
   }
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center py-8">
-        <div className="w-5 h-5 border-2 border-border border-t-primary rounded-full animate-spin" />
-      </div>
-    )
+    return <p style={{ color: colors.dim, textAlign: 'center', padding: '24px 0' }}>Loading configuration...</p>
   }
+
+  const models = provider === 'OpenRouter' ? OPENROUTER_MODELS : OLLAMA_MODELS
+  const currentModel = provider === 'OpenRouter' ? (model || OPENROUTER_MODELS[0].value) : (ollamaModel || OLLAMA_MODELS[0].value)
 
   return (
     <div>
-      <h2 className="text-xl font-semibold mb-1">Configure AI Provider</h2>
-      <p className="text-secondary text-sm mb-4">
-        FoldDB uses AI for data ingestion and search. Choose a provider below.
-      </p>
+      <h2 style={{ fontSize: 'inherit', fontWeight: 700, margin: '0 0 4px' }}>
+        <span style={{ color: colors.green }}>CONFIGURE AI</span>{' '}
+        <span style={{ color: colors.dim }}>Provider setup</span>
+      </h2>
+      <p>FoldDB uses AI for data ingestion and search.</p>
 
       {alreadyConfigured && (
-        <div className="bg-green-50 border border-green-200 px-3 py-2 mb-4 text-green-800 text-sm rounded">
-          AI provider is already configured. You can update it or skip this step.
+        <div style={{ ...styles.card, borderColor: colors.green, marginTop: '12px' }}>
+          <p><span style={{ ...styles.label, background: colors.green }}>CONFIGURED</span></p>
+          <p style={{ margin: '4px 0' }}>AI provider is already set up. Update below or skip.</p>
         </div>
       )}
 
-      <SelectField
-        name="provider"
-        label="Provider"
-        value={provider}
-        options={[
-          { value: 'OpenRouter', label: 'OpenRouter (Cloud)' },
-          { value: 'Ollama', label: 'Ollama (Local)' },
-        ]}
-        onChange={setProvider}
-      />
+      <div style={{ marginTop: '16px' }}>
+        <p style={{ color: colors.textBright, fontWeight: 700, marginBottom: '4px' }}>Provider</p>
+        <select
+          value={provider}
+          onChange={e => setProvider(e.target.value)}
+          style={styles.select}
+          data-testid="provider-select"
+        >
+          <option value="OpenRouter">OpenRouter (Cloud)</option>
+          <option value="Ollama">Ollama (Local)</option>
+        </select>
+      </div>
+
+      <div style={{ marginTop: '12px' }}>
+        <p style={{ color: colors.textBright, fontWeight: 700, marginBottom: '4px' }}>Model</p>
+        <select
+          value={currentModel}
+          onChange={e => provider === 'OpenRouter' ? setModel(e.target.value) : setOllamaModel(e.target.value)}
+          style={styles.select}
+          data-testid="model-select"
+        >
+          {models.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+        </select>
+      </div>
 
       {provider === 'OpenRouter' && (
-        <div className="mt-3 space-y-3">
-          <SelectField
-            name="model"
-            label="Model"
-            value={model || OPENROUTER_MODELS[0].value}
-            options={OPENROUTER_MODELS}
-            onChange={setModel}
+        <div style={{ marginTop: '12px' }}>
+          <p style={{ color: colors.textBright, fontWeight: 700, marginBottom: '4px' }}>API Key</p>
+          <input
+            type="password"
+            value={apiKey}
+            onChange={e => setApiKey(e.target.value)}
+            placeholder={alreadyConfigured ? '***configured***' : 'sk-or-...'}
+            style={styles.input}
+            data-testid="api-key-input"
           />
-          <div>
-            <label className="block text-sm font-medium text-primary mb-1">API Key</label>
-            <input
-              type="password"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              placeholder={alreadyConfigured ? '***configured***' : 'sk-or-...'}
-              className="input w-full"
-              data-testid="api-key-input"
-            />
+          <p style={{ marginTop: '4px' }}>
             <a
               href="https://openrouter.ai/keys"
               target="_blank"
               rel="noopener noreferrer"
-              className="text-xs text-blue-600 hover:underline mt-1 inline-block"
+              style={{ color: colors.link, fontSize: '12px', textDecoration: 'none' }}
             >
-              Get an API key from OpenRouter
+              [Get API key from OpenRouter]
             </a>
-          </div>
+          </p>
         </div>
       )}
 
       {provider === 'Ollama' && (
-        <div className="mt-3 space-y-3">
-          <SelectField
-            name="ollama-model"
-            label="Model"
-            value={ollamaModel || OLLAMA_MODELS[0].value}
-            options={OLLAMA_MODELS}
-            onChange={setOllamaModel}
-          />
-          <div className="bg-surface-secondary border border-border px-3 py-2 text-sm rounded">
-            <p className="font-medium mb-1">Setup</p>
-            <p className="text-secondary">
-              Make sure Ollama is running locally. Pull a model with:
+        <>
+          <div style={{ marginTop: '12px' }}>
+            <p style={{ color: colors.textBright, fontWeight: 700, marginBottom: '4px' }}>Ollama URL</p>
+            <input
+              type="text"
+              value={ollamaUrl}
+              onChange={e => setOllamaUrl(e.target.value)}
+              placeholder="http://localhost:11434"
+              style={styles.input}
+            />
+            <p style={{ color: colors.dim, fontSize: '12px', marginTop: '4px' }}>
+              Use a LAN address (e.g. http://192.168.1.100:11434) for a remote instance
             </p>
-            <code className="block mt-1 text-xs bg-surface px-2 py-1 border border-border rounded">
-              ollama pull {ollamaModel || OLLAMA_MODELS[0].value}
-            </code>
           </div>
-        </div>
+          <div style={{ ...styles.pre, marginTop: '12px' }}>
+            <p style={{ color: colors.textBright, fontWeight: 700 }}>Setup</p>
+            <p style={{ color: colors.dim }}>Make sure Ollama is running:</p>
+            <p style={{ color: colors.yellow, marginTop: '4px' }}>$ ollama pull {currentModel}</p>
+          </div>
+        </>
       )}
 
       {saveResult === 'success' && (
-        <div className="mt-3 bg-green-50 border border-green-200 px-3 py-2 text-green-800 text-sm rounded">
-          Configuration saved successfully!
-        </div>
+        <p style={{ color: colors.green, marginTop: '8px' }}>Configuration saved successfully!</p>
       )}
       {saveResult === 'error' && (
-        <div className="mt-3 bg-red-50 border border-red-200 px-3 py-2 text-red-800 text-sm rounded">
-          Failed to save configuration. Please try again.
-        </div>
+        <p style={{ color: colors.red, marginTop: '8px' }}>Failed to save. Please try again.</p>
       )}
 
-      <div className="flex gap-3 mt-5">
+      <div style={{ display: 'flex', gap: '8px', marginTop: '16px' }}>
         <button
           onClick={handleSave}
           disabled={saving || (provider === 'OpenRouter' && !apiKey && !alreadyConfigured)}
-          className="btn-primary flex-1"
+          style={{
+            ...styles.btnPrimary, flex: 1,
+            opacity: (saving || (provider === 'OpenRouter' && !apiKey && !alreadyConfigured)) ? 0.4 : 1,
+          }}
+          onMouseEnter={e => { e.target.style.color = colors.yellow; e.target.style.borderColor = colors.yellow }}
+          onMouseLeave={e => { e.target.style.color = colors.orange; e.target.style.borderColor = colors.orange }}
         >
-          {saving ? 'Saving...' : 'Save & Continue'}
+          {saving ? 'Saving...' : '[Save & Continue]'}
         </button>
-        <button onClick={onSkip} className="btn-secondary flex-1">
-          Skip for Now
+        <button onClick={onSkip} style={{ ...styles.btnSecondary, flex: 1 }}>
+          [Skip]
         </button>
       </div>
     </div>
@@ -234,78 +332,77 @@ function ConfigureAiStep({ onNext, onSkip, onConfigSaved }) {
 
 function StorageInfoStep({ onNext, storageInfo }) {
   const isLocal = !storageInfo || storageInfo.type === 'local'
-  const mode = isLocal ? 'Local' : 'Cloud'
 
   return (
     <div>
-      <h2 className="text-xl font-semibold mb-1">Storage Configuration</h2>
-      <p className="text-secondary text-sm mb-4">
-        Here's how your data is currently being stored.
-      </p>
+      <h2 style={{ fontSize: 'inherit', fontWeight: 700, margin: '0 0 4px' }}>
+        <span style={{ color: colors.blue }}>STORAGE</span>{' '}
+        <span style={{ color: colors.dim }}>Current configuration</span>
+      </h2>
 
-      <div className="bg-surface-secondary border border-border px-4 py-3 rounded mb-4">
-        <div className="flex items-center gap-3">
-          <span className="text-2xl">{isLocal ? '\uD83D\uDCBB' : '\u2601\uFE0F'}</span>
-          <div>
-            <p className="font-medium">{mode} Storage</p>
-            <p className="text-secondary text-sm">
-              {isLocal
-                ? 'Data is stored locally using Sled embedded database.'
-                : `Data is stored in AWS (DynamoDB + S3) in ${storageInfo.region || 'us-west-2'}.`}
-            </p>
-          </div>
-        </div>
-      </div>
-
-      <div className="bg-surface-secondary border border-border px-3 py-2 text-sm rounded">
-        <p className="font-medium mb-1">Switching Modes</p>
-        <p className="text-secondary">
-          Start the server with <code className="bg-surface px-1 border border-border rounded">./run.sh --local</code> for
-          local mode or <code className="bg-surface px-1 border border-border rounded">./run.sh</code> for cloud mode.
+      <div style={{ ...styles.card, marginTop: '12px' }}>
+        <p>
+          <span style={{ ...styles.label, background: isLocal ? colors.blue : colors.purple }}>
+            {isLocal ? 'LOCAL' : 'CLOUD'}
+          </span>
+        </p>
+        <p style={{ margin: '4px 0' }}>
+          {isLocal
+            ? 'Data is stored locally using Sled embedded database.'
+            : `Data is stored in AWS (DynamoDB + S3) in ${storageInfo?.region || 'us-west-2'}.`}
         </p>
       </div>
 
-      <button onClick={onNext} className="btn-primary w-full mt-5">
-        Continue
+      <div style={styles.pre}>
+        <p style={{ color: colors.textBright, fontWeight: 700 }}>Switching Modes</p>
+        <p style={{ color: colors.dim }}>
+          <span style={{ color: colors.yellow }}>$ ./run.sh --local</span>  Local (Sled){'\n'}
+          <span style={{ color: colors.yellow }}>$ ./run.sh</span>          Cloud (DynamoDB + S3)
+        </p>
+      </div>
+
+      <button
+        onClick={onNext}
+        style={{ ...styles.btnPrimary, marginTop: '16px' }}
+        onMouseEnter={e => { e.target.style.color = colors.yellow; e.target.style.borderColor = colors.yellow }}
+        onMouseLeave={e => { e.target.style.color = colors.orange; e.target.style.borderColor = colors.orange }}
+      >
+        [Continue]
       </button>
     </div>
   )
 }
 
 function DoneStep({ onComplete }) {
-  const features = [
-    {
-      title: 'Smart Folder Sync',
-      description: 'Point FoldDB at a folder and let AI categorize and ingest your files automatically.',
-    },
-    {
-      title: 'AI Query',
-      description: 'Search your data using natural language queries powered by your configured AI provider.',
-    },
-    {
-      title: 'Advanced Features',
-      description: 'Explore schemas, mutations, transforms, and native indexing for full control over your data.',
-    },
-  ]
-
   return (
     <div>
-      <h2 className="text-xl font-semibold mb-1">You're All Set!</h2>
-      <p className="text-secondary text-sm mb-4">
-        FoldDB is ready to use. Here are some things you can try:
+      <p style={{ fontSize: '1.4em', fontWeight: 700, color: colors.orange, margin: '0.3em 0' }}>
+        You&apos;re all set.
       </p>
+      <p>Your Personal Data Node is ready. Here&apos;s what you can do:</p>
 
-      <div className="space-y-3 mb-6">
-        {features.map((f) => (
-          <div key={f.title} className="bg-surface-secondary border border-border px-3 py-2 rounded">
-            <p className="font-medium text-sm">{f.title}</p>
-            <p className="text-secondary text-xs mt-0.5">{f.description}</p>
-          </div>
-        ))}
+      <div style={{ margin: '16px 0' }}>
+        <div style={styles.card}>
+          <p><span style={{ ...styles.label, background: colors.green }}>SMART FOLDER SYNC</span></p>
+          <p style={{ margin: '4px 0' }}>Point FoldDB at a folder and let AI categorize and ingest your files.</p>
+        </div>
+        <div style={styles.card}>
+          <p><span style={{ ...styles.label, background: colors.blue }}>AI QUERY</span></p>
+          <p style={{ margin: '4px 0' }}>Search your data using natural language queries.</p>
+        </div>
+        <div style={styles.card}>
+          <p><span style={{ ...styles.label, background: colors.purple }}>SCHEMAS & MUTATIONS</span></p>
+          <p style={{ margin: '4px 0' }}>Explore schemas, transforms, and native indexing for full control.</p>
+        </div>
       </div>
 
-      <button onClick={onComplete} className="btn-primary w-full">
-        Start Using FoldDB
+      <button
+        onClick={onComplete}
+        style={styles.btnPrimary}
+        onMouseEnter={e => { e.target.style.color = colors.yellow; e.target.style.borderColor = colors.yellow }}
+        onMouseLeave={e => { e.target.style.color = colors.orange; e.target.style.borderColor = colors.orange }}
+      >
+        [Start Using FoldDB]
       </button>
     </div>
   )
@@ -316,7 +413,6 @@ export default function OnboardingWizard({ isOpen, onClose }) {
   const [aiWasConfigured, setAiWasConfigured] = useState(false)
   const [storageInfo, setStorageInfo] = useState(null)
 
-  // Fetch storage info on mount
   useEffect(() => {
     if (!isOpen) return
     systemClient.getDatabaseConfig().then(response => {
@@ -343,48 +439,30 @@ export default function OnboardingWizard({ isOpen, onClose }) {
 
   const renderStep = () => {
     switch (currentStep) {
-      case 1:
-        return <WelcomeStep onNext={goNext} />
-      case 2:
-        return (
-          <ConfigureAiStep
-            onNext={goNext}
-            onSkip={goNext}
-            onConfigSaved={() => setAiWasConfigured(true)}
-          />
-        )
-      case 3:
-        return <StorageInfoStep onNext={goNext} storageInfo={storageInfo} />
-      case 4:
-        return <DoneStep onComplete={handleComplete} />
-      default:
-        return null
+      case 1: return <WelcomeStep onNext={goNext} />
+      case 2: return <ConfigureAiStep onNext={goNext} onSkip={goNext} onConfigSaved={() => setAiWasConfigured(true)} />
+      case 3: return <StorageInfoStep onNext={goNext} storageInfo={storageInfo} />
+      case 4: return <DoneStep onComplete={handleComplete} />
+      default: return null
     }
   }
 
   return (
-    <div className="modal-overlay" onClick={(e) => e.stopPropagation()}>
-      <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '480px' }}>
+    <div style={styles.overlay} onClick={e => e.stopPropagation()}>
+      <div style={styles.modal} onClick={e => e.stopPropagation()}>
         <ProgressBar currentStep={currentStep} />
-
-        <div className="modal-body px-6 py-4">
-          {renderStep()}
-        </div>
-
-        <div className="modal-footer px-6 py-3 flex items-center justify-between border-t border-border">
+        <div style={styles.body}>{renderStep()}</div>
+        <div style={styles.footer}>
           <div>
             {currentStep > 1 && currentStep < 4 && (
-              <button onClick={goBack} className="btn-secondary btn-sm">
-                Back
+              <button onClick={goBack} style={styles.btnSecondary}>
+                [Back]
               </button>
             )}
           </div>
           <div>
             {currentStep < 4 && (
-              <button
-                onClick={handleSkipTutorial}
-                className="text-sm text-tertiary hover:text-secondary bg-transparent border-none cursor-pointer"
-              >
+              <button onClick={handleSkipTutorial} style={styles.btnLink}>
                 Skip Tutorial
               </button>
             )}

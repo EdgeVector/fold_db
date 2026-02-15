@@ -92,21 +92,37 @@ function AiConfigSettings({ configSaveStatus, setConfigSaveStatus, onClose }) {
           </div>
         )}
 
+        {aiProvider === 'Ollama' && (
+          <div>
+            <label className="label">Ollama URL</label>
+            <input
+              type="text"
+              value={ollamaBaseUrl}
+              onChange={(e) => setOllamaBaseUrl(e.target.value)}
+              placeholder="http://localhost:11434"
+              className="input"
+            />
+            <p className="text-xs text-secondary mt-1">Use a LAN address for a remote instance (e.g. http://192.168.1.100:11434)</p>
+          </div>
+        )}
+
         <div>
           <button onClick={() => setShowAdvanced(!showAdvanced)} className="text-sm text-secondary hover:text-primary flex items-center gap-1">
             <span>{showAdvanced ? '▼' : '▶'}</span> Advanced
           </button>
           {showAdvanced && (
             <div className="mt-3 space-y-3 pl-4 border-l-2 border-border">
-              <div>
-                <label className="label">Base URL</label>
-                <input
-                  type="text"
-                  value={aiProvider === 'OpenRouter' ? openrouterBaseUrl : ollamaBaseUrl}
-                  onChange={(e) => aiProvider === 'OpenRouter' ? setOpenrouterBaseUrl(e.target.value) : setOllamaBaseUrl(e.target.value)}
-                  className="input"
-                />
-              </div>
+              {aiProvider === 'OpenRouter' && (
+                <div>
+                  <label className="label">Base URL</label>
+                  <input
+                    type="text"
+                    value={openrouterBaseUrl}
+                    onChange={(e) => setOpenrouterBaseUrl(e.target.value)}
+                    className="input"
+                  />
+                </div>
+              )}
             </div>
           )}
         </div>
