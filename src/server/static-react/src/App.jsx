@@ -12,6 +12,7 @@ import IngestionTab from './components/tabs/IngestionTab'
 import FileUploadTab from './components/tabs/FileUploadTab'
 import NativeIndexTab from './components/tabs/NativeIndexTab'
 import SmartFolderTab from './components/tabs/SmartFolderTab'
+import DataBrowserTab from './components/tabs/DataBrowserTab'
 import SettingsModal from './components/SettingsModal'
 import OnboardingWizard from './components/OnboardingWizard'
 import LogSidebar from './components/LogSidebar'
@@ -31,6 +32,7 @@ const HASH_TO_TAB = {
   'native-index': 'native-index',
   'llm-query': 'llm-query', 'ai-query': 'llm-query',
   'smart-folder': 'smart-folder',
+  'data-browser': 'data-browser',
 }
 
 function resolveTabFromHash() {
@@ -172,6 +174,8 @@ export function AppContent() {
         return <FileUploadTab onResult={handleOperationResult} />
       case 'native-index':
         return <NativeIndexTab onResult={handleOperationResult} />
+      case 'data-browser':
+        return <DataBrowserTab />
       default:
         return null
     }

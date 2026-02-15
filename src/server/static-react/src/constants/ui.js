@@ -28,6 +28,7 @@ export const DEFAULT_TABS = [
     icon: "🧭",
     group: "advanced",
   },
+  { id: "data-browser", label: "Data Browser", icon: "🗄️", group: "advanced" },
 ];
 
 // Button Text Constants

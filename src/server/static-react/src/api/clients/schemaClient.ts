@@ -348,6 +348,26 @@ export class UnifiedSchemaClient {
   }
 
   /**
+   * List keys for a schema with pagination
+   * UNPROTECTED - No authentication required
+   */
+  async listSchemaKeys(
+    schemaName: string,
+    offset = 0,
+    limit = 50,
+  ): Promise<EnhancedApiResponse<{ keys: Array<{ hash?: string; range?: string }>; total_count: number }>> {
+    return this.client.get(
+      `/schema/${encodeURIComponent(schemaName)}/keys?offset=${offset}&limit=${limit}`,
+      {
+        timeout: 8000,
+        retries: 2,
+        cacheable: true,
+        cacheTtl: 30000,
+      },
+    );
+  }
+
+  /**
    * Get backfill status by hash
    * UNPROTECTED - No authentication required
    */

@@ -239,6 +239,42 @@ pub async fn load_schemas(
     }
 }
 
+/// Response for listing keys in a schema
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bindings", derive(TS))]
+#[cfg_attr(
+    feature = "ts-bindings",
+    ts(export, export_to = "src/fold_node/static-react/src/types/")
+)]
+pub struct SchemaKeysResponse {
+    /// Keys in this page
+    pub keys: Vec<crate::schema::types::KeyValue>,
+    /// Total number of keys across all pages
+    pub total_count: usize,
+}
+
+/// List keys for a schema with pagination
+pub async fn list_schema_keys(
+    schema_name: &str,
+    offset: usize,
+    limit: usize,
+    user_hash: &str,
+    node: &FoldNode,
+) -> HandlerResult<SchemaKeysResponse> {
+    let processor = OperationProcessor::new(node.clone());
+
+    match processor.list_schema_keys(schema_name, offset, limit).await {
+        Ok((keys, total_count)) => Ok(ApiResponse::success_with_user(
+            SchemaKeysResponse { keys, total_count },
+            user_hash,
+        )),
+        Err(e) => Err(HandlerError::Internal(format!(
+            "Failed to list keys: {}",
+            e
+        ))),
+    }
+}
+
 /// Response for backfill status
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-bindings", derive(TS))]

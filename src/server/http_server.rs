@@ -299,6 +299,10 @@ impl FoldHttpServer {
             .route("/schemas/load", web::post().to(schema_routes::load_schemas))
             .route("/schema/{name}", web::get().to(schema_routes::get_schema))
             .route(
+                "/schema/{name}/keys",
+                web::get().to(schema_routes::list_schema_keys),
+            )
+            .route(
                 "/schema/{name}/approve",
                 web::post().to(schema_routes::approve_schema),
             )

@@ -1,5 +1,6 @@
 use crate::error::{FoldDbError, FoldDbResult};
 use crate::ingestion::ingestion_service::IngestionService;
+use crate::schema::types::field::Field;
 use crate::schema::types::{KeyValue, Mutation, Query};
 #[cfg(test)]
 use crate::schema::types::field::HashRangeFilter;
@@ -557,6 +558,44 @@ impl OperationProcessor {
     }
 
     // Removed execute_sync as part of eliminating the generic execute path
+
+    /// List keys for a schema with pagination.
+    /// Returns (paginated_keys, total_count).
+    pub async fn list_schema_keys(
+        &self,
+        schema_name: &str,
+        offset: usize,
+        limit: usize,
+    ) -> FoldDbResult<(Vec<KeyValue>, usize)> {
+        let db = self
+            .node
+            .get_fold_db()
+            .await
+            .map_err(|e| FoldDbError::Database(e.to_string()))?;
+
+        let mut schema = db
+            .schema_manager
+            .get_schema(schema_name)
+            .map_err(|e| FoldDbError::Database(e.to_string()))?
+            .ok_or_else(|| {
+                FoldDbError::Database(format!("Schema '{}' not found", schema_name))
+            })?;
+
+        // Pick the first runtime field to extract keys from
+        let field = schema
+            .runtime_fields
+            .values_mut()
+            .next()
+            .ok_or_else(|| {
+                FoldDbError::Database(format!("Schema '{}' has no fields", schema_name))
+            })?;
+
+        field.refresh_from_db(&db.db_ops).await;
+        let all_keys = field.get_all_keys();
+        let total = all_keys.len();
+        let page = all_keys.into_iter().skip(offset).take(limit).collect();
+        Ok((page, total))
+    }
 
     /// Search the native word index for a term.
     pub async fn native_index_search(&self, term: &str) -> FoldDbResult<Vec<IndexResult>> {

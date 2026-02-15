@@ -102,6 +102,19 @@ impl Field for FieldVariant {
 }
 
 impl FieldVariant {
+    /// Returns all keys present in this field's molecule.
+    pub fn get_all_keys(&self) -> Vec<KeyValue> {
+        match self {
+            Self::Single(_) => vec![KeyValue::new(None, None)],
+            Self::Range(f) => f
+                .get_all_keys()
+                .into_iter()
+                .map(|range| KeyValue::new(None, Some(range)))
+                .collect(),
+            Self::HashRange(f) => f.get_all_keys(),
+        }
+    }
+
     /// Returns the current molecule version, if a molecule is present.
     #[must_use]
     pub fn molecule_version(&self) -> Option<u64> {

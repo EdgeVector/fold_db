@@ -124,6 +124,52 @@ pub async fn block_schema(path: web::Path<String>, state: web::Data<AppState>) -
     }
 }
 
+/// Query parameters for schema keys pagination
+#[derive(Debug, Deserialize)]
+pub struct SchemaKeysQuery {
+    #[serde(default)]
+    pub offset: Option<usize>,
+    #[serde(default)]
+    pub limit: Option<usize>,
+}
+
+/// List keys for a schema with pagination
+#[utoipa::path(
+    get,
+    path = "/api/schema/{name}/keys",
+    tag = "schemas",
+    params(
+        ("name" = String, Path, description = "Schema name"),
+        ("offset" = Option<usize>, Query, description = "Pagination offset (default 0)"),
+        ("limit" = Option<usize>, Query, description = "Page size (default 50)")
+    ),
+    responses(
+        (status = 200, description = "Paginated list of keys"),
+        (status = 500, description = "Server error")
+    )
+)]
+pub async fn list_schema_keys(
+    path: web::Path<String>,
+    query: web::Query<SchemaKeysQuery>,
+    state: web::Data<AppState>,
+) -> impl Responder {
+    let name = path.into_inner();
+    let offset = query.offset.unwrap_or(0);
+    let limit = query.limit.unwrap_or(50);
+
+    let (user_hash, node_arc) = match require_node(&state).await {
+        Ok(res) => res,
+        Err(response) => return response,
+    };
+
+    let node = node_arc.read().await;
+
+    match schema_handlers::list_schema_keys(&name, offset, limit, &user_hash, &node).await {
+        Ok(response) => HttpResponse::Ok().json(response),
+        Err(e) => handler_error_to_response(e),
+    }
+}
+
 /// Get backfill status by hash
 #[utoipa::path(
     get,
