@@ -13,6 +13,7 @@ import FileUploadTab from './components/tabs/FileUploadTab'
 import NativeIndexTab from './components/tabs/NativeIndexTab'
 import SmartFolderTab from './components/tabs/SmartFolderTab'
 import SettingsModal from './components/SettingsModal'
+import OnboardingWizard from './components/OnboardingWizard'
 import LogSidebar from './components/LogSidebar'
 import { useApprovedSchemas } from './hooks/useApprovedSchemas.js'
 import { useIngestionStatus } from './hooks/useIngestionStatus'
@@ -45,6 +46,10 @@ export function AppContent() {
   const [results, setResults] = useState(null)
   const [setupDismissed, setSetupDismissed] = useState(
     () => localStorage.getItem('folddb_setup_dismissed') === '1'
+  )
+  const [isOnboardingOpen, setIsOnboardingOpen] = useState(false)
+  const [onboardingCompleted, setOnboardingCompleted] = useState(
+    () => localStorage.getItem(BROWSER_CONFIG.STORAGE_KEYS.ONBOARDING_COMPLETED) === '1'
   )
 
   // Sync activeTab with URL hash changes
@@ -101,6 +106,20 @@ export function AppContent() {
     }
   }, [dispatch, isAuthenticated])
 
+  // Show onboarding wizard for first-time users
+  useEffect(() => {
+    if (isAuthenticated && !onboardingCompleted) {
+      const timer = setTimeout(() => setIsOnboardingOpen(true), 500)
+      return () => clearTimeout(timer)
+    }
+  }, [isAuthenticated, onboardingCompleted])
+
+  const handleOnboardingClose = () => {
+    setIsOnboardingOpen(false)
+    setOnboardingCompleted(true)
+    refetchIngestionStatus()
+  }
+
   // Only fetch schemas when authenticated
   const {
     isLoading: schemasLoading,
@@ -109,9 +128,9 @@ export function AppContent() {
   } = useApprovedSchemas({ enabled: isAuthenticated })
 
   // Check AI configuration status for setup banner
-  const { ingestionStatus } = useIngestionStatus()
+  const { ingestionStatus, refetchIngestionStatus } = useIngestionStatus()
   const aiConfigured = ingestionStatus?.enabled && ingestionStatus?.configured
-  const showSetupBanner = isAuthenticated && ingestionStatus && !aiConfigured && !setupDismissed
+  const showSetupBanner = isAuthenticated && ingestionStatus && !aiConfigured && !setupDismissed && !isOnboardingOpen && onboardingCompleted
 
   const handleTabChange = (tab) => {
     setActiveTab(tab)
@@ -179,6 +198,7 @@ export function AppContent() {
     <div className="h-screen flex flex-col bg-surface overflow-hidden">
       <Header onSettingsClick={() => setIsSettingsOpen(true)} />
       <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
+      <OnboardingWizard isOpen={isOnboardingOpen} onClose={handleOnboardingClose} />
 
       {showSetupBanner && (
         <div className="bg-blue-50 border-b border-blue-200 px-8 py-3 flex items-center justify-between">
