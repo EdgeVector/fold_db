@@ -112,6 +112,86 @@ jobs:
           tag: ${{ github.ref }}
           overwrite: true
 
+      - name: Create tarball
+        shell: bash
+        run: |
+          cd dist
+          tar czf ${{ matrix.artifact_name }}-${{ steps.get_version.outputs.version }}.tar.gz \
+            ${{ matrix.artifact_name }}-${{ steps.get_version.outputs.version }}
+
+      - name: Upload tarball to release
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: dist/${{ matrix.artifact_name }}-${{ steps.get_version.outputs.version }}.tar.gz
+          asset_name: ${{ matrix.artifact_name }}-${{ steps.get_version.outputs.version }}.tar.gz
+          tag: ${{ github.ref }}
+          overwrite: true
+
+  # Update Homebrew formula with new version and SHA256 hashes
+  update-homebrew:
+    name: Update Homebrew Formula
+    needs: [build-cli]
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: master
+
+      - name: Get version from tag
+        id: get_version
+        run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Download tarballs and compute SHA256
+        run: |
+          VERSION=${{ steps.get_version.outputs.version }}
+          BASE="https://github.com/shiba4life/fold_db/releases/download/v${VERSION}"
+          for name in folddb-macos-aarch64 folddb-macos-x86_64 folddb-linux-x86_64 \
+                       folddb_server-macos-aarch64 folddb_server-macos-x86_64 folddb_server-linux-x86_64; do
+            curl -sL "${BASE}/${name}-${VERSION}.tar.gz" -o "${name}.tar.gz"
+            sha=$(sha256sum "${name}.tar.gz" | cut -d' ' -f1)
+            # Convert hyphens to underscores for valid bash variable names
+            env_name=$(echo "${name}" | tr '-' '_')
+            echo "${env_name}_SHA=${sha}" >> $GITHUB_ENV
+          done
+
+      - name: Update formula version and SHA256 values
+        run: |
+          VERSION=${{ steps.get_version.outputs.version }}
+          FORMULA=HomebrewFormula/folddb.rb
+
+          # Update version
+          sed -i "s/^  version \".*\"/  version \"${VERSION}\"/" "$FORMULA"
+
+          # Helper: replace the sha256 on the line following a url containing $1
+          update_sha() {
+            local url_pattern="$1"
+            local new_sha="$2"
+            # Find line number of the url, then replace sha256 on the next line
+            local line
+            line=$(grep -n "$url_pattern" "$FORMULA" | head -1 | cut -d: -f1)
+            if [ -n "$line" ]; then
+              local sha_line=$((line + 1))
+              sed -i "${sha_line}s/sha256 \".*\"/sha256 \"${new_sha}\"/" "$FORMULA"
+            fi
+          }
+
+          update_sha "folddb-macos-aarch64-#{version}.tar.gz" "$folddb_macos_aarch64_SHA"
+          update_sha "folddb-macos-x86_64-#{version}.tar.gz"  "$folddb_macos_x86_64_SHA"
+          update_sha "folddb-linux-x86_64-#{version}.tar.gz"  "$folddb_linux_x86_64_SHA"
+          update_sha "folddb_server-macos-aarch64-#{version}.tar.gz" "$folddb_server_macos_aarch64_SHA"
+          update_sha "folddb_server-macos-x86_64-#{version}.tar.gz"  "$folddb_server_macos_x86_64_SHA"
+          update_sha "folddb_server-linux-x86_64-#{version}.tar.gz"  "$folddb_server_linux_x86_64_SHA"
+
+      - name: Commit and push formula update
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add HomebrewFormula/folddb.rb
+          git diff --cached --quiet || git commit -m "brew: update folddb to ${{ steps.get_version.outputs.version }}"
+          git push
+
   # Build native macOS apps
   build-macos-app:
     name: Build macOS Native App
@@ -232,7 +312,7 @@ jobs:
   # Create release notes
   create-release-notes:
     name: Create Release Notes
-    needs: [build-cli, build-macos-app]
+    needs: [build-cli, build-macos-app, update-homebrew]
     runs-on: ubuntu-latest
 
     steps:
@@ -254,6 +334,17 @@ jobs:
           overwrite: true
           body: |
             ## FoldDB ${{ github.ref_name }}
+
+            ### Install via Homebrew
+
+            ```bash
+            brew tap shiba4life/fold_db
+            brew install folddb
+            ```
+
+            This installs both `folddb` (CLI) and `folddb_server` (HTTP server with embedded UI).
+
+            ---
 
             ### Native macOS App (Recommended)
 
