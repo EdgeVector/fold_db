@@ -385,7 +385,9 @@ impl MutationManager {
 
                 // Flush index entries to storage so they're visible before events are published
                 if any_indexed {
-                    let _ = native_index_mgr.flush().await;
+                    if let Err(e) = native_index_mgr.flush().await {
+                        warn!("Inline indexing: flush failed for schema '{}': {}", schema_name, e);
+                    }
                 }
             }
 

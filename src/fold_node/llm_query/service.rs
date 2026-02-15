@@ -11,7 +11,6 @@ use crate::ingestion::{
 use crate::schema::types::{DeclarativeSchemaDefinition, Query};
 use crate::schema::SchemaWithState;
 use serde_json::Value;
-use std::collections::HashSet;
 
 /// Service for LLM-based query analysis and summarization
 pub struct LlmQueryService {
@@ -452,52 +451,7 @@ impl LlmQueryService {
         self.parse_query_terms_response(&response)
     }
 
-    /// Execute a complete AI-native index query workflow
-    pub async fn execute_ai_native_index_query(
-        &self,
-        user_query: &str,
-        schemas: &[crate::schema::SchemaWithState],
-        db_ops: &crate::db_operations::DbOperations,
-    ) -> Result<String, String> {
-        // Step 1: Generate native index search terms using AI
-        let search_terms = self
-            .generate_native_index_search_terms(user_query, schemas)
-            .await?;
-
-        // Step 2: Execute native index searches for each term
-        let mut all_results = Vec::new();
-        if let Some(native_index_mgr) = db_ops.native_index_manager() {
-            for term in &search_terms {
-                match native_index_mgr
-                    .search_all_classifications(term)
-                    .await
-                {
-                    Ok(mut results) => {
-                        log::debug!(
-                            "LLM Query: Term '{}' returned {} results",
-                            term,
-                            results.len()
-                        );
-                        all_results.append(&mut results);
-                    }
-                    Err(e) => {
-                        log::warn!("Native index search failed for term '{}': {}", term, e);
-                    }
-                }
-            }
-        }
-
-        log::info!(
-            "LLM Query: Collected {} total results for AI interpretation",
-            all_results.len()
-        );
-
-        // Step 3: Send results to AI for interpretation
-        self.interpret_native_index_results(user_query, &all_results)
-            .await
-    }
-
-    /// Search the native index and return deduplicated results (without AI interpretation)
+    /// Search the native index and return results (without AI interpretation)
     ///
     /// This is the first step of the AI-native index query workflow.
     /// Call `interpret_native_index_results` separately to get AI interpretation.
@@ -535,43 +489,12 @@ impl LlmQueryService {
             }
         }
 
-        log::debug!(
-            "LLM Query: Total results before deduplication: {}",
+        log::info!(
+            "LLM Query: Found {} results from native index",
             all_results.len()
         );
 
-        // Step 2.5: Deduplicate results based on schema_name + key_value + field
-        let deduplicated_results = self.deduplicate_results(all_results);
-
-        log::info!(
-            "LLM Query: Found {} deduplicated results from native index",
-            deduplicated_results.len()
-        );
-
-        Ok(deduplicated_results)
-    }
-
-    /// Execute a complete AI-native index query workflow and return both AI interpretation and raw results
-    pub async fn execute_ai_native_index_query_with_results(
-        &self,
-        user_query: &str,
-        schemas: &[crate::schema::SchemaWithState],
-        db_ops: &crate::db_operations::DbOperations,
-    ) -> Result<(String, Vec<crate::db_operations::IndexResult>), String> {
-        // Search the native index
-        let deduplicated_results = self.search_native_index(user_query, schemas, db_ops).await?;
-
-        log::info!(
-            "LLM Query: Sending {} results to AI for interpretation",
-            deduplicated_results.len()
-        );
-
-        // Send results to AI for interpretation
-        let ai_interpretation = self
-            .interpret_native_index_results(user_query, &deduplicated_results)
-            .await?;
-
-        Ok((ai_interpretation, deduplicated_results))
+        Ok(all_results)
     }
 
     /// Build prompt to analyze if a followup needs a new query
@@ -771,29 +694,6 @@ impl LlmQueryService {
         let prompt = self.build_native_index_search_prompt(user_query, schemas);
         let response = self.call_llm(&prompt).await?;
         self.parse_query_terms_response(&response)
-    }
-
-    /// Deduplicate results based on schema_name + key_value + field combination
-    fn deduplicate_results(
-        &self,
-        mut results: Vec<crate::db_operations::IndexResult>,
-    ) -> Vec<crate::db_operations::IndexResult> {
-        let _original_count = results.len();
-        let mut seen = HashSet::new();
-
-        results.retain(|result| {
-            // Create a unique key based on schema_name + key_value + field
-            let key = format!(
-                "{}:{}:{}",
-                result.schema_name,
-                serde_json::to_string(&result.key_value).unwrap_or_default(),
-                result.field
-            );
-
-            seen.insert(key)
-        });
-
-        results
     }
 
     /// Interpret native index search results using AI
