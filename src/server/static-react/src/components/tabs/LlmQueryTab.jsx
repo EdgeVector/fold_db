@@ -52,7 +52,7 @@ function LlmQueryTab({ onResult }) {
    * Process an AI agent response — shared by follow-up and new-query paths
    */
   const processAgentResponse = useCallback((agentResponse) => {
-    if (!agentResponse.ok) {
+    if (!agentResponse.success) {
       addToLog('system', `❌ Error: ${agentResponse.error || 'Failed to run AI agent query'}`);
       return;
     }
