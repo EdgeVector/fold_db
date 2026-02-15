@@ -26,15 +26,16 @@ function Header({ onSettingsClick }) {
           </a>
           <HeaderProgress />
           {ingestionStatus && (
-            <div
-              className="flex items-center gap-2 px-3 py-1.5 bg-surface-secondary border border-border"
-              title={aiReady ? `${ingestionStatus.provider} · ${ingestionStatus.model}` : 'AI not configured — open Settings'}
+            <button
+              onClick={aiReady ? undefined : onSettingsClick}
+              className={`flex items-center gap-2 px-3 py-1.5 bg-surface-secondary border border-border ${aiReady ? '' : 'cursor-pointer hover:border-red-400'}`}
+              title={aiReady ? `${ingestionStatus.provider} · ${ingestionStatus.model}` : 'AI not configured — click to open Settings'}
             >
               <div className={`w-2 h-2 rounded-full animate-pulse ${aiReady ? 'bg-green-600' : 'bg-red-600'}`} />
               <span className={`text-xs font-mono ${aiReady ? 'text-green-600' : 'text-red-600'}`}>
                 {aiReady ? `AI · ${ingestionStatus.provider}` : 'AI off'}
               </span>
-            </div>
+            </button>
           )}
         </div>
         <div className="flex items-center gap-4">

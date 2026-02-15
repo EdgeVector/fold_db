@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { FoldDbProvider } from './components/FoldDbProvider'
 import Header from './components/Header'
 import Footer from './components/Footer'
@@ -15,10 +15,10 @@ import SmartFolderTab from './components/tabs/SmartFolderTab'
 import SettingsModal from './components/SettingsModal'
 import LogSidebar from './components/LogSidebar'
 import { useApprovedSchemas } from './hooks/useApprovedSchemas.js'
+import { useIngestionStatus } from './hooks/useIngestionStatus'
 import { useAppSelector, useAppDispatch } from './store/hooks'
 import { initializeSystemKey, fetchNodePrivateKey, restoreSession } from './store/authSlice'
 import LoginPage from './components/LoginPage'
-import { useEffect } from 'react'
 import { DEFAULT_TAB } from './constants'
 import { BROWSER_CONFIG } from './constants/config'
 
@@ -43,6 +43,9 @@ export function AppContent() {
   const [activeTab, setActiveTab] = useState(() => resolveTabFromHash() || DEFAULT_TAB)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [results, setResults] = useState(null)
+  const [setupDismissed, setSetupDismissed] = useState(
+    () => localStorage.getItem('folddb_setup_dismissed') === '1'
+  )
 
   // Sync activeTab with URL hash changes
   useEffect(() => {
@@ -104,6 +107,11 @@ export function AppContent() {
     error: schemasError,
     refetch: refetchSchemas
   } = useApprovedSchemas({ enabled: isAuthenticated })
+
+  // Check AI configuration status for setup banner
+  const { ingestionStatus } = useIngestionStatus()
+  const aiConfigured = ingestionStatus?.enabled && ingestionStatus?.configured
+  const showSetupBanner = isAuthenticated && ingestionStatus && !aiConfigured && !setupDismissed
 
   const handleTabChange = (tab) => {
     setActiveTab(tab)
@@ -171,6 +179,31 @@ export function AppContent() {
     <div className="h-screen flex flex-col bg-surface overflow-hidden">
       <Header onSettingsClick={() => setIsSettingsOpen(true)} />
       <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
+
+      {showSetupBanner && (
+        <div className="bg-blue-50 border-b border-blue-200 px-8 py-3 flex items-center justify-between">
+          <span className="text-blue-800 text-sm">
+            Configure AI to get started — FoldDB needs OpenRouter or local Ollama for ingestion and search.
+          </span>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setIsSettingsOpen(true)}
+              className="bg-blue-600 text-white text-sm px-4 py-1.5 border-none cursor-pointer hover:bg-blue-700 transition-colors"
+            >
+              Configure AI
+            </button>
+            <button
+              onClick={() => {
+                setSetupDismissed(true)
+                localStorage.setItem('folddb_setup_dismissed', '1')
+              }}
+              className="text-blue-600 text-sm bg-transparent border-none cursor-pointer hover:text-blue-800 transition-colors"
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="flex flex-1 overflow-hidden">
         <div className="flex-1 flex flex-col overflow-hidden">

@@ -5,6 +5,7 @@ use super::routes::{
     query as query_routes, schema as schema_routes, security as security_routes,
     system as system_routes,
 };
+use super::static_assets::Asset;
 use crate::fold_node::llm_query;
 use crate::fold_node::FoldNode;
 use crate::error::{FoldDbError, FoldDbResult};
@@ -14,9 +15,8 @@ use crate::utils::http_errors;
 use crate::log_feature;
 use crate::logging::features::LogFeature;
 use actix_cors::Cors;
-use actix_files::Files;
 
-use actix_web::{web, App, HttpResponse, HttpServer as ActixHttpServer};
+use actix_web::{web, App, HttpRequest, HttpResponse, HttpServer as ActixHttpServer};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -200,9 +200,9 @@ impl FoldHttpServer {
                 .app_data(ingestion_service_data.clone())
                 .app_data(json_config)
                 .configure(Self::configure_api)
-                // Serve static files from the React app build directory
+                // Serve embedded static assets (React build)
                 // This must be last to allow API routes to take precedence
-                .service(Files::new("/", "./src/server/static-react/dist").index_file("index.html"))
+                .default_service(web::route().to(serve_embedded_asset))
         })
         .bind(&self.bind_address)
         .map_err(|e| FoldDbError::Config(format!("Failed to bind HTTP server: {}", e)))?
@@ -456,6 +456,29 @@ impl FoldHttpServer {
                     .route(web::get().to(security_routes::get_system_public_key)),
             ),
         );
+    }
+}
+
+/// Serve embedded static assets from the React build.
+/// Falls back to index.html for SPA client-side routing.
+async fn serve_embedded_asset(req: HttpRequest) -> HttpResponse {
+    let path = req.path();
+    // Try the exact path (with leading /)
+    let asset_path = if path == "/" { "/index.html" } else { path };
+
+    if let Some(content) = Asset::get(asset_path) {
+        let mime = mime_guess::from_path(asset_path).first_or_octet_stream();
+        HttpResponse::Ok()
+            .content_type(mime.as_ref())
+            .body(content.data.into_owned())
+    } else {
+        // SPA fallback: return index.html for unmatched routes
+        match Asset::get("/index.html") {
+            Some(content) => HttpResponse::Ok()
+                .content_type("text/html")
+                .body(content.data.into_owned()),
+            None => HttpResponse::NotFound().body("UI not available"),
+        }
     }
 }
 
