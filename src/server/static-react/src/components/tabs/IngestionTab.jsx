@@ -3,6 +3,8 @@ import { ingestionClient } from '../../api/clients'
 import { generateBlogPosts } from '../../data/sampleBlogPosts'
 import { twitterSamples, instagramSamples, linkedinSamples, tiktokSamples } from '../../data/sampleSocialPosts'
 
+const SAMPLES_ENABLED = import.meta.env.VITE_ENABLE_SAMPLES === 'true'
+
 function IngestionTab({ onResult }) {
   const [jsonData, setJsonData] = useState('')
   const [autoExecute, setAutoExecute] = useState(true)
@@ -35,13 +37,15 @@ function IngestionTab({ onResult }) {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <div className="flex gap-2">
-          {['blogposts', 'twitter', 'instagram', 'linkedin', 'tiktok'].map(t => (
-            <button key={t} onClick={() => loadSampleData(t)} className="btn-secondary btn-sm">
-              {t === 'blogposts' ? 'Blog Posts (100)' : t.charAt(0).toUpperCase() + t.slice(1)}
-            </button>
-          ))}
-        </div>
+        {SAMPLES_ENABLED && (
+          <div className="flex gap-2">
+            {['blogposts', 'twitter', 'instagram', 'linkedin', 'tiktok'].map(t => (
+              <button key={t} onClick={() => loadSampleData(t)} className="btn-secondary btn-sm">
+                {t === 'blogposts' ? 'Blog Posts (100)' : t.charAt(0).toUpperCase() + t.slice(1)}
+              </button>
+            ))}
+          </div>
+        )}
         <label className="flex items-center gap-2 text-sm cursor-pointer">
           <input type="checkbox" checked={autoExecute} onChange={(e) => setAutoExecute(e.target.checked)} className="checkbox" />
           <span className="text-secondary">Auto-execute</span>

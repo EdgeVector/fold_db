@@ -14,6 +14,7 @@ set -e
 #   --dev            Use dev schema service (default: prod)
 #   --reset-db       Reset database from test_db template
 #   --empty-db       Start with empty database
+#   --demo           Use isolated demo directories (~/.folddb/demo-data, demo-config)
 #   --region=REGION  AWS region for cloud mode (default: us-west-2)
 #
 # Examples:
@@ -185,12 +186,18 @@ start_http_server() {
     local features="$1"
     local schema_url="$2"
     local timeout="$3"
+    local demo_flag="$4"
+
+    local extra_args=""
+    if [ "$demo_flag" = true ]; then
+        extra_args="--demo"
+    fi
 
     echo "Starting the HTTP server on port 9001..."
     if [ -n "$features" ]; then
-        RUST_LOG=debug nohup cargo run --features "$features" --bin folddb_server -- --port 9001 --schema-service-url "$schema_url" > server.log 2>&1 &
+        RUST_LOG=debug nohup cargo run --features "$features" --bin folddb_server -- --port 9001 --schema-service-url "$schema_url" $extra_args > server.log 2>&1 &
     else
-        RUST_LOG=debug nohup cargo run --bin folddb_server -- --port 9001 --schema-service-url "$schema_url" > server.log 2>&1 &
+        RUST_LOG=debug nohup cargo run --bin folddb_server -- --port 9001 --schema-service-url "$schema_url" $extra_args > server.log 2>&1 &
     fi
     SERVER_PID=$!
 
@@ -221,6 +228,7 @@ start_vite_dev() {
     echo ""
 
     cd src/server/static-react
+    export VITE_ENABLE_SAMPLES=true
     npm run dev
 }
 
@@ -233,6 +241,7 @@ LOCAL_SCHEMA=false
 DEV_MODE=false
 RESET_DB=false
 EMPTY_DB=false
+DEMO_MODE=false
 REGION="us-west-2"
 TABLE_NAME="DataFoldStorage"
 
@@ -252,6 +261,9 @@ for arg in "$@"; do
             ;;
         --empty-db)
             EMPTY_DB=true
+            ;;
+        --demo)
+            DEMO_MODE=true
             ;;
         --region=*)
             REGION="${arg#*=}"
@@ -426,7 +438,7 @@ else
 fi
 
 # Start HTTP server
-if ! start_http_server "$CARGO_FEATURES" "$SCHEMA_SERVICE_URL" "$SERVER_TIMEOUT"; then
+if ! start_http_server "$CARGO_FEATURES" "$SCHEMA_SERVICE_URL" "$SERVER_TIMEOUT" "$DEMO_MODE"; then
     [ -n "$SCHEMA_SERVICE_PID" ] && kill $SCHEMA_SERVICE_PID 2>/dev/null || true
     exit 1
 fi

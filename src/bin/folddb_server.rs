@@ -31,22 +31,28 @@ struct Cli {
     /// Schema service URL (default: production schema service)
     #[arg(long)]
     schema_service_url: Option<String>,
+
+    /// Run in demo mode with isolated data/config directories
+    #[arg(long)]
+    demo: bool,
 }
 
-/// Resolve the default data directory: ~/.folddb/data
-fn default_data_dir() -> PathBuf {
+/// Resolve the default data directory: ~/.folddb/data (or ~/.folddb/demo-data in demo mode)
+fn default_data_dir(demo: bool) -> PathBuf {
+    let subdir = if demo { "demo-data" } else { "data" };
     dirs::home_dir()
         .unwrap_or_else(|| PathBuf::from("."))
         .join(".folddb")
-        .join("data")
+        .join(subdir)
 }
 
-/// Resolve the default config directory: ~/.folddb/config
-fn default_config_dir() -> PathBuf {
+/// Resolve the default config directory: ~/.folddb/config (or ~/.folddb/demo-config in demo mode)
+fn default_config_dir(demo: bool) -> PathBuf {
+    let subdir = if demo { "demo-config" } else { "config" };
     dirs::home_dir()
         .unwrap_or_else(|| PathBuf::from("."))
         .join(".folddb")
-        .join("config")
+        .join(subdir)
 }
 
 /// Check if a user-provided or env-var config file exists.
@@ -83,6 +89,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         port: http_port,
         data_dir,
         schema_service_url,
+        demo,
     } = Cli::parse();
 
     // Load node configuration
@@ -92,8 +99,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // When no config file exists, apply zero-config defaults so the binary
     // works out of the box after a fresh install.
     if !has_config_file {
-        let data_path = data_dir.unwrap_or_else(default_data_dir);
-        let config_path = default_config_dir();
+        let data_path = data_dir.unwrap_or_else(|| default_data_dir(demo));
+        let config_path = default_config_dir(demo);
 
         std::fs::create_dir_all(&data_path)?;
         std::fs::create_dir_all(&config_path)?;
@@ -107,7 +114,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Let ingestion config saves go to ~/.folddb/config
         std::env::set_var("DATAFOLD_CONFIG_DIR", &config_path);
 
-        println!("FoldDB Server");
+        let label = if demo { "FoldDB Server [DEMO]" } else { "FoldDB Server" };
+        println!("{}", label);
         println!("  Data:   {}", data_path.display());
         println!("  Config: {}", config_path.display());
         println!("  UI:     http://localhost:{}", http_port);
@@ -202,5 +210,33 @@ mod tests {
             cli.schema_service_url,
             Some("http://localhost:9002".to_string())
         );
+    }
+
+    #[test]
+    fn demo_flag() {
+        let cli = Cli::parse_from(["test", "--demo"]);
+        assert!(cli.demo);
+    }
+
+    #[test]
+    fn demo_flag_default_false() {
+        let cli = Cli::parse_from(["test"]);
+        assert!(!cli.demo);
+    }
+
+    #[test]
+    fn demo_data_dir() {
+        let normal = super::default_data_dir(false);
+        let demo = super::default_data_dir(true);
+        assert!(normal.ends_with("data"));
+        assert!(demo.ends_with("demo-data"));
+    }
+
+    #[test]
+    fn demo_config_dir() {
+        let normal = super::default_config_dir(false);
+        let demo = super::default_config_dir(true);
+        assert!(normal.ends_with("config"));
+        assert!(demo.ends_with("demo-config"));
     }
 }
