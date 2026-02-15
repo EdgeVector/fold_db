@@ -1,4 +1,4 @@
-/// Common constants used across the DataFold project.
+/// Common constants used across the FoldDB project.
 ///
 /// These defaults are used for command line arguments and
 /// configuration when explicit values are not provided.

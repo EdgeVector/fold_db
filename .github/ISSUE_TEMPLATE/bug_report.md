@@ -1,6 +1,6 @@
 ---
 name: Bug Report
-about: Report a bug to help us improve DataFold
+about: Report a bug to help us improve FoldDB
 title: '[BUG] '
 labels: bug
 assignees: ''
@@ -23,7 +23,7 @@ What actually happened.
 ## Environment
 - OS: [e.g., macOS 14.0, Ubuntu 22.04]
 - Rust version: [e.g., 1.75.0]
-- DataFold version: [e.g., 0.1.0]
+- FoldDB version: [e.g., 0.1.0]
 - Storage mode: [local/cloud]
 
 ## Logs

@@ -10,7 +10,7 @@
  *
  * @module useApprovedSchemas
  * @since 2.0.0
- * @see {@link https://github.com/datafold/datafold/docs/project_logic.md#schema-002} SCHEMA-002 compliance documentation
+ * @see {@link https://github.com/shiba4life/fold_db/docs/project_logic.md#schema-002} SCHEMA-002 compliance documentation
  */
 
 import { useEffect, useCallback } from "react";

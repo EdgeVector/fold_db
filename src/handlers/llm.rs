@@ -168,7 +168,7 @@ async fn generate_backfill_hash_for_transform(
 /// * `user_hash` - User identifier for isolation
 /// * `service` - LLM query service
 /// * `session_manager` - Session manager for tracking conversation state
-/// * `node` - DataFold node instance
+/// * `node` - FoldDB node instance
 ///
 /// # Returns
 /// * `HandlerResult<AnalyzeQueryHandlerResponse>` - Analysis result with query plan
@@ -232,7 +232,7 @@ pub async fn analyze_query(
 /// * `user_hash` - User identifier for isolation
 /// * `service` - Optional LLM query service (for summarization)
 /// * `session_manager` - Session manager for tracking conversation state
-/// * `node` - DataFold node instance
+/// * `node` - FoldDB node instance
 ///
 /// # Returns
 /// * `HandlerResult<ExecuteQueryPlanHandlerResponse>` - Execution result
@@ -421,7 +421,7 @@ pub async fn execute_query_plan(
 /// * `user_hash` - User identifier for isolation
 /// * `service` - LLM query service
 /// * `session_manager` - Session manager for tracking conversation state
-/// * `node` - DataFold node instance
+/// * `node` - FoldDB node instance
 ///
 /// # Returns
 /// * `HandlerResult<ChatHandlerResponse>` - Chat response with answer
@@ -524,7 +524,7 @@ pub async fn chat(
 /// * `user_hash` - User identifier for isolation
 /// * `service` - LLM query service
 /// * `session_manager` - Session manager for tracking conversation state
-/// * `node` - DataFold node instance
+/// * `node` - FoldDB node instance
 ///
 /// # Returns
 /// * `HandlerResult<AnalyzeFollowupHandlerResponse>` - Analysis of whether new query is needed
@@ -600,7 +600,7 @@ pub async fn analyze_followup(
 /// # Arguments
 /// * `hash` - The backfill hash
 /// * `user_hash` - User identifier for isolation
-/// * `node` - DataFold node instance
+/// * `node` - FoldDB node instance
 ///
 /// # Returns
 /// * `HandlerResult<BackfillStatusHandlerResponse>` - Backfill status
@@ -806,7 +806,7 @@ async fn hydrate_index_results(
 /// * `user_hash` - User identifier for isolation
 /// * `service` - LLM query service
 /// * `session_manager` - Session manager for tracking conversation state
-/// * `node` - DataFold node instance
+/// * `node` - FoldDB node instance
 ///
 /// # Returns
 /// * `HandlerResult<AiNativeIndexHandlerResponse>` - AI interpretation and raw results
@@ -919,7 +919,7 @@ pub async fn ai_native_index_query(
 /// * `user_hash` - User identifier for isolation
 /// * `service` - LLM query service
 /// * `session_manager` - Session manager for tracking conversation state
-/// * `node` - DataFold node instance
+/// * `node` - FoldDB node instance
 ///
 /// # Returns
 /// * `HandlerResult<AgentQueryHandlerResponse>` - Agent response with answer and tool calls

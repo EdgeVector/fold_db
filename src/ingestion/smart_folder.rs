@@ -1,7 +1,7 @@
 //! Shared smart-folder scan and ingestion logic.
 //!
 //! These functions are framework-agnostic and used by both
-//! HTTP handlers (`routes.rs`) and the CLI (`datafold_cli`).
+//! HTTP handlers (`routes.rs`) and the CLI (`folddb`).
 
 use crate::ingestion::error::IngestionError;
 use crate::ingestion::IngestionResult;

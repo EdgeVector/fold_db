@@ -252,7 +252,7 @@ pub async fn save_config(
 /// * `request` - The ingestion request with data and options
 /// * `user_hash` - The user's hash for isolation
 /// * `tracker` - Progress tracker
-/// * `node` - The DataFold node
+/// * `node` - The FoldDB node
 ///
 /// # Returns
 /// * `HandlerResult<ProcessJsonResponse>` - Response with progress_id
@@ -353,7 +353,7 @@ pub async fn process_json(
 /// * `request` - The ingestion request with data and options
 /// * `user_hash` - The user's hash for isolation
 /// * `tracker` - Progress tracker
-/// * `node` - The DataFold node
+/// * `node` - The FoldDB node
 /// * `service` - The ingestion service
 ///
 /// # Returns

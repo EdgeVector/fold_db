@@ -1,4 +1,4 @@
-//! A DataFold node is a self-contained instance that can store data, process
+//! A FoldDB node is a self-contained instance that can store data, process
 //! queries and mutations, and communicate with other nodes. Each node has:
 //!
 //! 1. A local database for storing data

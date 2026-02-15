@@ -1,6 +1,6 @@
 //! Multi-tenant Node Manager
 //!
-//! Manages DataFold nodes for different tenants, caching them for reuse.
+//! Manages FoldDB nodes for different tenants, caching them for reuse.
 //! This enables lazy node initialization - nodes are only created when
 //! a user makes their first request, avoiding DynamoDB access during startup.
 //!
@@ -40,7 +40,7 @@ pub struct NodeManagerConfig {
     pub base_config: NodeConfig,
 }
 
-/// Manages DataFold nodes for different tenants
+/// Manages FoldDB nodes for different tenants
 pub struct NodeManager {
     /// Configuration for creating new nodes
     config: NodeManagerConfig,
@@ -174,7 +174,7 @@ impl NodeManager {
         .await
         .map_err(|e| NodeManagerError::StorageError(e.to_string()))?;
 
-        // Create DataFold node with user context set
+        // Create FoldDB node with user context set
         let node = crate::logging::core::run_with_user(user_id, async {
             FoldNode::new_with_db(node_config, db).await
         })

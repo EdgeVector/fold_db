@@ -1,4 +1,4 @@
-# Datafold React Application (v2.0.0)
+# FoldDB React Application (v2.0.0)
 
 A modern React application for managing schemas, mutations, queries, and data operations with comprehensive state management and SCHEMA-002 compliance enforcement.
 
@@ -18,7 +18,7 @@ This application follows a **simplified, modular architecture** designed for mai
 ### Prerequisites
 
 - Node.js 18+ and npm
-- Access to Datafold backend API
+- Access to FoldDB backend API
 - Valid authentication credentials
 
 ### Installation
@@ -230,7 +230,7 @@ VITE_ENABLE_API_LOGGING=true
 VITE_CACHE_TTL_MS=300000
 
 # Production
-VITE_API_BASE_URL=https://api.datafold.com
+VITE_API_BASE_URL=https://api.folddb.com
 VITE_ENABLE_API_LOGGING=false
 VITE_CACHE_TTL_MS=600000
 ```
@@ -309,6 +309,6 @@ All components, hooks, and utilities include comprehensive JSDoc documentation:
 
 ---
 
-**Built with modern React patterns for the Datafold ecosystem** 🚀
+**Built with modern React patterns for the FoldDB ecosystem** 🚀
 
 For detailed implementation guidance, see the [Architecture Documentation](./ARCHITECTURE.md).

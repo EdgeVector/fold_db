@@ -1,4 +1,4 @@
-//! Generic progress tracking system for DataFold
+//! Generic progress tracking system for FoldDB
 //!
 //! Provides a unified way to track long-running jobs (Ingestion, Backfill, etc.)
 //! with pluggable persistence (InMemory, DynamoDB).

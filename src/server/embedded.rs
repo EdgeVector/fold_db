@@ -1,6 +1,6 @@
-//! Embedded server functionality for running DataFold in desktop applications.
+//! Embedded server functionality for running FoldDB in desktop applications.
 //!
-//! This module provides an embeddable version of the DataFold HTTP server that can
+//! This module provides an embeddable version of the FoldDB HTTP server that can
 //! be integrated into desktop applications (e.g., Tauri, Electron) without blocking
 //! the main thread.
 
@@ -13,7 +13,7 @@ use tokio::task::JoinHandle;
 
 /// Handle to a running embedded server.
 ///
-/// This handle can be used to manage the lifecycle of an embedded DataFold server.
+/// This handle can be used to manage the lifecycle of an embedded FoldDB server.
 pub struct EmbeddedServerHandle {
     /// The join handle for the server task
     task_handle: JoinHandle<FoldDbResult<()>>,
@@ -45,9 +45,9 @@ impl EmbeddedServerHandle {
     }
 }
 
-/// Start an embedded DataFold HTTP server in a background task.
+/// Start an embedded FoldDB HTTP server in a background task.
 ///
-/// This function creates and starts a DataFold HTTP server without blocking the
+/// This function creates and starts a FoldDB HTTP server without blocking the
 /// current thread. It's designed for use in desktop applications where the server
 /// needs to run alongside a UI.
 ///
@@ -110,7 +110,7 @@ pub async fn start_embedded_server(
     })
 }
 
-/// Start an embedded DataFold HTTP server with a shared node reference.
+/// Start an embedded FoldDB HTTP server with a shared node reference.
 ///
 /// This variant is useful when you need to keep a reference to the node
 /// for other purposes while also running the server.

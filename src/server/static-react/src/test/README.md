@@ -1,6 +1,6 @@
 # UI Testing Documentation
 
-This directory contains comprehensive UI tests for the DataFold Node React application using Vitest and React Testing Library.
+This directory contains comprehensive UI tests for the FoldDB Node React application using Vitest and React Testing Library.
 
 ## Test Structure
 

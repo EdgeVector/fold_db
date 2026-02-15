@@ -16,7 +16,7 @@ use fold_db::{
 #[command(
     author,
     version,
-    about = "Stateless DataFold HTTP Server - user identity comes from X-User-Hash header on each request"
+    about = "Stateless FoldDB HTTP Server - user identity comes from X-User-Hash header on each request"
 )]
 struct Cli {
     /// Port for the HTTP server
@@ -28,7 +28,7 @@ struct Cli {
     schema_service_url: Option<String>,
 }
 
-/// Main entry point for the DataFold HTTP server.
+/// Main entry point for the FoldDB HTTP server.
 ///
 /// This is a STATELESS HTTP server - user identity comes from the X-User-Hash
 /// header on each incoming request, just like the Lambda implementation.
@@ -78,7 +78,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     } = Cli::parse();
 
     println!("┌─────────────────────────────────────────────────────────┐");
-    println!("│         DataFold HTTP Server (Stateless Mode)          │");
+    println!("│         FoldDB HTTP Server (Stateless Mode)             │");
     println!("├─────────────────────────────────────────────────────────┤");
     println!("│  User identity comes from X-User-Hash header per-request  │");
     println!("│  Client generates: user_hash = SHA256(user_id)[0:32]   │");

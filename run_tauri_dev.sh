@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# Script to run the DataFold Tauri app in development mode
-# This script starts the DataFold server and opens the native app
+# Script to run the FoldDB Tauri app in development mode
+# This script starts the FoldDB server and opens the native app
 
 set -e
 
-echo "🚀 Starting DataFold Native App (Development Mode)"
+echo "🚀 Starting FoldDB Native App (Development Mode)"
 echo "=================================================="
 
 # Check if Rust toolchain is installed
@@ -23,7 +23,7 @@ if ! command -v node &> /dev/null; then
 fi
 
 # Navigate to the React project directory
-cd src/datafold_node/static-react
+cd src/server/static-react
 
 # Install dependencies if needed
 if [ ! -d "node_modules" ]; then
@@ -45,7 +45,7 @@ fi
 echo "🎯 Starting Tauri app..."
 echo ""
 echo "The app will open in a native window."
-echo "The DataFold server will start automatically on port 9001."
+echo "The FoldDB server will start automatically on port 9001."
 echo "Data will be stored in: ~/.datafold/data"
 echo ""
 echo "Press Ctrl+C to stop the app."

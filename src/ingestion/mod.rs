@@ -1,6 +1,6 @@
 //! # Ingestion Module
 //!
-//! The ingestion module provides automated data ingestion capabilities for the DataFold system.
+//! The ingestion module provides automated data ingestion capabilities for the FoldDB system.
 //! It takes JSON data, analyzes it against existing schemas using AI, and either maps it to
 //! existing schemas or creates new ones as needed.
 //!

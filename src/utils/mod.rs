@@ -1,4 +1,4 @@
-//! Comprehensive error handling utilities for the DataFold system.
+//! Comprehensive error handling utilities for the FoldDB system.
 //!
 //! This module provides utilities to eliminate unsafe `.unwrap()` calls
 //! and implement robust error handling patterns across the codebase.

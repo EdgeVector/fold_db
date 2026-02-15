@@ -12,19 +12,19 @@ fn main() {
     // and potentially skip if the directory seems to be the package source during verify.
     
     // BUT, the user asked to "remove it as part of the publishing step" if it's not working.
-    // Since we determined `src/datafold_node/static-react/dist` seems UNUSED by Rust code (grep failed),
+    // Since we determined `src/server/static-react/dist` seems UNUSED by Rust code (grep failed),
     // maybe we can just remove this block entirely or comment it out?
     
     // Let's comment closely.
     // However, if I remove it, and something DOES use it (maybe I missed it), build might fail.
-    // But grep "react" in src/datafold_node yielded nothing.
+    // But grep "react" in src/fold_node yielded nothing.
     // Let's try pointing it to the RIGHT place if `src/server/static-react/dist` is what matters.
     
     // Wait, the user said "If the frontend part isn't working, remove it as part of the publishing step".
     // I will modify build.rs to ONLY print rerun-if-changed and NOT create files.
     
     // Ensure the static-react/dist directory exists so that RustEmbed doesn't panic
-    // let path = std::path::Path::new("src/datafold_node/static-react/dist");
+    // let path = std::path::Path::new("src/server/static-react/dist");
     // ... all commented out ...
     println!("cargo:rerun-if-changed=build.rs");
 

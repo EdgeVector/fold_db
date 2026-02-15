@@ -1,6 +1,6 @@
 # UI Test: DSL Transformation (Average Heart Rate)
 
-This document describes how to verify the DSL refactoring and the new `average()` reducer function using the DataFold UI.
+This document describes how to verify the DSL refactoring and the new `average()` reducer function using the FoldDB UI.
 
 ## Scenario
 
@@ -29,7 +29,7 @@ Save the following JSON as `heart_rate_samples.json` or copy it to your clipboar
 
 ## 2. Configure Schema (DSL Instructions)
 
-In the DataFold UI **Ingestion** page (or using the Schema API), use the following Schema definition. Note the `transform_fields` section using the new DSL syntax.
+In the FoldDB UI **Ingestion** page (or using the Schema API), use the following Schema definition. Note the `transform_fields` section using the new DSL syntax.
 
 ```json
 {

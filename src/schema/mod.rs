@@ -1,6 +1,6 @@
 //! # Schema System
 //!
-//! The schema module defines the structure and behavior of data in the DataFold system.
+//! The schema module defines the structure and behavior of data in the FoldDB system.
 //! Schemas define fields, their types, permissions, and payment requirements.
 //!
 //! ## Components
@@ -14,7 +14,7 @@
 //!
 //! ## Architecture
 //!
-//! Schemas in DataFold define the structure of data and the operations that can be
+//! Schemas in FoldDB define the structure of data and the operations that can be
 //! performed on it. Each schema has a name and a set of fields, each with its own
 //! type, permissions, and payment requirements.
 //!

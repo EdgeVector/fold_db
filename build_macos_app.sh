@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# Script to build the DataFold macOS native app
+# Script to build the FoldDB macOS native app
 # This creates a production-ready .app bundle
 
 set -e
 
-echo "🍎 Building DataFold macOS Native App"
+echo "🍎 Building FoldDB macOS Native App"
 echo "======================================"
 
 # Check if Rust toolchain is installed
@@ -23,7 +23,7 @@ if ! command -v node &> /dev/null; then
 fi
 
 # Navigate to the React project directory
-cd src/datafold_node/static-react
+cd src/server/static-react
 
 # Clean previous builds
 echo "🧹 Cleaning previous builds..."
@@ -47,12 +47,12 @@ echo ""
 echo "✅ Build complete!"
 echo ""
 echo "📦 Your macOS app is ready:"
-echo "   Location: src/datafold_node/static-react/src-tauri/target/release/bundle/macos/"
+echo "   Location: src/server/static-react/src-tauri/target/release/bundle/macos/"
 echo ""
 echo "To install the app:"
 echo "   1. Navigate to the location above"
-echo "   2. Copy DataFold.app to your Applications folder"
-echo "   3. Open DataFold from Applications"
+echo "   2. Copy FoldDB.app to your Applications folder"
+echo "   3. Open FoldDB from Applications"
 echo ""
 echo "To create a DMG installer:"
 echo "   The .dmg file is also in the same directory"

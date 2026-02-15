@@ -1,6 +1,6 @@
 //! # Enhanced Logging System
 //!
-//! This module provides enhanced logging capabilities for the datafold project.
+//! This module provides enhanced logging capabilities for the FoldDB project.
 //! It extends the existing web_logger with configuration management and
 //! feature-specific logging support.
 

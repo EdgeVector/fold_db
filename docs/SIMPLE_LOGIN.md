@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document describes the simple, client-side only authentication system for DataFold that aligns with the stateless Lambda implementation in Exemem.
+This document describes the simple, client-side only authentication system for FoldDB that aligns with the stateless Lambda implementation in Exemem.
 
 ## Architecture
 
@@ -10,7 +10,7 @@ This document describes the simple, client-side only authentication system for D
 
 ```
 ┌──────────────────┐     ┌─────────────────────────┐
-│  HTTP Server     │     │  DataFoldNode           │
+│  HTTP Server     │     │  FoldNode               │
 │  (Startup)       │────▶│  (Single Identity)      │
 │  - user_id: X    │     │  - keys from X          │
 └──────────────────┘     └─────────────────────────┘
@@ -101,7 +101,7 @@ All downstream operations use `get_current_user_id()` to:
 
 ## Comparison with Lambda
 
-| Aspect          | Lambda (Exemem)             | HTTP Server (DataFold)     |
+| Aspect          | Lambda (Exemem)             | HTTP Server (FoldDB)       |
 | --------------- | --------------------------- | -------------------------- |
 | Identity Source | X-User-Hash header          | X-User-Hash header         |
 | Startup Auth    | None required               | None required              |

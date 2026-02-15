@@ -4,7 +4,7 @@
 [![Documentation](https://docs.rs/fold_db/badge.svg)](https://docs.rs/fold_db)
 [![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](https://github.com/shiba4life/fold_db)
 
-FoldDB is a personal database that uses AI to automatically organize your data. Drop in files, JSON, or social media exports — FoldDB detects schemas, extracts searchable keywords, and lets you query with natural language. Runs locally with zero config, or scales to AWS with DynamoDB and Lambda.
+FoldDB is a personal database that uses AI to automatically organize your data. Drop in files, JSON, or social media exports — FoldDB detects schemas, extracts searchable keywords, and lets you query with natural language. Runs locally with minimal config, or scales to AWS with DynamoDB and Lambda.
 
 ## When to Use FoldDB
 

@@ -1,6 +1,6 @@
 ---
 name: Feature Request
-about: Suggest an idea for DataFold
+about: Suggest an idea for FoldDB
 title: '[FEATURE] '
 labels: enhancement
 assignees: ''

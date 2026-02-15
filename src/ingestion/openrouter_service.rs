@@ -111,8 +111,8 @@ impl OpenRouterService {
             .post(&url)
             .header("Authorization", format!("Bearer {}", self.config.api_key))
             .header("Content-Type", "application/json")
-            .header("HTTP-Referer", "https://github.com/datafold/datafold")
-            .header("X-Title", "DataFold Ingestion")
+            .header("HTTP-Referer", "https://github.com/shiba4life/fold_db")
+            .header("X-Title", "FoldDB Ingestion")
             .json(request)
             .send()
             .await?;

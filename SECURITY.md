@@ -35,11 +35,11 @@ When reporting, please include:
 1. **API Keys**: Never commit API keys (e.g., `FOLD_OPENROUTER_API_KEY`) to version control
 2. **AWS Credentials**: Use IAM roles or environment variables, never hardcode credentials
 3. **Network**: Use TLS in production environments
-4. **Updates**: Keep your DataFold installation up to date
+4. **Updates**: Keep your FoldDB installation up to date
 
 ## Security Features
 
-DataFold includes several security features:
+FoldDB includes several security features:
 
 - **Ed25519 Signatures**: Cryptographic signing for data integrity
 - **AES-GCM Encryption**: Optional encryption at rest
@@ -50,7 +50,7 @@ DataFold includes several security features:
 
 This security policy covers:
 
-- The DataFold core library (`fold_db`)
+- The FoldDB core library (`fold_db`)
 - The HTTP server (`folddb_server`)
 - The schema service (`schema_service`)
 
