@@ -1,6 +1,6 @@
-# Contributing to DataFold
+# Contributing to FoldDB
 
-Thank you for your interest in contributing to DataFold! This document provides guidelines and instructions for contributing.
+Thank you for your interest in contributing to FoldDB! This document provides guidelines and instructions for contributing.
 
 ## Getting Started
 

@@ -4,207 +4,167 @@
 [![Documentation](https://docs.rs/fold_db/badge.svg)](https://docs.rs/fold_db)
 [![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](https://github.com/shiba4life/fold_db)
 
-A Rust-based distributed data platform with schema-based storage, AI-powered ingestion, and real-time data processing capabilities. FoldDB provides a complete solution for distributed data management with automatic schema generation, field mapping, and extensible ingestion pipelines.
+FoldDB is a personal database that uses AI to automatically organize your data. Drop in files, JSON, or social media exports — FoldDB detects schemas, extracts searchable keywords, and lets you query with natural language. Runs locally with zero config, or scales to AWS with DynamoDB and Lambda.
 
-## ✨ Features
+## When to Use FoldDB
 
-- **🤖 AI-Powered Data Ingestion** - Automatic schema creation and field mapping using AI [working]
-- **📂 Smart Folder Ingestion** - LLM-powered file filtering and batch ingestion from local directories [working]
-- **💬 AI Natural Language Query** - Ask questions in plain English, get AI-interpreted results [working]
-- **🔄 Real-Time Processing** - Event-driven architecture with automatic transform execution [working]
-- **🌐 Distributed Architecture** - P2P networking with automatic peer discovery [untested]
-- **📊 Flexible Schema System** - Dynamic schema management with validation [working]
-- **🔐 Permission Management** - Fine-grained access control and trust-based permissions [working]
-- **🔒 Encryption at Rest** - AES-256-GCM encryption with local key or AWS KMS support [working]
-- **⚡ High Performance** - Rust-based core with optimized storage and query execution [working]
-- **☁️ Serverless Ready** - DynamoDB + S3 storage for AWS Lambda and serverless deployments [working]
-- **🔌 Extensible Ingestion** - Plugin system for social media and external data sources [not yet begun]
+- **Organize personal data** — Tweets, notes, photos, documents. Drop them in and FoldDB schemas, indexes, and stores them automatically.
+- **Build apps with AI-powered ingestion** — Skip writing schema definitions and field mappings. Send JSON, get structured storage.
+- **Self-hosted alternative to cloud databases** — Everything runs on your machine with AES-256-GCM encryption at rest. Your data stays yours.
+- **Serverless data backends** — Deploy to AWS Lambda with DynamoDB multi-tenant isolation out of the box.
 
-## 🚀 Quick Start
+## Quick Start
 
-### Installation
-
-#### Option 1: Install via Script (Recommended)
-
-Install the `folddb` CLI with a single command:
+### 1. Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/shiba4life/fold_db/master/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/shiba4life/fold_db/master/install.sh | sh
 ```
 
-This auto-detects your OS and architecture (macOS/Linux, Intel/Apple Silicon) and installs the latest release.
-
-#### Option 2: Download Pre-built Binary
-
-Download the latest release for your platform from [GitHub Releases](https://github.com/shiba4life/fold_db/releases). Nightly builds are also available for the latest development changes.
-
-#### Option 3: Install from Crates.io
-
-Add FoldDB to your `Cargo.toml`:
-
-```toml
-[dependencies]
-fold_db = "0.1.0"
-```
-
-Or install the CLI tools:
+Auto-detects macOS (Apple Silicon / Intel) and Linux x86_64. Or install from source:
 
 ```bash
-cargo install fold_db
+cargo install --git https://github.com/shiba4life/fold_db.git --bin folddb
 ```
 
-This provides two main binaries:
-
-- `folddb` - Human-first CLI with nested subcommands
-- `folddb_server` - HTTP server with web UI
-
-### Optional TypeScript Bindings
-
-The crate ships without generating TypeScript artifacts by default so it can
-compile cleanly in any environment. If you need the auto-generated bindings for
-the web UI, enable the `ts-bindings` feature when building or testing:
+### 2. Set your API key (for AI features)
 
 ```bash
-cargo build --features ts-bindings
+export FOLD_OPENROUTER_API_KEY="sk-..."
 ```
 
-The feature keeps the `ts-rs` dependency optional and writes the generated
-definitions to the existing `bindings/` directory just like the repository
-version.
-
-### Basic Usage
-
-```rust
-use fold_db::{FoldNode, IngestionCore, Schema};
-use serde_json::json;
-
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Initialize a Fold node
-    let node = FoldNode::new_with_defaults().await?;
-
-    // Create an ingestion pipeline
-    let config = fold_db::IngestionConfig::from_env_allow_empty();
-    let ingestion = IngestionCore::new(config)?;
-
-    // Process JSON data with automatic schema generation
-    let data = json!({
-        "name": "John Doe",
-        "email": "john@example.com",
-        "age": 30,
-        "preferences": {
-            "theme": "dark",
-            "notifications": true
-        }
-    });
-
-    let response = ingestion.process_json_ingestion(
-        fold_db::IngestionRequest { data }
-    ).await?;
-
-    println!("Ingestion result: {:?}", response);
-    Ok(())
-}
-```
-
-### Running the HTTP Server
+### 3. Run
 
 ```bash
-# Start the HTTP server with web UI
-folddb_server --port 9001
+./run.sh --local
 ```
 
-Then visit `http://localhost:9001` for the web interface.
+Visit `http://localhost:5173` for the web UI. The backend runs on port 9001.
 
-## 🌐 Global Schema Service
+## Features
 
-FoldDB provides a **Global Schema Service** at [schema.folddb.com](https://schema.folddb.com) for sharing and discovering schemas across the network.
+- **AI-Powered Ingestion** — Drop any JSON and AI generates schemas, maps fields, and stores your data
+- **Smart Folder Ingestion** — Point at a directory and let AI filter, classify, and batch-ingest files
+- **Natural Language Queries** — Ask questions in plain English, get structured results
+- **Encryption at Rest** — AES-256-GCM encryption with local keys or AWS KMS
+- **Fine-Grained Permissions** — Trust-based access control at the field level
+- **Dynamic Schemas** — Schemas evolve with your data, no migrations needed
+- **Serverless Ready** — DynamoDB + S3 storage backend, deploy to AWS Lambda with zero modifications
+- **Distributed P2P** — Built-in peer discovery and networking for horizontal scaling
 
-### How It Works
+## How It Works
 
-The global schema service is managed **automatically** through two processes:
+```
+Files / JSON / APIs
+        |
+        v
+   AI Ingestion ──> Schema Service (detects or creates schema)
+        |
+        v
+   Mutation ──> Storage (Sled local or DynamoDB cloud)
+        |
+        v
+   Keyword Indexing ──> AI extracts and normalizes searchable terms
+        |
+        v
+   Query ──> Natural language or structured field queries
+```
 
-1. **AI-Powered Ingestion** - When ingesting data, the LLM analyzes your data structure and automatically checks the global schema registry for matching schemas. If a compatible schema exists, it's used; otherwise, a new schema may be registered.
+1. **Ingest** — Send data in any format. AI analyzes the structure and maps it to a schema.
+2. **Schema** — The global schema service checks for existing compatible schemas or creates new ones.
+3. **Store** — Data is written as mutations with encryption at rest.
+4. **Index** — AI extracts keywords and normalizes terms (dates, names, etc.) for search.
+5. **Query** — Search with natural language or structured field queries.
 
-2. **AI Query Processing** - When executing natural language queries, the system consults the global schema service to understand available data structures and optimize query execution across nodes.
+## Core Concepts
 
-### Features
+### Schemas
 
-- **Automatic Schema Discovery** - Schemas are matched and reused automatically during ingestion
-- **Schema Registry** - Published schemas are available for all FoldDB nodes to discover
-- **Interoperability** - Shared schemas enable seamless data exchange between nodes
-- **Version Tracking** - Schema versions are tracked over time
+FoldDB uses dynamic schemas that define data structure and operations. Schemas are managed automatically during AI ingestion or can be loaded manually:
 
-### Configuration
+```bash
+folddb schema load my_schema.json
+folddb schema approve my_schema
+folddb schema list -p
+```
 
-Set the schema service URL via environment variable:
+### Global Schema Service
+
+A shared registry at [schema.folddb.com](https://schema.folddb.com) ensures schema consistency across FoldDB instances. During ingestion, the AI checks the registry for compatible schemas before creating new ones.
 
 ```bash
 export DATAFOLD_SCHEMA_SERVICE_URL=https://schema.folddb.com
 ```
 
-## 📖 Core Concepts
-
-### Schemas
-
-FoldDB uses dynamic schemas that define data structure and operations:
+### Ingestion
 
 ```rust
-use fold_db::{Schema, Operation};
+use fold_db::{IngestionConfig, IngestionCore, IngestionRequest};
+use serde_json::json;
 
-// Load a schema
-let schema_json = std::fs::read_to_string("my_schema.json")?;
-let schema: Schema = serde_json::from_str(&schema_json)?;
-
-// Execute operations
-let operation = Operation::Query(query_data);
-let result = node.execute_operation(operation).await?;
-```
-
-### AI-Powered Ingestion
-
-Automatically analyze and ingest data from any source:
-
-```rust
-use fold_db::{IngestionConfig, IngestionCore};
-
-// Configure with OpenRouter API
-let config = IngestionConfig {
-    openrouter_api_key: Some("your-api-key".to_string()),
-    openrouter_model: "anthropic/claude-3.5-sonnet".to_string(),
-    ..Default::default()
-};
-
+let config = IngestionConfig::from_env_allow_empty();
 let ingestion = IngestionCore::new(config)?;
 
-// Process any JSON data
-let result = ingestion.process_json_ingestion(request).await?;
+let data = json!({
+    "name": "John Doe",
+    "email": "john@example.com",
+    "age": 30
+});
+
+let result = ingestion.process_json_ingestion(
+    IngestionRequest { data }
+).await?;
 ```
 
-### Distributed Networking
-
-Connect nodes in a P2P network:
+### Queries
 
 ```rust
-use fold_db::{NetworkConfig, NetworkCore};
+use fold_db::FoldNode;
 
-let network_config = NetworkConfig::default();
-let network = NetworkCore::new(network_config).await?;
+let node = FoldNode::new_with_defaults().await?;
 
-// Start networking
-network.start().await?;
-
-// Discover peers
-let peers = network.discover_peers().await?;
+// Natural language query
+let response = node.ai_query("Show me all purchases over $50").await?;
 ```
 
-## 🌐 Frontend Development
+## CLI Reference
 
-FoldDB includes a comprehensive React frontend with a unified API client architecture that provides type-safe, standardized access to all backend operations.
+```bash
+# Status and exploration
+folddb status -p                              # Check node health
+folddb schema list -p                         # List all schemas
 
-### Frontend API Clients
+# Ingest data
+folddb ingest run data.json                   # Ingest a JSON file
+folddb ingest smart-folder ~/Documents --scan # Scan a directory
+folddb ingest smart-folder ~/Documents --all-recommended  # Batch ingest
 
-The frontend uses specialized API clients that eliminate boilerplate code and provide consistent error handling, caching, and authentication:
+# Query
+folddb query run tweets --fields text,author  # Structured query
+folddb query search "machine learning"        # Full-text search
+folddb query ai "recent purchases over $50"   # Natural language
+
+# Schema management
+folddb schema load schema.json                # Load a schema
+folddb schema approve my_schema               # Approve a pending schema
+folddb schema get my_schema -p                # Inspect a schema
+```
+
+Run `folddb --help` for the full command reference.
+
+## Web UI
+
+Start with `./run.sh --local` and visit `http://localhost:5173`. The UI provides:
+
+- Schema browsing and approval
+- Data ingestion (file upload, smart folders, social media imports)
+- Natural language and structured queries
+- Native index search
+- System status and configuration
+
+## Frontend Development
+
+FoldDB includes a React frontend with type-safe API clients:
 
 ```typescript
 import { schemaClient, securityClient, systemClient } from "../api/clients";
@@ -217,248 +177,58 @@ if (response.success) {
 
 // System monitoring with intelligent caching
 const status = await systemClient.getSystemStatus(); // 30-second cache
-
-// Security operations with built-in validation
-const verification = await securityClient.verifyMessage(signedMessage);
 ```
-
-### Key Features
-
-- **🔒 Type Safety** - Full TypeScript support with comprehensive interfaces
-- **⚡ Intelligent Caching** - Operation-specific caching (30s for status, 5m for schemas, 1h for keys)
-- **🔄 Automatic Retries** - Configurable retry logic with exponential backoff
-- **🛡️ Error Handling** - Standardized error types with user-friendly messages
-- **🔐 Built-in Authentication** - Automatic auth header management
-- **📊 Request Deduplication** - Prevents duplicate concurrent requests
-- **🎯 Batch Operations** - Efficient multi-request processing
 
 ### Available Clients
 
-- **SchemaClient** - Schema management and SCHEMA-002 compliance
-- **SecurityClient** - Authentication, key management, cryptographic operations
-- **SystemClient** - System operations, logging, database management
-- **TransformClient** - Data transformation and queue management
-- **IngestionClient** - AI-powered data ingestion (60s timeout for AI processing)
-- **MutationClient** - Data mutation operations and query execution
+- **SchemaClient** — Schema management and SCHEMA-002 compliance
+- **SecurityClient** — Authentication, key management, cryptographic operations
+- **SystemClient** — System operations, logging, database management
+- **TransformClient** — Data transformation and queue management
+- **IngestionClient** — AI-powered data ingestion (60s timeout for AI processing)
+- **MutationClient** — Data mutation operations and query execution
 
-### Error Handling
-
-```typescript
-import {
-  isNetworkError,
-  isAuthenticationError,
-  isSchemaStateError,
-} from "../api/core/errors";
-
-try {
-  const response = await schemaClient.approveSchema("users");
-} catch (error) {
-  if (isAuthenticationError(error)) {
-    redirectToLogin();
-  } else if (isSchemaStateError(error)) {
-    showMessage(`Schema "${error.schemaName}" is ${error.currentState}`);
-  } else {
-    showMessage(error.toUserMessage());
-  }
-}
-```
-
-### Frontend Development Setup
+### Frontend Setup
 
 ```bash
-# Start both backend and frontend with a single command
+# Start both backend and frontend
 ./run.sh --local
-```
 
-This starts the Rust backend on port 9001 and the React frontend on port 5173 with hot-reload.
-
-For frontend-only development:
-
-```bash
+# Frontend-only development
 cd src/server/static-react
 npm install
 npm run dev
 ```
 
-### Frontend Documentation
+## Advanced: AWS Deployment
 
-- **[Architecture Guide](docs/delivery/API-STD-1/api-client-architecture.md)** - Technical architecture and design patterns
-- **[Developer Guide](docs/delivery/API-STD-1/developer-guide.md)** - Usage examples and best practices
-- **[Migration Reference](docs/delivery/API-STD-1/migration-reference.md)** - Migration from direct fetch() usage
+### S3 Storage
 
-## 🔌 Extensible Ingestion
-
-FoldDB supports ingesting data from various sources with the new adapter-based architecture:
-
-- **Social Media APIs** - Twitter, Facebook, Reddit, TikTok
-- **Real-time Streams** - WebSockets, Server-Sent Events
-- **File Uploads** - JSON, CSV, JSONL with AI-powered conversion
-- **S3 File Paths** - Process files already in S3 without re-uploading
-- **Webhooks** - Real-time event processing
-- **Custom Adapters** - Extensible plugin system
-
-See [`SOCIAL_MEDIA_INGESTION_PROPOSAL.md`](SOCIAL_MEDIA_INGESTION_PROPOSAL.md) for the complete ingestion architecture.
-
-### File Ingestion
-
-FoldDB provides two ways to ingest files:
-
-**1. Traditional File Upload**
+FoldDB can use S3-backed storage for serverless environments:
 
 ```bash
-curl -X POST http://localhost:9001/api/ingestion/upload \
-  -F "file=@/path/to/local/file.json" \
-  -F "autoExecute=true"
-```
-
-**2. S3 File Path (No Re-upload Required)**
-
-```bash
-curl -X POST http://localhost:9001/api/ingestion/upload \
-  -F "s3FilePath=s3://my-bucket/path/to/file.json" \
-  -F "autoExecute=true"
-```
-
-**3. Programmatic API (for Lambda/Rust code)**
-
-```rust
-use fold_db::ingestion::{ingest_from_s3_path_async, S3IngestionRequest};
-
-// Async ingestion (returns immediately with progress_id)
-let request = S3IngestionRequest::new("s3://bucket/file.json".to_string());
-let response = ingest_from_s3_path_async(&request, &state).await?;
-println!("Started: {}", response.progress_id.unwrap());
-
-// Or sync ingestion (waits for completion)
-use fold_db::ingestion::ingest_from_s3_path_sync;
-let response = ingest_from_s3_path_sync(&request, &state).await?;
-println!("Complete: {} mutations", response.mutations_executed);
-```
-
-The S3 file path option allows you to process files already stored in S3 without uploading them again, saving bandwidth and time. This is particularly useful for:
-
-- **Lambda Functions** - Process S3 events programmatically
-- **ETL Pipelines** - Ingest pipeline outputs already in S3
-- **Batch Processing** - Process existing S3 files at scale
-- **Data Lakes** - Integration with S3-based data lakes
-
-**Requirements for S3 file paths:**
-
-- S3 storage mode must be configured (`DATAFOLD_UPLOAD_STORAGE_MODE=s3`)
-- AWS credentials with `s3:GetObject` permissions
-
-See [S3 File Path Ingestion Guide](docs/S3_FILE_PATH_INGESTION.md) for complete documentation and [Lambda example](examples/lambda_s3_ingestion.rs) for AWS Lambda integration.
-
-## 🛠️ Development Setup
-
-### Prerequisites
-
-- Rust 1.70+ with Cargo
-- Node.js 16+ (for web UI development)
-
-### Building from Source
-
-```bash
-# Clone the repository
-git clone https://github.com/shiba4life/fold_db.git
-cd fold_db
-
-# Install dependencies
-sudo apt install rustup
-rustup default stable        # Installs cargo
-sudo apt install openssl libssl-dev pkg-config
-
-# Build all components
-cargo build --release --workspace
-
-# Run tests
-cargo test --workspace
-```
-
-### Running the Web UI
-
-```bash
-# Start backend + frontend together (recommended)
-./run.sh --local
-
-# Other modes:
-./run.sh --local --local-schema    # Fully offline (local storage + local schema service)
-./run.sh --local --empty-db        # Start with a fresh database
-```
-
-The UI will be available at `http://localhost:5173`.
-
-## ☁️ Serverless Deployment (S3 Storage)
-
-FoldDB can run in serverless environments like AWS Lambda using S3-backed storage:
-
-```rust
-use fold_db::{FoldDB, S3Config};
-
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Configure S3 storage
-    let config = S3Config::new(
-        "my-folddb-bucket".to_string(),
-        "us-west-2".to_string(),
-        "production".to_string(),
-    );
-
-    // Database automatically downloads from S3 on startup
-    let db = FoldDB::new_with_s3(config).await?;
-
-    // Use normally - all operations are local
-    // ... queries, mutations, transforms ...
-
-    // Sync back to S3
-    db.flush_to_s3().await?;
-
-    Ok(())
-}
-```
-
-**Environment variable configuration:**
-
-```bash
-# Database storage (Sled with S3 sync)
 export DATAFOLD_STORAGE_MODE=s3
 export DATAFOLD_S3_BUCKET=my-folddb-bucket
 export DATAFOLD_S3_REGION=us-west-2
-
-# Upload storage (for file ingestion)
-export DATAFOLD_UPLOAD_STORAGE_MODE=s3
-export DATAFOLD_UPLOAD_S3_BUCKET=my-uploads-bucket
-export DATAFOLD_UPLOAD_S3_REGION=us-west-2
 ```
 
-See [S3 Configuration Guide](docs/S3_CONFIGURATION.md) for complete setup instructions, AWS Lambda deployment, and cost optimization.
+### Lambda + DynamoDB
 
-## ⚡ AWS Lambda & DynamoDB
-
-FoldDB provides first-class support for AWS Lambda with a multi-tenant DynamoDB backend. This allows you to build serverless, user-isolated applications without managing servers.
-
-### Setup
-
-Add the `lambda` feature to your `Cargo.toml`:
+Add the `lambda` feature for multi-tenant serverless deployments:
 
 ```toml
 [dependencies]
 fold_db = { version = "0.1.0", features = ["lambda"] }
 ```
 
-### Configuration
-
-Initialize the `LambdaContext` with `LambdaStorage::DynamoDb`:
-
 ```rust
 use fold_db::lambda::{LambdaConfig, LambdaContext, LambdaStorage, LambdaLogging};
 use fold_db::storage::{DynamoDbConfig, ExplicitTables};
 
-// Using ExplicitTables::from_prefix for convenience
 let config = LambdaConfig::new(
     LambdaStorage::DynamoDb(DynamoDbConfig {
         region: "us-east-1".to_string(),
-        tables: ExplicitTables::from_prefix("MyApp"), // Creates: MyApp-main, MyApp-schemas, etc.
+        tables: ExplicitTables::from_prefix("MyApp"),
         auto_create: true,
         user_id: None,
     }),
@@ -468,113 +238,77 @@ let config = LambdaConfig::new(
 LambdaContext::init(config).await?;
 ```
 
-### DynamoDB Tables
+This creates 11 DynamoDB tables (`MyApp-main`, `MyApp-schemas`, etc.) with automatic multi-tenant isolation via `user_id`.
 
-The system requires and automatically manages **11 tables** per deployment. Using `ExplicitTables::from_prefix("MyApp")`, they are:
+### File Ingestion from S3
 
-- `MyApp-main` (Data)
-- `MyApp-metadata`
-- `MyApp-node_id_schema_permissions`
-- `MyApp-transforms`
-- `MyApp-orchestrator_state`
-- `MyApp-schema_states`
-- `MyApp-schemas`
-- `MyApp-public_keys`
-- `MyApp-transform_queue_tree`
-- `MyApp-native_index`
-- `MyApp-process` (Process Tracking)
-
-### Multi-Tenancy
-
-FoldDB automatically handles multi-tenancy. When you pass a `user_id` to ingestion or node retrieval methods, operations are scoped to that user within the DynamoDB tables.
-
-## 📊 Examples
-
-### Loading Sample Data
+Process files already in S3 without re-uploading:
 
 ```bash
-# Use the CLI to load a schema
-folddb schema load examples/user_schema.json
-
-# Query data
-folddb query run examples/user_query.json
-
-# Execute mutations
-folddb mutation run examples/user_mutation.json
+curl -X POST http://localhost:9001/api/ingestion/upload \
+  -F "s3FilePath=s3://my-bucket/path/to/file.json" \
+  -F "autoExecute=true"
 ```
 
-### Rust Code Examples
+See [S3 Configuration Guide](docs/S3_CONFIGURATION.md) for complete setup.
 
-See [`examples/`](examples/) directory for:
+## Development Setup
 
-- **[simple_s3_ingestion.rs](examples/simple_s3_ingestion.rs)** - Basic S3 file ingestion from Rust code
-- **[lambda_s3_ingestion.rs](examples/lambda_s3_ingestion.rs)** - AWS Lambda integration with S3 events
+### Prerequisites
 
-```rust
-// Quick example: Ingest S3 file in Lambda
-use fold_db::ingestion::{ingest_from_s3_path_async, S3IngestionRequest};
+- Rust 1.70+ with Cargo
+- Node.js 16+ (for web UI)
 
-let request = S3IngestionRequest::new("s3://bucket/data.json".to_string());
-let response = ingest_from_s3_path_async(&request, &state).await?;
+### Building from Source
+
+```bash
+git clone https://github.com/shiba4life/fold_db.git
+cd fold_db
+cargo build --release --workspace
+cargo test --workspace
 ```
 
-### Python Integration
+### Running Locally
 
-See [`datafold_api_examples/`](datafold_api_examples/) for Python scripts demonstrating:
-
-- Schema management
-- Data querying
-- Mutations and updates
-- User management
-
-## 🔧 Configuration
-
-FoldDB uses JSON configuration files. Default config:
-
-```json
-{
-  "storage_path": "data/db",
-  "default_trust_distance": 1,
-  "network": {
-    "port": 9000,
-    "enable_mdns": true
-  },
-  "ingestion": {
-    "enabled": true,
-    "openrouter_model": "anthropic/claude-3.5-sonnet"
-  }
-}
+```bash
+./run.sh --local                    # Local Sled + prod schema service (recommended)
+./run.sh --local --local-schema     # Fully offline
+./run.sh --local --empty-db         # Start with fresh database
+./run.sh --local --dev              # Local Sled + dev schema service
 ```
 
-Environment variables:
+### TypeScript Bindings
 
-- `OPENROUTER_API_KEY` - API key for AI-powered ingestion
-- `DATAFOLD_CONFIG` - Path to configuration file
+```bash
+cargo build --features ts-bindings
+```
 
-## 🔐 Public Key Persistence
+## Configuration
 
-FoldDB stores registered Ed25519 public keys in the sled database. When the node
-starts it loads all saved keys, and new keys are persisted as soon as they are
-registered. This keeps authentication intact across restarts. See
-[PBI SEC-8 documentation](docs/delivery/SEC-8/prd.md) for implementation details.
+### Environment Variables
 
-- `DATAFOLD_LOG_LEVEL` - Logging level (trace, debug, info, warn, error)
+| Variable | Purpose |
+|----------|---------|
+| `FOLD_OPENROUTER_API_KEY` | API key for AI-powered ingestion (or `OPENROUTER_API_KEY`) |
+| `DATAFOLD_SCHEMA_SERVICE_URL` | Schema service URL (default: `https://schema.folddb.com`) |
+| `DATAFOLD_CONFIG` | Path to configuration file |
+| `DATAFOLD_LOG_LEVEL` | Logging level (`trace`, `debug`, `info`, `warn`, `error`) |
+| `DATAFOLD_STORAGE_MODE` | Storage backend (`s3` for cloud) |
+| `DATAFOLD_S3_BUCKET` | S3 bucket for database storage |
+| `DATAFOLD_S3_REGION` | AWS region for S3 |
+| `DATAFOLD_UPLOAD_STORAGE_MODE` | Upload storage backend (`s3` for cloud) |
 
-## 📚 Documentation
+## Documentation
 
-- **[API Documentation](https://docs.rs/fold_db)** - Complete API reference
-- **CLI Guide** - Run `folddb --help` for full command reference
-- **[Ingestion Guide](INGESTION_README.md)** - AI-powered data ingestion
-- **[S3 File Path Ingestion](docs/S3_FILE_PATH_INGESTION.md)** - Process S3 files without re-uploading
-- **[AI Query Guide](docs/AI_QUERY_USAGE_GUIDE.md)** - Natural language query with AI interpretation
-- **[AI Query Quick Reference](docs/AI_QUERY_QUICK_REFERENCE.md)** - Quick start for AI queries
-- **[S3 Storage Guide](docs/S3_CONFIGURATION.md)** - Serverless deployment with S3
-- **[Upload Storage Guide](docs/UPLOAD_STORAGE.md)** - Configure local or S3 storage for uploads
-- **[Architecture](docs/Unified_Architecture.md)** - System design and patterns
+- **[API Reference](https://docs.rs/fold_db)** — Complete Rust API docs
+- **[Ingestion Guide](INGESTION_README.md)** — AI-powered data ingestion
+- **[AI Query Guide](docs/AI_QUERY_USAGE_GUIDE.md)** — Natural language queries
+- **[S3 Storage Guide](docs/S3_CONFIGURATION.md)** — Serverless deployment with S3
+- **[Architecture](docs/Unified_Architecture.md)** — System design and patterns
 
-## 🤝 Contributing
+## Contributing
 
-We welcome contributions! Please see our contributing guidelines:
+We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 1. Fork the repository
 2. Create a feature branch
@@ -582,20 +316,11 @@ We welcome contributions! Please see our contributing guidelines:
 4. Run `cargo test --workspace`
 5. Submit a pull request
 
-## 📄 License
+## License
 
-This project is licensed under either of:
+Dual-licensed under [MIT](LICENSE-MIT) or [Apache 2.0](LICENSE-APACHE), at your option.
 
-- [Apache License, Version 2.0](LICENSE-APACHE)
-- [MIT License](LICENSE-MIT)
+## Community
 
-at your option.
-
-## 🌟 Community
-
-- **Issues** - Report bugs and request features on [GitHub Issues](https://github.com/shiba4life/fold_db/issues)
-- **Discussions** - Join discussions on [GitHub Discussions](https://github.com/shiba4life/fold_db/discussions)
-
----
-
-**FoldDB** - Distributed data platform for the modern world 🚀
+- **[GitHub Issues](https://github.com/shiba4life/fold_db/issues)** — Report bugs and request features
+- **[GitHub Discussions](https://github.com/shiba4life/fold_db/discussions)** — Questions and community discussion
