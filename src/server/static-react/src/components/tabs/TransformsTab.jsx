@@ -115,7 +115,7 @@ const TransformsTab = ({ onResult }) => {
 
       {!queueInfo.isEmpty && (
         <div className="card card-info p-4" data-testid="transform-queue">
-          <p className="text-sm font-medium text-blue-600 mb-2">Queue</p>
+          <p className="text-sm font-medium text-gruvbox-blue mb-2">Queue</p>
           <ul className="list-none space-y-1">
             {queueInfo.queue.map((transformId, index) => (
               <li key={`${transformId}-${index}`} className="text-secondary font-mono text-sm">
@@ -136,7 +136,7 @@ const TransformsTab = ({ onResult }) => {
       {transformsError && (
         <div className="card card-error p-4" role="alert">
           <div className="flex items-center gap-4">
-            <span className="text-red-600">Error loading transforms: {transformsError}</span>
+            <span className="text-gruvbox-red">Error loading transforms: {transformsError}</span>
             <button onClick={fetchTransforms} className="btn-secondary btn-sm">Retry</button>
           </div>
         </div>
@@ -175,8 +175,8 @@ const TransformsTab = ({ onResult }) => {
             return (
               <div key={transformId} className="card p-4">
                 <div className="flex justify-between items-start mb-3">
-                  <div className="flex-1">
-                    <p className="text-lg text-primary">{schemaName}</p>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-lg text-primary break-all">{schemaName}</p>
                     <div className="flex gap-2 mt-2 flex-wrap">
                       <span className={schemaTypeColor}>{schemaTypeLabel}</span>
                       {transformFieldsCount > 0 && (
@@ -195,9 +195,9 @@ const TransformsTab = ({ onResult }) => {
 
                 <div className="mt-3 space-y-3">
                   {keyConfig && (
-                    <div className="bg-surface-secondary p-3 border-l-2 border-blue-300">
-                      <p className="text-sm font-medium text-blue-600 mb-1">Key Config</p>
-                      <div className="text-sm text-secondary space-y-1 font-mono">
+                    <div className="bg-surface-secondary p-3 border-l-2 border-gruvbox-blue">
+                      <p className="text-sm font-medium text-gruvbox-blue mb-1">Key Config</p>
+                      <div className="text-sm text-secondary space-y-1 font-mono break-all">
                         {keyConfig.hash_field && <p>hash_key: {keyConfig.hash_field}</p>}
                         {keyConfig.range_field && <p>range_key: {keyConfig.range_field}</p>}
                         {!keyConfig.hash_field && !keyConfig.range_field && keyConfig.key_field && (
@@ -230,7 +230,7 @@ const TransformsTab = ({ onResult }) => {
                   >
                     {isLoading ? '→ Adding...' : '→ Add to Queue'}
                   </button>
-                  {errorMessage && <span className="text-sm text-red-600">Error: {errorMessage}</span>}
+                  {errorMessage && <span className="text-sm text-gruvbox-red">Error: {errorMessage}</span>}
                 </div>
               </div>
             )

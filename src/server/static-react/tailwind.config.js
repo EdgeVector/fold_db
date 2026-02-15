@@ -7,28 +7,37 @@ export default {
   theme: {
     extend: {
       colors: {
-        // Grayscale
         surface: {
-          DEFAULT: '#ffffff',
-          secondary: '#fafafa',
+          DEFAULT: '#282828',
+          secondary: '#1d2021',
         },
         border: {
-          DEFAULT: '#e5e5e5',
-          dark: '#d4d4d4',
+          DEFAULT: '#504945',
+          dark: '#665c54',
         },
-        // Text colors
-        primary: '#111111',
-        secondary: '#666666',
-        tertiary: '#999999',
-        // Accent colors
+        primary: '#ebdbb2',
+        secondary: '#928374',
+        tertiary: '#665c54',
         accent: {
-          DEFAULT: '#111111',
-          hover: '#333333',
+          DEFAULT: '#fe8019',
+          hover: '#fabd2f',
+        },
+        gruvbox: {
+          orange: '#fe8019',
+          yellow: '#fabd2f',
+          green: '#b8bb26',
+          blue: '#83a598',
+          purple: '#d3869b',
+          red: '#fb4934',
+          link: '#8ec07c',
+          bright: '#fbf1c7',
+          elevated: '#3c3836',
+          hover: '#504945',
         },
       },
       fontFamily: {
-        sans: ['Inter', 'Helvetica Neue', 'Helvetica', 'Arial', 'sans-serif'],
-        mono: ['SF Mono', 'Monaco', 'monospace'],
+        sans: ['IBM Plex Mono', 'monospace'],
+        mono: ['IBM Plex Mono', 'monospace'],
       },
     },
   },

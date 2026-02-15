@@ -115,7 +115,7 @@ function SelectField({
             value={state.searchTerm}
             onChange={handleSearchChange}
             onFocus={() => searchableSelect.actions.openDropdown()}
-            className={`input ${hasError ? 'border-red-500' : ''}`}
+            className={`input ${hasError ? 'border-gruvbox-red' : ''}`}
           />
           {state.isOpen && state.filteredOptions.length > 0 && (
             <div className="absolute z-10 w-full mt-1 bg-surface border border-border shadow-lg max-h-60 overflow-auto">
@@ -134,7 +134,7 @@ function SelectField({
                       disabled={option.disabled}
                       className={`w-full text-left px-3 py-2 hover:bg-surface-secondary focus:bg-surface-secondary focus:outline-none ${
                         option.disabled ? 'text-tertiary cursor-not-allowed' : 'text-primary'
-                      } ${value === option.value ? 'bg-primary text-white' : ''}`}
+                      } ${value === option.value ? 'bg-gruvbox-orange text-surface' : ''}`}
                     >
                       {option.label}
                     </button>

@@ -119,8 +119,8 @@ function StatusSection() {
         >
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
-              <XCircleIcon className="w-5 h-5 text-red-600" />
-              <span className="font-medium text-red-600">
+              <XCircleIcon className="w-5 h-5 text-gruvbox-red" />
+              <span className="font-medium text-gruvbox-red">
                 {jobLabel}
               </span>
               <span className="badge badge-error text-xs">
@@ -133,7 +133,7 @@ function StatusSection() {
             </div>
           </div>
           {job.error_message && (
-            <div className="text-xs text-red-600 mt-2">
+            <div className="text-xs text-gruvbox-red mt-2">
               Error: {job.error_message}
             </div>
           )}
@@ -143,7 +143,7 @@ function StatusSection() {
 
     // In-progress jobs show full progress bar
     const cardClass = isDatabaseReset ? 'card card-error' : isIndexing ? 'card card-info' : 'card card-info'
-    const textColor = isIndexing ? 'text-blue-600' : isDatabaseReset ? 'text-red-600' : 'text-blue-600'
+    const textColor = isIndexing ? 'text-gruvbox-blue' : isDatabaseReset ? 'text-gruvbox-red' : 'text-gruvbox-blue'
 
     return (
       <div
@@ -190,7 +190,7 @@ function StatusSection() {
       <div className="modal-overlay">
         <div className="modal max-w-md p-6">
           <div className="flex items-center gap-3 mb-4">
-            <TrashIcon className="w-6 h-6 text-red-600" />
+            <TrashIcon className="w-6 h-6 text-gruvbox-red" />
             <h3 className="text-lg font-semibold text-primary">Reset Database</h3>
           </div>
 
@@ -238,7 +238,7 @@ function StatusSection() {
       <div className="card p-4 mb-6">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
-            <CheckCircleIcon className="w-5 h-5 text-green-600" />
+            <CheckCircleIcon className="w-5 h-5 text-gruvbox-green" />
             <h2 className="text-lg font-semibold text-primary">System Status</h2>
           </div>
 
@@ -263,14 +263,14 @@ function StatusSection() {
         ) : (
           <div className="card card-success p-4">
             <div className="flex items-center gap-2">
-              <CheckCircleIcon className="w-5 h-5 text-green-600" />
-              <span className="text-green-600 font-medium">No active jobs</span>
+              <CheckCircleIcon className="w-5 h-5 text-gruvbox-green" />
+              <span className="text-gruvbox-green font-medium">No active jobs</span>
             </div>
           </div>
         )}
 
         {resetResult && (
-          <div className={`mt-3 p-3 text-sm ${resetResult.type === 'success' ? 'card card-success text-green-600' : 'card card-error text-red-600'}`}>
+          <div className={`mt-3 p-3 text-sm ${resetResult.type === 'success' ? 'card card-success text-gruvbox-green' : 'card card-error text-gruvbox-red'}`}>
             {resetResult.message}
           </div>
         )}

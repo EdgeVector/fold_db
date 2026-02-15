@@ -201,14 +201,14 @@ export function AppContent() {
       <OnboardingWizard isOpen={isOnboardingOpen} onClose={handleOnboardingClose} />
 
       {showSetupBanner && (
-        <div className="bg-blue-50 border-b border-blue-200 px-8 py-3 flex items-center justify-between">
-          <span className="text-blue-800 text-sm">
+        <div className="bg-gruvbox-elevated border-b border-border px-8 py-3 flex items-center justify-between">
+          <span className="text-gruvbox-blue text-sm">
             Configure AI to get started — FoldDB needs OpenRouter or local Ollama for ingestion and search.
           </span>
           <div className="flex items-center gap-3">
             <button
               onClick={() => setIsSettingsOpen(true)}
-              className="bg-blue-600 text-white text-sm px-4 py-1.5 border-none cursor-pointer hover:bg-blue-700 transition-colors"
+              className="bg-gruvbox-blue text-surface text-sm px-4 py-1.5 border-none cursor-pointer hover:bg-gruvbox-green transition-colors"
             >
               Configure AI
             </button>
@@ -217,7 +217,7 @@ export function AppContent() {
                 setSetupDismissed(true)
                 localStorage.setItem('folddb_setup_dismissed', '1')
               }}
-              className="text-blue-600 text-sm bg-transparent border-none cursor-pointer hover:text-blue-800 transition-colors"
+              className="text-gruvbox-blue text-sm bg-transparent border-none cursor-pointer hover:text-gruvbox-bright transition-colors"
             >
               Dismiss
             </button>
@@ -236,8 +236,8 @@ export function AppContent() {
             <div className="max-w-5xl mx-auto p-6 bg-surface min-h-full">
               {/* Schema Loading/Error States */}
               {schemasError && (
-                <div className="mb-4 p-3 bg-surface border border-red-200 border-l-4 border-l-red-600">
-                  <p className="text-red-600 text-sm">{schemasError}</p>
+                <div className="mb-4 p-3 bg-surface border border-border border-l-4 border-l-gruvbox-red">
+                  <p className="text-gruvbox-red text-sm">{schemasError}</p>
                 </div>
               )}
 

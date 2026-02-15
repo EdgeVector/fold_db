@@ -39,7 +39,7 @@ export function generateInputStyles({
   additionalClasses = "",
 }) {
   const baseStyles = "input";
-  const stateStyles = hasError ? "border-red-500" : "";
+  const stateStyles = hasError ? "border-gruvbox-red" : "";
   const disabledStyles = disabled ? "opacity-50 cursor-not-allowed" : "";
 
   return `${baseStyles} ${stateStyles} ${disabledStyles} ${additionalClasses}`.trim();
@@ -61,7 +61,7 @@ export function generateSelectStyles({
   additionalClasses = "",
 }) {
   const baseStyles = "select";
-  const errorStyles = hasError ? "border-red-500" : "";
+  const errorStyles = hasError ? "border-gruvbox-red" : "";
   const disabledStyles =
     disabled || loading ? "opacity-50 cursor-not-allowed" : "";
 
@@ -181,7 +181,7 @@ export function getLoadingSpinnerClasses({
 
   const colorClasses = {
     primary: "border-primary border-t-transparent",
-    gray: "border-gray-400 border-t-transparent",
+    gray: "border-border border-t-transparent",
     white: "border-white border-t-transparent",
   };
 

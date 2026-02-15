@@ -187,7 +187,7 @@ function LlmQueryTab({ onResult }) {
             <div key={idx} className="mb-3">
               {entry.type === 'user' && (
                 <div className="flex justify-end">
-                  <div className="max-w-[80%] px-4 py-3 bg-primary text-white rounded-lg">
+                  <div className="max-w-[80%] px-4 py-3 bg-gruvbox-elevated border border-gruvbox-orange text-primary rounded-lg">
                     <p className="text-xs opacity-70 mb-1">You</p>
                     <p className="text-sm">{entry.content}</p>
                   </div>
@@ -222,7 +222,7 @@ function LlmQueryTab({ onResult }) {
                           onResult(null);
                         }
                       }}
-                      className="text-xs text-blue-600 hover:underline bg-transparent border-none cursor-pointer"
+                      className="text-xs text-gruvbox-blue hover:underline bg-transparent border-none cursor-pointer"
                     >
                       {showResults ? 'Hide Details' : 'Show Details'}
                     </button>

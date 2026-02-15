@@ -28,11 +28,11 @@ function Header({ onSettingsClick }) {
           {ingestionStatus && (
             <button
               onClick={aiReady ? undefined : onSettingsClick}
-              className={`flex items-center gap-2 px-3 py-1.5 bg-surface-secondary border border-border ${aiReady ? '' : 'cursor-pointer hover:border-red-400'}`}
+              className={`flex items-center gap-2 px-3 py-1.5 bg-surface-secondary border border-border ${aiReady ? '' : 'cursor-pointer hover:border-gruvbox-red'}`}
               title={aiReady ? `${ingestionStatus.provider} · ${ingestionStatus.model}` : 'AI not configured — click to open Settings'}
             >
-              <div className={`w-2 h-2 rounded-full animate-pulse ${aiReady ? 'bg-green-600' : 'bg-red-600'}`} />
-              <span className={`text-xs font-mono ${aiReady ? 'text-green-600' : 'text-red-600'}`}>
+              <div className={`w-2 h-2 rounded-full animate-pulse ${aiReady ? 'bg-gruvbox-green' : 'bg-gruvbox-red'}`} />
+              <span className={`text-xs font-mono ${aiReady ? 'text-gruvbox-green' : 'text-gruvbox-red'}`}>
                 {aiReady ? `AI · ${ingestionStatus.provider}` : 'AI off'}
               </span>
             </button>
@@ -40,7 +40,7 @@ function Header({ onSettingsClick }) {
         </div>
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2 text-sm text-secondary">
-            <span className="w-2 h-2 bg-green-600 rounded-full" />
+            <span className="w-2 h-2 bg-gruvbox-green rounded-full" />
             Connected
           </div>
           {isAuthenticated && (

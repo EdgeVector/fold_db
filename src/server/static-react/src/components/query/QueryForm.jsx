@@ -165,7 +165,7 @@ function QueryForm({
           name="hashRangeFilter"
           helpText="Filter data by hash and range key values"
         >
-          <div className="bg-blue-50 border border-blue-200 p-4 space-y-4">
+          <div className="bg-gruvbox-elevated border border-border p-4 space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <label className="label">Hash Key</label>

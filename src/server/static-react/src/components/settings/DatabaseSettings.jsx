@@ -100,7 +100,7 @@ function DatabaseSettings({ configSaveStatus, setConfigSaveStatus, onClose }) {
             <div><label className="label">Table Name *</label><input type="text" value={dynamoTableName} onChange={(e) => setDynamoTableName(e.target.value)} className="input" /></div>
             <div><label className="label">AWS Region *</label><input type="text" value={dynamoRegion} onChange={(e) => setDynamoRegion(e.target.value)} className="input" /></div>
             <div><label className="label">User ID (Optional)</label><input type="text" value={dynamoUserId} onChange={(e) => setDynamoUserId(e.target.value)} className="input" /></div>
-            <div className="card card-warning p-3"><p className="text-xs text-amber-600"><strong>Note:</strong> Ensure AWS credentials are configured.</p></div>
+            <div className="card card-warning p-3"><p className="text-xs text-gruvbox-yellow"><strong>Note:</strong> Ensure AWS credentials are configured.</p></div>
           </div>
         )}
 
@@ -110,30 +110,30 @@ function DatabaseSettings({ configSaveStatus, setConfigSaveStatus, onClose }) {
             <div><label className="label">AWS Region *</label><input type="text" value={s3Region} onChange={(e) => setS3Region(e.target.value)} className="input" /></div>
             <div><label className="label">S3 Prefix</label><input type="text" value={s3Prefix} onChange={(e) => setS3Prefix(e.target.value)} className="input" /></div>
             <div><label className="label">Local Cache Path</label><input type="text" value={s3LocalPath} onChange={(e) => setS3LocalPath(e.target.value)} className="input" /></div>
-            <div className="card card-warning p-3"><p className="text-xs text-amber-600"><strong>Note:</strong> Ensure AWS credentials are configured.</p></div>
+            <div className="card card-warning p-3"><p className="text-xs text-gruvbox-yellow"><strong>Note:</strong> Ensure AWS credentials are configured.</p></div>
           </div>
         )}
 
-        <div className="mt-8 pt-6 border-t border-red-300">
+        <div className="mt-8 pt-6 border-t border-gruvbox-red">
           <div className="flex items-center gap-2 mb-3">
-            <TrashIcon className="w-5 h-5 text-red-600" />
-            <h4 className="text-md font-semibold text-red-600">Danger Zone</h4>
+            <TrashIcon className="w-5 h-5 text-gruvbox-red" />
+            <h4 className="text-md font-semibold text-gruvbox-red">Danger Zone</h4>
           </div>
           <p className="text-sm text-secondary mb-4">Permanently delete all data and restart. Cannot be undone.</p>
           {!isResetting ? (
             <button onClick={handleResetDatabase} className="btn-danger flex items-center gap-2"><TrashIcon className="w-4 h-4" /> Reset Database</button>
           ) : (
-            <div className="card card-info p-3 flex items-center gap-2 text-sm text-blue-600"><span className="spinner" /> Resetting Database...</div>
+            <div className="card card-info p-3 flex items-center gap-2 text-sm text-gruvbox-blue"><span className="spinner" /> Resetting Database...</div>
           )}
           {resetResult && (
-            <div className={`mt-4 p-3 text-sm card ${resetResult.type === 'success' ? 'card-success text-green-600' : 'card-error text-red-600'}`}>
+            <div className={`mt-4 p-3 text-sm card ${resetResult.type === 'success' ? 'card-success text-gruvbox-green' : 'card-error text-gruvbox-red'}`}>
               {resetResult.message}
             </div>
           )}
         </div>
 
         {configSaveStatus && (
-          <div className={`p-3 card ${configSaveStatus.success ? 'card-success text-green-600' : 'card-error text-red-600'}`}>
+          <div className={`p-3 card ${configSaveStatus.success ? 'card-success text-gruvbox-green' : 'card-error text-gruvbox-red'}`}>
             <span className="text-sm font-medium">{configSaveStatus.success ? '✓' : '✗'} {configSaveStatus.message}</span>
           </div>
         )}

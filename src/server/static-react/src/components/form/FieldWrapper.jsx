@@ -43,7 +43,7 @@ function FieldWrapper({
       >
         {label}
         {required && (
-          <span className="ml-1 text-red-600" aria-label="required">
+          <span className="ml-1 text-gruvbox-red" aria-label="required">
             *
           </span>
         )}
@@ -57,7 +57,7 @@ function FieldWrapper({
       {/* Error Message */}
       {hasError && (
         <p 
-          className="text-sm text-red-600"
+          className="text-sm text-gruvbox-red"
           role="alert"
           aria-live="polite"
         >

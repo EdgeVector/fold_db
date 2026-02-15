@@ -72,10 +72,10 @@ export function getModeButtonStyles(isActive = false) {
   const baseStyles = 'px-3 py-1 text-xs transition-colors duration-200';
   
   if (isActive) {
-    return `${baseStyles} bg-primary text-white`;
+    return `${baseStyles} bg-gruvbox-orange text-surface`;
   }
   
-  return `${baseStyles} bg-gray-200 text-gray-700 hover:bg-gray-300`;
+  return `${baseStyles} bg-gruvbox-elevated text-secondary hover:bg-gruvbox-hover`;
 }
 
 /**
@@ -144,7 +144,7 @@ export function validateRangeConfig(config = {}) {
  * @returns {string} CSS classes for range field container
  */
 export function getRangeFieldContainerStyles() {
-  return 'bg-yellow-50 border border-yellow-200 p-4 space-y-4';
+  return 'bg-gruvbox-elevated border border-border p-4 space-y-4';
 }
 
 /**

@@ -15,9 +15,9 @@ function TopologyNode({ node, depth = 0, name = null }) {
   if (node.type === 'Primitive') {
     const primitiveType = node.value
     const typeColor = {
-      String: 'text-green-600',
-      Number: 'text-blue-600',
-      Boolean: 'text-amber-600',
+      String: 'text-gruvbox-green',
+      Number: 'text-gruvbox-blue',
+      Boolean: 'text-gruvbox-yellow',
       Null: 'text-secondary'
     }[primitiveType] || 'text-secondary'
 
@@ -106,7 +106,7 @@ function TopologyNode({ node, depth = 0, name = null }) {
 
   // Fallback for unknown node types
   return (
-    <span className="font-mono text-sm text-red-600">
+    <span className="font-mono text-sm text-gruvbox-red">
       unknown ({JSON.stringify(node)})
     </span>
   )

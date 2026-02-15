@@ -26,7 +26,7 @@ function FileUploadMode({
         <div className="space-y-2">
           <p className="font-medium">{selectedFile.name}</p>
           <p className="text-sm text-secondary">{formatFileSize(selectedFile.size)}</p>
-          <button onClick={() => setSelectedFile(null)} className="text-sm text-red-600">
+          <button onClick={() => setSelectedFile(null)} className="text-sm text-gruvbox-red">
             Remove
           </button>
         </div>

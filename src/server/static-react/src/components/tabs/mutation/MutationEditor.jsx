@@ -151,7 +151,7 @@ function MutationEditor({ fields, mutationType, mutationData, onFieldChange, isR
                       <button
                         type="button"
                         onClick={() => removeKeyValuePair(index)}
-                        className="text-red-600 hover:opacity-75 p-1"
+                        className="text-gruvbox-red hover:opacity-75 p-1"
                         title="Remove this key-value pair"
                       >
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -203,7 +203,7 @@ function MutationEditor({ fields, mutationType, mutationData, onFieldChange, isR
       <h3 className="text-lg font-medium text-primary mb-4">
         Schema Fields
         {isRangeSchema && (
-          <span className="ml-2 text-sm text-blue-600 font-normal">
+          <span className="ml-2 text-sm text-gruvbox-blue font-normal">
             (Range Schema - Single Values)
           </span>
         )}

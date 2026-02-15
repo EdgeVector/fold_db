@@ -76,7 +76,7 @@ export function getSelectStyles(
   let classes = "select";
 
   if (hasError) {
-    classes += " border-red-500";
+    classes += " border-gruvbox-red";
   }
 
   if (disabled || loading) {

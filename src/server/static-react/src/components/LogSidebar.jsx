@@ -14,8 +14,8 @@ function LogSidebar() {
 
   const getLevelColor = (level) => {
     switch (level?.toUpperCase()) {
-      case 'ERROR': return 'text-red-600'
-      case 'WARN': case 'WARNING': return 'text-amber-600'
+      case 'ERROR': return 'text-gruvbox-red'
+      case 'WARN': case 'WARNING': return 'text-gruvbox-yellow'
       case 'INFO': return 'text-secondary'
       default: return 'text-tertiary'
     }

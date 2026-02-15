@@ -130,14 +130,14 @@ function QueryPreview({
         {validationErrors && validationErrors.length > 0 && (
           <div className="card card-error p-3">
             <div className="flex items-center mb-2">
-              <svg className="h-4 w-4 text-red-600 mr-2" fill="currentColor" viewBox="0 0 20 20">
+              <svg className="h-4 w-4 text-gruvbox-red mr-2" fill="currentColor" viewBox="0 0 20 20">
                 <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
               </svg>
-              <span className="text-sm font-medium text-red-600">Validation Errors</span>
+              <span className="text-sm font-medium text-gruvbox-red">Validation Errors</span>
             </div>
             <ul className="space-y-1">
               {validationErrors.map((error, index) => (
-                <li key={index} className="text-sm text-red-600">
+                <li key={index} className="text-sm text-gruvbox-red">
                   {error}
                 </li>
               ))}
@@ -149,11 +149,11 @@ function QueryPreview({
         {isExecuting && (
           <div className="card card-info p-3">
             <div className="flex items-center">
-              <svg className="animate-spin h-4 w-4 text-blue-600 mr-2" fill="none" viewBox="0 0 24 24">
+              <svg className="animate-spin h-4 w-4 text-gruvbox-blue mr-2" fill="none" viewBox="0 0 24 24">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
               </svg>
-              <span className="text-sm font-medium text-blue-600">Executing query...</span>
+              <span className="text-sm font-medium text-gruvbox-blue">Executing query...</span>
             </div>
           </div>
         )}
@@ -210,7 +210,7 @@ function QueryPreview({
                   // Handle filters as array (from test mocks)
                   formattedQuery.filters.map((filter, index) => (
                     <div key={index} className="card card-warning p-3">
-                      <div className="text-sm text-amber-700">
+                      <div className="text-sm text-gruvbox-yellow">
                         {filter.field} {filter.operator} "{filter.value}"
                       </div>
                     </div>
@@ -219,18 +219,18 @@ function QueryPreview({
                   // Handle filters as object (existing format)
                   Object.entries(formattedQuery.filters).map(([fieldName, filter]) => (
                     <div key={fieldName} className="card card-warning p-3">
-                      <div className="font-medium text-sm text-amber-700 mb-1">
+                      <div className="font-medium text-sm text-gruvbox-yellow mb-1">
                         {fieldName}
                       </div>
-                      <div className="text-sm text-amber-700">
+                      <div className="text-sm text-gruvbox-yellow">
                         {filter.exactKey && (
-                          <span>Exact key: <code className="bg-amber-100 px-1 rounded">{filter.exactKey}</code></span>
+                          <span>Exact key: <code className="bg-gruvbox-elevated px-1 rounded">{filter.exactKey}</code></span>
                         )}
                         {filter.keyRange && (
-                          <span>Key range: <code className="bg-amber-100 px-1 rounded">{filter.keyRange}</code></span>
+                          <span>Key range: <code className="bg-gruvbox-elevated px-1 rounded">{filter.keyRange}</code></span>
                         )}
                         {filter.keyPrefix && (
-                          <span>Key prefix: <code className="bg-amber-100 px-1 rounded">{filter.keyPrefix}</code></span>
+                          <span>Key prefix: <code className="bg-gruvbox-elevated px-1 rounded">{filter.keyPrefix}</code></span>
                         )}
                       </div>
                     </div>
@@ -247,7 +247,7 @@ function QueryPreview({
                 OrderBy
               </label>
               <div className="card card-info p-3">
-                <div className="text-sm text-blue-600">
+                <div className="text-sm text-gruvbox-blue">
                   {formattedQuery.orderBy.field} {formattedQuery.orderBy.direction}
                 </div>
               </div>
@@ -260,9 +260,9 @@ function QueryPreview({
               <label className="block text-xs font-medium text-secondary mb-1">
                 RangeKey
               </label>
-              <div className="bg-blue-50 border border-blue-200 p-3">
-                <div className="text-sm text-blue-700">
-                  <code className="bg-blue-100 px-1">{formattedQuery.rangeKey}</code>
+              <div className="bg-gruvbox-elevated border border-border p-3">
+                <div className="text-sm text-gruvbox-blue">
+                  <code className="bg-gruvbox-elevated px-1">{formattedQuery.rangeKey}</code>
                 </div>
               </div>
             </div>
@@ -275,7 +275,7 @@ function QueryPreview({
             <label className="block text-xs font-medium text-secondary uppercase tracking-wide mb-2">
               Raw JSON
             </label>
-            <pre className="text-xs p-3 overflow-x-auto bg-gray-900 text-gray-200">
+            <pre className="text-xs p-3 overflow-x-auto bg-surface-secondary text-primary">
               {JSON.stringify(query, null, 2)}
             </pre>
           </div>
