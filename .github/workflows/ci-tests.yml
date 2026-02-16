@@ -19,6 +19,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          lfs: true
 
       - name: Setup Node.js (for actions/cache)
         uses: actions/setup-node@v4
@@ -70,6 +72,13 @@ jobs:
         continue-on-error: true
         run: cargo test --workspace
 
+      - name: Run tweets ingestion integration test
+        id: ingestion-test
+        continue-on-error: true
+        if: env.FOLD_OPENROUTER_API_KEY != ''
+        run: cargo test --test ingest_tweets_test -- --ignored
+        timeout-minutes: 5
+
       - name: Check AWS Backend
         id: check-aws
         run: cargo check --workspace --features aws-backend
@@ -79,6 +88,7 @@ jobs:
         run: |
           clippy_status="${{ steps.clippy.outcome }}"
           test_status="${{ steps.cargo-test.outcome }}"
+          ingestion_status="${{ steps.ingestion-test.outcome }}"
 
           if [ "$clippy_status" = "success" ]; then
             echo "✅ **Rust Clippy**" >> $GITHUB_STEP_SUMMARY
@@ -94,6 +104,17 @@ jobs:
           else
             echo "❌ **Rust Tests**" >> $GITHUB_STEP_SUMMARY
             echo "Cargo tests failed. Check the job logs for details." >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ "$ingestion_status" = "success" ]; then
+            echo "✅ **Tweets Ingestion Test**" >> $GITHUB_STEP_SUMMARY
+            echo "Integration test passed (356 tweets ingested)." >> $GITHUB_STEP_SUMMARY
+          elif [ "$ingestion_status" = "skipped" ]; then
+            echo "⏭️ **Tweets Ingestion Test**" >> $GITHUB_STEP_SUMMARY
+            echo "Skipped (FOLD_OPENROUTER_API_KEY not configured)." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Tweets Ingestion Test**" >> $GITHUB_STEP_SUMMARY
+            echo "Integration test failed. Check the job logs for details." >> $GITHUB_STEP_SUMMARY
           fi
 
       - name: Fail if clippy or tests failed
