@@ -334,10 +334,10 @@ impl MutationManager {
             }
 
             // Collect molecule versions for each mutated field
-            let mut mol_versions: Vec<u64> = Vec::new();
+            let mut mol_versions: std::collections::HashSet<u64> = std::collections::HashSet::new();
             for schema_field in schema.runtime_fields.values() {
                 if let Some(v) = schema_field.molecule_version() {
-                    mol_versions.push(v);
+                    mol_versions.insert(v);
                 }
             }
 

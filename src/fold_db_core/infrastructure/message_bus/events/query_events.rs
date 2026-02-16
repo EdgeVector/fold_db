@@ -31,7 +31,7 @@ pub struct MutationExecuted {
     pub user_id: Option<String>,
     /// Molecule version numbers at time of mutation
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub molecule_versions: Option<Vec<u64>>,
+    pub molecule_versions: Option<std::collections::HashSet<u64>>,
 }
 
 impl EventType for MutationExecuted {

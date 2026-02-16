@@ -280,7 +280,7 @@ async fn test_molecule_versions_preserved_through_index_roundtrip() {
     let manager = NativeIndexManager::new(kv_store, None);
 
     let key = KeyValue::new(Some("rec1".to_string()), None);
-    let mol_versions = vec![3u64, 1u64];
+    let mol_versions: std::collections::HashSet<u64> = [3u64, 1u64].into_iter().collect();
 
     // Index with molecule versions
     manager
@@ -294,7 +294,8 @@ async fn test_molecule_versions_preserved_through_index_roundtrip() {
     let entry = &entries[0];
     assert!(entry.molecule_versions.is_some());
     let versions = entry.molecule_versions.as_ref().unwrap();
-    assert_eq!(versions, &vec![3u64, 1u64]);
+    let expected: std::collections::HashSet<u64> = [3u64, 1u64].into_iter().collect();
+    assert_eq!(versions, &expected);
 }
 
 #[tokio::test]

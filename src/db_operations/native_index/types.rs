@@ -1,6 +1,7 @@
 use crate::schema::types::key_value::KeyValue;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::collections::HashSet;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub(super) const EXCLUDED_FIELDS: &[&str] = &["uuid", "id", "password", "token"];
@@ -50,7 +51,7 @@ pub struct IndexEntry {
     pub matched_term: Option<String>,
     /// Molecule version numbers at the time this entry was indexed
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub molecule_versions: Option<Vec<u64>>,
+    pub molecule_versions: Option<HashSet<u64>>,
 }
 
 impl IndexEntry {
@@ -144,7 +145,7 @@ pub struct IndexResult {
     pub metadata: Option<Value>,
     /// Molecule version numbers at the time this entry was indexed
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub molecule_versions: Option<Vec<u64>>,
+    pub molecule_versions: Option<HashSet<u64>>,
 }
 
 impl IndexResult {
