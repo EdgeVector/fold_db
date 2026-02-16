@@ -1,13 +1,33 @@
+import { useState, useEffect } from 'react'
 import { useAppDispatch, useAppSelector } from '../store/hooks'
 import { logoutUser } from '../store/authSlice'
-import { useIngestionStatus } from '../hooks/useIngestionStatus'
 import { BROWSER_CONFIG } from '../constants/config'
+import { systemClient } from '../api/clients/systemClient'
 import HeaderProgress from './HeaderProgress'
+import AnimatedLogo from './AnimatedLogo'
 
-function Header({ onSettingsClick }) {
+function classifySchemaEnv(url) {
+  if (!url) return { label: 'None', color: 'text-gruvbox-yellow' }
+  if (url.includes('127.0.0.1') || url.includes('localhost')) return { label: 'Local', color: 'text-gruvbox-yellow' }
+  if (url.includes('us-east-1')) return { label: 'Prod', color: 'text-gruvbox-green' }
+  if (url.includes('us-west-2')) return { label: 'Dev', color: 'text-gruvbox-blue' }
+  return { label: 'Custom', color: 'text-secondary' }
+}
+
+function Header({ onSettingsClick, onAiSettingsClick, ingestionStatus }) {
   const dispatch = useAppDispatch()
   const { isAuthenticated, user } = useAppSelector(state => state.auth)
-  const { ingestionStatus } = useIngestionStatus()
+  const [storageMode, setStorageMode] = useState(null)
+  const [schemaEnv, setSchemaEnv] = useState(null)
+
+  useEffect(() => {
+    systemClient.getDatabaseConfig().then(res => {
+      if (res.data) setStorageMode(res.data.type === 'dynamodb' ? 'Cloud' : 'Local')
+    }).catch(() => {})
+    systemClient.getSystemStatus().then(res => {
+      if (res.data) setSchemaEnv(classifySchemaEnv(res.data.schema_service_url))
+    }).catch(() => {})
+  }, [])
 
   const handleLogout = () => {
     dispatch(logoutUser())
@@ -21,27 +41,25 @@ function Header({ onSettingsClick }) {
     <header className="bg-surface border-b border-border px-8 py-3 flex-shrink-0">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-6">
-          <a href="/" className="text-lg font-medium tracking-tight text-primary no-underline hover:text-primary">
+          <a href="/" className="flex items-center gap-2 text-lg font-medium tracking-tight text-primary no-underline hover:text-primary">
+            <AnimatedLogo size={72} />
             FoldDB
           </a>
           <HeaderProgress />
-          {ingestionStatus && (
-            <button
-              onClick={aiReady ? undefined : onSettingsClick}
-              className={`flex items-center gap-2 px-3 py-1.5 bg-surface-secondary border border-border ${aiReady ? '' : 'cursor-pointer hover:border-gruvbox-red'}`}
-              title={aiReady ? `${ingestionStatus.provider} · ${ingestionStatus.model}` : 'AI not configured — click to open Settings'}
-            >
-              <div className={`w-2 h-2 rounded-full animate-pulse ${aiReady ? 'bg-gruvbox-green' : 'bg-gruvbox-red'}`} />
-              <span className={`text-xs font-mono ${aiReady ? 'text-gruvbox-green' : 'text-gruvbox-red'}`}>
-                {aiReady ? `AI · ${ingestionStatus.provider}` : 'AI off'}
-              </span>
-            </button>
-          )}
         </div>
         <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2 text-sm text-secondary">
-            <span className="w-2 h-2 bg-gruvbox-green rounded-full" />
-            Connected
+          <div className="flex items-center gap-2 text-sm text-secondary font-mono">
+            <span>{storageMode || '...'}</span>
+            {schemaEnv && <><span className="text-tertiary">/</span><span className={schemaEnv.color}>Schema: {schemaEnv.label}</span></>}
+            {ingestionStatus && (
+              <><span className="text-tertiary">/</span><button
+                onClick={onAiSettingsClick}
+                className={`bg-transparent border-none cursor-pointer p-0 font-mono text-sm ${aiReady ? 'text-gruvbox-green' : 'text-gruvbox-red'} hover:text-primary`}
+                title={aiReady ? `${ingestionStatus.provider} · ${ingestionStatus.model}` : 'AI not configured — click to open Settings'}
+              >
+                {aiReady ? `AI: ${ingestionStatus.provider}` : 'AI: off'}
+              </button></>
+            )}
           </div>
           {isAuthenticated && (
             <div className="flex items-center gap-4">

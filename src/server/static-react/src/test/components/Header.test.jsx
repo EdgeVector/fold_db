@@ -66,12 +66,13 @@ describe('Header Component', () => {
     expect(settingsButton).toBeInTheDocument()
   })
 
-  it('displays connected status', () => {
+  it('displays status indicators', () => {
     renderWithRedux(<Header onSettingsClick={vi.fn()} />, {
       preloadedState: defaultPreloadedState
     })
 
-    expect(screen.getByText('Connected')).toBeInTheDocument()
+    // Shows placeholder while loading storage mode
+    expect(screen.getByText('...')).toBeInTheDocument()
   })
 
   it('calls onSettingsClick when settings button is clicked', () => {

@@ -28,23 +28,6 @@ vi.mock('../../api/clients', () => ({
   },
 }))
 
-vi.mock('../../components/form/SelectField', () => ({
-  default: ({ name, label, value, options, onChange }) => (
-    <div data-testid={`select-${name}`}>
-      <label>{label}</label>
-      <select
-        data-testid={`select-input-${name}`}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-      >
-        {options.map((o) => (
-          <option key={o.value} value={o.value}>{o.label}</option>
-        ))}
-      </select>
-    </div>
-  ),
-}))
-
 const { ingestionClient } = await import('../../api/clients')
 
 describe('OnboardingWizard', () => {
@@ -59,29 +42,29 @@ describe('OnboardingWizard', () => {
     renderWithRedux(<OnboardingWizard isOpen={true} onClose={mockOnClose} />)
 
     await waitFor(() => {
-      expect(screen.getByText('Welcome to FoldDB')).toBeInTheDocument()
+      expect(screen.getByText('Welcome to Fold DB')).toBeInTheDocument()
     })
-    expect(screen.getByText('Get Started')).toBeInTheDocument()
+    expect(screen.getByText('[Get Started]')).toBeInTheDocument()
     expect(screen.getByText('Step 1 of 4')).toBeInTheDocument()
   })
 
   it('does not render when closed', () => {
     renderWithRedux(<OnboardingWizard isOpen={false} onClose={mockOnClose} />)
 
-    expect(screen.queryByText('Welcome to FoldDB')).not.toBeInTheDocument()
+    expect(screen.queryByText('Welcome to Fold DB')).not.toBeInTheDocument()
   })
 
   it('advances from welcome to configure AI', async () => {
     renderWithRedux(<OnboardingWizard isOpen={true} onClose={mockOnClose} />)
 
     await waitFor(() => {
-      expect(screen.getByText('Welcome to FoldDB')).toBeInTheDocument()
+      expect(screen.getByText('Welcome to Fold DB')).toBeInTheDocument()
     })
 
-    fireEvent.click(screen.getByText('Get Started'))
+    fireEvent.click(screen.getByText('[Get Started]'))
 
     await waitFor(() => {
-      expect(screen.getByText('Configure AI Provider')).toBeInTheDocument()
+      expect(screen.getByText('CONFIGURE AI')).toBeInTheDocument()
     })
     expect(screen.getByText('Step 2 of 4')).toBeInTheDocument()
   })
@@ -106,12 +89,12 @@ describe('OnboardingWizard', () => {
 
     // Go to step 2
     await waitFor(() => {
-      expect(screen.getByText('Get Started')).toBeInTheDocument()
+      expect(screen.getByText('[Get Started]')).toBeInTheDocument()
     })
-    fireEvent.click(screen.getByText('Get Started'))
+    fireEvent.click(screen.getByText('[Get Started]'))
 
     await waitFor(() => {
-      expect(screen.getByText('Configure AI Provider')).toBeInTheDocument()
+      expect(screen.getByText('CONFIGURE AI')).toBeInTheDocument()
     })
 
     // Enter API key
@@ -119,7 +102,7 @@ describe('OnboardingWizard', () => {
     fireEvent.change(apiKeyInput, { target: { value: 'sk-or-test-key' } })
 
     // Click save
-    fireEvent.click(screen.getByText('Save & Continue'))
+    fireEvent.click(screen.getByText('[Save & Continue]'))
 
     await waitFor(() => {
       expect(ingestionClient.saveConfig).toHaveBeenCalled()
@@ -136,7 +119,7 @@ describe('OnboardingWizard', () => {
     })
 
     await waitFor(() => {
-      expect(screen.getByText('Storage Configuration')).toBeInTheDocument()
+      expect(screen.getByText('STORAGE')).toBeInTheDocument()
     })
 
     vi.useRealTimers()
@@ -147,19 +130,19 @@ describe('OnboardingWizard', () => {
 
     // Navigate to step 3
     await waitFor(() => {
-      expect(screen.getByText('Get Started')).toBeInTheDocument()
+      expect(screen.getByText('[Get Started]')).toBeInTheDocument()
     })
-    fireEvent.click(screen.getByText('Get Started'))
+    fireEvent.click(screen.getByText('[Get Started]'))
 
     await waitFor(() => {
-      expect(screen.getByText('Configure AI Provider')).toBeInTheDocument()
+      expect(screen.getByText('CONFIGURE AI')).toBeInTheDocument()
     })
-    fireEvent.click(screen.getByText('Skip for Now'))
+    fireEvent.click(screen.getByText('[Skip]'))
 
     await waitFor(() => {
-      expect(screen.getByText('Storage Configuration')).toBeInTheDocument()
+      expect(screen.getByText('STORAGE')).toBeInTheDocument()
     })
-    expect(screen.getByText('Local Storage')).toBeInTheDocument()
+    expect(screen.getByText('LOCAL')).toBeInTheDocument()
   })
 
   it('completes wizard on final step', async () => {
@@ -167,28 +150,28 @@ describe('OnboardingWizard', () => {
 
     // Step 1 -> 2
     await waitFor(() => {
-      expect(screen.getByText('Get Started')).toBeInTheDocument()
+      expect(screen.getByText('[Get Started]')).toBeInTheDocument()
     })
-    fireEvent.click(screen.getByText('Get Started'))
+    fireEvent.click(screen.getByText('[Get Started]'))
 
     // Step 2 -> 3
     await waitFor(() => {
-      expect(screen.getByText('Configure AI Provider')).toBeInTheDocument()
+      expect(screen.getByText('CONFIGURE AI')).toBeInTheDocument()
     })
-    fireEvent.click(screen.getByText('Skip for Now'))
+    fireEvent.click(screen.getByText('[Skip]'))
 
     // Step 3 -> 4
     await waitFor(() => {
-      expect(screen.getByText('Storage Configuration')).toBeInTheDocument()
+      expect(screen.getByText('STORAGE')).toBeInTheDocument()
     })
-    fireEvent.click(screen.getByText('Continue'))
+    fireEvent.click(screen.getByText('[Continue]'))
 
     // Step 4 (Done)
     await waitFor(() => {
-      expect(screen.getByText("You're All Set!")).toBeInTheDocument()
+      expect(screen.getByText("You're all set.")).toBeInTheDocument()
     })
 
-    fireEvent.click(screen.getByText('Start Using FoldDB'))
+    fireEvent.click(screen.getByText('[Start Using FoldDB]'))
 
     expect(localStorage.getItem(BROWSER_CONFIG.STORAGE_KEYS.ONBOARDING_COMPLETED)).toBe('1')
     expect(mockOnClose).toHaveBeenCalled()

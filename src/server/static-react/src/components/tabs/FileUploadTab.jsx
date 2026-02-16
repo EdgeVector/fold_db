@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react'
+import { BROWSER_CONFIG } from '../../constants/config'
 import FileUploadMode from './upload/FileUploadMode'
 
 function FileUploadTab({ onResult }) {
@@ -65,8 +66,15 @@ function FileUploadTab({ onResult }) {
       formData.append('trustDistance', trustDistance.toString())
       formData.append('pubKey', pubKey)
 
+      const headers = {}
+      const userHash = localStorage.getItem(BROWSER_CONFIG.STORAGE_KEYS.USER_HASH)
+      if (userHash) {
+        headers['x-user-hash'] = userHash
+      }
+
       const response = await fetch('/api/ingestion/upload', {
         method: 'POST',
+        headers,
         body: formData,
       })
 

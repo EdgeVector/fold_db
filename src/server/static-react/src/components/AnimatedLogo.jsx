@@ -4,7 +4,7 @@ import { useRef, useEffect } from 'react'
  * Animated FoldDB logo rendered on a <canvas>.
  * @param {{ size?: number, className?: string }} props
  */
-function AnimatedLogo({ size = 28, className = '' }) {
+function AnimatedLogo({ size = 84, className = '' }) {
   const canvasRef = useRef(null)
 
   useEffect(() => {
@@ -67,7 +67,7 @@ function AnimatedLogo({ size = 28, className = '' }) {
       return { t, rot }
     }
 
-    function drawShape(cx, cy, hw, hh, r, color, sy, rot) {
+    function drawShape(cx, cy, hw, hh, r, color, sy, rot, t) {
       const clampR = Math.min(r, hw, hh)
       const L = cx - hw, R = cx + hw, T = cy - hh, B = cy + hh
       ctx.save()
@@ -86,9 +86,12 @@ function AnimatedLogo({ size = 28, className = '' }) {
       ctx.lineTo(L, T + clampR)
       ctx.arcTo(L, T, L + clampR, T, clampR)
       ctx.closePath()
+      if (t > 0) {
+        ctx.globalAlpha = t
+        ctx.fillStyle = color
+        ctx.fill()
+      }
       ctx.globalAlpha = 1
-      ctx.fillStyle = color
-      ctx.fill()
       ctx.strokeStyle = color
       ctx.lineWidth = LINE_W
       ctx.stroke()
@@ -104,7 +107,7 @@ function AnimatedLogo({ size = 28, className = '' }) {
         const r  = lerp(RECT_R, CIRCLE_R, t)
         const sy = lerp(1, SCALE_Y, t)
         const cy = CY + lerp(OFFSETS_RECT[i], OFFSETS_CIRCLE[i], t)
-        drawShape(CX, cy, hw, hh, r, COLORS[i], sy, rot)
+        drawShape(CX, cy, hw, hh, r, COLORS[i], sy, rot, t)
       }
     }
 

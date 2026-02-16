@@ -1,15 +1,19 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import TransformsTab from './tabs/TransformsTab'
 import KeyManagementTab from './tabs/KeyManagementTab'
 import AiConfigSettings from './settings/AiConfigSettings'
 import SchemaServiceSettings from './settings/SchemaServiceSettings'
 import DatabaseSettings from './settings/DatabaseSettings'
 
-function SettingsModal({ isOpen, onClose }) {
-  const [activeTab, setActiveTab] = useState('ai')
+function SettingsModal({ isOpen, onClose, onConfigSaved, initialTab }) {
+  const [activeTab, setActiveTab] = useState(initialTab || 'ai')
   const [configSaveStatus, setConfigSaveStatus] = useState(null)
 
-  const aiConfig = AiConfigSettings({ configSaveStatus, setConfigSaveStatus, onClose })
+  useEffect(() => {
+    if (isOpen && initialTab) setActiveTab(initialTab)
+  }, [isOpen, initialTab])
+
+  const aiConfig = AiConfigSettings({ configSaveStatus, setConfigSaveStatus, onClose, onConfigSaved })
   const dbConfig = DatabaseSettings({ configSaveStatus, setConfigSaveStatus, onClose })
 
   if (!isOpen) return null

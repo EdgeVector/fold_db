@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { ingestionClient } from '../../api/clients'
 
-function AiConfigSettings({ configSaveStatus, setConfigSaveStatus, onClose }) {
+function AiConfigSettings({ configSaveStatus, setConfigSaveStatus, onClose, onConfigSaved }) {
   const [aiProvider, setAiProvider] = useState('OpenRouter')
   const [openrouterApiKey, setOpenrouterApiKey] = useState('')
   const [openrouterModel, setOpenrouterModel] = useState('anthropic/claude-3.5-sonnet')
@@ -36,6 +36,7 @@ function AiConfigSettings({ configSaveStatus, setConfigSaveStatus, onClose }) {
       const response = await ingestionClient.saveConfig(config)
       if (response.success) {
         setConfigSaveStatus({ success: true, message: 'Configuration saved successfully' })
+        if (onConfigSaved) onConfigSaved()
         setTimeout(() => { setConfigSaveStatus(null); onClose() }, 1500)
       } else {
         setConfigSaveStatus({ success: false, message: 'Failed to save configuration' })
