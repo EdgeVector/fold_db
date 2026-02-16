@@ -211,7 +211,7 @@ describe('rangeSchemaUtils', () => {
         type: 'query',
         schema: 'UserScores',
         fields: ['game_scores', 'achievements'],
-        filter: { HashKey: 'user123' }
+        filter: { RangeKey: 'user123' }
       })
     })
 
@@ -219,8 +219,8 @@ describe('rangeSchemaUtils', () => {
       const fields = ['game_scores']
       const rangeFilterValue = '  user123  '
       const result = formatRangeQuery(schema, fields, rangeFilterValue)
-      
-      expect(result.filter).toEqual({ HashKey: 'user123' })
+
+      expect(result.filter).toEqual({ RangeKey: 'user123' })
     })
 
     it('should not include range_filter for empty string', () => {
@@ -362,7 +362,7 @@ describe('rangeSchemaUtils', () => {
         type: 'query',
         schema: 'BlogPost',
         fields: ['title', 'author'],
-        filter: { HashKey: '2024-01-01' }
+        filter: { RangeKey: '2024-01-01' }
       })
     })
   })

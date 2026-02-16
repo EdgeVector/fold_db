@@ -365,7 +365,7 @@ describe('useQueryBuilder Hook', () => {
         }
       });
 
-      expect(result.current.query.filter).toEqual({ "HashKey": "user:123" });
+      expect(result.current.query.filter).toEqual({ "RangeKey": "user:123" });
     });
 
     it('should not include rangeKey for non-range schemas', () => {

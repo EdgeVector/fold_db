@@ -164,7 +164,7 @@ pub fn apply_range_filter<T: RangeOperations>(
                 matches.insert(composite_key, atom_uuid);
             }
         }
-        HashRangeFilter::HashKey(key) => {
+        HashRangeFilter::HashKey(key) | HashRangeFilter::RangeKey(key) => {
             if let Some(atom_uuid) = operations.get_atom_uuid(&key) {
                 let composite_key = KeyValue::new(None, Some(key.clone()));
                 matches.insert(composite_key, atom_uuid);
@@ -257,6 +257,15 @@ pub fn apply_hash_range_filter<T: HashRangeOperations>(
             if let Some(range_atoms) = operations.get_atoms_for_hash(&hash) {
                 for (range_key, atom_uuid) in range_atoms {
                     let composite_key = KeyValue::new(Some(hash.clone()), Some(range_key.clone()));
+                    matches.insert(composite_key, atom_uuid);
+                }
+            }
+        }
+        HashRangeFilter::RangeKey(range) => {
+            for hash_value in operations.get_hash_values() {
+                if let Some(atom_uuid) = operations.get_atom_uuid(&hash_value, &range) {
+                    let composite_key =
+                        KeyValue::new(Some(hash_value.clone()), Some(range.clone()));
                     matches.insert(composite_key, atom_uuid);
                 }
             }

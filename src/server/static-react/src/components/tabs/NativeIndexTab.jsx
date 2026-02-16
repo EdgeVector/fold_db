@@ -2,9 +2,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useApprovedSchemas } from '../../hooks/useApprovedSchemas.js'
 import { nativeIndexClient, mutationClient } from '../../api/clients'
 import { FieldsTable } from '../StructuredResults'
-import { 
+import {
   createHashRangeKeyFilter,
-  createHashKeyFilter
+  createHashKeyFilter,
+  createRangeKeyFilter,
 } from '../../utils/filterUtils'
 
 function ResultRow({ r }) {
@@ -95,7 +96,7 @@ export default function NativeIndexTab({ onResult }) {
     const r = kv?.range
     if (h && r) return createHashRangeKeyFilter(h, r)
     if (h) return createHashKeyFilter(h)
-    if (r) return createHashKeyFilter(r)
+    if (r) return createRangeKeyFilter(r)
     return undefined
   }, [])
 

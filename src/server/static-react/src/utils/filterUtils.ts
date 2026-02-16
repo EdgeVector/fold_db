@@ -9,10 +9,17 @@
 import type { HashRangeFilter } from '@generated/generated';
 
 /**
- * Creates a HashKey filter for exact range key matches
+ * Creates a HashKey filter for hash key matches (returns all range keys for that hash)
  */
-export function createHashKeyFilter(rangeKey: string): HashRangeFilter {
-  return { HashKey: rangeKey };
+export function createHashKeyFilter(hashKey: string): HashRangeFilter {
+  return { HashKey: hashKey };
+}
+
+/**
+ * Creates a RangeKey filter for exact range key matches
+ */
+export function createRangeKeyFilter(rangeKey: string): HashRangeFilter {
+  return { RangeKey: rangeKey };
 }
 
 /**
@@ -107,7 +114,7 @@ export interface RangeFilterInput {
  */
 export function createFilterFromRangeInput(input: RangeFilterInput): HashRangeFilter | null {
   if (input.key) {
-    return createHashKeyFilter(input.key);
+    return createRangeKeyFilter(input.key);
   } else if (input.keyPrefix) {
     return createRangePrefixFilter(input.keyPrefix);
   } else if (input.start && input.end) {
@@ -143,7 +150,7 @@ export function createFilterFromHashRangeInput(input: HashRangeFilterInput): Has
   } else if (input.hash) {
     return createHashKeyFilter(input.hash);
   } else if (input.range) {
-    return createHashKeyFilter(input.range);
+    return createRangeKeyFilter(input.range);
   } else if (input.prefix) {
     return createRangePrefixFilter(input.prefix);
   } else if (input.start && input.end) {

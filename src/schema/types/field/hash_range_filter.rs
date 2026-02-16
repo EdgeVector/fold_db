@@ -19,6 +19,8 @@ pub enum HashRangeFilter {
     HashRangeKey { hash: String, range: String },
     /// Filter by hash value only (returns all range keys for that hash)
     HashKey(String),
+    /// Filter by exact range key value (across all hash groups for HashRange schemas)
+    RangeKey(String),
     /// Filter by range key prefix within a specific hash group
     HashRangePrefix { hash: String, prefix: String },
     /// Filter by range key prefix across all hash groups

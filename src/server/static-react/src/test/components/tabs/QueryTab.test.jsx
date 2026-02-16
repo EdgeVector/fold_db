@@ -249,7 +249,7 @@ describe('QueryTab Component', () => {
       query: {
         schema_name: 'BlogPost',
         fields: ['title', 'author', 'publish_date'],
-        filter: { HashKey: '2024-01-15' }  // Range filter for exact key
+        filter: { RangeKey: '2024-01-15' }  // Range filter for exact key
       },
       isValid: true
     })
@@ -322,7 +322,7 @@ describe('QueryTab Component', () => {
       expect.objectContaining({
         schema_name: 'BlogPost',
         fields: expect.arrayContaining(['title', 'author', 'publish_date']),
-        filter: expect.objectContaining({ HashKey: '2024-01-15' })
+        filter: expect.objectContaining({ RangeKey: '2024-01-15' })
       })
     )
 

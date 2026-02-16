@@ -8,10 +8,11 @@ import { useMemo, useCallback } from 'react';
 import { useAppSelector } from '../store/hooks';
 import { selectApprovedSchemas } from '../store/schemaSlice';
 import { isHashRangeSchema, isRangeSchema as detectRangeSchema } from '../utils/rangeSchemaHelpers.js';
-import { 
-  createFilterFromRangeInput, 
-  createHashKeyFilter, 
-  createRangePrefixFilter, 
+import {
+  createFilterFromRangeInput,
+  createHashKeyFilter,
+  createRangeKeyFilter,
+  createRangePrefixFilter,
   createRangeRangeFilter,
   type HashRangeFilter,
   type RangeFilterInput
@@ -142,11 +143,9 @@ export function useQueryBuilder({
       const rangeKey = queryState.rangeSchemaFilter?.key;
       
       if (hashKey && hashKey.trim()) {
-        // For HashRange schemas, use HashKey filter for hash key filtering
         builtQuery.filter = createHashKeyFilter(hashKey.trim());
       } else if (rangeKey && rangeKey.trim()) {
-        // For HashRange schemas, use HashKey filter for range key filtering
-        builtQuery.filter = createHashKeyFilter(rangeKey.trim());
+        builtQuery.filter = createRangeKeyFilter(rangeKey.trim());
       }
     }
 
@@ -164,7 +163,7 @@ export function useQueryBuilder({
 
       // Create filter if any range filter value exists
       if (activeRangeFilter.key) {
-        builtQuery.filter = createHashKeyFilter(activeRangeFilter.key);
+        builtQuery.filter = createRangeKeyFilter(activeRangeFilter.key);
       } else if (activeRangeFilter.keyPrefix) {
         builtQuery.filter = createRangePrefixFilter(activeRangeFilter.keyPrefix);
       } else if (activeRangeFilter.start && activeRangeFilter.end) {

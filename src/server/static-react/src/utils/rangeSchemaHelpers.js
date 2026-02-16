@@ -346,8 +346,8 @@ export function formatRangeQuery(schema, fields, rangeFilterValue) {
   };
   
   if (rangeFilterValue && rangeFilterValue.trim()) {
-    // Use proper HashRangeFilter format
-    query.filter = { "HashKey": rangeFilterValue.trim() };
+    // Use RangeKey filter for exact range key match
+    query.filter = { "RangeKey": rangeFilterValue.trim() };
   }
   
   return query;
@@ -369,11 +369,10 @@ export function formatHashRangeQuery(schema, fields, hashKey, rangeKey) {
     fields: fields
   };
   
-  // Use proper HashRangeFilter format
   if (hashKey && hashKey.trim()) {
     query.filter = { "HashKey": hashKey.trim() };
   } else if (rangeKey && rangeKey.trim()) {
-    query.filter = { "HashKey": rangeKey.trim() };
+    query.filter = { "RangeKey": rangeKey.trim() };
   }
   
   return query;

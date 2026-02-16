@@ -8,6 +8,7 @@ import { SCHEMA_BADGE_COLORS } from '../../constants/ui'
 import {
   createHashRangeKeyFilter,
   createHashKeyFilter,
+  createRangeKeyFilter,
 } from '../../utils/filterUtils'
 
 const PAGE_SIZE = 50
@@ -253,6 +254,6 @@ function buildFilter(kv) {
   const r = kv?.range
   if (h && r) return createHashRangeKeyFilter(h, r)
   if (h) return createHashKeyFilter(h)
-  if (r) return createHashKeyFilter(r)
+  if (r) return createRangeKeyFilter(r)
   return undefined
 }
