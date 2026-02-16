@@ -16,6 +16,16 @@ use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+/// Shared ingestion service state — wrapped in RwLock so config saves can reload it.
+pub type IngestionServiceState = tokio::sync::RwLock<Option<Arc<IngestionService>>>;
+
+/// Helper to get a clone of the current IngestionService Arc from the RwLock.
+pub async fn get_ingestion_service(
+    state: &web::Data<IngestionServiceState>,
+) -> Option<Arc<IngestionService>> {
+    state.read().await.clone()
+}
+
 /// Resolve a folder path — absolute paths pass through, relative paths
 /// are resolved against the current working directory.
 fn resolve_folder_path(path: &str) -> PathBuf {
@@ -168,7 +178,7 @@ pub async fn process_json(
     request: web::Json<IngestionRequest>,
     progress_tracker: web::Data<ProgressTracker>,
     state: web::Data<AppState>,
-    ingestion_service: web::Data<Option<Arc<IngestionService>>>,
+    ingestion_service: web::Data<IngestionServiceState>,
 ) -> impl Responder {
     log_feature!(
         LogFeature::Ingestion,
@@ -186,8 +196,8 @@ pub async fn process_json(
         Err(response) => return response,
     };
 
-    let service = match ingestion_service.get_ref() {
-        Some(s) => s.clone(),
+    let service = match get_ingestion_service(&ingestion_service).await {
+        Some(s) => s,
         None => {
             return HttpResponse::ServiceUnavailable().json(json!({
                 "error": "Ingestion service not available"
@@ -220,7 +230,7 @@ pub async fn process_json(
     responses((status = 200, description = "Ingestion status", body = crate::ingestion::IngestionStatus))
 )]
 pub async fn get_status(
-    ingestion_service: web::Data<Option<Arc<IngestionService>>>,
+    ingestion_service: web::Data<IngestionServiceState>,
 ) -> impl Responder {
     log_feature!(
         LogFeature::Ingestion,
@@ -228,7 +238,7 @@ pub async fn get_status(
         "Received ingestion status request"
     );
 
-    match ingestion_service.get_ref() {
+    match get_ingestion_service(&ingestion_service).await {
         Some(service) => match service.get_status() {
             Ok(status) => HttpResponse::Ok().json(status),
             Err(e) => HttpResponse::InternalServerError().json(json!({
@@ -253,7 +263,7 @@ pub async fn get_status(
 )]
 pub async fn validate_json(
     request: web::Json<Value>,
-    ingestion_service: web::Data<Option<Arc<IngestionService>>>,
+    ingestion_service: web::Data<IngestionServiceState>,
 ) -> impl Responder {
     log_feature!(
         LogFeature::Ingestion,
@@ -261,7 +271,7 @@ pub async fn validate_json(
         "Received JSON validation request"
     );
 
-    match ingestion_service.get_ref() {
+    match get_ingestion_service(&ingestion_service).await {
         Some(service) => match service.validate_input(&request.into_inner()) {
             Ok(()) => HttpResponse::Ok().json(json!({
                 "valid": true,
@@ -305,7 +315,10 @@ pub async fn get_ingestion_config() -> impl Responder {
     request_body = SavedConfig,
     responses((status = 200, description = "Saved"), (status = 500, description = "Failed"))
 )]
-pub async fn save_ingestion_config(request: web::Json<SavedConfig>) -> impl Responder {
+pub async fn save_ingestion_config(
+    request: web::Json<SavedConfig>,
+    ingestion_service: web::Data<IngestionServiceState>,
+) -> impl Responder {
     log_feature!(
         LogFeature::Ingestion,
         info,
@@ -313,10 +326,36 @@ pub async fn save_ingestion_config(request: web::Json<SavedConfig>) -> impl Resp
     );
 
     match crate::ingestion::config::IngestionConfig::save_to_file(&request.into_inner()) {
-        Ok(()) => HttpResponse::Ok().json(json!({
-            "success": true,
-            "message": "Configuration saved successfully"
-        })),
+        Ok(()) => {
+            // Reload the IngestionService so the new config takes effect immediately.
+            // Use from_env_allow_empty() to skip strict validation — the user just
+            // saved this config through the UI, so honour it even if e.g. an API key
+            // is missing (the status endpoint will reflect configured=false).
+            let reload_config = crate::ingestion::config::IngestionConfig::from_env_allow_empty();
+            match IngestionService::new(reload_config) {
+                Ok(new_service) => {
+                    let mut guard = ingestion_service.write().await;
+                    *guard = Some(Arc::new(new_service));
+                    log_feature!(
+                        LogFeature::Ingestion,
+                        info,
+                        "IngestionService reloaded with new configuration"
+                    );
+                }
+                Err(e) => {
+                    log_feature!(
+                        LogFeature::Ingestion,
+                        warn,
+                        "Config saved but failed to reload IngestionService: {}. Service may be unavailable until restart.",
+                        e
+                    );
+                }
+            }
+            HttpResponse::Ok().json(json!({
+                "success": true,
+                "message": "Configuration saved successfully"
+            }))
+        }
         Err(e) => HttpResponse::InternalServerError().json(json!({
             "success": false,
             "error": format!("Failed to save configuration: {}", e)
@@ -398,7 +437,7 @@ pub async fn batch_folder_ingest(
     request: web::Json<BatchFolderRequest>,
     progress_tracker: web::Data<ProgressTracker>,
     state: web::Data<AppState>,
-    ingestion_service: web::Data<Option<Arc<IngestionService>>>,
+    ingestion_service: web::Data<IngestionServiceState>,
 ) -> impl Responder {
     log_feature!(
         LogFeature::Ingestion,
@@ -460,8 +499,8 @@ pub async fn batch_folder_ingest(
     let file_progress_ids = start_file_progress(&files_to_ingest, &user_id, &progress_service).await;
 
     // Validate ingestion service is available before spawning tasks
-    let service = match ingestion_service.get_ref() {
-        Some(s) => s.clone(),
+    let service = match get_ingestion_service(&ingestion_service).await {
+        Some(s) => s,
         None => {
             log_feature!(
                 LogFeature::Ingestion,
@@ -551,7 +590,7 @@ pub struct SmartFolderIngestRequest {
 pub async fn smart_folder_scan(
     request: web::Json<SmartFolderScanRequest>,
     _state: web::Data<AppState>,
-    ingestion_service: web::Data<Option<Arc<IngestionService>>>,
+    ingestion_service: web::Data<IngestionServiceState>,
 ) -> impl Responder {
     log_feature!(
         LogFeature::Ingestion,
@@ -577,7 +616,8 @@ pub async fn smart_folder_scan(
     let max_files = request.max_files.unwrap_or(500);
 
     // Delegate to shared logic
-    let service_ref = ingestion_service.get_ref().as_deref();
+    let service_opt = get_ingestion_service(&ingestion_service).await;
+    let service_ref = service_opt.as_deref();
     match smart_folder::perform_smart_folder_scan(&folder_path, max_depth, max_files, service_ref).await {
         Ok(response) => HttpResponse::Ok().json(response),
         Err(e) => HttpResponse::BadRequest().json(json!({
@@ -602,7 +642,7 @@ pub async fn smart_folder_ingest(
     request: web::Json<SmartFolderIngestRequest>,
     progress_tracker: web::Data<ProgressTracker>,
     state: web::Data<AppState>,
-    ingestion_service: web::Data<Option<Arc<IngestionService>>>,
+    ingestion_service: web::Data<IngestionServiceState>,
 ) -> impl Responder {
     log_feature!(
         LogFeature::Ingestion,
@@ -645,8 +685,8 @@ pub async fn smart_folder_ingest(
     }
 
     // Validate ingestion service is available
-    let service = match ingestion_service.get_ref() {
-        Some(s) => s.clone(),
+    let service = match get_ingestion_service(&ingestion_service).await {
+        Some(s) => s,
         None => {
             return HttpResponse::ServiceUnavailable().json(json!({
                 "success": false,
@@ -738,7 +778,7 @@ mod tests {
 
     #[actix_web::test]
     async fn test_get_status() {
-        let ingestion_service: Option<Arc<IngestionService>> = None;
+        let ingestion_service: IngestionServiceState = tokio::sync::RwLock::new(None);
         let app = test::init_service(
             App::new()
                 .app_data(web::Data::new(ingestion_service))

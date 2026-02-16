@@ -178,24 +178,40 @@ impl IngestionService {
         Self::new(config)
     }
 
-    /// Create a new ingestion service
+    /// Create a new ingestion service.
+    /// Provider services are initialised best-effort: if validation fails
+    /// (e.g. missing API key) the service is still created so that
+    /// `get_status()` can report the correct provider/model — actual
+    /// ingestion calls will fail at runtime with a clear error.
     pub fn new(config: IngestionConfig) -> IngestionResult<Self> {
         let openrouter_service = if config.provider == AIProvider::OpenRouter {
-            Some(OpenRouterService::new(
+            match OpenRouterService::new(
                 config.openrouter.clone(),
                 config.timeout_seconds,
                 config.max_retries,
-            )?)
+            ) {
+                Ok(svc) => Some(svc),
+                Err(e) => {
+                    log::warn!("OpenRouter service init skipped: {}", e);
+                    None
+                }
+            }
         } else {
             None
         };
 
         let ollama_service = if config.provider == AIProvider::Ollama {
-            Some(OllamaService::new(
+            match OllamaService::new(
                 config.ollama.clone(),
                 config.timeout_seconds,
                 config.max_retries,
-            )?)
+            ) {
+                Ok(svc) => Some(svc),
+                Err(e) => {
+                    log::warn!("Ollama service init skipped: {}", e);
+                    None
+                }
+            }
         } else {
             None
         };
