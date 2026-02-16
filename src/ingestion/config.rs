@@ -247,19 +247,39 @@ impl IngestionConfig {
         self.enabled && self.validate().is_ok()
     }
 
-    /// Save configuration to file
+    /// Save configuration to file.
+    ///
+    /// If the incoming `api_key` is empty and an existing config has one,
+    /// the existing key is preserved (prevents accidental clearing).
     pub fn save_to_file(config: &SavedConfig) -> Result<(), Box<dyn std::error::Error>> {
         use std::fs;
         use std::io::Write;
 
         let config_path = Self::get_config_file_path();
 
+        // Merge: preserve existing api_key when the incoming value is empty
+        let merged = if config.openrouter.api_key.is_empty() {
+            if let Ok(existing) = Self::load_saved_config() {
+                if !existing.openrouter.api_key.is_empty() {
+                    let mut merged = config.clone();
+                    merged.openrouter.api_key = existing.openrouter.api_key;
+                    merged
+                } else {
+                    config.clone()
+                }
+            } else {
+                config.clone()
+            }
+        } else {
+            config.clone()
+        };
+
         // Create directory if it doesn't exist
         if let Some(parent) = config_path.parent() {
             fs::create_dir_all(parent)?;
         }
 
-        let content = serde_json::to_string_pretty(config)?;
+        let content = serde_json::to_string_pretty(&merged)?;
         let mut file = fs::File::create(&config_path)?;
         file.write_all(content.as_bytes())?;
 
@@ -276,7 +296,7 @@ impl IngestionConfig {
 }
 
 /// Structure for saving AI provider configuration.
-#[derive(Debug, Serialize, Deserialize, Default, utoipa::ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, utoipa::ToSchema)]
 pub struct SavedConfig {
     pub provider: AIProvider,
     pub openrouter: OpenRouterConfig,
