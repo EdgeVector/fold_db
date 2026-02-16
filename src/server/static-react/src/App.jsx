@@ -45,6 +45,7 @@ function resolveTabFromHash() {
 export function AppContent() {
   const [activeTab, setActiveTab] = useState(() => resolveTabFromHash() || DEFAULT_TAB)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
+  const [settingsInitialTab, setSettingsInitialTab] = useState(null)
   const [results, setResults] = useState(null)
   const [setupDismissed, setSetupDismissed] = useState(
     () => localStorage.getItem('folddb_setup_dismissed') === '1'
@@ -124,7 +125,6 @@ export function AppContent() {
 
   // Only fetch schemas when authenticated
   const {
-    isLoading: schemasLoading,
     error: schemasError,
     refetch: refetchSchemas
   } = useApprovedSchemas({ enabled: isAuthenticated })
@@ -200,8 +200,12 @@ export function AppContent() {
 
   return (
     <div className="h-screen flex flex-col bg-surface overflow-hidden">
-      <Header onSettingsClick={() => setIsSettingsOpen(true)} />
-      <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
+      <Header
+        onSettingsClick={() => { setSettingsInitialTab(null); setIsSettingsOpen(true) }}
+        onAiSettingsClick={() => { setSettingsInitialTab('ai'); setIsSettingsOpen(true) }}
+        ingestionStatus={ingestionStatus}
+      />
+      <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} onConfigSaved={refetchIngestionStatus} initialTab={settingsInitialTab} />
       <OnboardingWizard isOpen={isOnboardingOpen} onClose={handleOnboardingClose} />
 
       {showSetupBanner && (
@@ -242,12 +246,6 @@ export function AppContent() {
               {schemasError && (
                 <div className="mb-4 p-3 bg-surface border border-border border-l-4 border-l-gruvbox-red">
                   <p className="text-gruvbox-red text-sm">{schemasError}</p>
-                </div>
-              )}
-
-              {schemasLoading && (
-                <div className="mb-4 p-3 bg-surface border border-border">
-                  <p className="text-secondary text-sm">Loading schemas...</p>
                 </div>
               )}
 

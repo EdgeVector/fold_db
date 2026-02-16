@@ -377,32 +377,6 @@ describe('App Component', () => {
     });
 
     describe('Schema Loading States', () => {
-      it('shows schema loading indicator', () => {
-        // Update mock to return loading state
-        mockApprovedSchemas.isLoading = true;
-        mockApprovedSchemas.error = null;
-
-        const store = createTestStore({
-          auth: {
-            isAuthenticated: true,
-            systemPublicKey: 'test-key',
-            systemKeyId: 'test-id',
-            isLoading: false,
-            error: null
-          },
-          schemas: {
-            schemas: {},
-            loading: { fetch: false },
-            errors: { fetch: null }
-          }
-        });
-
-        renderWithRedux(<AppContent />, { store });
-
-        // Terminal-styled loading message
-        expect(screen.getByText(/loading/i)).toBeInTheDocument();
-      });
-
       it('shows schema error message', () => {
         // Update mock to return error state
         mockApprovedSchemas.isLoading = false;
