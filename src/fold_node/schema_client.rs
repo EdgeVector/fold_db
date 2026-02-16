@@ -1,6 +1,5 @@
 use crate::error::{FoldDbError, FoldDbResult};
 use crate::schema::types::Schema;
-use crate::schema_service::server::SchemaAddOutcome;
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -69,41 +68,15 @@ impl SchemaServiceClient {
                 ))
             })?;
 
-        if response.status() == StatusCode::CREATED || response.status() == StatusCode::OK {
-            let body_text = response.text().await.map_err(|error| {
-                FoldDbError::Config(format!("Failed to read schema response body: {}", error))
-            })?;
+        let status = response.status();
 
-            // Try parsing as AddSchemaResponse (from actix server)
-            if let Ok(add_schema_response) = serde_json::from_str::<AddSchemaResponse>(&body_text) {
-                return Ok(add_schema_response);
-            }
-
-            // Try parsing as SchemaAddOutcome (from Lambda)
-            if let Ok(outcome) = serde_json::from_str::<SchemaAddOutcome>(&body_text) {
-                match outcome {
-                    SchemaAddOutcome::Added(schema, mutation_mappers) => {
-                        return Ok(AddSchemaResponse {
-                            schema,
-                            mutation_mappers,
-                        });
-                    }
-                    SchemaAddOutcome::TooSimilar(conflict) => {
-                        return Ok(AddSchemaResponse {
-                            schema: conflict.closest_schema,
-                            mutation_mappers: HashMap::new(),
-                        });
-                    }
-                }
-            }
-
-            return Err(FoldDbError::Config(format!(
-                "Failed to parse schema creation response: {}",
-                body_text
-            )));
+        if status == StatusCode::CREATED || status == StatusCode::OK {
+            return response.json::<AddSchemaResponse>().await.map_err(|error| {
+                FoldDbError::Config(format!("Failed to parse schema response: {}", error))
+            });
         }
 
-        if response.status() == StatusCode::CONFLICT {
+        if status == StatusCode::CONFLICT {
             #[derive(Deserialize)]
             struct ConflictBody {
                 closest_schema: Schema,
@@ -116,14 +89,12 @@ impl SchemaServiceClient {
                 ))
             })?;
 
-            // Return the existing schema as if it was successfully added
             return Ok(AddSchemaResponse {
                 schema: conflict_body.closest_schema,
-                mutation_mappers: HashMap::new(), // Empty mappers for existing schema
+                mutation_mappers: HashMap::new(),
             });
         }
 
-        let status = response.status();
         let body = response
             .text()
             .await
