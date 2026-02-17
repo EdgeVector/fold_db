@@ -25,13 +25,19 @@ vi.mock('../../api/clients', () => ({
       success: true,
       data: { type: 'local', path: '/tmp/fold_db' },
     }),
+    applySetup: vi.fn().mockResolvedValue({
+      success: true,
+      data: { success: true, message: 'Setup applied' },
+    }),
   },
 }))
 
-const { ingestionClient } = await import('../../api/clients')
+const { ingestionClient, systemClient } = await import('../../api/clients')
 
 describe('OnboardingWizard', () => {
   const mockOnClose = vi.fn()
+  const testUserHash = 'abc123testhash'
+  const onboardingKey = `${BROWSER_CONFIG.STORAGE_KEYS.ONBOARDING_COMPLETED}_${testUserHash}`
 
   beforeEach(() => {
     vi.clearAllMocks()
@@ -39,7 +45,7 @@ describe('OnboardingWizard', () => {
   })
 
   it('renders welcome step when open', async () => {
-    renderWithRedux(<OnboardingWizard isOpen={true} onClose={mockOnClose} />)
+    renderWithRedux(<OnboardingWizard isOpen={true} onClose={mockOnClose} userHash={testUserHash} />)
 
     await waitFor(() => {
       expect(screen.getByText('Welcome to Fold DB')).toBeInTheDocument()
@@ -49,13 +55,13 @@ describe('OnboardingWizard', () => {
   })
 
   it('does not render when closed', () => {
-    renderWithRedux(<OnboardingWizard isOpen={false} onClose={mockOnClose} />)
+    renderWithRedux(<OnboardingWizard isOpen={false} onClose={mockOnClose} userHash={testUserHash} />)
 
     expect(screen.queryByText('Welcome to Fold DB')).not.toBeInTheDocument()
   })
 
   it('advances from welcome to configure AI', async () => {
-    renderWithRedux(<OnboardingWizard isOpen={true} onClose={mockOnClose} />)
+    renderWithRedux(<OnboardingWizard isOpen={true} onClose={mockOnClose} userHash={testUserHash} />)
 
     await waitFor(() => {
       expect(screen.getByText('Welcome to Fold DB')).toBeInTheDocument()
@@ -70,7 +76,7 @@ describe('OnboardingWizard', () => {
   })
 
   it('marks completed when skipping tutorial', async () => {
-    renderWithRedux(<OnboardingWizard isOpen={true} onClose={mockOnClose} />)
+    renderWithRedux(<OnboardingWizard isOpen={true} onClose={mockOnClose} userHash={testUserHash} />)
 
     await waitFor(() => {
       expect(screen.getByText('Skip Tutorial')).toBeInTheDocument()
@@ -78,14 +84,14 @@ describe('OnboardingWizard', () => {
 
     fireEvent.click(screen.getByText('Skip Tutorial'))
 
-    expect(localStorage.getItem(BROWSER_CONFIG.STORAGE_KEYS.ONBOARDING_COMPLETED)).toBe('1')
+    expect(localStorage.getItem(onboardingKey)).toBe('1')
     expect(mockOnClose).toHaveBeenCalled()
   })
 
   it('saves AI config and advances', async () => {
     vi.useFakeTimers()
 
-    renderWithRedux(<OnboardingWizard isOpen={true} onClose={mockOnClose} />)
+    renderWithRedux(<OnboardingWizard isOpen={true} onClose={mockOnClose} userHash={testUserHash} />)
 
     // Go to step 2
     await waitFor(() => {
@@ -125,8 +131,8 @@ describe('OnboardingWizard', () => {
     vi.useRealTimers()
   })
 
-  it('displays storage mode', async () => {
-    renderWithRedux(<OnboardingWizard isOpen={true} onClose={mockOnClose} />)
+  it('displays storage config step with options', async () => {
+    renderWithRedux(<OnboardingWizard isOpen={true} onClose={mockOnClose} userHash={testUserHash} />)
 
     // Navigate to step 3
     await waitFor(() => {
@@ -142,11 +148,57 @@ describe('OnboardingWizard', () => {
     await waitFor(() => {
       expect(screen.getByText('STORAGE')).toBeInTheDocument()
     })
-    expect(screen.getByText('LOCAL')).toBeInTheDocument()
+    expect(screen.getByTestId('storage-type-select')).toBeInTheDocument()
+    expect(screen.getByTestId('storage-path-input')).toBeInTheDocument()
+  })
+
+  it('saves storage config and advances', async () => {
+    vi.useFakeTimers()
+
+    renderWithRedux(<OnboardingWizard isOpen={true} onClose={mockOnClose} userHash={testUserHash} />)
+
+    // Navigate to step 3 (Storage)
+    await waitFor(() => {
+      expect(screen.getByText('[Get Started]')).toBeInTheDocument()
+    })
+    fireEvent.click(screen.getByText('[Get Started]'))
+    await waitFor(() => {
+      expect(screen.getByText('CONFIGURE AI')).toBeInTheDocument()
+    })
+    fireEvent.click(screen.getByText('[Skip]'))
+
+    await waitFor(() => {
+      expect(screen.getByText('STORAGE')).toBeInTheDocument()
+    })
+
+    // Change path and save
+    const pathInput = screen.getByTestId('storage-path-input')
+    fireEvent.change(pathInput, { target: { value: 'my_data' } })
+    fireEvent.click(screen.getByText('[Save & Continue]'))
+
+    await waitFor(() => {
+      expect(systemClient.applySetup).toHaveBeenCalledWith({
+        storage: { type: 'local', path: 'my_data' },
+      })
+    })
+
+    await waitFor(() => {
+      expect(screen.getByText('Storage configuration saved!')).toBeInTheDocument()
+    })
+
+    act(() => {
+      vi.advanceTimersByTime(1100)
+    })
+
+    await waitFor(() => {
+      expect(screen.getByText("You're all set.")).toBeInTheDocument()
+    })
+
+    vi.useRealTimers()
   })
 
   it('completes wizard on final step', async () => {
-    renderWithRedux(<OnboardingWizard isOpen={true} onClose={mockOnClose} />)
+    renderWithRedux(<OnboardingWizard isOpen={true} onClose={mockOnClose} userHash={testUserHash} />)
 
     // Step 1 -> 2
     await waitFor(() => {
@@ -164,7 +216,7 @@ describe('OnboardingWizard', () => {
     await waitFor(() => {
       expect(screen.getByText('STORAGE')).toBeInTheDocument()
     })
-    fireEvent.click(screen.getByText('[Continue]'))
+    fireEvent.click(screen.getByText('[Skip]'))
 
     // Step 4 (Done)
     await waitFor(() => {
@@ -173,7 +225,7 @@ describe('OnboardingWizard', () => {
 
     fireEvent.click(screen.getByText('[Start Using FoldDB]'))
 
-    expect(localStorage.getItem(BROWSER_CONFIG.STORAGE_KEYS.ONBOARDING_COMPLETED)).toBe('1')
+    expect(localStorage.getItem(onboardingKey)).toBe('1')
     expect(mockOnClose).toHaveBeenCalled()
   })
 })

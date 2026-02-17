@@ -51,9 +51,8 @@ export function AppContent() {
     () => localStorage.getItem('folddb_setup_dismissed') === '1'
   )
   const [isOnboardingOpen, setIsOnboardingOpen] = useState(false)
-  const [onboardingCompleted, setOnboardingCompleted] = useState(
-    () => localStorage.getItem(BROWSER_CONFIG.STORAGE_KEYS.ONBOARDING_COMPLETED) === '1'
-  )
+  const userHash = useAppSelector(state => state.auth.user?.hash)
+  const [onboardingCompleted, setOnboardingCompleted] = useState(false)
 
   // Sync activeTab with URL hash changes
   useEffect(() => {
@@ -109,17 +108,28 @@ export function AppContent() {
     }
   }, [dispatch, isAuthenticated])
 
+  // Check per-user onboarding status when user hash becomes available
+  useEffect(() => {
+    if (userHash) {
+      const key = `${BROWSER_CONFIG.STORAGE_KEYS.ONBOARDING_COMPLETED}_${userHash}`
+      setOnboardingCompleted(localStorage.getItem(key) === '1')
+    }
+  }, [userHash])
+
   // Show onboarding wizard for first-time users
   useEffect(() => {
-    if (isAuthenticated && !onboardingCompleted) {
+    if (isAuthenticated && userHash && !onboardingCompleted) {
       const timer = setTimeout(() => setIsOnboardingOpen(true), 500)
       return () => clearTimeout(timer)
     }
-  }, [isAuthenticated, onboardingCompleted])
+  }, [isAuthenticated, userHash, onboardingCompleted])
 
   const handleOnboardingClose = () => {
     setIsOnboardingOpen(false)
     setOnboardingCompleted(true)
+    if (userHash) {
+      localStorage.setItem(`${BROWSER_CONFIG.STORAGE_KEYS.ONBOARDING_COMPLETED}_${userHash}`, '1')
+    }
     refetchIngestionStatus()
   }
 
@@ -206,7 +216,7 @@ export function AppContent() {
         ingestionStatus={ingestionStatus}
       />
       <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} onConfigSaved={refetchIngestionStatus} initialTab={settingsInitialTab} />
-      <OnboardingWizard isOpen={isOnboardingOpen} onClose={handleOnboardingClose} />
+      <OnboardingWizard isOpen={isOnboardingOpen} onClose={handleOnboardingClose} userHash={userHash} />
 
       {showSetupBanner && (
         <div className="bg-gruvbox-elevated border-b border-border px-8 py-3 flex items-center justify-between">

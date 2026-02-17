@@ -42,15 +42,15 @@ pub struct NodeManagerConfig {
 
 /// Manages FoldDB nodes for different tenants
 pub struct NodeManager {
-    /// Configuration for creating new nodes
-    config: NodeManagerConfig,
+    /// Configuration for creating new nodes (wrapped in RwLock for live reconfiguration)
+    config: RwLock<NodeManagerConfig>,
     /// Cache of active nodes (user_id -> Node)
     nodes: Arc<Mutex<HashMap<String, Arc<RwLock<FoldNode>>>>>,
     /// Shared node for local mode (single-tenant)
     /// In local Sled mode, we share one node to avoid lock conflicts
     shared_local_node: Arc<Mutex<Option<Arc<RwLock<FoldNode>>>>>,
-    /// Whether we're in local mode
-    is_local_mode: bool,
+    /// Whether we're in local mode (wrapped in RwLock for live reconfiguration)
+    is_local_mode: RwLock<bool>,
 }
 
 impl NodeManager {
@@ -58,10 +58,10 @@ impl NodeManager {
     pub fn new(config: NodeManagerConfig) -> Self {
         let is_local_mode = matches!(config.base_config.database, DatabaseConfig::Local { .. });
         Self {
-            config,
+            config: RwLock::new(config),
             nodes: Arc::new(Mutex::new(HashMap::new())),
             shared_local_node: Arc::new(Mutex::new(None)),
-            is_local_mode,
+            is_local_mode: RwLock::new(is_local_mode),
         }
     }
 
@@ -74,7 +74,7 @@ impl NodeManager {
         user_id: &str,
     ) -> Result<Arc<RwLock<FoldNode>>, NodeManagerError> {
         // Local mode: use shared single node to avoid Sled lock conflicts
-        if self.is_local_mode {
+        if *self.is_local_mode.read().await {
             return self.get_shared_local_node(user_id).await;
         }
 
@@ -131,7 +131,7 @@ impl NodeManager {
         user_id: &str,
     ) -> Result<Arc<RwLock<FoldNode>>, NodeManagerError> {
         // Clone the base config and set user_id
-        let mut node_config = self.config.base_config.clone();
+        let mut node_config = self.config.read().await.base_config.clone();
 
         // Set user_id in database config
         match &mut node_config.database {
@@ -139,8 +139,8 @@ impl NodeManager {
             DatabaseConfig::Cloud(ref mut cloud_config) => {
                 cloud_config.user_id = Some(user_id.to_string());
             }
-            DatabaseConfig::Local { .. } => {
-                // Local storage doesn't need user_id in config
+            DatabaseConfig::Local { .. } | DatabaseConfig::Exemem { .. } => {
+                // Local/Exemem storage doesn't need user_id in config
                 // User isolation is handled differently
             }
         }
@@ -190,6 +190,39 @@ impl NodeManager {
     pub async fn invalidate_node(&self, user_id: &str) {
         let mut nodes = self.nodes.lock().await;
         nodes.remove(user_id);
+
+        // Also clear the shared local node so it gets re-created
+        if *self.is_local_mode.read().await {
+            let mut shared = self.shared_local_node.lock().await;
+            *shared = None;
+        }
+    }
+
+    /// Invalidate all cached nodes
+    /// Used when configuration changes require all nodes to be recreated
+    pub async fn invalidate_all_nodes(&self) {
+        let mut nodes = self.nodes.lock().await;
+        nodes.clear();
+
+        let mut shared = self.shared_local_node.lock().await;
+        *shared = None;
+    }
+
+    /// Update the configuration and invalidate all cached nodes
+    /// The next request will create fresh nodes with the new config
+    pub async fn update_config(&self, new_config: NodeManagerConfig) {
+        let new_is_local = matches!(new_config.base_config.database, DatabaseConfig::Local { .. });
+
+        {
+            let mut config = self.config.write().await;
+            *config = new_config;
+        }
+        {
+            let mut is_local = self.is_local_mode.write().await;
+            *is_local = new_is_local;
+        }
+
+        self.invalidate_all_nodes().await;
     }
 
     /// Set a pre-existing node in the cache
@@ -198,7 +231,7 @@ impl NodeManager {
         let node_arc = Arc::new(RwLock::new(node));
 
         // In local mode, also set the shared_local_node so get_node finds it
-        if self.is_local_mode {
+        if *self.is_local_mode.read().await {
             let mut shared = self.shared_local_node.lock().await;
             *shared = Some(node_arc.clone());
         }
@@ -207,8 +240,8 @@ impl NodeManager {
         nodes.insert(user_id.to_string(), node_arc);
     }
 
-    /// Get the base configuration
-    pub fn get_base_config(&self) -> &NodeConfig {
-        &self.config.base_config
+    /// Get the base configuration (returns a clone since config is behind RwLock)
+    pub async fn get_base_config(&self) -> NodeConfig {
+        self.config.read().await.base_config.clone()
     }
 }

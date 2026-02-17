@@ -75,8 +75,9 @@ impl FoldHttpServer {
     /// * There is an error starting the HTTP server
     pub async fn new(node_manager: NodeManager, bind_address: &str) -> FoldDbResult<Self> {
         // Extract DynamoDB logs config from base config if using DynamoDB backend
+        let base_config = node_manager.get_base_config().await;
         let logs_config = {
-            match &node_manager.get_base_config().database {
+            match &base_config.database {
                 #[cfg(feature = "aws-backend")]
                 crate::fold_node::config::DatabaseConfig::Cloud(d) => {
                     // Note: user_id is NOT set here - it comes from per-request headers
@@ -146,20 +147,23 @@ impl FoldHttpServer {
         // Create LLM query state (gracefully handles missing configuration)
         let llm_query_state = web::Data::new(llm_query::LlmQueryState::new());
 
-        // Create IngestionService singleton (gracefully handles missing configuration)
+        // Create IngestionService wrapped in RwLock so config saves can reload it
         let ingestion_service: Option<Arc<crate::ingestion::ingestion_service::IngestionService>> =
             crate::ingestion::ingestion_service::IngestionService::from_env()
                 .ok()
                 .map(Arc::new);
-        let ingestion_service_data = web::Data::new(ingestion_service);
+        let ingestion_service_data = web::Data::new(
+            tokio::sync::RwLock::new(ingestion_service),
+        );
 
 
         // Create progress tracker based on database config
         let progress_tracker = {
             #[cfg(feature = "aws-backend")]
             {
+                let run_base_config = self.node_manager.get_base_config().await;
                 if let crate::fold_node::config::DatabaseConfig::Cloud(cloud_config) =
-                    &self.node_manager.get_base_config().database
+                    &run_base_config.database
                 {
                     crate::progress::create_tracker(Some((
                         cloud_config.tables.process.clone(),
@@ -218,11 +222,8 @@ impl FoldHttpServer {
 
     async fn load_schemas_if_configured(&self) -> FoldDbResult<()> {
         // Load schemas from schema service if configured
-        let schema_service_url = self
-            .node_manager
-            .get_base_config()
-            .schema_service_url
-            .clone();
+        let base_config = self.node_manager.get_base_config().await;
+        let schema_service_url = base_config.schema_service_url.clone();
 
         if let Some(url) = schema_service_url {
             // Skip loading for mock/test schema services
@@ -422,6 +423,10 @@ impl FoldHttpServer {
         .route(
             "/system/database-config",
             web::post().to(system_routes::update_database_config),
+        )
+        .route(
+            "/system/setup",
+            web::post().to(system_routes::apply_setup),
         );
     }
 

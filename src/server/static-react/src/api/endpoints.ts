@@ -37,6 +37,7 @@ export const API_ENDPOINTS_DERIVED = {
   GET_NODE_PUBLIC_KEY: '/system/public-key',
   RESET_DATABASE: '/system/reset-database',
   RESET_SCHEMA_SERVICE: '/system/reset-schema-service',
+  APPLY_SETUP: '/system/setup',
   GET_SYSTEM_STATUS: '/system/status',
   LIST_TRANSFORMS: '/transforms',
   GET_ALL_BACKFILLS: '/transforms/backfills',

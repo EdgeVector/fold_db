@@ -129,7 +129,7 @@ function WelcomeStep({ onNext }) {
         </div>
         <div style={styles.card}>
           <p><span style={{ ...styles.label, background: colors.blue }}>02 STORAGE</span></p>
-          <p style={{ margin: '4px 0' }}>Review your current storage configuration</p>
+          <p style={{ margin: '4px 0' }}>Choose local Sled or Exemem cloud storage</p>
         </div>
       </div>
 
@@ -330,48 +330,135 @@ function ConfigureAiStep({ onNext, onSkip, onConfigSaved }) {
   )
 }
 
-function StorageInfoStep({ onNext, storageInfo }) {
-  const isLocal = !storageInfo || storageInfo.type === 'local'
+function StorageConfigStep({ onNext, onSkip, storageInfo }) {
+  const currentIsLocal = !storageInfo || storageInfo.type === 'local'
+  const [storageType, setStorageType] = useState(currentIsLocal ? 'local' : 'exemem')
+  const [localPath, setLocalPath] = useState(storageInfo?.path || 'data')
+  const [exememUrl, setExememUrl] = useState(storageInfo?.api_url || '')
+  const [exememKey, setExememKey] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [saveResult, setSaveResult] = useState(null)
+
+  const handleSave = async () => {
+    setSaving(true)
+    setSaveResult(null)
+    const setup = {
+      storage: storageType === 'local'
+        ? { type: 'local', path: localPath }
+        : { type: 'exemem', api_url: exememUrl, api_key: exememKey },
+    }
+    try {
+      const response = await systemClient.applySetup(setup)
+      if (response.success) {
+        setSaveResult('success')
+        setTimeout(() => onNext(), 1000)
+      } else {
+        setSaveResult('error')
+      }
+    } catch {
+      setSaveResult('error')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const canSave = storageType === 'local'
+    ? localPath.trim() !== ''
+    : exememUrl.trim() !== '' && exememKey.trim() !== ''
 
   return (
     <div>
       <h2 style={{ fontSize: 'inherit', fontWeight: 700, margin: '0 0 4px' }}>
         <span style={{ color: colors.blue }}>STORAGE</span>{' '}
-        <span style={{ color: colors.dim }}>Current configuration</span>
+        <span style={{ color: colors.dim }}>Backend configuration</span>
       </h2>
+      <p>Choose where FoldDB stores your data.</p>
 
-      <div style={{ ...styles.card, marginTop: '12px' }}>
-        <p>
-          <span style={{ ...styles.label, background: isLocal ? colors.blue : colors.purple }}>
-            {isLocal ? 'LOCAL' : 'CLOUD'}
-          </span>
-        </p>
-        <p style={{ margin: '4px 0' }}>
-          {isLocal
-            ? 'Data is stored locally using Sled embedded database.'
-            : `Data is stored in AWS (DynamoDB + S3) in ${storageInfo?.region || 'us-west-2'}.`}
-        </p>
+      <div style={{ marginTop: '16px' }}>
+        <p style={{ color: colors.textBright, fontWeight: 700, marginBottom: '4px' }}>Storage Backend</p>
+        <select
+          value={storageType}
+          onChange={e => setStorageType(e.target.value)}
+          style={styles.select}
+          data-testid="storage-type-select"
+        >
+          <option value="local">Local (Sled)</option>
+          <option value="exemem">Exemem Cloud</option>
+        </select>
       </div>
 
-      <div style={styles.pre}>
-        <p style={{ color: colors.textBright, fontWeight: 700 }}>Switching Modes</p>
-        <p style={{ color: colors.dim }}>
-          <span style={{ color: colors.yellow }}>$ ./run.sh --local</span>  Local (Sled){'\n'}
-          <span style={{ color: colors.yellow }}>$ ./run.sh</span>          Cloud (DynamoDB + S3)
-        </p>
-      </div>
+      {storageType === 'local' && (
+        <div style={{ marginTop: '12px' }}>
+          <p style={{ color: colors.textBright, fontWeight: 700, marginBottom: '4px' }}>Data Directory</p>
+          <input
+            type="text"
+            value={localPath}
+            onChange={e => setLocalPath(e.target.value)}
+            placeholder="data"
+            style={styles.input}
+            data-testid="storage-path-input"
+          />
+          <p style={{ color: colors.dim, fontSize: '12px', marginTop: '4px' }}>
+            Relative to the server working directory
+          </p>
+        </div>
+      )}
 
-      <button
-        onClick={onNext}
-        style={{ ...styles.btnPrimary, marginTop: '16px' }}
-        onMouseEnter={e => { e.target.style.color = colors.yellow; e.target.style.borderColor = colors.yellow }}
-        onMouseLeave={e => { e.target.style.color = colors.orange; e.target.style.borderColor = colors.orange }}
-      >
-        [Continue]
-      </button>
+      {storageType === 'exemem' && (
+        <>
+          <div style={{ marginTop: '12px' }}>
+            <p style={{ color: colors.textBright, fontWeight: 700, marginBottom: '4px' }}>Exemem API URL</p>
+            <input
+              type="text"
+              value={exememUrl}
+              onChange={e => setExememUrl(e.target.value)}
+              placeholder="https://api.exemem.com"
+              style={styles.input}
+              data-testid="exemem-url-input"
+            />
+          </div>
+          <div style={{ marginTop: '12px' }}>
+            <p style={{ color: colors.textBright, fontWeight: 700, marginBottom: '4px' }}>API Key</p>
+            <input
+              type="password"
+              value={exememKey}
+              onChange={e => setExememKey(e.target.value)}
+              placeholder="Enter your API key"
+              style={styles.input}
+              data-testid="exemem-key-input"
+            />
+          </div>
+        </>
+      )}
+
+      {saveResult === 'success' && (
+        <p style={{ color: colors.green, marginTop: '8px' }}>Storage configuration saved!</p>
+      )}
+      {saveResult === 'error' && (
+        <p style={{ color: colors.red, marginTop: '8px' }}>Failed to save. Please try again.</p>
+      )}
+
+      <div style={{ display: 'flex', gap: '8px', marginTop: '16px' }}>
+        <button
+          onClick={handleSave}
+          disabled={saving || !canSave}
+          style={{
+            ...styles.btnPrimary, flex: 1,
+            opacity: (saving || !canSave) ? 0.4 : 1,
+          }}
+          onMouseEnter={e => { e.target.style.color = colors.yellow; e.target.style.borderColor = colors.yellow }}
+          onMouseLeave={e => { e.target.style.color = colors.orange; e.target.style.borderColor = colors.orange }}
+        >
+          {saving ? 'Saving...' : '[Save & Continue]'}
+        </button>
+        <button onClick={onSkip} style={{ ...styles.btnSecondary, flex: 1 }}>
+          [Skip]
+        </button>
+      </div>
     </div>
   )
 }
+
 
 function DoneStep({ onComplete }) {
   return (
@@ -408,7 +495,7 @@ function DoneStep({ onComplete }) {
   )
 }
 
-export default function OnboardingWizard({ isOpen, onClose }) {
+export default function OnboardingWizard({ isOpen, onClose, userHash }) {
   const [currentStep, setCurrentStep] = useState(1)
   const [aiWasConfigured, setAiWasConfigured] = useState(false)
   const [storageInfo, setStorageInfo] = useState(null)
@@ -423,14 +510,18 @@ export default function OnboardingWizard({ isOpen, onClose }) {
   }, [isOpen])
 
   const handleComplete = useCallback(() => {
-    localStorage.setItem(BROWSER_CONFIG.STORAGE_KEYS.ONBOARDING_COMPLETED, '1')
+    if (userHash) {
+      localStorage.setItem(`${BROWSER_CONFIG.STORAGE_KEYS.ONBOARDING_COMPLETED}_${userHash}`, '1')
+    }
     onClose()
-  }, [onClose])
+  }, [onClose, userHash])
 
   const handleSkipTutorial = useCallback(() => {
-    localStorage.setItem(BROWSER_CONFIG.STORAGE_KEYS.ONBOARDING_COMPLETED, '1')
+    if (userHash) {
+      localStorage.setItem(`${BROWSER_CONFIG.STORAGE_KEYS.ONBOARDING_COMPLETED}_${userHash}`, '1')
+    }
     onClose()
-  }, [onClose])
+  }, [onClose, userHash])
 
   if (!isOpen) return null
 
@@ -441,7 +532,7 @@ export default function OnboardingWizard({ isOpen, onClose }) {
     switch (currentStep) {
       case 1: return <WelcomeStep onNext={goNext} />
       case 2: return <ConfigureAiStep onNext={goNext} onSkip={goNext} onConfigSaved={() => setAiWasConfigured(true)} />
-      case 3: return <StorageInfoStep onNext={goNext} storageInfo={storageInfo} />
+      case 3: return <StorageConfigStep onNext={goNext} onSkip={goNext} storageInfo={storageInfo} />
       case 4: return <DoneStep onComplete={handleComplete} />
       default: return null
     }
@@ -454,14 +545,14 @@ export default function OnboardingWizard({ isOpen, onClose }) {
         <div style={styles.body}>{renderStep()}</div>
         <div style={styles.footer}>
           <div>
-            {currentStep > 1 && currentStep < 4 && (
+            {currentStep > 1 && currentStep < TOTAL_STEPS && (
               <button onClick={goBack} style={styles.btnSecondary}>
                 [Back]
               </button>
             )}
           </div>
           <div>
-            {currentStep < 4 && (
+            {currentStep < TOTAL_STEPS && (
               <button onClick={handleSkipTutorial} style={styles.btnLink}>
                 Skip Tutorial
               </button>

@@ -72,6 +72,27 @@ export interface DatabaseConfigResponse {
   requires_restart: boolean;
 }
 
+export interface SetupStorageLocal {
+  type: 'local';
+  path: string;
+}
+
+export interface SetupStorageExemem {
+  type: 'exemem';
+  api_url: string;
+  api_key: string;
+}
+
+export interface SetupRequest {
+  storage?: SetupStorageLocal | SetupStorageExemem;
+  schema_service_url?: string;
+}
+
+export interface SetupResponse {
+  success: boolean;
+  message: string;
+}
+
 /**
  * Unified System API Client Implementation
  */
@@ -292,6 +313,25 @@ export class UnifiedSystemClient {
   }
 
   /**
+   * Apply setup configuration (storage and/or schema service URL)
+   * Matches CLI setup wizard capabilities
+   *
+   * @param setup - Setup configuration to apply
+   * @returns Promise resolving to setup result
+   */
+  async applySetup(setup: SetupRequest): Promise<EnhancedApiResponse<SetupResponse>> {
+    return this.client.post<SetupResponse>(
+      API_ENDPOINTS.APPLY_SETUP,
+      setup,
+      {
+        timeout: API_TIMEOUTS.STANDARD,
+        retries: API_RETRIES.NONE,
+        cacheable: false
+      }
+    );
+  }
+
+  /**
    * Clear system-related cache
    */
   clearCache(): void {
@@ -315,6 +355,7 @@ export const getNodePrivateKey = systemClient.getNodePrivateKey.bind(systemClien
 export const getNodePublicKey = systemClient.getNodePublicKey.bind(systemClient);
 export const getDatabaseConfig = systemClient.getDatabaseConfig.bind(systemClient);
 export const updateDatabaseConfig = systemClient.updateDatabaseConfig.bind(systemClient);
+export const applySetup = systemClient.applySetup.bind(systemClient);
 export const createLogStream = systemClient.createLogStream.bind(systemClient);
 export const validateResetRequest = systemClient.validateResetRequest.bind(systemClient);
 

@@ -1,7 +1,9 @@
+use crate::fold_node::config::NodeConfig;
 use crate::log_feature;
 use crate::logging::features::LogFeature;
 use crate::security::Ed25519KeyPair;
 use crate::server::http_server::AppState;
+use crate::server::node_manager::NodeManagerConfig;
 use crate::server::routes::{handler_error_to_response, require_node, require_user_context};
 use crate::storage::config::DatabaseConfig;
 use actix_web::{web, HttpResponse, Responder};
@@ -359,6 +361,8 @@ pub enum DatabaseConfigDto {
     #[cfg(feature = "aws-backend")]
     #[serde(rename = "cloud", alias = "dynamodb")]
     Cloud(Box<CloudConfigDto>),
+    #[serde(rename = "exemem")]
+    Exemem { api_url: String },
 }
 
 /// DTO for ExplicitTables
@@ -409,7 +413,7 @@ pub struct DatabaseConfigResponse {
 )]
 pub async fn get_database_config(state: web::Data<AppState>) -> impl Responder {
     // Get the base configuration from NodeManager (not per-user)
-    let config = state.node_manager.get_base_config();
+    let config = state.node_manager.get_base_config().await;
 
     let db_config = match &config.database {
         DatabaseConfig::Local { path } => DatabaseConfigDto::Local {
@@ -437,6 +441,9 @@ pub async fn get_database_config(state: web::Data<AppState>) -> impl Responder {
                 idempotency: config.tables.idempotency.clone(),
             },
         })),
+        DatabaseConfig::Exemem { api_url, .. } => DatabaseConfigDto::Exemem {
+            api_url: api_url.clone(),
+        },
     };
 
     HttpResponse::Ok().json(db_config)
@@ -507,6 +514,142 @@ pub async fn update_database_config(
         success: false,
         message: "Dynamic database configuration updates are not supported. Please update the configuration file and restart the server.".to_string(),
         requires_restart: true,
+    })
+}
+
+/// Request body for system setup (matches CLI setup wizard)
+#[derive(Deserialize, Serialize, utoipa::ToSchema, Debug, Clone)]
+pub struct SetupRequest {
+    /// Storage configuration (optional: only update if provided)
+    #[serde(default)]
+    pub storage: Option<StorageSetup>,
+    /// Schema service URL (optional: only update if provided)
+    #[serde(default)]
+    pub schema_service_url: Option<String>,
+}
+
+/// Storage setup options matching CLI wizard
+#[derive(Deserialize, Serialize, utoipa::ToSchema, Debug, Clone)]
+#[serde(tag = "type")]
+pub enum StorageSetup {
+    /// Local Sled storage
+    #[serde(rename = "local")]
+    Local { path: String },
+    /// Exemem cloud storage
+    #[serde(rename = "exemem")]
+    Exemem { api_url: String, api_key: String },
+}
+
+/// Response for setup endpoint
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct SetupResponse {
+    pub success: bool,
+    pub message: String,
+}
+
+/// Persist a NodeConfig to disk (same path the server loaded from)
+fn persist_node_config(config: &NodeConfig) -> Result<(), String> {
+    let config_path =
+        std::env::var("NODE_CONFIG").unwrap_or_else(|_| "config/node_config.json".to_string());
+
+    // Ensure config directory exists
+    if let Some(parent) = std::path::Path::new(&config_path).parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create config directory: {}", e))?;
+    }
+
+    let config_json = serde_json::to_string_pretty(config)
+        .map_err(|e| format!("Failed to serialize config: {}", e))?;
+
+    std::fs::write(&config_path, config_json)
+        .map_err(|e| format!("Failed to write config file: {}", e))?;
+
+    Ok(())
+}
+
+/// Apply setup configuration (storage and/or schema service URL)
+///
+/// This endpoint allows the UI wizard to configure the same settings as the CLI
+/// setup wizard. It updates the config, persists it to disk, and invalidates
+/// cached nodes so the next request uses the new configuration.
+#[utoipa::path(
+    post,
+    path = "/api/system/setup",
+    tag = "system",
+    request_body = SetupRequest,
+    responses(
+        (status = 200, description = "Setup applied successfully", body = SetupResponse),
+        (status = 400, description = "Bad request", body = SetupResponse),
+        (status = 500, description = "Server error", body = SetupResponse)
+    )
+)]
+pub async fn apply_setup(
+    state: web::Data<AppState>,
+    req: web::Json<SetupRequest>,
+) -> impl Responder {
+    // Read current config
+    let mut config = state.node_manager.get_base_config().await;
+
+    let mut changes = Vec::new();
+
+    // Apply storage override if provided
+    if let Some(ref storage) = req.storage {
+        match storage {
+            StorageSetup::Local { path } => {
+                config.database = DatabaseConfig::Local {
+                    path: std::path::PathBuf::from(path),
+                };
+                changes.push("storage (local)");
+            }
+            StorageSetup::Exemem { api_url, api_key } => {
+                config.database = DatabaseConfig::Exemem {
+                    api_url: api_url.clone(),
+                    api_key: api_key.clone(),
+                };
+                changes.push("storage (exemem)");
+            }
+        }
+    }
+
+    // Apply schema_service_url override if provided
+    if let Some(ref url) = req.schema_service_url {
+        config.schema_service_url = Some(url.clone());
+        changes.push("schema service URL");
+    }
+
+    if changes.is_empty() {
+        return HttpResponse::BadRequest().json(SetupResponse {
+            success: false,
+            message: "No configuration changes provided".to_string(),
+        });
+    }
+
+    // Persist to disk
+    if let Err(e) = persist_node_config(&config) {
+        log_feature!(
+            LogFeature::HttpServer,
+            error,
+            "Failed to persist setup config: {}",
+            e
+        );
+        return HttpResponse::InternalServerError().json(SetupResponse {
+            success: false,
+            message: format!("Failed to save configuration: {}", e),
+        });
+    }
+
+    // Update NodeManager config and invalidate all cached nodes
+    let new_manager_config = NodeManagerConfig {
+        base_config: config,
+    };
+    state.node_manager.update_config(new_manager_config).await;
+
+    let message = format!("Setup applied: {}", changes.join(", "));
+    log_feature!(LogFeature::HttpServer, info, "{}", message);
+
+    HttpResponse::Ok().json(SetupResponse {
+        success: true,
+        message,
     })
 }
 
