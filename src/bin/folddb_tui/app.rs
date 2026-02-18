@@ -8,7 +8,10 @@ use fold_db::{
         ProgressTracker,
     },
     progress::InMemoryProgressStore,
-    schema::{schema_types::SchemaWithState, types::key_value::KeyValue},
+    schema::{
+        schema_types::SchemaWithState,
+        types::{key_value::KeyValue, field::HashRangeFilter, Query},
+    },
     DatabaseConfig,
 };
 use std::collections::VecDeque;
@@ -28,6 +31,7 @@ pub enum AsyncResult {
     Progress(Option<IngestionProgress>),
     SchemaList(Result<Vec<SchemaWithState>, String>),
     SchemaKeys(Result<(Vec<KeyValue>, usize), String>),
+    RecordValues(Result<Vec<serde_json::Value>, String>),
 }
 
 // --- Tab enum ---
@@ -157,8 +161,11 @@ pub struct SchemasState {
     pub keys_total: usize,
     pub keys_offset: usize,
     pub keys_loading: bool,
+    pub selected_key: usize,
+    pub record: Option<serde_json::Value>,
+    pub record_loading: bool,
     pub loading: bool,
-    /// 0 = schema list focused, 1 = keys list focused
+    /// 0 = schema list, 1 = keys list, 2 = record view
     pub focus: usize,
 }
 
@@ -260,6 +267,9 @@ impl App {
                 keys_total: 0,
                 keys_offset: 0,
                 keys_loading: false,
+                selected_key: 0,
+                record: None,
+                record_loading: false,
                 loading: false,
                 focus: 0,
             },
@@ -469,6 +479,45 @@ impl App {
         });
     }
 
+    pub fn load_record_values(&mut self) {
+        if self.schemas_state.keys.is_empty() || self.schemas_state.schemas.is_empty() {
+            return;
+        }
+        let sws = &self.schemas_state.schemas[self.schemas_state.selected];
+        let schema_name = sws.name().to_string();
+        let fields: Vec<String> = sws
+            .schema
+            .fields
+            .clone()
+            .unwrap_or_default();
+        if fields.is_empty() {
+            return;
+        }
+        let kv = &self.schemas_state.keys[self.schemas_state.selected_key];
+        let filter = match (&kv.hash, &kv.range) {
+            (Some(h), Some(r)) => Some(HashRangeFilter::HashRangeKey {
+                hash: h.clone(),
+                range: r.clone(),
+            }),
+            (Some(h), None) => Some(HashRangeFilter::HashKey(h.clone())),
+            (None, Some(r)) => Some(HashRangeFilter::RangeKey(r.clone())),
+            (None, None) => None,
+        };
+        self.schemas_state.record_loading = true;
+        self.schemas_state.record = None;
+        let proc = Arc::clone(&self.processor);
+        let tx = self.result_tx.clone();
+        // execute_query_json returns a !Send future, so use a dedicated thread
+        std::thread::spawn(move || {
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let query = Query::new_with_filter(schema_name, fields, filter);
+            let result = rt.block_on(proc.execute_query_json(query));
+            let _ = tx.send(AsyncResult::RecordValues(
+                result.map_err(|e| e.to_string()),
+            ));
+        });
+    }
+
     pub fn execute_search(&mut self) {
         if self.search.input.trim().is_empty() {
             return;
@@ -589,6 +638,8 @@ impl App {
                     self.schemas_state.keys.clear();
                     self.schemas_state.keys_total = 0;
                     self.schemas_state.keys_offset = 0;
+                    self.schemas_state.selected_key = 0;
+                    self.schemas_state.record = None;
                     // Auto-load keys for first schema
                     if !self.schemas_state.schemas.is_empty() {
                         self.load_schema_keys();
@@ -604,6 +655,13 @@ impl App {
                 }
                 AsyncResult::SchemaKeys(Err(_)) => {
                     self.schemas_state.keys_loading = false;
+                }
+                AsyncResult::RecordValues(Ok(values)) => {
+                    self.schemas_state.record = values.into_iter().next();
+                    self.schemas_state.record_loading = false;
+                }
+                AsyncResult::RecordValues(Err(_)) => {
+                    self.schemas_state.record_loading = false;
                 }
                 AsyncResult::Progress(progress) => {
                     if self.current_tab == Tab::Ingestion && self.ingestion.loading {
@@ -926,35 +984,74 @@ impl App {
     fn handle_schemas_key(&mut self, key: KeyEvent) {
         match key.code {
             KeyCode::Tab => {
-                // Toggle focus between schema list and keys list
-                self.schemas_state.focus = if self.schemas_state.focus == 0 { 1 } else { 0 };
+                // Cycle focus: schemas -> keys -> record
+                self.schemas_state.focus = (self.schemas_state.focus + 1) % 3;
+            }
+            KeyCode::BackTab => {
+                self.schemas_state.focus = if self.schemas_state.focus == 0 { 2 } else { self.schemas_state.focus - 1 };
             }
             KeyCode::Up => {
-                if self.schemas_state.focus == 0 && self.schemas_state.selected > 0 {
-                    self.schemas_state.selected -= 1;
-                    self.schemas_state.keys_offset = 0;
-                    self.load_schema_keys();
+                match self.schemas_state.focus {
+                    0 => {
+                        if self.schemas_state.selected > 0 {
+                            self.schemas_state.selected -= 1;
+                            self.schemas_state.keys_offset = 0;
+                            self.schemas_state.selected_key = 0;
+                            self.schemas_state.record = None;
+                            self.load_schema_keys();
+                        }
+                    }
+                    1 => {
+                        if self.schemas_state.selected_key > 0 {
+                            self.schemas_state.selected_key -= 1;
+                            self.load_record_values();
+                        }
+                    }
+                    _ => {}
                 }
             }
             KeyCode::Down => {
-                let max = self.schemas_state.schemas.len().saturating_sub(1);
-                if self.schemas_state.focus == 0 && self.schemas_state.selected < max {
-                    self.schemas_state.selected += 1;
-                    self.schemas_state.keys_offset = 0;
-                    self.load_schema_keys();
+                match self.schemas_state.focus {
+                    0 => {
+                        let max = self.schemas_state.schemas.len().saturating_sub(1);
+                        if self.schemas_state.selected < max {
+                            self.schemas_state.selected += 1;
+                            self.schemas_state.keys_offset = 0;
+                            self.schemas_state.selected_key = 0;
+                            self.schemas_state.record = None;
+                            self.load_schema_keys();
+                        }
+                    }
+                    1 => {
+                        let max = self.schemas_state.keys.len().saturating_sub(1);
+                        if self.schemas_state.selected_key < max {
+                            self.schemas_state.selected_key += 1;
+                            self.load_record_values();
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            KeyCode::Enter => {
+                // When on keys panel, load the record
+                if self.schemas_state.focus == 1 && !self.schemas_state.keys.is_empty() {
+                    self.load_record_values();
+                    self.schemas_state.focus = 2;
                 }
             }
             KeyCode::Char('n') => {
-                // Next page of keys
                 if self.schemas_state.keys_offset + 50 < self.schemas_state.keys_total {
                     self.schemas_state.keys_offset += 50;
+                    self.schemas_state.selected_key = 0;
+                    self.schemas_state.record = None;
                     self.load_schema_keys();
                 }
             }
             KeyCode::Char('p') => {
-                // Previous page of keys
                 if self.schemas_state.keys_offset >= 50 {
                     self.schemas_state.keys_offset -= 50;
+                    self.schemas_state.selected_key = 0;
+                    self.schemas_state.record = None;
                     self.load_schema_keys();
                 }
             }
