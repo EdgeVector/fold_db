@@ -39,7 +39,7 @@ function formatValue(v) {
 }
 
 export default function NativeIndexTab({ onResult }) {
-  const { approvedSchemas, isLoading: schemasLoading, refetch: refetchSchemas } = useApprovedSchemas()
+  const { approvedSchemas, refetch: refetchSchemas } = useApprovedSchemas()
   const [term, setTerm] = useState('')
   const [isSearching, setIsSearching] = useState(false)
   const [results, setResults] = useState([])
@@ -139,7 +139,7 @@ export default function NativeIndexTab({ onResult }) {
       try {
         const fields = await fetchRecordFor(r.schema_name, r.key_value)
         updates.set(id, fields)
-      } catch (_e) {
+      } catch {
         // store empty to avoid refetch loop
         updates.set(id, {})
       }
@@ -194,7 +194,7 @@ export default function NativeIndexTab({ onResult }) {
               </tr>
             </thead>
             <tbody>
-              {results.map((r, i) => {
+              {results.map((r) => {
                 const id = buildKeyId(r.schema_name, r.key_value)
                 const isOpen = expanded.has(id)
                 const details = recordDetails.get(id)
@@ -215,7 +215,7 @@ export default function NativeIndexTab({ onResult }) {
                               try {
                                 const fields = await fetchRecordFor(r.schema_name, r.key_value)
                                 setRecordDetails(prev => new Map(prev).set(id, fields))
-                              } catch {}
+                              } catch { /* ignore */ }
                             }
                           }}
                         >
