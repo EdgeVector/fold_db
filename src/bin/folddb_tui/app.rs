@@ -1003,16 +1003,36 @@ impl App {
 
     fn handle_schemas_key(&mut self, key: KeyEvent) {
         match key.code {
-            KeyCode::Right => {
-                // Move focus to next panel
-                if self.schemas_state.focus < 2 {
-                    self.schemas_state.focus += 1;
+            KeyCode::Enter => {
+                // Drill deeper: schemas -> keys -> record
+                match self.schemas_state.focus {
+                    0 if !self.schemas_state.schemas.is_empty() => {
+                        self.schemas_state.focus = 1;
+                        if self.schemas_state.keys.is_empty() {
+                            self.load_schema_keys();
+                        }
+                    }
+                    1 if !self.schemas_state.keys.is_empty() => {
+                        self.load_record_values();
+                        self.schemas_state.focus = 2;
+                    }
+                    _ => {}
+                }
+            }
+            KeyCode::Esc | KeyCode::Backspace => {
+                // Go back: record -> keys -> schemas
+                if self.schemas_state.focus > 0 {
+                    self.schemas_state.focus -= 1;
                 }
             }
             KeyCode::Left => {
-                // Move focus to previous panel
                 if self.schemas_state.focus > 0 {
                     self.schemas_state.focus -= 1;
+                }
+            }
+            KeyCode::Right => {
+                if self.schemas_state.focus < 2 {
+                    self.schemas_state.focus += 1;
                 }
             }
             KeyCode::Up => {
@@ -1055,13 +1075,6 @@ impl App {
                         }
                     }
                     _ => {}
-                }
-            }
-            KeyCode::Enter => {
-                // When on keys panel, load the record
-                if self.schemas_state.focus == 1 && !self.schemas_state.keys.is_empty() {
-                    self.load_record_values();
-                    self.schemas_state.focus = 2;
                 }
             }
             KeyCode::Char('n') => {

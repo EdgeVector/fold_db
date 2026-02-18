@@ -20,69 +20,64 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect) {
     render_record_panel(frame, app, chunks[2]);
 }
 
-fn panel_border_style(app: &App, panel: usize) -> Style {
-    if app.schemas_state.focus == panel {
+fn render_schema_list(frame: &mut Frame, app: &App, area: Rect) {
+    let focused = app.schemas_state.focus == 0;
+    let border_style = if focused {
         Style::default()
             .fg(Color::Cyan)
             .add_modifier(Modifier::BOLD)
     } else {
         Style::default().fg(Color::DarkGray)
-    }
-}
-
-fn panel_title_style(app: &App, panel: usize) -> Style {
-    if app.schemas_state.focus == panel {
-        Style::default()
-            .fg(Color::Cyan)
-            .add_modifier(Modifier::BOLD)
-    } else {
-        Style::default().fg(Color::Gray)
-    }
-}
-
-fn render_schema_list(frame: &mut Frame, app: &App, area: Rect) {
-    let focused = app.schemas_state.focus == 0;
-    let title = if focused {
-        format!(" ▶ Schemas ({}) ", app.schemas_state.schemas.len())
-    } else {
-        format!("   Schemas ({}) ", app.schemas_state.schemas.len())
     };
+
+    let title = if focused {
+        format!(" >> Schemas ({}) << ", app.schemas_state.schemas.len())
+    } else {
+        format!("    Schemas ({})    ", app.schemas_state.schemas.len())
+    };
+
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(panel_border_style(app, 0))
+        .border_style(border_style)
         .title(title)
-        .title_style(panel_title_style(app, 0));
+        .title_style(if focused {
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::DarkGray)
+        });
 
     if app.schemas_state.loading {
-        let lines = vec![
-            Line::from(""),
-            Line::from(Span::styled(
-                "  Loading...",
-                Style::default().fg(Color::Yellow),
-            )),
-        ];
-        frame.render_widget(Paragraph::new(lines).block(block), area);
+        frame.render_widget(
+            Paragraph::new(vec![
+                Line::from(""),
+                Line::from(Span::styled("  Loading...", Style::default().fg(Color::Yellow))),
+            ])
+            .block(block),
+            area,
+        );
         return;
     }
 
     if app.schemas_state.schemas.is_empty() {
-        let lines = vec![
-            Line::from(""),
-            Line::from(Span::styled(
-                "  No schemas.",
-                Style::default().fg(Color::Gray),
-            )),
-            Line::from(Span::styled(
-                "  r=refresh",
-                Style::default().fg(Color::Gray),
-            )),
-        ];
-        frame.render_widget(Paragraph::new(lines).block(block), area);
+        frame.render_widget(
+            Paragraph::new(vec![
+                Line::from(""),
+                Line::from(Span::styled("  No schemas.", Style::default().fg(Color::Gray))),
+                Line::from(Span::styled("  r=refresh", Style::default().fg(Color::Gray))),
+            ])
+            .block(block),
+            area,
+        );
         return;
     }
 
     let inner_height = area.height.saturating_sub(2) as usize;
-    let scroll = app.schemas_state.selected.saturating_sub(inner_height.saturating_sub(1));
+    let scroll = app
+        .schemas_state
+        .selected
+        .saturating_sub(inner_height.saturating_sub(1));
 
     let lines: Vec<Line> = app
         .schemas_state
@@ -92,18 +87,6 @@ fn render_schema_list(frame: &mut Frame, app: &App, area: Rect) {
         .skip(scroll)
         .take(inner_height)
         .map(|(i, sws)| {
-            let state_indicator = match sws.state {
-                fold_db::schema::schema_types::SchemaState::Approved => {
-                    Span::styled("[A]", Style::default().fg(Color::Green))
-                }
-                fold_db::schema::schema_types::SchemaState::Blocked => {
-                    Span::styled("[B]", Style::default().fg(Color::Red))
-                }
-                fold_db::schema::schema_types::SchemaState::Available => {
-                    Span::styled("[?]", Style::default().fg(Color::Yellow))
-                }
-            };
-
             let is_selected = i == app.schemas_state.selected;
             let name = sws
                 .schema
@@ -111,22 +94,46 @@ fn render_schema_list(frame: &mut Frame, app: &App, area: Rect) {
                 .as_deref()
                 .unwrap_or_else(|| sws.name());
 
-            let name_style = if is_selected {
-                Style::default()
-                    .fg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD)
-            } else {
-                Style::default()
+            let state_char = match sws.state {
+                fold_db::schema::schema_types::SchemaState::Approved => "A",
+                fold_db::schema::schema_types::SchemaState::Blocked => "B",
+                fold_db::schema::schema_types::SchemaState::Available => "?",
+            };
+            let state_color = match sws.state {
+                fold_db::schema::schema_types::SchemaState::Approved => Color::Green,
+                fold_db::schema::schema_types::SchemaState::Blocked => Color::Red,
+                fold_db::schema::schema_types::SchemaState::Available => Color::Yellow,
             };
 
-            let marker = if is_selected { ">" } else { " " };
-
-            Line::from(vec![
-                Span::raw(marker),
-                state_indicator,
-                Span::raw(" "),
-                Span::styled(name.to_string(), name_style),
-            ])
+            if is_selected && focused {
+                // Focused + selected: reverse video highlight
+                Line::from(vec![
+                    Span::styled(
+                        format!(" [{}] {} ", state_char, name),
+                        Style::default()
+                            .fg(Color::Black)
+                            .bg(Color::Cyan)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                ])
+            } else if is_selected {
+                // Selected but not focused: dim highlight
+                Line::from(vec![
+                    Span::styled(
+                        format!(" [{}] ", state_char),
+                        Style::default().fg(state_color),
+                    ),
+                    Span::styled(name.to_string(), Style::default().fg(Color::Gray)),
+                ])
+            } else {
+                Line::from(vec![
+                    Span::styled(
+                        format!(" [{}] ", state_char),
+                        Style::default().fg(state_color),
+                    ),
+                    Span::raw(name.to_string()),
+                ])
+            }
         })
         .collect();
 
@@ -135,45 +142,60 @@ fn render_schema_list(frame: &mut Frame, app: &App, area: Rect) {
 
 fn render_keys_panel(frame: &mut Frame, app: &App, area: Rect) {
     let focused = app.schemas_state.focus == 1;
+    let border_style = if focused {
+        Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(Color::DarkGray)
+    };
+
     let page_start = if app.schemas_state.keys.is_empty() {
         0
     } else {
         app.schemas_state.keys_offset + 1
     };
     let page_end = app.schemas_state.keys_offset + app.schemas_state.keys.len();
-    let marker = if focused { " ▶" } else { "  " };
-    let title = format!(
-        "{} Keys {}-{}/{} ",
-        marker, page_start, page_end, app.schemas_state.keys_total
-    );
+
+    let title = if focused {
+        format!(" >> Keys {}-{}/{} << ", page_start, page_end, app.schemas_state.keys_total)
+    } else {
+        format!("    Keys {}-{}/{}    ", page_start, page_end, app.schemas_state.keys_total)
+    };
 
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(panel_border_style(app, 1))
+        .border_style(border_style)
         .title(title)
-        .title_style(panel_title_style(app, 1));
+        .title_style(if focused {
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::DarkGray)
+        });
 
     if app.schemas_state.keys_loading {
-        let lines = vec![
-            Line::from(""),
-            Line::from(Span::styled(
-                "  Loading...",
-                Style::default().fg(Color::Yellow),
-            )),
-        ];
-        frame.render_widget(Paragraph::new(lines).block(block), area);
+        frame.render_widget(
+            Paragraph::new(vec![
+                Line::from(""),
+                Line::from(Span::styled("  Loading...", Style::default().fg(Color::Yellow))),
+            ])
+            .block(block),
+            area,
+        );
         return;
     }
 
     if app.schemas_state.keys.is_empty() {
-        let lines = vec![
-            Line::from(""),
-            Line::from(Span::styled(
-                "  No keys.",
-                Style::default().fg(Color::Gray),
-            )),
-        ];
-        frame.render_widget(Paragraph::new(lines).block(block), area);
+        frame.render_widget(
+            Paragraph::new(vec![
+                Line::from(""),
+                Line::from(Span::styled("  No keys.", Style::default().fg(Color::Gray))),
+            ])
+            .block(block),
+            area,
+        );
         return;
     }
 
@@ -199,19 +221,23 @@ fn render_keys_panel(frame: &mut Frame, app: &App, area: Rect) {
             };
 
             let is_selected = i == app.schemas_state.selected_key;
-            let marker = if is_selected { ">" } else { " " };
-            let style = if is_selected {
-                Style::default()
-                    .fg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD)
-            } else {
-                Style::default()
-            };
 
-            Line::from(vec![
-                Span::raw(marker),
-                Span::styled(format!(" {}", key_str), style),
-            ])
+            if is_selected && focused {
+                Line::from(Span::styled(
+                    format!(" {} ", key_str),
+                    Style::default()
+                        .fg(Color::Black)
+                        .bg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
+                ))
+            } else if is_selected {
+                Line::from(Span::styled(
+                    format!(" {}", key_str),
+                    Style::default().fg(Color::Gray),
+                ))
+            } else {
+                Line::from(Span::raw(format!(" {}", key_str)))
+            }
         })
         .collect();
 
@@ -220,70 +246,82 @@ fn render_keys_panel(frame: &mut Frame, app: &App, area: Rect) {
 
 fn render_record_panel(frame: &mut Frame, app: &App, area: Rect) {
     let focused = app.schemas_state.focus == 2;
-    let title = if focused {
-        " ▶ Record "
+    let border_style = if focused {
+        Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD)
     } else {
-        "   Record "
+        Style::default().fg(Color::DarkGray)
     };
+
+    let title = if focused {
+        " >> Record << "
+    } else {
+        "    Record    "
+    };
+
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(panel_border_style(app, 2))
+        .border_style(border_style)
         .title(title)
-        .title_style(panel_title_style(app, 2));
+        .title_style(if focused {
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::DarkGray)
+        });
 
     if app.schemas_state.record_loading {
-        let lines = vec![
-            Line::from(""),
-            Line::from(Span::styled(
-                "  Loading...",
-                Style::default().fg(Color::Yellow),
-            )),
-        ];
-        frame.render_widget(Paragraph::new(lines).block(block), area);
+        frame.render_widget(
+            Paragraph::new(vec![
+                Line::from(""),
+                Line::from(Span::styled("  Loading...", Style::default().fg(Color::Yellow))),
+            ])
+            .block(block),
+            area,
+        );
         return;
     }
 
     let record = match &app.schemas_state.record {
         Some(r) => r,
         None => {
-            let lines = vec![
-                Line::from(""),
-                Line::from(Span::styled(
-                    "  Select a key to view fields.",
-                    Style::default().fg(Color::Gray),
-                )),
-                Line::from(""),
-                Line::from(Span::styled(
-                    "  Left/Right  switch panels",
-                    Style::default().fg(Color::Gray),
-                )),
-                Line::from(Span::styled(
-                    "  Up/Down     navigate list",
-                    Style::default().fg(Color::Gray),
-                )),
-                Line::from(Span::styled(
-                    "  Enter       load record",
-                    Style::default().fg(Color::Gray),
-                )),
-                Line::from(Span::styled(
-                    "  n/p         page keys",
-                    Style::default().fg(Color::Gray),
-                )),
-            ];
-            frame.render_widget(Paragraph::new(lines).block(block), area);
+            let hint = match app.schemas_state.focus {
+                0 => "  Press Enter to browse keys",
+                1 => "  Press Enter to view record",
+                _ => "  Press Esc to go back",
+            };
+            frame.render_widget(
+                Paragraph::new(vec![
+                    Line::from(""),
+                    Line::from(Span::styled(hint, Style::default().fg(Color::Gray))),
+                    Line::from(""),
+                    Line::from(Span::styled(
+                        "  Enter  drill deeper",
+                        Style::default().fg(Color::DarkGray),
+                    )),
+                    Line::from(Span::styled(
+                        "  Esc    go back",
+                        Style::default().fg(Color::DarkGray),
+                    )),
+                    Line::from(Span::styled(
+                        "  n/p    page keys",
+                        Style::default().fg(Color::DarkGray),
+                    )),
+                ])
+                .block(block),
+                area,
+            );
             return;
         }
     };
 
     let mut lines = Vec::new();
 
-    // Extract fields from the record JSON
     if let Some(fields) = record.get("fields").and_then(|f| f.as_object()) {
         for (field_name, field_data) in fields {
-            // field_data is typically {"value": ..., "atom_uuid": ...}
-            let value = field_data
-                .get("value")
-                .unwrap_or(field_data);
+            let value = field_data.get("value").unwrap_or(field_data);
 
             lines.push(Line::from(Span::styled(
                 format!("  {}:", field_name),
@@ -299,7 +337,6 @@ fn render_record_panel(frame: &mut Frame, app: &App, area: Rect) {
             lines.push(Line::from(""));
         }
     } else {
-        // Fallback: pretty-print the whole record
         let pretty = serde_json::to_string_pretty(record).unwrap_or_default();
         for line in pretty.lines() {
             lines.push(Line::from(Span::raw(format!("  {}", line))));
