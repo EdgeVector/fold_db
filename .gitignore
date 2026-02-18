@@ -98,6 +98,10 @@ src/server/static-react/node_modules_corrupt/
 src/server/static-react/dist/
 src/server/static-react/.vite/
 
+# MCP server
+mcp-server/node_modules/
+mcp-server/dist/
+
 # Debug files
 *.pdb
 tests/test_data/
