@@ -3,7 +3,7 @@ use ratatui::{
     layout::{Constraint, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph, Wrap},
+    widgets::{Block, Borders, Paragraph},
     Frame,
 };
 
@@ -193,17 +193,20 @@ fn render_conversation(frame: &mut Frame, app: &App, area: Rect) {
 
     let inner_height = area.height.saturating_sub(2) as usize;
     let total_lines = lines.len();
+    let max_scroll = total_lines.saturating_sub(inner_height);
+
+    // Store total lines so scroll_up/scroll_down can use it
+    app.ai_query.last_total_lines.set(max_scroll);
 
     // Compute scroll: if scroll is MAX, auto-scroll to bottom
     let scroll = if app.ai_query.scroll == usize::MAX {
-        total_lines.saturating_sub(inner_height)
+        max_scroll
     } else {
-        app.ai_query.scroll.min(total_lines.saturating_sub(inner_height))
+        app.ai_query.scroll.min(max_scroll)
     };
 
     let paragraph = Paragraph::new(lines)
         .block(block)
-        .wrap(Wrap { trim: false })
         .scroll((scroll as u16, 0));
 
     frame.render_widget(paragraph, area);

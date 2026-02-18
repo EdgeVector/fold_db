@@ -14,6 +14,7 @@ use fold_db::{
     },
     DatabaseConfig,
 };
+use std::cell::Cell;
 use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -141,8 +142,33 @@ pub struct AiQueryState {
     pub cursor_pos: usize,
     pub input_mode: InputMode,
     pub messages: Vec<ChatMessage>,
+    /// Scroll offset. usize::MAX means auto-scroll to bottom.
     pub scroll: usize,
+    /// Total rendered line count from last frame (set by render via interior mutability).
+    pub last_total_lines: Cell<usize>,
     pub loading: bool,
+}
+
+impl AiQueryState {
+    pub fn scroll_up(&mut self) {
+        if self.scroll == usize::MAX {
+            // Snap from auto-scroll to one line above the bottom
+            let total = self.last_total_lines.get();
+            self.scroll = total.saturating_sub(1);
+        } else if self.scroll > 0 {
+            self.scroll -= 1;
+        }
+    }
+
+    pub fn scroll_down(&mut self) {
+        if self.scroll != usize::MAX {
+            self.scroll = self.scroll.saturating_add(1);
+            // If we scrolled past the bottom, re-enable auto-scroll
+            if self.scroll >= self.last_total_lines.get() {
+                self.scroll = usize::MAX;
+            }
+        }
+    }
 }
 
 pub struct SearchState {
@@ -250,6 +276,7 @@ impl App {
                 input_mode: InputMode::Normal,
                 messages: vec![],
                 scroll: 0,
+                last_total_lines: Cell::new(0),
                 loading: false,
             },
             search: SearchState {
@@ -909,17 +936,10 @@ impl App {
                 self.ai_query.input_mode = InputMode::Editing;
             }
             KeyCode::Up => {
-                if self.ai_query.scroll == usize::MAX {
-                    // Currently auto-scrolled to bottom; snap to a concrete value
-                    // We don't know exact line count here, so set a large number and
-                    // the render will clamp it. Subtract 1 to scroll up.
-                    self.ai_query.scroll = 10000_usize.saturating_sub(1);
-                } else if self.ai_query.scroll > 0 {
-                    self.ai_query.scroll -= 1;
-                }
+                self.ai_query.scroll_up();
             }
             KeyCode::Down => {
-                self.ai_query.scroll = self.ai_query.scroll.saturating_add(1);
+                self.ai_query.scroll_down();
             }
             KeyCode::End => {
                 self.ai_query.scroll = usize::MAX;
