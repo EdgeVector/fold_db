@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { ingestionClient } from '../../api/clients'
 
 const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__
@@ -9,6 +9,105 @@ function SmartFolderTab({ onResult }) {
   const [isIngesting, setIsIngesting] = useState(false)
   const [scanResult, setScanResult] = useState(null)
   const [ingestionStarted, setIngestionStarted] = useState(false)
+
+  // Autocomplete state
+  const [suggestions, setSuggestions] = useState([])
+  const [selectedIndex, setSelectedIndex] = useState(-1)
+  const [showSuggestions, setShowSuggestions] = useState(false)
+  const inputRef = useRef(null)
+  const suggestionsRef = useRef(null)
+  const debounceRef = useRef(null)
+
+  const fetchCompletions = useCallback(async (path) => {
+    if (!path.includes('/')) {
+      setSuggestions([])
+      setShowSuggestions(false)
+      return
+    }
+    try {
+      const response = await ingestionClient.completePath(path)
+      if (response.success && response.data?.completions) {
+        setSuggestions(response.data.completions)
+        setSelectedIndex(-1)
+        setShowSuggestions(response.data.completions.length > 0)
+      } else {
+        setSuggestions([])
+        setShowSuggestions(false)
+      }
+    } catch {
+      setSuggestions([])
+      setShowSuggestions(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    if (!folderPath.includes('/') || isScanning) {
+      setSuggestions([])
+      setShowSuggestions(false)
+      return
+    }
+    debounceRef.current = setTimeout(() => fetchCompletions(folderPath), 200)
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
+  }, [folderPath, isScanning, fetchCompletions])
+
+  // Close suggestions when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (
+        inputRef.current && !inputRef.current.contains(e.target) &&
+        suggestionsRef.current && !suggestionsRef.current.contains(e.target)
+      ) {
+        setShowSuggestions(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  const acceptSuggestion = (path) => {
+    // Append trailing slash so user can keep drilling down
+    const newPath = path.endsWith('/') ? path : path + '/'
+    setFolderPath(newPath)
+    setShowSuggestions(false)
+    setSelectedIndex(-1)
+    inputRef.current?.focus()
+  }
+
+  const handleInputKeyDown = (e) => {
+    if (showSuggestions && suggestions.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        setSelectedIndex((prev) => (prev < suggestions.length - 1 ? prev + 1 : 0))
+        return
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        setSelectedIndex((prev) => (prev > 0 ? prev - 1 : suggestions.length - 1))
+        return
+      }
+      if (e.key === 'Tab') {
+        e.preventDefault()
+        const idx = selectedIndex >= 0 ? selectedIndex : 0
+        acceptSuggestion(suggestions[idx])
+        return
+      }
+      if (e.key === 'Enter') {
+        if (selectedIndex >= 0) {
+          e.preventDefault()
+          acceptSuggestion(suggestions[selectedIndex])
+          return
+        }
+        // No suggestion selected — fall through to scan
+      }
+      if (e.key === 'Escape') {
+        setShowSuggestions(false)
+        setSelectedIndex(-1)
+        return
+      }
+    }
+    if (e.key === 'Enter') handleScan()
+  }
 
   const openFolderPicker = async () => {
     if (!isTauri) return
@@ -23,6 +122,7 @@ function SmartFolderTab({ onResult }) {
 
   const handleScan = async () => {
     if (!folderPath.trim()) return
+    setShowSuggestions(false)
     setIsScanning(true)
     setScanResult(null)
     setIngestionStarted(false)
@@ -64,7 +164,39 @@ function SmartFolderTab({ onResult }) {
     <div className="space-y-4">
       {!scanResult && !ingestionStarted && (
         <div className="flex gap-3">
-          <input type="text" value={folderPath} onChange={(e) => setFolderPath(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleScan()} placeholder="/path/to/your/folder" className="input flex-1" disabled={isScanning} />
+          <div className="relative flex-1">
+            <input
+              ref={inputRef}
+              type="text"
+              value={folderPath}
+              onChange={(e) => setFolderPath(e.target.value)}
+              onKeyDown={handleInputKeyDown}
+              onFocus={() => { if (suggestions.length > 0) setShowSuggestions(true) }}
+              placeholder="/path/to/your/folder"
+              className="input w-full"
+              disabled={isScanning}
+              autoComplete="off"
+            />
+            {showSuggestions && suggestions.length > 0 && (
+              <ul
+                ref={suggestionsRef}
+                className="absolute z-50 left-0 right-0 top-full mt-1 border border-border rounded-lg bg-surface shadow-lg max-h-48 overflow-y-auto"
+              >
+                {suggestions.map((path, i) => (
+                  <li
+                    key={path}
+                    className={`px-3 py-1.5 cursor-pointer text-sm font-mono truncate ${
+                      i === selectedIndex ? 'bg-accent text-on-accent' : 'hover:bg-surface-hover'
+                    }`}
+                    onMouseDown={(e) => { e.preventDefault(); acceptSuggestion(path) }}
+                    onMouseEnter={() => setSelectedIndex(i)}
+                  >
+                    {path}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
           {isTauri && <button onClick={openFolderPicker} disabled={isScanning} className="btn-secondary" title="Browse">📁</button>}
           <button onClick={handleScan} disabled={isScanning || !folderPath.trim()} className="btn-primary flex items-center gap-2">
             {isScanning ? <><span className="spinner" />Scanning...</> : <>→ Scan</>}

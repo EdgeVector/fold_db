@@ -8,6 +8,8 @@ pub mod dynamodb_utils;
 pub mod encrypting_namespaced_store;
 pub mod encrypting_store;
 pub mod error;
+pub mod exemem_api_store;
+pub mod exemem_namespaced_store;
 pub mod inmemory_backend;
 #[cfg(feature = "aws-backend")]
 pub mod message_bus;
@@ -37,6 +39,8 @@ pub use inmemory_backend::InMemoryNamespacedStore;
 
 pub use encrypting_namespaced_store::EncryptingNamespacedStore;
 pub use encrypting_store::EncryptingKvStore;
+pub use exemem_api_store::{ExememApiStore, ExememAuth};
+pub use exemem_namespaced_store::ExememNamespacedStore;
 #[cfg(feature = "aws-backend")]
 pub use message_bus::CloudMessageBus;
 pub use sled_backend::SledNamespacedStore;

@@ -150,6 +150,14 @@ pub enum DatabaseConfig {
     #[cfg(feature = "aws-backend")]
     #[serde(rename = "cloud")]
     Cloud(Box<CloudConfig>),
+    /// Exemem Cloud storage (remote API-backed)
+    #[serde(rename = "exemem")]
+    Exemem {
+        /// Exemem Storage API URL
+        api_url: String,
+        /// API key for authentication
+        api_key: String,
+    },
 }
 
 impl Default for DatabaseConfig {
@@ -221,11 +229,18 @@ impl DatabaseConfig {
                 let config = CloudConfig::from_env()?;
                 Ok(DatabaseConfig::Cloud(Box::new(config)))
             }
+            "exemem" => {
+                let api_url = env::var("EXEMEM_API_URL")
+                    .map_err(|_| ConfigError::MissingVariable("EXEMEM_API_URL".to_string()))?;
+                let api_key = env::var("EXEMEM_API_KEY")
+                    .map_err(|_| ConfigError::MissingVariable("EXEMEM_API_KEY".to_string()))?;
+                Ok(DatabaseConfig::Exemem { api_url, api_key })
+            }
             _ => Err(ConfigError::InvalidValue(format!(
-                "Invalid DATAFOLD_STORAGE_MODE: '{}'. Must be 'local' or 's3'{}",
+                "Invalid DATAFOLD_STORAGE_MODE: '{}'. Must be 'local', 'exemem'{}",
                 mode,
                 if cfg!(feature = "aws-backend") {
-                    ", 'dynamodb'"
+                    ", or 'dynamodb'"
                 } else {
                     ""
                 }

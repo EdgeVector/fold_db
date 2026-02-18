@@ -427,6 +427,10 @@ impl FoldHttpServer {
         .route(
             "/system/setup",
             web::post().to(system_routes::apply_setup),
+        )
+        .route(
+            "/system/complete-path",
+            web::post().to(system_routes::complete_path),
         );
     }
 

@@ -228,6 +228,9 @@ pub fn render(output: &CommandOutput) {
                 }
                 #[cfg(feature = "aws-backend")]
                 fold_db::DatabaseConfig::Cloud(_) => "Cloud".to_string(),
+                fold_db::DatabaseConfig::Exemem { api_url, .. } => {
+                    format!("Exemem ({})", api_url)
+                }
             };
             println!(
                 "{}         {}",

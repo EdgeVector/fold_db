@@ -22,7 +22,7 @@ tauri-build = { version = "2.5.5", features = [] }
 fold_db = { path = "../../../../" }
 
 # Tauri dependencies
-tauri = { version = "2.10.2", features = [] }
+tauri = { version = "2.10.2", features = ["devtools"] }
 tauri-plugin-log = "2.0.0"
 tauri-plugin-shell = "2.0.0"
 tauri-plugin-dialog = "2"

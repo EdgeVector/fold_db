@@ -430,6 +430,10 @@ pub async fn get_database_config(
                 "user_id": cloud_config.user_id,
             }),
         ),
+        DatabaseConfig::Exemem { api_url, .. } => (
+            "exemem".to_string(),
+            serde_json::json!({ "api_url": api_url }),
+        ),
     };
 
     Ok(ApiResponse::success_with_user(

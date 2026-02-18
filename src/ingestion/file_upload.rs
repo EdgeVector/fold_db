@@ -1,8 +1,8 @@
 //! File upload and conversion module for ingestion
 
-use crate::ingestion::ingestion_service::IngestionService;
 use crate::ingestion::json_processor::{convert_file_to_json_http, save_json_to_temp_file};
 use crate::ingestion::multipart_parser::parse_multipart;
+use crate::ingestion::routes::{get_ingestion_service, IngestionServiceState};
 use crate::ingestion::{IngestionRequest, ProgressTracker};
 use crate::log_feature;
 use crate::logging::features::LogFeature;
@@ -12,7 +12,6 @@ use crate::storage::UploadStorage;
 use actix_multipart::Multipart;
 use actix_web::{web, HttpResponse, Responder};
 use serde_json::json;
-use std::sync::Arc;
 
 /// Process file upload and ingestion
 ///
@@ -42,7 +41,7 @@ pub async fn upload_file(
     upload_storage: web::Data<UploadStorage>,
     progress_tracker: web::Data<ProgressTracker>,
     state: web::Data<AppState>,
-    ingestion_service: web::Data<Option<Arc<IngestionService>>>,
+    ingestion_service: web::Data<IngestionServiceState>,
 ) -> impl Responder {
     log_feature!(LogFeature::Ingestion, info, "Received file upload request");
 
@@ -106,8 +105,8 @@ pub async fn upload_file(
     };
 
     // Extract ingestion service
-    let service = match ingestion_service.get_ref() {
-        Some(s) => s.clone(),
+    let service = match get_ingestion_service(&ingestion_service).await {
+        Some(s) => s,
         None => {
             return HttpResponse::ServiceUnavailable().json(json!({
                 "error": "Ingestion service not available"

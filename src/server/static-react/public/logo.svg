@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Dark gray background with rounded corners -->
+  <rect width="1024" height="1024" rx="180" fill="#2D2D2D"/>
+
+  <!-- Yellow disc (bottom) -->
+  <ellipse cx="512" cy="660" rx="250" ry="95" fill="#FFD600"/>
+  <ellipse cx="512" cy="660" rx="250" ry="95" fill="url(#yellowGrad)"/>
+
+  <!-- Orange disc (middle) -->
+  <ellipse cx="512" cy="510" rx="250" ry="95" fill="#FF9800"/>
+  <ellipse cx="512" cy="510" rx="250" ry="95" fill="url(#orangeGrad)"/>
+
+  <!-- Red disc (top) -->
+  <ellipse cx="512" cy="360" rx="250" ry="95" fill="#E53935"/>
+  <ellipse cx="512" cy="360" rx="250" ry="95" fill="url(#redGrad)"/>
+
+  <defs>
+    <radialGradient id="yellowGrad" cx="0.45" cy="0.35" r="0.65">
+      <stop offset="0%" stop-color="#FFEE58" stop-opacity="0.6"/>
+      <stop offset="100%" stop-color="#FFD600" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="orangeGrad" cx="0.45" cy="0.35" r="0.65">
+      <stop offset="0%" stop-color="#FFB74D" stop-opacity="0.5"/>
+      <stop offset="100%" stop-color="#FF9800" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="redGrad" cx="0.45" cy="0.35" r="0.65">
+      <stop offset="0%" stop-color="#EF5350" stop-opacity="0.5"/>
+      <stop offset="100%" stop-color="#E53935" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+</svg>

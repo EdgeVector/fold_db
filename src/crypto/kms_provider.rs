@@ -6,7 +6,6 @@ use aws_sdk_dynamodb::types::AttributeValue;
 use aws_sdk_dynamodb::Client as DynamoClient;
 use aws_sdk_kms::primitives::Blob;
 use aws_sdk_kms::Client as KmsClient;
-use std::sync::Arc;
 use tokio::sync::RwLock;
 
 /// AWS KMS-backed crypto provider using envelope encryption.

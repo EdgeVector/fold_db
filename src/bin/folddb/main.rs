@@ -42,6 +42,19 @@ async fn main() {
         }
     };
 
+    // If no identity configured, run the setup wizard
+    if config.public_key.is_none() && !commands::setup::identity_file_exists() {
+        if json_mode {
+            CliError::new("Not configured")
+                .with_hint("Run `folddb` interactively to set up")
+                .exit(json_mode);
+        }
+        config = match commands::setup::run_setup_wizard() {
+            Ok(c) => c,
+            Err(e) => e.exit(false),
+        };
+    }
+
     if let Some(path) = &cli.data_path {
         config.database = DatabaseConfig::Local {
             path: path.clone(),

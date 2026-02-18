@@ -418,6 +418,23 @@ export class UnifiedIngestionClient {
   }
 
   /**
+   * Complete a partial filesystem path with matching directories
+   */
+  async completePath(
+    partialPath: string,
+  ): Promise<EnhancedApiResponse<{ completions: string[] }>> {
+    return this.client.post<{ completions: string[] }>(
+      "/system/complete-path",
+      { partial_path: partialPath },
+      {
+        timeout: 2000,
+        retries: 0,
+        cacheable: false,
+      },
+    );
+  }
+
+  /**
    * Get API metrics for ingestion operations
    */
   getMetrics() {

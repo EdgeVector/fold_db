@@ -10,6 +10,9 @@ social_app_example/Cargo.lock
 **/target/**/*.lock
 sample_data/
 
+# Root node_modules (e.g. from accidental npm install at repo root)
+/node_modules/
+
 # Electron UI specific
 /fold_client/node_modules/
 /fold_client/dist/

@@ -10,6 +10,7 @@ use actix_web::{web, HttpResponse, Responder};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sha2::{Digest, Sha256};
+use std::path::{Path, PathBuf};
 
 /// Get system status information
 #[utoipa::path(
@@ -651,6 +652,59 @@ pub async fn apply_setup(
         success: true,
         message,
     })
+}
+
+/// Request body for filesystem path completion
+#[derive(Deserialize)]
+pub struct PathCompleteRequest {
+    pub partial_path: String,
+}
+
+/// Complete a partial filesystem path with matching directories
+///
+/// This endpoint provides directory-only path completion for the folder picker UI.
+/// It lists directories matching a partial path prefix, hiding dotfiles.
+pub async fn complete_path(body: web::Json<PathCompleteRequest>) -> impl Responder {
+    let partial = &body.partial_path;
+
+    let (parent, prefix) = if partial.ends_with('/') || partial.ends_with('\\') {
+        (PathBuf::from(partial), String::new())
+    } else {
+        let path = PathBuf::from(partial);
+        let parent = path.parent().unwrap_or(Path::new("/")).to_path_buf();
+        let prefix = path
+            .file_name()
+            .map(|f| f.to_string_lossy().to_string())
+            .unwrap_or_default();
+        (parent, prefix)
+    };
+
+    let entries = match std::fs::read_dir(&parent) {
+        Ok(entries) => entries,
+        Err(_) => return HttpResponse::Ok().json(json!({ "completions": Vec::<String>::new() })),
+    };
+
+    let prefix_lower = prefix.to_lowercase();
+    let mut completions: Vec<String> = entries
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().is_dir())
+        .filter(|e| {
+            if prefix.is_empty() {
+                return true;
+            }
+            e.file_name()
+                .to_string_lossy()
+                .to_lowercase()
+                .starts_with(&prefix_lower)
+        })
+        .filter(|e| !e.file_name().to_string_lossy().starts_with('.'))
+        .map(|e| e.path().to_string_lossy().to_string())
+        .collect();
+
+    completions.sort();
+    completions.truncate(20);
+
+    HttpResponse::Ok().json(json!({ "completions": completions }))
 }
 
 #[cfg(test)]

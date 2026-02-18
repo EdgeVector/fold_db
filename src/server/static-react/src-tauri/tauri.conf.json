@@ -9,19 +9,7 @@
     "beforeBuildCommand": ""
   },
   "app": {
-    "windows": [
-      {
-        "title": "FoldDB - Personal Database",
-        "width": 1400,
-        "height": 900,
-        "minWidth": 1000,
-        "minHeight": 700,
-        "resizable": true,
-        "fullscreen": false,
-        "center": true,
-        "url": "http://localhost:9001"
-      }
-    ],
+    "windows": [],
     "security": {
       "csp": null
     }

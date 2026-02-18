@@ -80,6 +80,13 @@ pub async fn create_fold_db(
                 .map_err(|e| FoldDbError::Config(e.to_string()))?,
             )))
         }
+        DatabaseConfig::Exemem { api_url, api_key } => {
+            let auth = crate::storage::ExememAuth::ApiKey(api_key.clone());
+            let store: Arc<dyn crate::storage::traits::NamespacedStore> = Arc::new(
+                crate::storage::ExememNamespacedStore::new(api_url.clone(), auth),
+            );
+            create_fold_db_from_store(store, e2e_keys).await
+        }
         #[cfg(feature = "aws-backend")]
         DatabaseConfig::Cloud(cloud_config) => {
             log_feature!(
@@ -225,4 +232,32 @@ pub async fn create_fold_db(
             )))
         }
     }
+}
+
+/// Creates a FoldDB instance from a pre-built NamespacedStore.
+///
+/// This is the generic factory for use when the caller already has a
+/// NamespacedStore (e.g. `ExememNamespacedStore` backed by the Storage API).
+/// It wraps the store with E2E encryption and initialises DbOperations.
+pub async fn create_fold_db_from_store(
+    store: Arc<dyn crate::storage::traits::NamespacedStore>,
+    e2e_keys: &E2eKeys,
+) -> FoldDbResult<Arc<Mutex<FoldDB>>> {
+    let crypto = Arc::new(crate::crypto::LocalCryptoProvider::from_key(
+        e2e_keys.encryption_key(),
+    ));
+    let enc_store = crate::storage::EncryptingNamespacedStore::new(store, crypto, true);
+    let final_store = Arc::new(enc_store) as Arc<dyn crate::storage::traits::NamespacedStore>;
+
+    let db_ops = Arc::new(
+        DbOperations::from_namespaced_store(final_store, Some(e2e_keys.index_key()))
+            .await
+            .map_err(|e| FoldDbError::Config(e.to_string()))?,
+    );
+
+    Ok(Arc::new(Mutex::new(
+        FoldDB::new_with_components(db_ops, "remote", None, None)
+            .await
+            .map_err(|e| FoldDbError::Config(e.to_string()))?,
+    )))
 }
