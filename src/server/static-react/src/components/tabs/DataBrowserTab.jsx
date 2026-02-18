@@ -179,7 +179,10 @@ export default function DataBrowserTab() {
               onClick={() => toggleSchema(name)}
             >
               <span className="text-xs text-secondary">{isOpen ? '▾' : '▸'}</span>
-              <span className="font-mono text-sm text-primary font-medium">{name}</span>
+              <span className="font-mono text-sm text-primary font-medium">{schema.descriptive_name || name}</span>
+              {schema.descriptive_name && schema.descriptive_name !== name && (
+                <span className="text-xs text-tertiary" title={name}>({name.length > 16 ? name.slice(0, 12) + '…' : name})</span>
+              )}
               <span className="text-xs text-tertiary">({fieldCount(schema)} fields)</span>
               <StateBadge state={schema.state || 'available'} />
             </button>

@@ -8,7 +8,9 @@ import {
   createRangeKeyFilter,
 } from '../../utils/filterUtils'
 
-function ResultRow({ r }) {
+function ResultRow({ r, schemaByName }) {
+  const schema = schemaByName?.get(r.schema_name)
+  const displayName = schema?.descriptive_name || r.schema_name
   return (
     <tr className="border-t">
       <td className="px-2 py-1 text-xs text-secondary">
@@ -17,8 +19,8 @@ function ResultRow({ r }) {
       <td className="px-2 py-1 text-xs text-secondary">
         {r.key_value?.range ?? ''}
       </td>
-      <td className="px-2 py-1 text-xs font-mono text-primary">
-        {r.schema_name}
+      <td className="px-2 py-1 text-xs font-mono text-primary" title={r.schema_name}>
+        {displayName}
       </td>
       <td className="px-2 py-1 text-xs text-primary">
         {r.field}
@@ -198,7 +200,7 @@ export default function NativeIndexTab({ onResult }) {
                 const details = recordDetails.get(id)
                 return (
                   <>
-                    <ResultRow key={`${id}-row`} r={r} />
+                    <ResultRow key={`${id}-row`} r={r} schemaByName={schemaByName} />
                     <tr key={`${id}-actions`} className="border-b">
                       <td colSpan={5}></td>
                       <td className="px-2 py-1 text-right">
