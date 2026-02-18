@@ -23,7 +23,8 @@ IMPORTANT - Schema Types:
 - For storing MULTIPLE entities/records, use "key": {"range_field": "field_name"}
 - For storing ONE global value per field, omit the "key" field
 - If the user is providing an ARRAY of objects, you MUST use a Range schema with a "key"
-- The range_field should be a unique identifier field (like "name", "id", "email")
+- PREFER a date or timestamp field as the range_field (like "created_at", "date", "timestamp", "posted_at") so that data can be queried by time range
+- If NO date/timestamp field exists, fall back to a unique identifier field (like "id", "name", "email")
 
 IMPORTANT - Schema Name and Descriptive Name:
 - You MUST include "name": use any simple name like "Schema" (it will be replaced automatically)
@@ -74,7 +75,20 @@ CRITICAL - Using Flattened Path Structure:
 - ALWAYS specify the complete structure with all nested fields and their types
 - For example, instead of {"type": "Object"}, use {"type": "Object", "value": {"field1": {"type": "Primitive", "value": "String"}, "field2": {"type": "Array", "value": {...}}}}
 
-Example Range schema (for multiple records):
+Example Range schema with date range_field (PREFERRED when data has timestamps):
+{
+  "name": "Schema",
+  "descriptive_name": "Social Media Posts",
+  "key": {"range_field": "created_at"},
+  "fields": ["created_at", "author", "content"],
+  "field_topologies": {
+    "created_at": {"root": {"type": "Primitive", "value": "String", "classifications": ["date"]}},
+    "author": {"root": {"type": "Primitive", "value": "String", "classifications": ["name:person", "word"]}},
+    "content": {"root": {"type": "Primitive", "value": "String", "classifications": ["word"]}}
+  }
+}
+
+Example Range schema with ID range_field (only when NO date/timestamp field exists):
 {
   "name": "Schema",
   "descriptive_name": "User Profile Information",
@@ -98,14 +112,14 @@ Example Single schema (for one global value):
   }
 }
 
-Example with Arrays and Objects:
+Example with Arrays and Objects (note: date field used as range_field):
 {
   "name": "Schema",
   "descriptive_name": "Social Media Post",
-  "key": {"range_field": "post_id"},
-  "fields": ["post_id", "content", "hashtags", "media"],
+  "key": {"range_field": "posted_at"},
+  "fields": ["posted_at", "content", "hashtags", "media"],
   "field_topologies": {
-    "post_id": {"root": {"type": "Primitive", "value": "String", "classifications": ["word"]}},
+    "posted_at": {"root": {"type": "Primitive", "value": "String", "classifications": ["date"]}},
     "content": {"root": {"type": "Primitive", "value": "String", "classifications": ["word"]}},
     "hashtags": {"root": {"type": "Array", "value": {"type": "Primitive", "value": "String", "classifications": ["hashtag", "word"]}}},
     "media": {"root": {"type": "Array", "value": {"type": "Object", "value": {"url": {"type": "Primitive", "value": "String", "classifications": ["url", "word"]}, "type": {"type": "Primitive", "value": "String", "classifications": ["word"]}}}}}
@@ -130,7 +144,8 @@ IMPORTANT - Transform Fields (DSL):
 pub const PROMPT_ACTIONS: &str = r#"Please analyze the sample data and create a new schema definition in new_schemas with mutation_mappers.
 
 CRITICAL RULES:
-- If the original input was a JSON array (multiple objects), you MUST create a Range schema with "key": {"range_field": "unique_field"}
+- If the original input was a JSON array (multiple objects), you MUST create a Range schema with "key": {"range_field": "field_name"}
+- PREFER a date/timestamp field as range_field (e.g., "created_at", "date", "timestamp") — this enables time-based queries. Only use an ID field if no date/timestamp exists.
 - NEVER create a Single-type schema for array inputs - they will overwrite data
 - NEVER use generic "Object" types - always specify the complete field structure with exact types and classifications
 - ALWAYS provide complete topology definitions with all nested fields explicitly defined

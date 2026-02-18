@@ -1062,6 +1062,11 @@ impl OperationProcessor {
                     return Err(FoldDbError::Io(e));
                 }
             }
+            DatabaseConfig::Exemem { .. } => {
+                return Err(FoldDbError::Other(
+                    "Database reset is not supported for Exemem backend".to_string(),
+                ));
+            }
         }
 
         Ok(())
@@ -1092,6 +1097,18 @@ impl OperationProcessor {
         &self,
         file_path: &std::path::Path,
         auto_execute: bool,
+    ) -> FoldDbResult<crate::ingestion::IngestionResponse> {
+        self.ingest_single_file_with_tracker(file_path, auto_execute, None).await
+    }
+
+    /// Like `ingest_single_file` but accepts an optional external `ProgressTracker`
+    /// so callers (e.g. TUI) can poll progress while ingestion runs.
+    /// Returns `(progress_id, IngestionResponse)`.
+    pub async fn ingest_single_file_with_tracker(
+        &self,
+        file_path: &std::path::Path,
+        auto_execute: bool,
+        external_tracker: Option<crate::ingestion::ProgressTracker>,
     ) -> FoldDbResult<crate::ingestion::IngestionResponse> {
         use crate::ingestion::IngestionRequest;
         use crate::ingestion::json_processor::convert_file_to_json;
@@ -1124,7 +1141,10 @@ impl OperationProcessor {
 
         let service = IngestionService::from_env().map_err(|e| FoldDbError::Other(e.to_string()))?;
 
-        let progress_tracker = crate::ingestion::create_progress_tracker(None).await;
+        let progress_tracker = match external_tracker {
+            Some(t) => t,
+            None => crate::ingestion::create_progress_tracker(None).await,
+        };
         let progress_service = ProgressService::new(progress_tracker);
         progress_service
             .start_progress(progress_id.clone(), "cli".to_string())
