@@ -22,22 +22,36 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect) {
 
 fn panel_border_style(app: &App, panel: usize) -> Style {
     if app.schemas_state.focus == panel {
-        Style::default().fg(Color::Yellow)
+        Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(Color::DarkGray)
+    }
+}
+
+fn panel_title_style(app: &App, panel: usize) -> Style {
+    if app.schemas_state.focus == panel {
+        Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD)
     } else {
         Style::default().fg(Color::Gray)
     }
 }
 
 fn render_schema_list(frame: &mut Frame, app: &App, area: Rect) {
+    let focused = app.schemas_state.focus == 0;
+    let title = if focused {
+        format!(" ▶ Schemas ({}) ", app.schemas_state.schemas.len())
+    } else {
+        format!("   Schemas ({}) ", app.schemas_state.schemas.len())
+    };
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(panel_border_style(app, 0))
-        .title(format!(" Schemas ({}) ", app.schemas_state.schemas.len()))
-        .title_style(
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
-        );
+        .title(title)
+        .title_style(panel_title_style(app, 0));
 
     if app.schemas_state.loading {
         let lines = vec![
@@ -120,26 +134,24 @@ fn render_schema_list(frame: &mut Frame, app: &App, area: Rect) {
 }
 
 fn render_keys_panel(frame: &mut Frame, app: &App, area: Rect) {
+    let focused = app.schemas_state.focus == 1;
     let page_start = if app.schemas_state.keys.is_empty() {
         0
     } else {
         app.schemas_state.keys_offset + 1
     };
     let page_end = app.schemas_state.keys_offset + app.schemas_state.keys.len();
+    let marker = if focused { " ▶" } else { "  " };
     let title = format!(
-        " Keys {}-{}/{} ",
-        page_start, page_end, app.schemas_state.keys_total
+        "{} Keys {}-{}/{} ",
+        marker, page_start, page_end, app.schemas_state.keys_total
     );
 
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(panel_border_style(app, 1))
         .title(title)
-        .title_style(
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
-        );
+        .title_style(panel_title_style(app, 1));
 
     if app.schemas_state.keys_loading {
         let lines = vec![
@@ -207,15 +219,17 @@ fn render_keys_panel(frame: &mut Frame, app: &App, area: Rect) {
 }
 
 fn render_record_panel(frame: &mut Frame, app: &App, area: Rect) {
+    let focused = app.schemas_state.focus == 2;
+    let title = if focused {
+        " ▶ Record "
+    } else {
+        "   Record "
+    };
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(panel_border_style(app, 2))
-        .title(" Record ")
-        .title_style(
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
-        );
+        .title(title)
+        .title_style(panel_title_style(app, 2));
 
     if app.schemas_state.record_loading {
         let lines = vec![
@@ -235,16 +249,24 @@ fn render_record_panel(frame: &mut Frame, app: &App, area: Rect) {
             let lines = vec![
                 Line::from(""),
                 Line::from(Span::styled(
-                    "  Select a key to view record fields.",
+                    "  Select a key to view fields.",
                     Style::default().fg(Color::Gray),
                 )),
                 Line::from(""),
                 Line::from(Span::styled(
-                    "  Tab=switch panels  Up/Down=navigate",
+                    "  Left/Right  switch panels",
                     Style::default().fg(Color::Gray),
                 )),
                 Line::from(Span::styled(
-                    "  Enter=load record  n/p=page keys",
+                    "  Up/Down     navigate list",
+                    Style::default().fg(Color::Gray),
+                )),
+                Line::from(Span::styled(
+                    "  Enter       load record",
+                    Style::default().fg(Color::Gray),
+                )),
+                Line::from(Span::styled(
+                    "  n/p         page keys",
                     Style::default().fg(Color::Gray),
                 )),
             ];

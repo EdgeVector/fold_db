@@ -1003,12 +1003,17 @@ impl App {
 
     fn handle_schemas_key(&mut self, key: KeyEvent) {
         match key.code {
-            KeyCode::Tab => {
-                // Cycle focus: schemas -> keys -> record
-                self.schemas_state.focus = (self.schemas_state.focus + 1) % 3;
+            KeyCode::Right => {
+                // Move focus to next panel
+                if self.schemas_state.focus < 2 {
+                    self.schemas_state.focus += 1;
+                }
             }
-            KeyCode::BackTab => {
-                self.schemas_state.focus = if self.schemas_state.focus == 0 { 2 } else { self.schemas_state.focus - 1 };
+            KeyCode::Left => {
+                // Move focus to previous panel
+                if self.schemas_state.focus > 0 {
+                    self.schemas_state.focus -= 1;
+                }
             }
             KeyCode::Up => {
                 match self.schemas_state.focus {
