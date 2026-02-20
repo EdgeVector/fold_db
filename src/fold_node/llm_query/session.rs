@@ -32,15 +32,19 @@ impl SessionManager {
         // Clean up expired sessions
         sessions.retain(|_, ctx| !ctx.is_expired());
 
-        // If session_id provided and exists, update and return it
+        // If session_id provided and exists, update and return it.
+        // If provided but expired/missing, recreate with the same ID for continuity.
         if let Some(id) = session_id {
             if let Some(ctx) = sessions.get_mut(&id) {
                 ctx.update_activity();
                 return Ok(id);
             }
+            let context = SessionContext::new(id.clone(), original_query);
+            sessions.insert(id.clone(), context);
+            return Ok(id);
         }
 
-        // Create new session
+        // No session_id provided — create new session with fresh ID
         let new_id = Uuid::new_v4().to_string();
         let context = SessionContext::new(new_id.clone(), original_query);
         sessions.insert(new_id.clone(), context);

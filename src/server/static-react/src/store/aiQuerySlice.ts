@@ -21,18 +21,19 @@ export interface ConversationMessage {
 export interface AIQueryState {
   // Input state
   inputText: string;
-  
+
   // Session management
   sessionId: string | null;
-  
+
   // Processing state
   isProcessing: boolean;
-  
+
   // Conversation history
   conversationLog: ConversationMessage[];
-  
+
   // UI state
   showResults: boolean;
+  viewMode: 'list' | 'chat';
 }
 
 // ============================================================================
@@ -45,6 +46,7 @@ const initialState: AIQueryState = {
   isProcessing: false,
   conversationLog: [],
   showResults: false,
+  viewMode: 'list',
 };
 
 // ============================================================================
@@ -92,6 +94,20 @@ const aiQuerySlice = createSlice({
       state.showResults = action.payload;
     },
     
+    // View mode
+    setViewMode: (state, action: PayloadAction<'list' | 'chat'>) => {
+      state.viewMode = action.payload;
+    },
+
+    loadConversation: (state, action: PayloadAction<{ sessionId: string; messages: ConversationMessage[] }>) => {
+      state.sessionId = action.payload.sessionId;
+      state.conversationLog = action.payload.messages;
+      state.viewMode = 'chat';
+      state.inputText = '';
+      state.isProcessing = false;
+      state.showResults = false;
+    },
+
     // Combined actions
     startNewConversation: (state) => {
       state.sessionId = null;
@@ -99,8 +115,9 @@ const aiQuerySlice = createSlice({
       state.inputText = '';
       state.isProcessing = false;
       state.showResults = false;
+      state.viewMode = 'chat';
     },
-    
+
     // Reset all state
     resetAIQueryState: () => initialState,
   },
@@ -118,6 +135,8 @@ export const {
   addMessage,
   clearConversation,
   setShowResults,
+  setViewMode,
+  loadConversation,
   startNewConversation,
   resetAIQueryState,
 } = aiQuerySlice.actions;
@@ -139,6 +158,8 @@ export const selectIsProcessing = (state: { aiQuery: AIQueryState }) => state.ai
 export const selectConversationLog = (state: { aiQuery: AIQueryState }) => state.aiQuery.conversationLog;
 
 export const selectShowResults = (state: { aiQuery: AIQueryState }) => state.aiQuery.showResults;
+
+export const selectViewMode = (state: { aiQuery: AIQueryState }) => state.aiQuery.viewMode;
 
 export const selectHasResults = (state: { aiQuery: AIQueryState }) => 
   state.aiQuery.conversationLog.some(log => log.type === 'results');

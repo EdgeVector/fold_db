@@ -6,15 +6,20 @@
  * Uses minimal design system consistent with the rest of FoldDB.
  */
 
-import { useCallback, useRef, useEffect } from 'react';
+import { useCallback, useRef, useEffect, useState } from 'react';
 import { llmQueryClient } from '../../api/clients/llmQueryClient';
+import { mutationClient } from '../../api/clients/mutationClient';
+import { createHashKeyFilter } from '../../utils/filterUtils';
 import { useAppSelector, useAppDispatch } from '../../store/hooks';
+import ConversationList from './ConversationList';
 import {
   setInputText,
   setSessionId,
   setIsProcessing,
   addMessage,
   setShowResults,
+  setViewMode,
+  loadConversation,
   startNewConversation,
   selectInputText,
   selectSessionId,
@@ -22,6 +27,7 @@ import {
   selectConversationLog,
   selectShowResults,
   selectCanAskFollowup,
+  selectViewMode,
 } from '../../store/aiQuerySlice';
 
 function LlmQueryTab({ onResult }) {
@@ -33,6 +39,9 @@ function LlmQueryTab({ onResult }) {
   const conversationLog = useAppSelector(selectConversationLog);
   const showResults = useAppSelector(selectShowResults);
   const canAskFollowup = useAppSelector(selectCanAskFollowup);
+
+  const viewMode = useAppSelector(selectViewMode);
+  const [isLoadingConversation, setIsLoadingConversation] = useState(false);
 
   const conversationEndRef = useRef(null);
 
@@ -96,19 +105,36 @@ function LlmQueryTab({ onResult }) {
     // Add user message to log
     addToLog('user', userInput);
 
+    // Helper: run a fresh agent query (used for new queries and as fallback)
+    const runAgentQuery = async () => {
+      addToLog('system', '🤖 Starting AI agent...');
+      const agentResponse = await llmQueryClient.agentQuery({
+        query: userInput,
+        session_id: sessionId,
+        max_iterations: 10
+      });
+      processAgentResponse(agentResponse);
+    };
+
     try {
       // If this is a follow-up question (session exists and we have results)
       if (canAskFollowup) {
-        addToLog('system', '🤔 Analyzing if question can be answered from existing context...');
-
-        // First analyze if the question can be answered from existing context
-        const analysisResponse = await llmQueryClient.analyzeFollowup({
-          session_id: sessionId,
-          question: userInput
-        });
+        // Try the follow-up path; if the backend session is stale/missing, fall back to agent
+        let analysisResponse;
+        try {
+          addToLog('system', '🤔 Analyzing if question can be answered from existing context...');
+          analysisResponse = await llmQueryClient.analyzeFollowup({
+            session_id: sessionId,
+            question: userInput
+          });
+        } catch {
+          // Session not found or no results — fall back to agent path
+          await runAgentQuery();
+          return;
+        }
 
         if (!analysisResponse.success) {
-          addToLog('system', `❌ Error: ${analysisResponse.error || 'Failed to analyze question'}`);
+          await runAgentQuery();
           return;
         }
 
@@ -132,27 +158,10 @@ function LlmQueryTab({ onResult }) {
         } else {
           // Needs new query - use AI agent with tool calling
           addToLog('system', `🔍 Need new data: ${analysis.reasoning}`);
-          addToLog('system', '🤖 Starting AI agent...');
-
-          const agentResponse = await llmQueryClient.agentQuery({
-            query: userInput,
-            session_id: sessionId,
-            max_iterations: 10
-          });
-
-          processAgentResponse(agentResponse);
+          await runAgentQuery();
         }
       } else {
-        // New query - use AI agent with tool calling
-        addToLog('system', '🤖 Starting AI agent...');
-
-        const agentResponse = await llmQueryClient.agentQuery({
-          query: userInput,
-          session_id: sessionId,
-          max_iterations: 10
-        });
-
-        processAgentResponse(agentResponse);
+        await runAgentQuery();
       }
     } catch (error) {
       console.error('Error processing input:', error);
@@ -164,17 +173,129 @@ function LlmQueryTab({ onResult }) {
   }, [inputText, sessionId, canAskFollowup, isProcessing, processAgentResponse, addToLog, onResult, dispatch]);
 
   /**
+   * Load a past conversation by session ID
+   */
+  const handleSelectConversation = useCallback(async (selectedSessionId) => {
+    setIsLoadingConversation(true);
+    try {
+      const response = await mutationClient.executeQuery({
+        schema_name: 'ai_conversations',
+        fields: ['session_id', 'timestamp', 'query', 'answer', 'tool_calls_json'],
+        filter: createHashKeyFilter(selectedSessionId),
+      });
+
+      if (!response.success || !response.data) {
+        addToLog('system', 'Failed to load conversation');
+        dispatch(setViewMode('chat'));
+        return;
+      }
+
+      const records = response.data?.results || response.data?.data || [];
+      if (!Array.isArray(records) || records.length === 0) {
+        dispatch(startNewConversation());
+        return;
+      }
+
+      // Sort by timestamp ascending
+      const sorted = [...records].sort((a, b) => {
+        const fa = a.fields || a;
+        const fb = b.fields || b;
+        return (fa.timestamp || '').localeCompare(fb.timestamp || '');
+      });
+
+      // Build conversation messages from each turn
+      const messages = [];
+      for (const record of sorted) {
+        const fields = record.fields || record;
+        const timestamp = fields.timestamp || new Date().toISOString();
+
+        // User message
+        if (fields.query) {
+          messages.push({ type: 'user', content: fields.query, timestamp });
+        }
+
+        // Tool calls if present
+        if (fields.tool_calls_json) {
+          try {
+            const toolCalls = JSON.parse(fields.tool_calls_json);
+            if (Array.isArray(toolCalls) && toolCalls.length > 0) {
+              messages.push({
+                type: 'system',
+                content: `Made ${toolCalls.length} tool call(s)`,
+                timestamp,
+              });
+              messages.push({
+                type: 'results',
+                content: 'Tool execution trace',
+                data: toolCalls,
+                timestamp,
+              });
+            }
+          } catch {
+            // Ignore malformed tool_calls_json
+          }
+        }
+
+        // AI answer
+        if (fields.answer) {
+          messages.push({ type: 'system', content: fields.answer, timestamp });
+        }
+      }
+
+      dispatch(loadConversation({ sessionId: selectedSessionId, messages }));
+    } catch (err) {
+      console.error('Error loading conversation:', err);
+      dispatch(setViewMode('chat'));
+    } finally {
+      setIsLoadingConversation(false);
+    }
+  }, [dispatch, addToLog]);
+
+  /**
+   * Navigate back to conversation list
+   */
+  const handleBackToList = useCallback(() => {
+    dispatch(setViewMode('list'));
+  }, [dispatch]);
+
+  /**
    * Start a new conversation
    */
   const handleNewConversation = useCallback(() => {
     dispatch(startNewConversation());
   }, [dispatch]);
 
+  if (viewMode === 'list') {
+    return (
+      <ConversationList
+        onSelectConversation={handleSelectConversation}
+        onNewConversation={handleNewConversation}
+      />
+    );
+  }
+
   return (
     <div className="flex flex-col h-[600px]">
+      {/* Header bar */}
+      <div className="flex items-center justify-between px-6 py-3 border-b border-border">
+        <button
+          onClick={handleBackToList}
+          className="text-sm text-gruvbox-blue hover:underline bg-transparent border-none cursor-pointer"
+        >
+          &larr; Conversations
+        </button>
+        <button onClick={handleNewConversation} className="btn-primary btn-sm">
+          New Conversation
+        </button>
+      </div>
+
       {/* Conversation Log */}
       <div className="flex-1 overflow-y-auto p-6 space-y-3">
-        {conversationLog.length === 0 ? (
+        {isLoadingConversation ? (
+          <div className="flex items-center justify-center h-full text-secondary">
+            <p className="text-sm">Loading conversation...</p>
+          </div>
+        ) : conversationLog.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-secondary">
             <div className="text-4xl mb-4">→</div>
             <p className="text-base mb-2">Start a conversation</p>

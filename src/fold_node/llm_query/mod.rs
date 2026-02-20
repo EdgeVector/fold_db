@@ -4,6 +4,7 @@
 //! queries, determine indexing needs, execute queries, and provide interactive
 //! results exploration.
 
+pub mod conversation_store;
 pub mod routes;
 pub mod service;
 pub mod session;

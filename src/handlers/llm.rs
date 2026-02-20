@@ -3,7 +3,7 @@
 //! Framework-agnostic handlers for LLM query operations.
 //! These can be called by both HTTP server routes and Lambda handlers.
 
-use crate::fold_node::llm_query::{types::*, LlmQueryService, SessionManager};
+use crate::fold_node::llm_query::{conversation_store, types::*, LlmQueryService, SessionManager};
 use crate::fold_node::node::FoldNode;
 use crate::fold_node::OperationProcessor;
 use crate::db_operations::IndexResult;
@@ -980,6 +980,23 @@ pub async fn agent_query(
         session_id,
         tool_calls.len()
     );
+
+    // Persist conversation turn to FoldDB in the background
+    let save_node = node.clone();
+    let save_session = session_id.clone();
+    let save_query = request.query.clone();
+    let save_answer = answer.clone();
+    let save_tools = tool_calls.clone();
+    tokio::spawn(async move {
+        conversation_store::save_conversation_turn(
+            &save_node,
+            save_session,
+            save_query,
+            save_answer,
+            save_tools,
+        )
+        .await;
+    });
 
     Ok(ApiResponse::success_with_user(
         AgentQueryHandlerResponse {
