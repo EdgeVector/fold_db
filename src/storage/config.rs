@@ -26,20 +26,20 @@ impl CloudConfig {
     /// Create config from environment variables.
     ///
     /// Required environment variables:
-    /// - `DATAFOLD_DYNAMODB_REGION`: AWS region
-    /// - `DATAFOLD_DYNAMODB_TABLE_PREFIX`: Prefix for table names (tables will be named `{prefix}-{namespace}`)
+    /// - `FOLD_DYNAMODB_REGION`: AWS region
+    /// - `FOLD_DYNAMODB_TABLE_PREFIX`: Prefix for table names (tables will be named `{prefix}-{namespace}`)
     ///
     /// Optional:
-    /// - `DATAFOLD_DYNAMODB_USER_ID`: User ID for multi-tenant isolation
-    /// - `DATAFOLD_S3_FILE_STORAGE_BUCKET`: S3 bucket for file storage (uploads/ingestion)
+    /// - `FOLD_DYNAMODB_USER_ID`: User ID for multi-tenant isolation
+    /// - `FOLD_S3_FILE_STORAGE_BUCKET`: S3 bucket for file storage (uploads/ingestion)
     pub fn from_env() -> Result<Self, ConfigError> {
-        let region = env::var("DATAFOLD_DYNAMODB_REGION")
-            .map_err(|_| ConfigError::MissingVariable("DATAFOLD_DYNAMODB_REGION".to_string()))?;
+        let region = env::var("FOLD_DYNAMODB_REGION")
+            .map_err(|_| ConfigError::MissingVariable("FOLD_DYNAMODB_REGION".to_string()))?;
 
-        let table_prefix = env::var("DATAFOLD_DYNAMODB_TABLE_PREFIX")
-            .or_else(|_| env::var("DATAFOLD_DYNAMODB_TABLE")) // Backward compatibility
+        let table_prefix = env::var("FOLD_DYNAMODB_TABLE_PREFIX")
+            .or_else(|_| env::var("FOLD_DYNAMODB_TABLE")) // Backward compatibility
             .map_err(|_| {
-                ConfigError::MissingVariable("DATAFOLD_DYNAMODB_TABLE_PREFIX".to_string())
+                ConfigError::MissingVariable("FOLD_DYNAMODB_TABLE_PREFIX".to_string())
             })?;
 
         // Generate explicit table names from prefix
@@ -49,8 +49,8 @@ impl CloudConfig {
             region,
             tables,
             auto_create: true,
-            user_id: env::var("DATAFOLD_DYNAMODB_USER_ID").ok(),
-            file_storage_bucket: env::var("DATAFOLD_S3_FILE_STORAGE_BUCKET").ok(),
+            user_id: env::var("FOLD_DYNAMODB_USER_ID").ok(),
+            file_storage_bucket: env::var("FOLD_S3_FILE_STORAGE_BUCKET").ok(),
         })
     }
 }
@@ -185,24 +185,24 @@ impl Default for UploadStorageConfig {
 
 impl UploadStorageConfig {
     /// Creates UploadStorageConfig from environment variables:
-    /// - DATAFOLD_UPLOAD_STORAGE_MODE: "local" or "s3" (defaults to "local")
-    /// - DATAFOLD_UPLOAD_PATH: Path for local storage (defaults to "data/uploads")
-    /// - DATAFOLD_UPLOAD_S3_BUCKET: S3 bucket for uploads (required if mode=s3)
-    /// - DATAFOLD_UPLOAD_S3_REGION: AWS region (required if mode=s3)
-    /// - DATAFOLD_UPLOAD_S3_PREFIX: S3 prefix/folder (defaults to "uploads")
+    /// - FOLD_UPLOAD_STORAGE_MODE: "local" or "s3" (defaults to "local")
+    /// - FOLD_UPLOAD_PATH: Path for local storage (defaults to "data/uploads")
+    /// - FOLD_UPLOAD_S3_BUCKET: S3 bucket for uploads (required if mode=s3)
+    /// - FOLD_UPLOAD_S3_REGION: AWS region (required if mode=s3)
+    /// - FOLD_UPLOAD_S3_PREFIX: S3 prefix/folder (defaults to "uploads")
     pub fn from_env() -> Result<Self, ConfigError> {
-        let mode = env::var("DATAFOLD_UPLOAD_STORAGE_MODE").unwrap_or_else(|_| "local".to_string());
+        let mode = env::var("FOLD_UPLOAD_STORAGE_MODE").unwrap_or_else(|_| "local".to_string());
 
         match mode.as_str() {
             "local" => {
-                let path = env::var("DATAFOLD_UPLOAD_PATH")
+                let path = env::var("FOLD_UPLOAD_PATH")
                     .map(PathBuf::from)
                     .unwrap_or_else(|_| PathBuf::from("data/uploads"));
                 Ok(UploadStorageConfig::Local { path })
             }
 
             _ => Err(ConfigError::InvalidValue(format!(
-                "Invalid DATAFOLD_UPLOAD_STORAGE_MODE: {}. Must be 'local' or 's3'",
+                "Invalid FOLD_UPLOAD_STORAGE_MODE: {}. Must be 'local' or 's3'",
                 mode
             ))),
         }
@@ -211,15 +211,15 @@ impl UploadStorageConfig {
 
 impl DatabaseConfig {
     /// Creates DatabaseConfig from environment variables:
-    /// - DATAFOLD_STORAGE_MODE: "local" (default) or "s3"
-    /// - DATAFOLD_STORAGE_PATH: path for local storage (default: "data")
+    /// - FOLD_STORAGE_MODE: "local" (default) or "s3"
+    /// - FOLD_STORAGE_PATH: path for local storage (default: "data")
     /// - For S3 mode, uses S3Config::from_env()
     pub fn from_env() -> Result<Self, ConfigError> {
-        let mode = env::var("DATAFOLD_STORAGE_MODE").unwrap_or_else(|_| "local".to_string());
+        let mode = env::var("FOLD_STORAGE_MODE").unwrap_or_else(|_| "local".to_string());
 
         match mode.to_lowercase().as_str() {
             "local" => {
-                let path = env::var("DATAFOLD_STORAGE_PATH")
+                let path = env::var("FOLD_STORAGE_PATH")
                     .map(PathBuf::from)
                     .unwrap_or_else(|_| PathBuf::from("data"));
                 Ok(DatabaseConfig::Local { path })
@@ -237,7 +237,7 @@ impl DatabaseConfig {
                 Ok(DatabaseConfig::Exemem { api_url, api_key })
             }
             _ => Err(ConfigError::InvalidValue(format!(
-                "Invalid DATAFOLD_STORAGE_MODE: '{}'. Must be 'local', 'exemem'{}",
+                "Invalid FOLD_STORAGE_MODE: '{}'. Must be 'local', 'exemem'{}",
                 mode,
                 if cfg!(feature = "aws-backend") {
                     ", or 'dynamodb'"

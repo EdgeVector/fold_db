@@ -35,8 +35,8 @@ struct Cli {
 /// # Environment Variables (DynamoDB Mode)
 ///
 /// To enable DynamoDB storage, set the following environment variables:
-/// * `DATAFOLD_DYNAMODB_TABLE` - DynamoDB table name (required for DynamoDB mode)
-/// * `DATAFOLD_DYNAMODB_REGION` - AWS region (required for DynamoDB mode)
+/// * `FOLD_DYNAMODB_TABLE` - DynamoDB table name (required for DynamoDB mode)
+/// * `FOLD_DYNAMODB_REGION` - AWS region (required for DynamoDB mode)
 ///
 /// If DynamoDB environment variables are set, DynamoDB storage will be used automatically.
 /// **No distributed locking needed** - topology hashes ensure idempotent writes!

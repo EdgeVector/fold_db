@@ -97,20 +97,20 @@ impl SecurityConfig {
         let mut config = Self::default();
 
         // Load from environment variables
-        if let Ok(value) = std::env::var("DATAFOLD_REQUIRE_TLS") {
+        if let Ok(value) = std::env::var("FOLD_REQUIRE_TLS") {
             config.require_tls = value.parse().unwrap_or(true);
         }
 
-        if let Ok(value) = std::env::var("DATAFOLD_REQUIRE_SIGNATURES") {
+        if let Ok(value) = std::env::var("FOLD_REQUIRE_SIGNATURES") {
             config.require_signatures = value.parse().unwrap_or(true);
         }
 
-        if let Ok(value) = std::env::var("DATAFOLD_ENCRYPT_AT_REST") {
+        if let Ok(value) = std::env::var("FOLD_ENCRYPT_AT_REST") {
             config.encrypt_at_rest = value.parse().unwrap_or(true);
         }
 
         // Load master key from environment (base64 encoded)
-        if let Ok(key_base64) = std::env::var("DATAFOLD_MASTER_KEY") {
+        if let Ok(key_base64) = std::env::var("FOLD_MASTER_KEY") {
             if let Ok(key_bytes) = general_purpose::STANDARD.decode(&key_base64) {
                 if key_bytes.len() == 32 {
                     let mut key = [0u8; 32];

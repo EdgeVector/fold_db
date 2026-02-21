@@ -241,60 +241,60 @@ impl LogConfig {
     /// Apply environment variable overrides to the configuration
     pub fn apply_env_overrides(&mut self) -> Result<(), ConfigError> {
         // General settings
-        if let Ok(level) = std::env::var("DATAFOLD_LOG_LEVEL") {
+        if let Ok(level) = std::env::var("FOLD_LOG_LEVEL") {
             self.general.default_level = level;
         }
-        if let Ok(colors) = std::env::var("DATAFOLD_LOG_COLORS") {
+        if let Ok(colors) = std::env::var("FOLD_LOG_COLORS") {
             self.general.enable_colors = colors.parse().unwrap_or(true);
         }
 
         // Console settings
-        if let Ok(enabled) = std::env::var("DATAFOLD_LOG_CONSOLE_ENABLED") {
+        if let Ok(enabled) = std::env::var("FOLD_LOG_CONSOLE_ENABLED") {
             self.outputs.console.enabled = enabled.parse().unwrap_or(true);
         }
-        if let Ok(level) = std::env::var("DATAFOLD_LOG_CONSOLE_LEVEL") {
+        if let Ok(level) = std::env::var("FOLD_LOG_CONSOLE_LEVEL") {
             self.outputs.console.level = level;
         }
 
         // File settings
-        if let Ok(enabled) = std::env::var("DATAFOLD_LOG_FILE_ENABLED") {
+        if let Ok(enabled) = std::env::var("FOLD_LOG_FILE_ENABLED") {
             self.outputs.file.enabled = enabled.parse().unwrap_or(false);
         }
-        if let Ok(path) = std::env::var("DATAFOLD_LOG_FILE_PATH") {
+        if let Ok(path) = std::env::var("FOLD_LOG_FILE_PATH") {
             self.outputs.file.path = path;
         }
-        if let Ok(level) = std::env::var("DATAFOLD_LOG_FILE_LEVEL") {
+        if let Ok(level) = std::env::var("FOLD_LOG_FILE_LEVEL") {
             self.outputs.file.level = level;
         }
 
         // Web settings
-        if let Ok(enabled) = std::env::var("DATAFOLD_LOG_WEB_ENABLED") {
+        if let Ok(enabled) = std::env::var("FOLD_LOG_WEB_ENABLED") {
             self.outputs.web.enabled = enabled.parse().unwrap_or(true);
         }
-        if let Ok(level) = std::env::var("DATAFOLD_LOG_WEB_LEVEL") {
+        if let Ok(level) = std::env::var("FOLD_LOG_WEB_LEVEL") {
             self.outputs.web.level = level;
         }
 
         // DynamoDB settings
         #[cfg(feature = "aws-backend")]
         {
-            if let Ok(enabled) = std::env::var("DATAFOLD_LOG_DYNAMODB_ENABLED") {
+            if let Ok(enabled) = std::env::var("FOLD_LOG_DYNAMODB_ENABLED") {
                 self.outputs.dynamodb.enabled = enabled.parse().unwrap_or(false);
             }
-            if let Ok(level) = std::env::var("DATAFOLD_LOG_DYNAMODB_LEVEL") {
+            if let Ok(level) = std::env::var("FOLD_LOG_DYNAMODB_LEVEL") {
                 self.outputs.dynamodb.level = level;
             }
-            if let Ok(table) = std::env::var("DATAFOLD_LOG_DYNAMODB_TABLE") {
+            if let Ok(table) = std::env::var("FOLD_LOG_DYNAMODB_TABLE") {
                 self.outputs.dynamodb.table_name = table;
             }
-            if let Ok(region) = std::env::var("DATAFOLD_LOG_DYNAMODB_REGION") {
+            if let Ok(region) = std::env::var("FOLD_LOG_DYNAMODB_REGION") {
                 self.outputs.dynamodb.region = Some(region);
             }
         }
 
         // Feature-specific overrides
         for (key, value) in std::env::vars() {
-            if let Some(feature) = key.strip_prefix("DATAFOLD_LOG_FEATURE_") {
+            if let Some(feature) = key.strip_prefix("FOLD_LOG_FEATURE_") {
                 let feature_name = feature.to_lowercase();
                 self.features.insert(feature_name, value);
             }

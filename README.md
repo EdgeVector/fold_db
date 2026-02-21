@@ -93,7 +93,7 @@ folddb schema list -p
 A shared registry at [schema.folddb.com](https://schema.folddb.com) ensures schema consistency across FoldDB instances. During ingestion, the AI checks the registry for compatible schemas before creating new ones.
 
 ```bash
-export DATAFOLD_SCHEMA_SERVICE_URL=https://schema.folddb.com
+export FOLD_SCHEMA_SERVICE_URL=https://schema.folddb.com
 ```
 
 ### Ingestion
@@ -207,9 +207,9 @@ npm run dev
 FoldDB can use S3-backed storage for serverless environments:
 
 ```bash
-export DATAFOLD_STORAGE_MODE=s3
-export DATAFOLD_S3_BUCKET=my-folddb-bucket
-export DATAFOLD_S3_REGION=us-west-2
+export FOLD_STORAGE_MODE=s3
+export FOLD_S3_BUCKET=my-folddb-bucket
+export FOLD_S3_REGION=us-west-2
 ```
 
 ### Lambda + DynamoDB
@@ -290,13 +290,13 @@ cargo build --features ts-bindings
 | Variable | Purpose |
 |----------|---------|
 | `FOLD_OPENROUTER_API_KEY` | API key for AI-powered ingestion (or `OPENROUTER_API_KEY`) |
-| `DATAFOLD_SCHEMA_SERVICE_URL` | Schema service URL (default: `https://schema.folddb.com`) |
-| `DATAFOLD_CONFIG` | Path to configuration file |
-| `DATAFOLD_LOG_LEVEL` | Logging level (`trace`, `debug`, `info`, `warn`, `error`) |
-| `DATAFOLD_STORAGE_MODE` | Storage backend (`s3` for cloud) |
-| `DATAFOLD_S3_BUCKET` | S3 bucket for database storage |
-| `DATAFOLD_S3_REGION` | AWS region for S3 |
-| `DATAFOLD_UPLOAD_STORAGE_MODE` | Upload storage backend (`s3` for cloud) |
+| `FOLD_SCHEMA_SERVICE_URL` | Schema service URL (default: `https://schema.folddb.com`) |
+| `FOLD_CONFIG` | Path to configuration file |
+| `FOLD_LOG_LEVEL` | Logging level (`trace`, `debug`, `info`, `warn`, `error`) |
+| `FOLD_STORAGE_MODE` | Storage backend (`s3` for cloud) |
+| `FOLD_S3_BUCKET` | S3 bucket for database storage |
+| `FOLD_S3_REGION` | AWS region for S3 |
+| `FOLD_UPLOAD_STORAGE_MODE` | Upload storage backend (`s3` for cloud) |
 
 ## Documentation
 

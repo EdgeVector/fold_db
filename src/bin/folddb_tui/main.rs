@@ -71,7 +71,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         format!("Failed to create node: {}", e)
     })?;
 
-    let user_hash = std::env::var("DATAFOLD_USER_HASH")
+    let user_hash = std::env::var("FOLD_USER_HASH")
         .unwrap_or_else(|_| user_hash_from_pubkey(node.get_node_public_key()));
 
     let processor = Arc::new(OperationProcessor::new(node));

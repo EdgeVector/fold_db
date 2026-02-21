@@ -74,7 +74,7 @@ async fn main() {
     let user_hash = cli
         .user_hash
         .clone()
-        .or_else(|| std::env::var("DATAFOLD_USER_HASH").ok())
+        .or_else(|| std::env::var("FOLD_USER_HASH").ok())
         .unwrap_or_else(|| user_hash_from_pubkey(node.get_node_public_key()));
 
     let processor = OperationProcessor::new(node);

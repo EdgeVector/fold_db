@@ -19,7 +19,7 @@ pub struct Cli {
     #[arg(long, global = true)]
     pub config: Option<String>,
 
-    /// User hash for data isolation (also reads DATAFOLD_USER_HASH env var)
+    /// User hash for data isolation (also reads FOLD_USER_HASH env var)
     #[arg(long, global = true)]
     pub user_hash: Option<String>,
 

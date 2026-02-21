@@ -201,7 +201,7 @@ async fn start_fold_server(port: u16) -> Result<EmbeddedServerHandle, String> {
     config = config.with_identity(&pub_key, &priv_key);
     config.database = fold_db::DatabaseConfig::Local { path: data_dir };
 
-    if let Ok(schema_url) = std::env::var("DATAFOLD_SCHEMA_SERVICE_URL") {
+    if let Ok(schema_url) = std::env::var("FOLD_SCHEMA_SERVICE_URL") {
         config.schema_service_url = Some(schema_url);
     } else {
         config.schema_service_url = Some("https://axo709qs11.execute-api.us-east-1.amazonaws.com".to_string());

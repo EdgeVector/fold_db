@@ -112,7 +112,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Some(schema_service_url.unwrap_or_else(|| DEFAULT_SCHEMA_SERVICE_URL.to_string()));
 
         // Let ingestion config saves go to ~/.folddb/config
-        std::env::set_var("DATAFOLD_CONFIG_DIR", &config_path);
+        std::env::set_var("FOLD_CONFIG_DIR", &config_path);
 
         let label = if demo { "FoldDB Server [DEMO]" } else { "FoldDB Server" };
         println!("{}", label);
@@ -147,7 +147,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let fold_db::fold_node::config::DatabaseConfig::Cloud(ref mut db_config) =
         config.database
     {
-        if std::env::var("DATAFOLD_LOG_DYNAMODB_ENABLED").is_err() {
+        if std::env::var("FOLD_LOG_DYNAMODB_ENABLED").is_err() {
             log_config.outputs.dynamodb.enabled = true;
             log_config.outputs.dynamodb.table_name = db_config.tables.logs.clone();
             log_config.outputs.dynamodb.region = Some(db_config.region.clone());

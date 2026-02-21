@@ -222,7 +222,7 @@ impl IngestionConfig {
         use std::fs;
         use std::path::Path;
 
-        let config_dir = env::var("DATAFOLD_CONFIG_DIR").unwrap_or_else(|_| "./config".to_string());
+        let config_dir = env::var("FOLD_CONFIG_DIR").unwrap_or_else(|_| "./config".to_string());
         let config_path = Path::new(&config_dir).join("ingestion_config.json");
 
         if !config_path.exists() {
@@ -289,7 +289,7 @@ impl IngestionConfig {
     /// Get the path to the ingestion configuration file
     pub fn get_config_file_path() -> std::path::PathBuf {
         let config_dir =
-            std::env::var("DATAFOLD_CONFIG_DIR").unwrap_or_else(|_| "./config".to_string());
+            std::env::var("FOLD_CONFIG_DIR").unwrap_or_else(|_| "./config".to_string());
 
         std::path::Path::new(&config_dir).join("ingestion_config.json")
     }
