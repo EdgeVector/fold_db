@@ -156,6 +156,10 @@ impl FoldHttpServer {
             tokio::sync::RwLock::new(ingestion_service),
         );
 
+        // Create BatchControllerMap for spend-limit batch tracking
+        let batch_controller_map_data =
+            web::Data::new(crate::ingestion::batch_controller::create_batch_controller_map());
+
 
         // Create progress tracker based on database config
         let progress_tracker = {
@@ -202,6 +206,7 @@ impl FoldHttpServer {
                 .app_data(upload_storage_data.clone())
                 .app_data(progress_tracker_data.clone())
                 .app_data(ingestion_service_data.clone())
+                .app_data(batch_controller_map_data.clone())
                 .app_data(json_config)
                 .configure(Self::configure_api)
                 // Serve embedded static assets (React build)
@@ -387,6 +392,18 @@ impl FoldHttpServer {
         .route(
             "/ingestion/smart-folder/ingest",
             web::post().to(ingestion_routes::smart_folder_ingest),
+        )
+        .route(
+            "/ingestion/batch/{batch_id}",
+            web::get().to(ingestion_routes::get_batch_status),
+        )
+        .route(
+            "/ingestion/smart-folder/resume",
+            web::post().to(ingestion_routes::resume_batch),
+        )
+        .route(
+            "/ingestion/smart-folder/cancel",
+            web::post().to(ingestion_routes::cancel_batch),
         );
     }
 

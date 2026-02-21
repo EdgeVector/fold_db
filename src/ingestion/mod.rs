@@ -28,6 +28,7 @@
 
 pub mod ai_helpers;
 pub mod ai_schema_response;
+pub mod batch_controller;
 pub mod config;
 pub mod decomposer;
 pub mod error;

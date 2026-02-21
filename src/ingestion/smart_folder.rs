@@ -23,6 +23,12 @@ pub struct FileRecommendation {
     pub category: String,
     /// Brief reason for the recommendation
     pub reason: String,
+    /// Size of the file in bytes (populated during scan)
+    #[serde(default)]
+    pub file_size_bytes: u64,
+    /// Estimated ingestion cost in USD
+    #[serde(default)]
+    pub estimated_cost: f64,
 }
 
 /// Summary of smart folder scan
@@ -48,6 +54,9 @@ pub struct SmartFolderScanResponse {
     pub skipped_files: Vec<FileRecommendation>,
     /// Summary statistics
     pub summary: SmartFolderSummary,
+    /// Total estimated cost for all recommended files
+    #[serde(default)]
+    pub total_estimated_cost: f64,
 }
 
 // ---- Directory scanning ----
@@ -282,6 +291,8 @@ pub fn apply_heuristic_filtering(file_tree: &[String]) -> Vec<FileRecommendation
                 should_ingest,
                 category: category.to_string(),
                 reason: reason.to_string(),
+                file_size_bytes: 0,
+                estimated_cost: 0.0,
             }
         })
         .collect()
@@ -385,6 +396,61 @@ pub fn read_file_as_json(file_path: &Path) -> IngestionResult<Value> {
     serde_json::from_str(&json_string).map_err(|e| IngestionError::InvalidInput(format!("Failed to parse JSON: {}", e)))
 }
 
+// ---- Cost estimation ----
+
+/// Estimate the ingestion cost for a single file based on its size and type.
+///
+/// The model accounts for multiple AI calls per file (classification, conversion,
+/// schema recommendation, child schema resolution) plus a base schema-service call.
+pub fn estimate_file_cost(path: &Path, root: &Path) -> f64 {
+    let full_path = root.join(path);
+    let file_size = std::fs::metadata(&full_path)
+        .map(|m| m.len())
+        .unwrap_or(0);
+
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+
+    // Base cost for schema recommendation call
+    let base_cost = 0.003;
+
+    let content_cost = match ext.as_str() {
+        // PDF: text extraction + conversion
+        "pdf" => {
+            let text_cost = text_cost_by_size(file_size);
+            0.04 + text_cost
+        }
+        // Images: vision model call
+        "jpg" | "jpeg" | "png" | "gif" | "webp" | "heic" | "heif" | "bmp" | "tiff" => 0.02,
+        // Text-like files: cost scales with size
+        _ => text_cost_by_size(file_size),
+    };
+
+    base_cost + content_cost
+}
+
+/// Helper: estimate the AI cost for text content based on byte size.
+fn text_cost_by_size(size: u64) -> f64 {
+    if size < 10_000 {
+        0.005
+    } else if size < 100_000 {
+        0.015
+    } else {
+        0.028
+    }
+}
+
+/// Get the file size for a path relative to root, returning 0 on error.
+fn file_size_bytes(path: &Path, root: &Path) -> u64 {
+    let full_path = root.join(path);
+    std::fs::metadata(&full_path)
+        .map(|m| m.len())
+        .unwrap_or(0)
+}
+
 // ---- Scan orchestration ----
 
 /// Perform a smart folder scan: directory walk → LLM classification → recommendations.
@@ -413,6 +479,7 @@ pub async fn perform_smart_folder_scan(
                 work_count: 0,
                 unknown_count: 0,
             },
+            total_estimated_cost: 0.0,
         });
     }
 
@@ -444,9 +511,10 @@ pub async fn perform_smart_folder_scan(
         }
     };
 
-    // Split into recommended and skipped, build summary
+    // Split into recommended and skipped, build summary, compute costs
     let mut recommended_files = Vec::new();
     let mut skipped_files = Vec::new();
+    let mut total_estimated_cost = 0.0;
     let mut summary = SmartFolderSummary {
         personal_data_count: 0,
         media_count: 0,
@@ -456,7 +524,12 @@ pub async fn perform_smart_folder_scan(
         unknown_count: 0,
     };
 
-    for rec in recommendations {
+    for mut rec in recommendations {
+        // Populate file size and cost estimate
+        let rel_path = Path::new(&rec.path);
+        rec.file_size_bytes = file_size_bytes(rel_path, folder_path);
+        rec.estimated_cost = estimate_file_cost(rel_path, folder_path);
+
         match rec.category.as_str() {
             "personal_data" => summary.personal_data_count += 1,
             "media" => summary.media_count += 1,
@@ -467,6 +540,7 @@ pub async fn perform_smart_folder_scan(
         }
 
         if rec.should_ingest {
+            total_estimated_cost += rec.estimated_cost;
             recommended_files.push(rec);
         } else {
             skipped_files.push(rec);
@@ -479,6 +553,7 @@ pub async fn perform_smart_folder_scan(
         recommended_files,
         skipped_files,
         summary,
+        total_estimated_cost,
     })
 }
 

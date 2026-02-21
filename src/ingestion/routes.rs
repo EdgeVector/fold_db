@@ -1,10 +1,13 @@
 //! HTTP route handlers for the ingestion API
 
+use crate::ingestion::batch_controller::{
+    BatchController, BatchControllerMap, BatchStatus, BatchStatusResponse, PendingFile,
+};
 use crate::ingestion::config::SavedConfig;
-use crate::ingestion::IngestionRequest;
-use crate::ingestion::progress::ProgressService;
 use crate::ingestion::ingestion_service::IngestionService;
+use crate::ingestion::progress::ProgressService;
 use crate::ingestion::smart_folder;
+use crate::ingestion::IngestionRequest;
 use crate::ingestion::ProgressTracker;
 use crate::log_feature;
 use crate::logging::features::LogFeature;
@@ -15,6 +18,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use tokio::sync::Mutex;
 
 /// Shared ingestion service state — wrapped in RwLock so config saves can reload it.
 pub type IngestionServiceState = tokio::sync::RwLock<Option<Arc<IngestionService>>>;
@@ -573,6 +577,23 @@ pub struct SmartFolderIngestRequest {
     pub files_to_ingest: Vec<String>,
     /// Whether to auto-execute mutations (default: true)
     pub auto_execute: Option<bool>,
+    /// Optional spend limit in USD. None = no cap.
+    pub spend_limit: Option<f64>,
+    /// Per-file estimated costs (parallel to files_to_ingest). Used for spend tracking.
+    pub file_costs: Option<Vec<f64>>,
+}
+
+/// Request to resume a paused batch
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BatchResumeRequest {
+    pub batch_id: String,
+    pub new_spend_limit: f64,
+}
+
+/// Request to cancel a batch
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BatchCancelRequest {
+    pub batch_id: String,
 }
 
 /// Scan a folder and use LLM to recommend which files contain personal data
@@ -643,16 +664,16 @@ pub async fn smart_folder_ingest(
     progress_tracker: web::Data<ProgressTracker>,
     state: web::Data<AppState>,
     ingestion_service: web::Data<IngestionServiceState>,
+    batch_controller_map: web::Data<BatchControllerMap>,
 ) -> impl Responder {
     log_feature!(
         LogFeature::Ingestion,
         info,
-        "Smart folder ingest requested for {} files",
-        request.files_to_ingest.len()
+        "Smart folder ingest requested for {} files (spend_limit: {:?})",
+        request.files_to_ingest.len(),
+        request.spend_limit
     );
 
-    // Convert to batch folder request format
-    // We'll process each approved file
     let folder_path = resolve_folder_path(&request.folder_path);
 
     // Get user context
@@ -661,12 +682,20 @@ pub async fn smart_folder_ingest(
         Err(response) => return response,
     };
 
-    // Validate files exist and build full paths
+    // Validate files exist and build full paths with costs
+    let file_costs = request.file_costs.as_deref();
     let mut files_to_process: Vec<std::path::PathBuf> = Vec::new();
-    for relative_path in &request.files_to_ingest {
+    let mut costs: Vec<f64> = Vec::new();
+    for (i, relative_path) in request.files_to_ingest.iter().enumerate() {
         let full_path = folder_path.join(relative_path);
         if full_path.exists() && full_path.is_file() {
+            let cost = file_costs
+                .and_then(|c| c.get(i).copied())
+                .unwrap_or_else(|| {
+                    smart_folder::estimate_file_cost(Path::new(relative_path), &folder_path)
+                });
             files_to_process.push(full_path);
+            costs.push(cost);
         } else {
             log_feature!(
                 LogFeature::Ingestion,
@@ -700,7 +729,8 @@ pub async fn smart_folder_ingest(
 
     // Create progress tracking for each file
     let progress_service = ProgressService::new(progress_tracker.get_ref().clone());
-    let file_progress_ids = start_file_progress(&files_to_process, &user_id, &progress_service).await;
+    let file_progress_ids =
+        start_file_progress(&files_to_process, &user_id, &progress_service).await;
 
     // Get node for processing
     let (user_id_task, node_arc) = match require_node(&state).await {
@@ -710,11 +740,36 @@ pub async fn smart_folder_ingest(
 
     let auto_execute = request.auto_execute.unwrap_or(true);
 
-    spawn_file_ingestion_tasks(
-        files_to_process
-            .into_iter()
-            .enumerate()
-            .map(|(i, path)| (path, file_progress_ids[i].progress_id.clone())),
+    // Build pending files for the batch controller
+    let pending_files: Vec<PendingFile> = files_to_process
+        .iter()
+        .zip(file_progress_ids.iter())
+        .zip(costs.iter())
+        .map(|((path, info), &cost)| PendingFile {
+            path: path.clone(),
+            progress_id: info.progress_id.clone(),
+            estimated_cost: cost,
+        })
+        .collect();
+
+    // Create the batch controller
+    let controller = BatchController::new(
+        batch_id.clone(),
+        request.spend_limit,
+        pending_files,
+    );
+    let ctrl_arc = Arc::new(Mutex::new(controller));
+
+    // Register in the global map
+    {
+        let mut map_guard = batch_controller_map.lock().await;
+        map_guard.insert(batch_id.clone(), ctrl_arc);
+    }
+
+    // Spawn the sequential coordinator
+    spawn_batch_coordinator(
+        batch_id.clone(),
+        batch_controller_map,
         progress_tracker.get_ref(),
         &node_arc,
         &user_id_task,
@@ -727,8 +782,204 @@ pub async fn smart_folder_ingest(
         batch_id,
         files_found: file_progress_ids.len(),
         file_progress_ids,
-        message: "Smart folder ingestion started. Use progress IDs to track individual file status.".to_string(),
+        message: "Smart folder ingestion started with spend tracking.".to_string(),
     })
+}
+
+/// Spawn a sequential coordinator task that processes files one at a time,
+/// checking the spend limit before each file and pausing when the limit is hit.
+fn spawn_batch_coordinator(
+    batch_id: String,
+    batch_controller_map: web::Data<BatchControllerMap>,
+    progress_tracker: &ProgressTracker,
+    node_arc: &Arc<tokio::sync::RwLock<crate::fold_node::FoldNode>>,
+    user_id: &str,
+    auto_execute: bool,
+    ingestion_service: Arc<IngestionService>,
+) {
+    let progress_tracker = progress_tracker.clone();
+    let node_arc = node_arc.clone();
+    let user_id = user_id.to_string();
+    let map = batch_controller_map.get_ref().clone();
+
+    tokio::spawn(async move {
+        crate::logging::core::run_with_user(&user_id, async move {
+            loop {
+                // Lock the controller briefly to check state and pop next file
+                let (file, resume_notifier) = {
+                    let map_guard = map.lock().await;
+                    let ctrl_arc = match map_guard.get(&batch_id) {
+                        Some(c) => c.clone(),
+                        None => break,
+                    };
+                    let mut ctrl = ctrl_arc.lock().await;
+
+                    // Check for cancellation
+                    if ctrl.status == BatchStatus::Cancelled {
+                        break;
+                    }
+
+                    // Check if any files remain
+                    let next_file = match ctrl.pending_files.first() {
+                        Some(f) => f.clone(),
+                        None => {
+                            // All files processed
+                            ctrl.status = BatchStatus::Completed;
+                            break;
+                        }
+                    };
+
+                    // Check spend limit
+                    if !ctrl.can_proceed(next_file.estimated_cost) {
+                        ctrl.pause();
+                        (None, Some(ctrl.resume_notifier()))
+                    } else {
+                        let file = ctrl.pop_next_file();
+                        (file, None)
+                    }
+                };
+
+                // If paused, wait for the resume notification
+                if let Some(notifier) = resume_notifier {
+                    notifier.notified().await;
+
+                    // After waking, re-check status (might have been cancelled)
+                    let map_guard = map.lock().await;
+                    if let Some(ctrl_arc) = map_guard.get(&batch_id) {
+                        let ctrl = ctrl_arc.lock().await;
+                        if ctrl.status == BatchStatus::Cancelled {
+                            break;
+                        }
+                    } else {
+                        break;
+                    }
+                    continue;
+                }
+
+                // Process the file (outside any lock)
+                let file = match file {
+                    Some(f) => f,
+                    None => continue,
+                };
+
+                let progress_service = ProgressService::new(progress_tracker.clone());
+                let service_clone = ingestion_service.clone();
+                let estimated_cost = file.estimated_cost;
+
+                let result = process_single_file_via_smart_folder(
+                    &file.path,
+                    &file.progress_id,
+                    &progress_service,
+                    &node_arc,
+                    auto_execute,
+                    &service_clone,
+                )
+                .await;
+
+                // Update controller with result
+                {
+                    let map_guard = map.lock().await;
+                    if let Some(ctrl_arc) = map_guard.get(&batch_id) {
+                        let mut ctrl = ctrl_arc.lock().await;
+                        match &result {
+                            Ok(()) => ctrl.record_completed(estimated_cost),
+                            Err(e) => {
+                                log_feature!(
+                                    LogFeature::Ingestion,
+                                    error,
+                                    "Batch {}: file {} failed: {}",
+                                    batch_id,
+                                    file.path.display(),
+                                    e
+                                );
+                                progress_service
+                                    .fail_progress(
+                                        &file.progress_id,
+                                        format!("Processing failed: {}", e),
+                                    )
+                                    .await;
+                                ctrl.record_failed();
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Mark completed if not already cancelled/failed
+            {
+                let map_guard = map.lock().await;
+                if let Some(ctrl_arc) = map_guard.get(&batch_id) {
+                    let mut ctrl = ctrl_arc.lock().await;
+                    if ctrl.status == BatchStatus::Running {
+                        ctrl.status = BatchStatus::Completed;
+                    }
+                }
+            }
+        })
+        .await
+    });
+}
+
+/// Get batch status
+pub async fn get_batch_status(
+    path: web::Path<String>,
+    batch_controller_map: web::Data<BatchControllerMap>,
+) -> impl Responder {
+    let batch_id = path.into_inner();
+    let map_guard = batch_controller_map.lock().await;
+
+    match map_guard.get(&batch_id) {
+        Some(ctrl_arc) => {
+            let ctrl = ctrl_arc.lock().await;
+            HttpResponse::Ok().json(BatchStatusResponse::from_controller(&ctrl))
+        }
+        None => HttpResponse::NotFound().json(json!({
+            "error": format!("Batch {} not found", batch_id)
+        })),
+    }
+}
+
+/// Resume a paused batch with a new spend limit
+pub async fn resume_batch(
+    request: web::Json<BatchResumeRequest>,
+    batch_controller_map: web::Data<BatchControllerMap>,
+) -> impl Responder {
+    let map_guard = batch_controller_map.lock().await;
+
+    match map_guard.get(&request.batch_id) {
+        Some(ctrl_arc) => {
+            let mut ctrl = ctrl_arc.lock().await;
+            if ctrl.status != BatchStatus::Paused {
+                return HttpResponse::BadRequest().json(json!({
+                    "error": format!("Batch is not paused (status: {})", ctrl.status)
+                }));
+            }
+            ctrl.resume(Some(request.new_spend_limit));
+            HttpResponse::Ok().json(BatchStatusResponse::from_controller(&ctrl))
+        }
+        None => HttpResponse::NotFound().json(json!({
+            "error": format!("Batch {} not found", request.batch_id)
+        })),
+    }
+}
+
+/// Cancel a batch
+pub async fn cancel_batch(
+    request: web::Json<BatchCancelRequest>,
+    batch_controller_map: web::Data<BatchControllerMap>,
+) -> impl Responder {
+    let map_guard = batch_controller_map.lock().await;
+
+    match map_guard.get(&request.batch_id) {
+        Some(ctrl_arc) => {
+            let mut ctrl = ctrl_arc.lock().await;
+            ctrl.cancel();
+            HttpResponse::Ok().json(BatchStatusResponse::from_controller(&ctrl))
+        }
+        None => HttpResponse::NotFound().json(json!({
+            "error": format!("Batch {} not found", request.batch_id)
+        })),
+    }
 }
 
 /// Process a single file for smart ingest using shared smart_folder module

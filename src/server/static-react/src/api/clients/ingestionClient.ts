@@ -79,6 +79,8 @@ export interface FileRecommendation {
   should_ingest: boolean;
   category: string;
   reason: string;
+  file_size_bytes: number;
+  estimated_cost: number;
 }
 
 export interface SmartFolderScanResponse {
@@ -87,6 +89,7 @@ export interface SmartFolderScanResponse {
   recommended_files: FileRecommendation[];
   skipped_files: FileRecommendation[];
   summary: Record<string, number>;
+  total_estimated_cost: number;
 }
 
 export interface SmartFolderIngestResponse {
@@ -95,6 +98,19 @@ export interface SmartFolderIngestResponse {
   files_found: number;
   file_progress_ids: { file_name: string; progress_id: string }[];
   message: string;
+}
+
+// Batch status types
+export interface BatchStatusResponse {
+  batch_id: string;
+  status: "Running" | "Paused" | "Completed" | "Cancelled" | "Failed";
+  spend_limit: number | null;
+  accumulated_cost: number;
+  files_total: number;
+  files_completed: number;
+  files_failed: number;
+  files_remaining: number;
+  estimated_remaining_cost: number;
 }
 
 // Progress tracking types
@@ -401,6 +417,8 @@ export class UnifiedIngestionClient {
     folderPath: string,
     files: string[],
     autoExecute = true,
+    spendLimit?: number,
+    fileCosts?: number[],
   ): Promise<EnhancedApiResponse<SmartFolderIngestResponse>> {
     return this.client.post<SmartFolderIngestResponse>(
       "/ingestion/smart-folder/ingest",
@@ -408,9 +426,62 @@ export class UnifiedIngestionClient {
         folder_path: folderPath,
         files_to_ingest: files,
         auto_execute: autoExecute,
+        spend_limit: spendLimit ?? null,
+        file_costs: fileCosts ?? null,
       },
       {
         timeout: 60000,
+        retries: 0,
+        cacheable: false,
+      },
+    );
+  }
+
+  /**
+   * Get batch status (cost, progress, pause state)
+   */
+  async getBatchStatus(
+    batchId: string,
+  ): Promise<EnhancedApiResponse<BatchStatusResponse>> {
+    return this.client.get<BatchStatusResponse>(
+      `/ingestion/batch/${batchId}`,
+      {
+        timeout: 5000,
+        retries: 0,
+        cacheable: false,
+      },
+    );
+  }
+
+  /**
+   * Resume a paused batch with a new spend limit
+   */
+  async resumeBatch(
+    batchId: string,
+    newSpendLimit: number,
+  ): Promise<EnhancedApiResponse<BatchStatusResponse>> {
+    return this.client.post<BatchStatusResponse>(
+      "/ingestion/smart-folder/resume",
+      { batch_id: batchId, new_spend_limit: newSpendLimit },
+      {
+        timeout: 5000,
+        retries: 0,
+        cacheable: false,
+      },
+    );
+  }
+
+  /**
+   * Cancel a running or paused batch
+   */
+  async cancelBatch(
+    batchId: string,
+  ): Promise<EnhancedApiResponse<BatchStatusResponse>> {
+    return this.client.post<BatchStatusResponse>(
+      "/ingestion/smart-folder/cancel",
+      { batch_id: batchId },
+      {
+        timeout: 5000,
         retries: 0,
         cacheable: false,
       },
