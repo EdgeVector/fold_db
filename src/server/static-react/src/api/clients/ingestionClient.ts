@@ -6,7 +6,7 @@
 
 import { ApiClient, createApiClient } from "../core/client";
 import { API_ENDPOINTS, API_BASE_URLS } from "../endpoints";
-import { API_TIMEOUTS, API_RETRIES } from "../../constants/api";
+import { API_TIMEOUTS, API_RETRIES, CONTENT_TYPES } from "../../constants/api";
 import type { EnhancedApiResponse } from "../core/types";
 
 // Ingestion-specific response types
@@ -132,6 +132,16 @@ export interface IngestionResults {
   new_schema_created: boolean;
   mutations_generated: number;
   mutations_executed: number;
+}
+
+export interface FileUploadResponse {
+  success: boolean;
+  error?: string;
+  schema_name?: string;
+  schema_used?: string;
+  new_schema_created?: boolean;
+  mutations_generated?: number;
+  mutations_executed?: number;
 }
 
 /**
@@ -500,6 +510,42 @@ export class UnifiedIngestionClient {
       {
         timeout: 2000,
         retries: 0,
+        cacheable: false,
+      },
+    );
+  }
+
+  /**
+   * Upload a file for AI-powered ingestion
+   * UNPROTECTED - No authentication required per project preference
+   *
+   * @param file The file to upload
+   * @param options Upload options (progressId, autoExecute, trustDistance, pubKey)
+   * @returns Promise resolving to upload/processing result
+   */
+  async uploadFile(
+    file: File,
+    options: {
+      progressId?: string;
+      autoExecute?: boolean;
+      trustDistance?: number;
+      pubKey?: string;
+    } = {},
+  ): Promise<EnhancedApiResponse<FileUploadResponse>> {
+    const formData = new FormData();
+    formData.append('progress_id', options.progressId ?? crypto.randomUUID());
+    formData.append('file', file);
+    formData.append('autoExecute', String(options.autoExecute ?? true));
+    formData.append('trustDistance', String(options.trustDistance ?? 0));
+    formData.append('pubKey', options.pubKey ?? 'default');
+
+    return this.client.post<FileUploadResponse>(
+      '/ingestion/upload',
+      formData,
+      {
+        headers: { 'Content-Type': CONTENT_TYPES.FORM_DATA },
+        timeout: API_TIMEOUTS.AI_PROCESSING,
+        retries: API_RETRIES.LIMITED,
         cacheable: false,
       },
     );

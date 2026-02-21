@@ -471,6 +471,11 @@ export class ApiClient implements ApiClientInstance {
           config.body,
           headers[REQUEST_HEADERS.CONTENT_TYPE],
         );
+        // When body is FormData, delete Content-Type so the browser
+        // auto-sets it with the correct multipart boundary
+        if (fetchOptions.body instanceof FormData) {
+          delete headers[REQUEST_HEADERS.CONTENT_TYPE];
+        }
       }
 
       // Perform the request

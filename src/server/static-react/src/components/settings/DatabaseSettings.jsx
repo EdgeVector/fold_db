@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { getDatabaseConfig, updateDatabaseConfig, resetDatabase } from '../../api/clients/systemClient'
 import { ingestionClient } from '../../api/clients'
 import { TrashIcon } from '@heroicons/react/24/solid'
@@ -15,6 +15,15 @@ function DatabaseSettings({ configSaveStatus, setConfigSaveStatus, onClose }) {
   const [s3LocalPath, setS3LocalPath] = useState('/tmp/folddb-data')
   const [isResetting, setIsResetting] = useState(false)
   const [resetResult, setResetResult] = useState(null)
+  const pollIntervalRef = useRef(null)
+  const fallbackTimeoutRef = useRef(null)
+
+  useEffect(() => {
+    return () => {
+      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current)
+      if (fallbackTimeoutRef.current) clearTimeout(fallbackTimeoutRef.current)
+    }
+  }, [])
 
   useEffect(() => { loadDatabaseConfig() }, [])
 
@@ -57,16 +66,16 @@ function DatabaseSettings({ configSaveStatus, setConfigSaveStatus, onClose }) {
       const response = await resetDatabase(true)
       if (response.success && response.data) {
         if (response.data.job_id) {
-          const pollInterval = setInterval(async () => {
+          pollIntervalRef.current = setInterval(async () => {
             try {
               const pr = await ingestionClient.getJobProgress(response.data.job_id)
               if (pr.success && pr.data) {
-                if (pr.data.is_complete) { clearInterval(pollInterval); setResetResult({ type: 'success', message: 'Reset complete. Reloading...' }); setTimeout(() => window.location.reload(), 1000) }
-                else if (pr.data.is_failed) { clearInterval(pollInterval); setResetResult({ type: 'error', message: pr.data.error_message || 'Reset failed' }); setIsResetting(false) }
+                if (pr.data.is_complete) { clearInterval(pollIntervalRef.current); pollIntervalRef.current = null; setResetResult({ type: 'success', message: 'Reset complete. Reloading...' }); setTimeout(() => window.location.reload(), 1000) }
+                else if (pr.data.is_failed) { clearInterval(pollIntervalRef.current); pollIntervalRef.current = null; setResetResult({ type: 'error', message: pr.data.error_message || 'Reset failed' }); setIsResetting(false) }
               }
             } catch { /* Polling error - will retry on next interval */ }
           }, 1000)
-          setTimeout(() => { clearInterval(pollInterval); if (isResetting) { setResetResult({ type: 'success', message: 'Reset likely complete. Reloading...' }); setTimeout(() => window.location.reload(), 1000) } }, 60000)
+          fallbackTimeoutRef.current = setTimeout(() => { clearInterval(pollIntervalRef.current); pollIntervalRef.current = null; fallbackTimeoutRef.current = null; if (isResetting) { setResetResult({ type: 'success', message: 'Reset likely complete. Reloading...' }); setTimeout(() => window.location.reload(), 1000) } }, 60000)
         } else { setResetResult({ type: 'success', message: response.data.message || 'Reset successfully' }); setTimeout(() => window.location.reload(), 2000) }
       } else { setResetResult({ type: 'error', message: response.error || 'Reset failed' }); setIsResetting(false) }
     } catch (error) { setResetResult({ type: 'error', message: `Network error: ${error.message}` }); setIsResetting(false) }

@@ -36,6 +36,12 @@ export interface ResetDatabaseResponse {
   affected_rows?: number;
 }
 
+export interface AutoIdentityResponse {
+  user_id: string;
+  user_hash: string;
+  public_key: string;
+}
+
 export interface SystemStatusResponse {
   status: string;
   uptime: number;
@@ -168,6 +174,21 @@ export class UnifiedSystemClient {
       cacheable: true,
       cacheTtl: API_CACHE_TTL.SYSTEM_STATUS, // Cache for 30 seconds
       cacheKey: CACHE_KEYS.SYSTEM_STATUS
+    });
+  }
+
+  /**
+   * Get the auto-identity (default user) for local dev
+   * UNPROTECTED - No authentication required
+   *
+   * @returns Promise resolving to auto identity (user_id, user_hash, public_key)
+   */
+  async getAutoIdentity(): Promise<EnhancedApiResponse<AutoIdentityResponse>> {
+    return this.client.get<AutoIdentityResponse>('/system/auto-identity', {
+      requiresAuth: false,
+      timeout: API_TIMEOUTS.QUICK,
+      retries: API_RETRIES.STANDARD,
+      cacheable: false,
     });
   }
 
@@ -350,6 +371,7 @@ export function createSystemClient(client?: ApiClient): UnifiedSystemClient {
 // Convenience exports for direct method access
 export const getLogs = systemClient.getLogs.bind(systemClient);
 export const resetDatabase = systemClient.resetDatabase.bind(systemClient);
+export const getAutoIdentity = systemClient.getAutoIdentity.bind(systemClient);
 export const getSystemStatus = systemClient.getSystemStatus.bind(systemClient);
 export const getNodePrivateKey = systemClient.getNodePrivateKey.bind(systemClient);
 export const getNodePublicKey = systemClient.getNodePublicKey.bind(systemClient);

@@ -1,6 +1,5 @@
-/* global FormData */
 import { useState, useCallback } from 'react'
-import { BROWSER_CONFIG } from '../../constants/config'
+import { ingestionClient } from '../../api/clients/ingestionClient'
 import FileUploadMode from './upload/FileUploadMode'
 
 function FileUploadTab({ onResult }) {
@@ -59,30 +58,15 @@ function FileUploadTab({ onResult }) {
     onResult(null)
 
     try {
-      const formData = new FormData()
-      const progressId = crypto.randomUUID()
-      formData.append('progress_id', progressId)
-      formData.append('file', selectedFile)
-      formData.append('autoExecute', autoExecute.toString())
-      formData.append('trustDistance', trustDistance.toString())
-      formData.append('pubKey', pubKey)
-
-      const headers = {}
-      const userHash = localStorage.getItem(BROWSER_CONFIG.STORAGE_KEYS.USER_HASH)
-      if (userHash) {
-        headers['x-user-hash'] = userHash
-      }
-
-      // eslint-disable-next-line no-restricted-globals
-      const response = await fetch('/api/ingestion/upload', {
-        method: 'POST',
-        headers,
-        body: formData,
+      const response = await ingestionClient.uploadFile(selectedFile, {
+        autoExecute,
+        trustDistance,
+        pubKey,
       })
 
-      const result = await response.json()
+      const result = response.data
 
-      if (result.success) {
+      if (result?.success) {
         onResult({
           success: true,
           data: {
@@ -95,7 +79,7 @@ function FileUploadTab({ onResult }) {
       } else {
         onResult({
           success: false,
-          error: result.error || 'Failed to process file'
+          error: result?.error || response.error || 'Failed to process file'
         })
       }
     } catch (error) {

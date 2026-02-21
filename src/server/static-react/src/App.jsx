@@ -23,6 +23,7 @@ import { initializeSystemKey, fetchNodePrivateKey, restoreSession } from './stor
 import LoginPage from './components/LoginPage'
 import { DEFAULT_TAB } from './constants'
 import { BROWSER_CONFIG } from './constants/config'
+import { getAutoIdentity } from './api/clients/systemClient'
 
 // Single lookup for URL hash → tab ID (prevents duplication)
 const HASH_TO_TAB = {
@@ -81,17 +82,15 @@ export function AppContent() {
       dispatch(restoreSession({ id: userId, hash: userHash }))
     } else {
       // Auto-authenticate: fetch default identity from backend
-      // eslint-disable-next-line no-restricted-globals
-      fetch('/api/system/auto-identity')
-        .then(res => res.json())
-        .then(data => {
-          if (data.user_id && data.user_hash) {
-            localStorage.setItem(BROWSER_CONFIG.STORAGE_KEYS.USER_ID, data.user_id)
-            localStorage.setItem(BROWSER_CONFIG.STORAGE_KEYS.USER_HASH, data.user_hash)
-            dispatch(restoreSession({ id: data.user_id, hash: data.user_hash }))
+      getAutoIdentity()
+        .then(response => {
+          if (response.success && response.data?.user_id && response.data?.user_hash) {
+            localStorage.setItem(BROWSER_CONFIG.STORAGE_KEYS.USER_ID, response.data.user_id)
+            localStorage.setItem(BROWSER_CONFIG.STORAGE_KEYS.USER_HASH, response.data.user_hash)
+            dispatch(restoreSession({ id: response.data.user_id, hash: response.data.user_hash }))
           }
         })
-        .catch(err => console.error('Auto-identity failed:', err))
+        .catch(() => {}) // Auto-identity is best-effort for local dev
     }
   }, [dispatch])
 
