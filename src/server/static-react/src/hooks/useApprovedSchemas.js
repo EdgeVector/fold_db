@@ -172,7 +172,7 @@ export function useApprovedSchemas({ enabled = true } = {}) {
     if (enabled && !cacheInfo.isValid) {
       dispatch(fetchSchemas());
     }
-  }, [dispatch, enabled]); // Only fetch when enabled changes to true
+  }, [dispatch, enabled, cacheInfo.isValid]); // Fetch when enabled changes to true or cache becomes invalid
 
   return {
     approvedSchemas,

@@ -1,3 +1,4 @@
+/* global Buffer, atob, btoa */
 /**
  * @fileoverview Crypto Utilities
  *

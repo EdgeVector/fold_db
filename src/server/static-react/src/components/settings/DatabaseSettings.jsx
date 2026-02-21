@@ -64,7 +64,7 @@ function DatabaseSettings({ configSaveStatus, setConfigSaveStatus, onClose }) {
                 if (pr.data.is_complete) { clearInterval(pollInterval); setResetResult({ type: 'success', message: 'Reset complete. Reloading...' }); setTimeout(() => window.location.reload(), 1000) }
                 else if (pr.data.is_failed) { clearInterval(pollInterval); setResetResult({ type: 'error', message: pr.data.error_message || 'Reset failed' }); setIsResetting(false) }
               }
-            } catch {}
+            } catch { /* Polling error - will retry on next interval */ }
           }, 1000)
           setTimeout(() => { clearInterval(pollInterval); if (isResetting) { setResetResult({ type: 'success', message: 'Reset likely complete. Reloading...' }); setTimeout(() => window.location.reload(), 1000) } }, 60000)
         } else { setResetResult({ type: 'success', message: response.data.message || 'Reset successfully' }); setTimeout(() => window.location.reload(), 2000) }

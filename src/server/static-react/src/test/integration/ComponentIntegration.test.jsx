@@ -4,7 +4,7 @@
  * Part of TASK-002: Component Extraction and Modularization
  */
 
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Provider } from 'react-redux'
 import TabNavigation from '../../components/TabNavigation'
@@ -14,7 +14,6 @@ import SchemaStatusBadge from '../../components/schema/SchemaStatusBadge'
 
 import { renderWithRedux } from '../utils/testHelpers'
 import { createAuthenticatedState, createUnauthenticatedState } from '../utils/testHelpers'
-import { createTestStore } from '../utils/testUtilities.jsx'
 
 describe('Component Integration Tests', () => {
   describe('TabNavigation with Authentication', () => {

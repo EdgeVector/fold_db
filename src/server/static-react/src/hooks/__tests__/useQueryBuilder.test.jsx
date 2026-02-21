@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { renderHook, act } from '@testing-library/react';
+import { renderHook } from '@testing-library/react';
 import { Provider } from 'react-redux';
 import { useQueryBuilder } from '../useQueryBuilder';
 import { createTestStore } from '../../test/utils/testUtilities.jsx';

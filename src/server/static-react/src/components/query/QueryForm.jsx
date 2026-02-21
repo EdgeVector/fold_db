@@ -42,7 +42,7 @@ function QueryForm({
   onSchemaChange,
   onFieldToggle,
   onFieldValueChange: _onFieldValueChange,
-  onRangeFilterChange,
+  onRangeFilterChange: _onRangeFilterChange,
   onRangeSchemaFilterChange,
   onHashKeyChange,
   approvedSchemas,

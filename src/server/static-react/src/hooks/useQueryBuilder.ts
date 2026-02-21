@@ -4,12 +4,11 @@
  * Part of UCR-1-5: Create QueryBuilder hook for complex query construction
  */
 
-import { useMemo, useCallback } from 'react';
+import { useMemo } from 'react';
 import { useAppSelector } from '../store/hooks';
 import { selectApprovedSchemas } from '../store/schemaSlice';
 import { isHashRangeSchema, isRangeSchema as detectRangeSchema } from '../utils/rangeSchemaHelpers.js';
 import {
-  createFilterFromRangeInput,
   createHashKeyFilter,
   createRangeKeyFilter,
   createRangePrefixFilter,
@@ -21,13 +20,13 @@ import type { Schema } from '@generated/generated';
 
 interface QueryState {
   queryFields?: string[];
-  fieldValues?: Record<string, any>;
+  fieldValues?: Record<string, unknown>;
   rangeFilters?: Record<string, RangeFilterInput>;
   rangeSchemaFilter?: RangeFilterInput;
   hashKeyValue?: string;
   rangeKeyValue?: string;
-  filters?: any[];
-  orderBy?: any;
+  filters?: Record<string, unknown>[];
+  orderBy?: Record<string, unknown>;
 }
 
 interface UseQueryBuilderOptions {
@@ -58,7 +57,7 @@ export function useQueryBuilder({
   schemas,
   selectedSchemaObj: providedSelectedSchema,
   isRangeSchema: providedIsRangeSchema,
-  rangeKey: providedRangeKey
+  rangeKey: _providedRangeKey
 }: UseQueryBuilderOptions): QueryBuilderResult {
   const approvedSchemas = useAppSelector(selectApprovedSchemas);
 
@@ -120,18 +119,18 @@ export function useQueryBuilder({
 
     const {
       queryFields = [],
-      fieldValues = {},
+      _fieldValues = {},
       rangeFilters = {},
       rangeSchemaFilter = {},
-      filters = [],
-      orderBy
+      _filters = [],
+      _orderBy
     } = queryState;
     
     // Build query object that matches backend Query struct exactly
     const builtQuery: {
       schema_name: string;
       fields: string[];
-      filter?: any;
+      filter?: HashRangeFilter;
     } = {
       schema_name: schema, // Backend expects schema_name, not schema
       fields: queryFields, // Array of selected field names
@@ -172,20 +171,7 @@ export function useQueryBuilder({
     }
 
     return builtQuery;
-  }, [schema, queryState, selectedSchemaObj]);
-
-  // Manual build function
-  const buildQuery = useCallback(() => {
-    return query;
-  }, [query]);
-
-  // Manual validation function
-  const validateQuery = useCallback(() => {
-    return {
-      isValid,
-      errors: validationErrors
-    };
-  }, [isValid, validationErrors]);
+  }, [schema, queryState, selectedSchemaObj, schemaIsRange]);
 
   return {
     query,

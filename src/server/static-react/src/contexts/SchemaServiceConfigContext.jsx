@@ -3,6 +3,7 @@ import { resetSchemaClient } from '../api/clients/configuredSchemaClient'
 import { BROWSER_CONFIG } from '../constants/config'
 
 // Schema service environment configurations
+// eslint-disable-next-line react-refresh/only-export-components
 export const SCHEMA_SERVICE_ENVIRONMENTS = {
   LOCAL: {
     id: 'local',
@@ -64,6 +65,7 @@ export function SchemaServiceConfigProvider({ children }) {
   )
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useSchemaServiceConfig() {
   const context = useContext(SchemaServiceConfigContext)
   if (!context) {

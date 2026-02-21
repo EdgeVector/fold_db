@@ -159,11 +159,14 @@ export const defaultApiSuite = createUnifiedApiSuite({
 // Utility functions
 export const ApiUtils = {
   isRetryableError,
-  getUserErrorMessage: (error: any): string => {
+  getUserErrorMessage: (error: unknown): string => {
     if (isApiError(error)) {
       return error.toUserMessage();
     }
-    return error.message || 'An unexpected error occurred';
+    if (error instanceof Error) {
+      return error.message;
+    }
+    return 'An unexpected error occurred';
   },
   generateRequestId: (): string => {
     return `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;

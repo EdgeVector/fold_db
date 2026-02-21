@@ -25,7 +25,7 @@ function MutationTab({ onResult }) {
   const [rangeKeyValue, setRangeKeyValue] = useState('')
 
   // Local validation state
-  const [errors, setErrors] = useState({})
+  const [errors] = useState({})
 
   const handleSchemaChange = (schemaName) => {
     setSelectedSchema(schemaName)

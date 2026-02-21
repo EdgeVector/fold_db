@@ -4,7 +4,7 @@ import { ChevronDownIcon, ChevronRightIcon } from '@heroicons/react/24/solid'
 /**
  * Recursively renders a topology node with proper styling and indentation
  */
-function TopologyNode({ node, depth = 0, name = null }) {
+function TopologyNode({ node, depth = 0, name: _name = null }) {
   const [isExpanded, setIsExpanded] = useState(depth === 0)
 
   if (!node) {

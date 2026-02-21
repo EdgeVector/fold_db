@@ -21,9 +21,9 @@ export interface QueryPlan {
   query: {
     schema_name: string;
     fields: string[];
-    filter?: any;
+    filter?: Record<string, unknown>;
   };
-  index_schema?: any;
+  index_schema?: Record<string, unknown>;
   reasoning: string;
 }
 
@@ -40,7 +40,7 @@ export interface ExecuteQueryPlanRequest {
 export interface ExecuteQueryPlanResponse {
   status: 'pending' | 'running' | 'complete';
   backfill_progress?: number;
-  results?: any[];
+  results?: unknown[];
   summary?: string;
 }
 
@@ -76,8 +76,8 @@ export interface AgentQueryRequest {
 
 export interface ToolCallRecord {
   tool: string;
-  params: Record<string, any>;
-  result: any;
+  params: Record<string, unknown>;
+  result: unknown;
 }
 
 export interface AgentQueryResponse {

@@ -100,7 +100,7 @@ export class UnifiedSchemaClient {
 
     // Normalize response into Schema[]
     // The backend returns { ok: true, schemas: [...], count: N, user_hash: '...' }
-    const raw = (response as any).data;
+    const raw = (response as EnhancedApiResponse<unknown>).data;
     let list: Schema[] = [];
 
     if (raw && typeof raw === 'object' && 'schemas' in raw) {
@@ -151,16 +151,16 @@ export class UnifiedSchemaClient {
    * UNPROTECTED - No authentication required
    */
   async getSchemasByState(state: string): Promise<EnhancedApiResponse<SchemasByStateResponse>> {
-    if (!Object.values(SCHEMA_STATES).includes(state as any)) {
+    if (!(Object.values(SCHEMA_STATES) as string[]).includes(state)) {
       throw new Error(`Invalid schema state: ${state}. Must be one of: ${Object.values(SCHEMA_STATES).join(', ')}`);
     }
     const all = await this.getSchemas();
     if (!all.success || !all.data) {
       return { success: false, error: 'Failed to fetch schemas', status: all.status, data: { data: [], state } };
     }
-    const names = (all.data as any[])
-      .filter((s: any) => s.state === state)
-      .map((s: any) => s.name);
+    const names = (all.data as Schema[])
+      .filter((s: Schema) => s.state === state)
+      .map((s: Schema) => s.name);
     return {
       success: true,
       data: { data: names, state },
@@ -243,11 +243,11 @@ export class UnifiedSchemaClient {
     if (!all.success || !all.data) {
       return { success: false, error: 'Failed to fetch schemas', status: all.status, data: { available: 0, approved: 0, blocked: 0, total: 0 } };
     }
-    const list = all.data as any[];
+    const list = all.data as Schema[];
     const counts = {
-      available: list.filter(s => s.state === SCHEMA_STATES.AVAILABLE).length,
-      approved: list.filter(s => s.state === SCHEMA_STATES.APPROVED).length,
-      blocked: list.filter(s => s.state === SCHEMA_STATES.BLOCKED).length,
+      available: list.filter((s: Schema) => s.state === SCHEMA_STATES.AVAILABLE).length,
+      approved: list.filter((s: Schema) => s.state === SCHEMA_STATES.APPROVED).length,
+      blocked: list.filter((s: Schema) => s.state === SCHEMA_STATES.BLOCKED).length,
       total: list.length
     };
     return { success: true, data: counts, status: 200, meta: { timestamp: Date.now(), cached: all.meta?.cached || false } };
@@ -305,10 +305,12 @@ export class UnifiedSchemaClient {
       if (!response.success || !response.data) {
         return { success: false, error: 'Failed to fetch schemas', status: response.status, data: [] };
       }
-      const approved = response.data.filter((s: any) => s.state === SCHEMA_STATES.APPROVED);
+      const approved = response.data.filter((s: Schema) => s.state === SCHEMA_STATES.APPROVED);
       return { success: true, data: approved, status: 200, meta: { timestamp: Date.now(), cached: response.meta?.cached } };
-    } catch (error) {
-      return { success: false, error: error.message || 'Failed to fetch approved schemas', status: error.status || 500, data: [] };
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to fetch approved schemas';
+      const status = error instanceof Error && 'status' in error ? (error as { status: number }).status : 500;
+      return { success: false, error: message, status, data: [] };
     }
   }
 
@@ -316,14 +318,14 @@ export class UnifiedSchemaClient {
    * Load a schema into memory (no-op client-side; server has no endpoint)
    */
   async loadSchema(_name: string): Promise<EnhancedApiResponse<void>> {
-    return { success: true, status: 200 } as any;
+    return { success: true, status: 200 } as EnhancedApiResponse<void>;
   }
 
   /**
    * Unload a schema from memory (no-op client-side; server has no endpoint)
    */
   async unloadSchema(_name: string): Promise<EnhancedApiResponse<void>> {
-    return { success: true, status: 200 } as any;
+    return { success: true, status: 200 } as EnhancedApiResponse<void>;
   }
 
   /**
@@ -371,8 +373,8 @@ export class UnifiedSchemaClient {
    * Get backfill status by hash
    * UNPROTECTED - No authentication required
    */
-  async getBackfillStatus(backfillHash: string): Promise<EnhancedApiResponse<any>> {
-    return this.client.get<any>(`/api/backfill/${backfillHash}`, {
+  async getBackfillStatus(backfillHash: string): Promise<EnhancedApiResponse<unknown>> {
+    return this.client.get<unknown>(`/api/backfill/${backfillHash}`, {
       cacheable: false, // Don't cache backfill status as it changes frequently
       timeout: 5000
     });

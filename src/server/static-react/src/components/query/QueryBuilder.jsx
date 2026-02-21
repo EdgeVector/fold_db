@@ -114,20 +114,7 @@ function QueryBuilder({
     rangeKey: resolvedRangeKey
   }), [rest, resolvedSchema, queryState, resolvedSchemas, resolvedSchemaObj, resolvedIsRangeSchema, resolvedRangeKey]);
 
-  let queryBuilder;
-  try {
-    queryBuilder = useQueryBuilder(hookArguments);
-  } catch (error) {
-    // Handle hook errors gracefully by returning error state
-    queryBuilder = {
-      query: null,
-      validationErrors: [error.message || 'An error occurred while building the query'],
-      isValid: false,
-      buildQuery: () => null,
-      validateQuery: () => false,
-      error: error
-    };
-  }
+  const queryBuilder = useQueryBuilder(hookArguments);
 
   if (typeof children === 'function') {
     return children(queryBuilder);
@@ -137,4 +124,5 @@ function QueryBuilder({
 }
 
 export default QueryBuilder;
+// eslint-disable-next-line react-refresh/only-export-components
 export { useQueryBuilder, QueryBuilder };

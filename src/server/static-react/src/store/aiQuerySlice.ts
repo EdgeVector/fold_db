@@ -14,7 +14,7 @@ import { createSlice, PayloadAction } from '@reduxjs/toolkit';
 export interface ConversationMessage {
   type: 'user' | 'system' | 'results';
   content: string;
-  data?: any;
+  data?: unknown;
   timestamp: string;
 }
 

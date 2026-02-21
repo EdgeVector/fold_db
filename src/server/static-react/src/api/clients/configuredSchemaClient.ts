@@ -107,6 +107,7 @@ export async function checkSchemaServiceStatus(baseUrl: string): Promise<{
       options.body = JSON.stringify({ action: "status" });
     }
 
+    // eslint-disable-next-line no-restricted-globals
     const response = await fetch(url, options);
     const responseTime = Date.now() - startTime;
 
@@ -124,12 +125,13 @@ export async function checkSchemaServiceStatus(baseUrl: string): Promise<{
         responseTime,
       };
     }
-  } catch (error: any) {
+  } catch (error: unknown) {
     const responseTime = Date.now() - startTime;
+    const err = error instanceof Error ? error : new Error(String(error));
     return {
       success: false,
       error:
-        error.name === "TimeoutError" ? "Connection timeout" : error.message,
+        err.name === "TimeoutError" ? "Connection timeout" : err.message,
       responseTime,
     };
   }

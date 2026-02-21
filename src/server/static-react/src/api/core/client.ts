@@ -103,7 +103,7 @@ class ApiCache {
  * Request queue for managing concurrent requests
  */
 class RequestQueue {
-  private queue = new Map<string, Promise<any>>();
+  private queue = new Map<string, Promise<unknown>>();
 
   /**
    * Get or create a request promise to prevent duplicate requests
@@ -169,7 +169,7 @@ export class ApiClient implements ApiClientInstance {
    */
   async post<T>(
     endpoint: string,
-    data?: any,
+    data?: unknown,
     options: RequestOptions = {},
   ): Promise<EnhancedApiResponse<T>> {
     return this.request<T>("POST", endpoint, data, options);
@@ -180,7 +180,7 @@ export class ApiClient implements ApiClientInstance {
    */
   async put<T>(
     endpoint: string,
-    data?: any,
+    data?: unknown,
     options: RequestOptions = {},
   ): Promise<EnhancedApiResponse<T>> {
     return this.request<T>("PUT", endpoint, data, options);
@@ -201,7 +201,7 @@ export class ApiClient implements ApiClientInstance {
    */
   async patch<T>(
     endpoint: string,
-    data?: any,
+    data?: unknown,
     options: RequestOptions = {},
   ): Promise<EnhancedApiResponse<T>> {
     return this.request<T>("PATCH", endpoint, data, options);
@@ -233,9 +233,9 @@ export class ApiClient implements ApiClientInstance {
             data: response.data,
             status: response.status,
           };
-        } catch (error) {
+        } catch (error: unknown) {
           const apiError =
-            error instanceof ApiError ? error : new ApiError(error.message);
+            error instanceof ApiError ? error : new ApiError(error instanceof Error ? error.message : String(error));
           return {
             id: request.id,
             success: false,
@@ -255,7 +255,7 @@ export class ApiClient implements ApiClientInstance {
   private async request<T>(
     method: HttpMethod,
     endpoint: string,
-    data?: any,
+    data?: unknown,
     options: RequestOptions = {},
   ): Promise<EnhancedApiResponse<T>> {
     const requestId = options.requestId || this.generateRequestId();
@@ -360,11 +360,11 @@ export class ApiClient implements ApiClientInstance {
       }
 
       return finalResponse;
-    } catch (error) {
+    } catch (error: unknown) {
       let apiError =
         error instanceof ApiError
           ? error
-          : ErrorFactory.fromNetworkError(error, requestId);
+          : ErrorFactory.fromNetworkError(error instanceof Error ? error : new Error(String(error)), requestId);
 
       // Apply error interceptors
       for (const interceptor of this.errorInterceptors) {
@@ -399,11 +399,11 @@ export class ApiClient implements ApiClientInstance {
     for (let attempt = 0; attempt <= config.retries; attempt++) {
       try {
         return await this.performRequest<T>(config);
-      } catch (error) {
+      } catch (error: unknown) {
         lastError =
           error instanceof ApiError
             ? error
-            : ErrorFactory.fromNetworkError(error, config.metadata.requestId);
+            : ErrorFactory.fromNetworkError(error instanceof Error ? error : new Error(String(error)), config.metadata.requestId);
 
         // Don't retry on final attempt or non-retryable errors
         if (attempt === config.retries || !isRetryableError(lastError)) {
@@ -481,17 +481,18 @@ export class ApiClient implements ApiClientInstance {
 
       // Handle response
       return await this.handleResponse<T>(response, config.metadata.requestId);
-    } catch (error) {
+    } catch (error: unknown) {
       clearTimeout(timeoutId);
 
-      if (error.name === "AbortError") {
+      const err = error instanceof Error ? error : new Error(String(error));
+      if (err.name === "AbortError") {
         throw ErrorFactory.fromTimeout(
           config.timeout,
           config.metadata.requestId,
         );
       }
 
-      throw ErrorFactory.fromNetworkError(error, config.metadata.requestId);
+      throw ErrorFactory.fromNetworkError(err, config.metadata.requestId);
     }
   }
 
@@ -540,7 +541,7 @@ export class ApiClient implements ApiClientInstance {
    */
   private async addAuthHeaders(
     _headers: Record<string, string>,
-    _body?: any,
+    _body?: unknown,
   ): Promise<void> {
     // No-op: UI does not perform authentication
     return;
@@ -565,12 +566,12 @@ export class ApiClient implements ApiClientInstance {
   /**
    * Serialize request body based on content type
    */
-  private serializeBody(body: any, contentType: string): string | FormData {
+  private serializeBody(body: unknown, contentType: string): string | FormData {
     if (contentType === CONTENT_TYPES.JSON) {
       return JSON.stringify(body);
     }
     if (contentType === CONTENT_TYPES.FORM_DATA) {
-      return body; // Assume FormData is passed directly
+      return body as FormData; // Assume FormData is passed directly
     }
     return String(body);
   }

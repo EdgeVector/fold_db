@@ -50,6 +50,7 @@ function KeyManagementTab({ onResult: _onResult }) {
             });
             
             if (isValid) {
+              // Validation succeeded - no additional action needed
             }
         } catch (error) {
             setPrivateKeyValidation({

@@ -1,3 +1,4 @@
+/* global FormData */
 import { useState, useCallback } from 'react'
 import { BROWSER_CONFIG } from '../../constants/config'
 import FileUploadMode from './upload/FileUploadMode'
@@ -6,8 +7,8 @@ function FileUploadTab({ onResult }) {
   const [isDragging, setIsDragging] = useState(false)
   const [selectedFile, setSelectedFile] = useState(null)
   const [autoExecute, setAutoExecute] = useState(true)
-  const [trustDistance, setTrustDistance] = useState(0)
-  const [pubKey, setPubKey] = useState('default')
+  const [trustDistance] = useState(0)
+  const [pubKey] = useState('default')
   const [isUploading, setIsUploading] = useState(false)
 
   const handleDragEnter = useCallback((e) => {
@@ -72,6 +73,7 @@ function FileUploadTab({ onResult }) {
         headers['x-user-hash'] = userHash
       }
 
+      // eslint-disable-next-line no-restricted-globals
       const response = await fetch('/api/ingestion/upload', {
         method: 'POST',
         headers,

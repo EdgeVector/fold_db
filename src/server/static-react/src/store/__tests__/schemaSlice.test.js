@@ -5,12 +5,9 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { createTestStore } from '../../test/utils/testUtilities.jsx';
-import schemaReducer, {
+import {
   fetchSchemas,
   approveSchema,
-  blockSchema,
-  unloadSchema,
-  loadSchema,
   setActiveSchema,
   updateSchemaStatus,
   setLoading,

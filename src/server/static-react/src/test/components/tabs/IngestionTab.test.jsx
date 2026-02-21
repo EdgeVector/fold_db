@@ -1,5 +1,5 @@
 import React from 'react'
-import { screen, fireEvent, waitFor } from '@testing-library/react'
+import { screen, fireEvent } from '@testing-library/react'
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import IngestionTab from '../../../components/tabs/IngestionTab'
 import { renderWithRedux, createTestSchemaState, createMockAuthState } from '../../utils/testStore.jsx'

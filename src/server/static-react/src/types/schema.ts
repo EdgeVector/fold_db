@@ -43,10 +43,10 @@ export interface SchemaField {
   description?: string;
   
   /** Default value for the field */
-  defaultValue?: any;
-  
+  defaultValue?: unknown;
+
   /** Validation constraints */
-  constraints?: Record<string, any>;
+  constraints?: Record<string, unknown>;
 }
 
 /**
@@ -74,7 +74,7 @@ export type Schema = BackendSchema & {
   state: SchemaState;
 
   /** Optional high-level definition/structure metadata (UI-only field) */
-  definition?: Record<string, any>;
+  definition?: Record<string, unknown>;
 
   /** Schema metadata (UI-only field) */
   metadata?: {
@@ -193,9 +193,9 @@ export interface FetchSchemasSuccessPayload {
 export interface SchemaOperationPayload {
   /** Schema name to operate on */
   schemaName: string;
-  
+
   /** Additional operation parameters */
-  params?: Record<string, any>;
+  params?: Record<string, unknown>;
 }
 
 /**
@@ -291,7 +291,7 @@ export interface SchemaOperationParams {
     timeout?: number;
     
     /** Additional metadata to include */
-    metadata?: Record<string, any>;
+    metadata?: Record<string, unknown>;
   };
 }
 
@@ -425,19 +425,19 @@ export interface SchemaApiResponse {
     schema?: Schema;
     
     /** Additional metadata */
-    metadata?: Record<string, any>;
+    metadata?: Record<string, unknown>;
   };
-  
+
   /** Error information if unsuccessful */
   error?: {
     /** Error code */
     code: string;
-    
+
     /** Human-readable error message */
     message: string;
-    
+
     /** Additional error details */
-    details?: any;
+    details?: unknown;
   };
   
   /** Response timestamp */
@@ -455,7 +455,7 @@ export interface SchemaOperationRequest {
   operation: 'approve' | 'block' | 'unload' | 'load';
   
   /** Additional request parameters */
-  params?: Record<string, any>;
+  params?: Record<string, unknown>;
   
   /** Request metadata */
   metadata?: {
@@ -477,7 +477,7 @@ export interface SchemaOperationRequest {
 /**
  * Type guard for schema objects
  */
-export type SchemaTypeGuard = (obj: any) => obj is Schema;
+export type SchemaTypeGuard = (obj: unknown) => obj is Schema;
 
 /**
  * Type for schema filter functions
@@ -492,7 +492,7 @@ export type SchemaSort = (a: Schema, b: Schema) => number;
 /**
  * Redux action creator return types
  */
-export type SchemaActionCreator<TPayload = any> = {
+export type SchemaActionCreator<TPayload = unknown> = {
   type: string;
   payload: TPayload;
 };
@@ -500,4 +500,4 @@ export type SchemaActionCreator<TPayload = any> = {
 /**
  * Async thunk return types
  */
-export type SchemaAsyncThunkReturn<TReturn = any> = Promise<TReturn>;
+export type SchemaAsyncThunkReturn<TReturn = unknown> = Promise<TReturn>;

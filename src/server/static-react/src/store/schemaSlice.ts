@@ -141,16 +141,17 @@ export const fetchSchemas = createAsyncThunk<
         // Use the backend schema objects directly without transformation
         // Only normalize the state field to lowercase for consistency
         const schemas = rawSchemas
-          .map((schema: any) => {
+          .map((schema: Record<string, unknown>) => {
             // Ensure schema has a name field - this is critical for display
             if (!schema.name) {
-              console.warn("⚠️ Schema missing name field:", schema);
+              console.warn("Schema missing name field:", schema);
               // Try to extract name from nested structure if present
-              if (schema.schema && schema.schema.name) {
-                schema.name = schema.schema.name;
+              const nested = schema.schema as Record<string, unknown> | undefined;
+              if (nested && nested.name) {
+                schema.name = nested.name;
               } else {
                 console.error(
-                  "❌ Schema has no name field and cannot be displayed:",
+                  "Schema has no name field and cannot be displayed:",
                   schema,
                 );
                 // Skip schemas without names - they can't be displayed
@@ -166,10 +167,11 @@ export const fetchSchemas = createAsyncThunk<
                 normalizedState = schema.state.toLowerCase();
               } else if (
                 typeof schema.state === "object" &&
-                schema.state.state
+                schema.state !== null &&
+                (schema.state as Record<string, unknown>).state
               ) {
                 // Handle object format like { state: 'approved' }
-                normalizedState = String(schema.state.state).toLowerCase();
+                normalizedState = String((schema.state as Record<string, unknown>).state).toLowerCase();
               } else {
                 normalizedState = String(schema.state).toLowerCase();
               }
@@ -181,7 +183,7 @@ export const fetchSchemas = createAsyncThunk<
               state: normalizedState,
             };
           })
-          .filter((schema: any) => schema !== null); // Remove any null schemas (those without names)
+          .filter((schema: Record<string, unknown> | null) => schema !== null); // Remove any null schemas (those without names)
 
         const timestamp = Date.now();
 
@@ -197,7 +199,7 @@ export const fetchSchemas = createAsyncThunk<
           // Use shorter delays in test environment
           const isTestEnv =
             typeof window !== "undefined" &&
-            (window as any).__TEST_ENV__ === true;
+            (window as unknown as Record<string, unknown>).__TEST_ENV__ === true;
           const retryDelay = isTestEnv ? 10 : 1000 * attempt;
           await new Promise((resolve) => setTimeout(resolve, retryDelay));
         }
@@ -474,8 +476,8 @@ export const selectApprovedSchemas = createSelector(
           ? schema.state.toLowerCase()
           : typeof schema.state === "object" &&
               schema.state !== null &&
-              (schema.state as any).state
-            ? String((schema.state as any).state).toLowerCase()
+              (schema.state as unknown as Record<string, unknown>).state
+            ? String((schema.state as unknown as Record<string, unknown>).state).toLowerCase()
             : String(schema.state || "").toLowerCase();
       return normalizedState === SCHEMA_STATES.APPROVED;
     }),

@@ -86,7 +86,7 @@ function QueryTab({ onResult }) {
     } finally {
       setIsExecuting(false);
     }
-  }, [onResult, isValid]);
+  }, [onResult]);
 
 
   // UI does not require authentication

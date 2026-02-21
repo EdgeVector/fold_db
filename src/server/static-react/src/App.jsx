@@ -81,6 +81,7 @@ export function AppContent() {
       dispatch(restoreSession({ id: userId, hash: userHash }))
     } else {
       // Auto-authenticate: fetch default identity from backend
+      // eslint-disable-next-line no-restricted-globals
       fetch('/api/system/auto-identity')
         .then(res => res.json())
         .then(data => {

@@ -83,7 +83,7 @@ export class UnifiedMutationClient implements MutationApiClient {
    * @returns Promise resolving to mutation result
    */
   async executeMutation(
-    _mutation: any,
+    _mutation: Record<string, unknown>,
   ): Promise<EnhancedApiResponse<Record<string, unknown>>> {
     return this.client.post<MutationResponse>(
       API_ENDPOINTS.EXECUTE_MUTATION,
@@ -105,7 +105,7 @@ export class UnifiedMutationClient implements MutationApiClient {
    * @returns Promise resolving to array of mutation IDs
    */
   async executeMutationsBatch(
-    mutations: any[],
+    mutations: Record<string, unknown>[],
   ): Promise<EnhancedApiResponse<string[]>> {
     return this.client.post<string[]>(
       API_ENDPOINTS.EXECUTE_MUTATIONS_BATCH,
@@ -127,7 +127,7 @@ export class UnifiedMutationClient implements MutationApiClient {
    * @returns Promise resolving to query results
    */
   async executeQuery(
-    query: any,
+    query: Record<string, unknown>,
   ): Promise<EnhancedApiResponse<Record<string, unknown>>> {
     return this.client.post<QueryResponse>(API_ENDPOINTS.EXECUTE_QUERY, query, {
       validateSchema: {
@@ -149,7 +149,7 @@ export class UnifiedMutationClient implements MutationApiClient {
    * @returns Promise resolving to validation result
    */
   async validateMutation(
-    _mutation: any,
+    _mutation: Record<string, unknown>,
   ): Promise<EnhancedApiResponse<ValidationResult>> {
     // Removed: server has no /mutation/validate. Perform client-side no-op validation.
     return Promise.resolve({
@@ -167,7 +167,7 @@ export class UnifiedMutationClient implements MutationApiClient {
    * @returns Promise resolving to batch execution results
    */
   async executeBatchMutations(
-    _mutations: any[],
+    _mutations: Record<string, unknown>[],
   ): Promise<EnhancedApiResponse<MutationResponse[]>> {
     // Removed: server has no /mutation/batch
     return {
@@ -187,7 +187,7 @@ export class UnifiedMutationClient implements MutationApiClient {
    */
   async executeParameterizedQuery(queryParams: {
     schema: string;
-    filters?: Record<string, any>;
+    filters?: Record<string, unknown>;
     sort?: { field: string; direction: "asc" | "desc" }[];
     pagination?: { offset: number; limit: number };
     fields?: string[];
@@ -219,7 +219,7 @@ export class UnifiedMutationClient implements MutationApiClient {
    * @returns Promise resolving to mutation history
    */
   async getMutationHistory(
-    _params: any,
+    _params: Record<string, unknown>,
   ): Promise<EnhancedApiResponse<MutationResponse[]>> {
     // Removed: server has no /mutation/history
     return {
@@ -245,7 +245,7 @@ export class UnifiedMutationClient implements MutationApiClient {
   }> {
     try {
       // Use the schema client to get schema details
-      const response = await this.client.get<any>(
+      const response = await this.client.get<Record<string, unknown>>(
         API_ENDPOINTS.GET_SCHEMA(schemaName),
         {
           timeout: 5000,
@@ -265,7 +265,7 @@ export class UnifiedMutationClient implements MutationApiClient {
         };
       }
 
-      const schema = response.data;
+      const schema = response.data as Record<string, unknown>;
       const isApproved = schema.state === SCHEMA_STATES.APPROVED;
 
       return {
@@ -277,13 +277,14 @@ export class UnifiedMutationClient implements MutationApiClient {
           ? undefined
           : `Schema '${schemaName}' is not approved (current state: ${schema.state})`,
       };
-    } catch (error) {
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
       return {
         isValid: false,
         schemaState: "error",
         canMutate: false,
         canQuery: false,
-        error: `Failed to validate schema '${schemaName}': ${error.message}`,
+        error: `Failed to validate schema '${schemaName}': ${message}`,
       };
     }
   }
@@ -321,10 +322,10 @@ export function createMutationClient(
 // Export aliases and convenience wrappers for backwards compatibility and index.ts exports
 export const MutationClient = UnifiedMutationClient;
 
-export const executeMutation = (mutation: any) =>
+export const executeMutation = (mutation: Record<string, unknown>) =>
   mutationClient.executeMutation(mutation);
-export const executeQuery = (query: any) => mutationClient.executeQuery(query);
-export const validateMutation = (mutation: any) =>
+export const executeQuery = (query: Record<string, unknown>) => mutationClient.executeQuery(query);
+export const validateMutation = (mutation: Record<string, unknown>) =>
   mutationClient.validateMutation(mutation);
 export const validateSchemaForMutation = (schemaName: string) =>
   mutationClient.validateSchemaForMutation(schemaName);

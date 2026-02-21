@@ -497,7 +497,7 @@ function DoneStep({ onComplete }) {
 
 export default function OnboardingWizard({ isOpen, onClose, userHash }) {
   const [currentStep, setCurrentStep] = useState(1)
-  const [aiWasConfigured, setAiWasConfigured] = useState(false)
+  const [, setAiWasConfigured] = useState(false)
   const [storageInfo, setStorageInfo] = useState(null)
 
   useEffect(() => {

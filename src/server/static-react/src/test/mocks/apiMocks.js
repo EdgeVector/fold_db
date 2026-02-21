@@ -17,7 +17,6 @@ import { beforeAll, afterEach, afterAll } from 'vitest';
 import {
   createMockSchema,
   createMockRangeSchema,
-  createMockError,
   mockDelay,
   SCHEMA_STATES
 } from '../utils/testUtilities.jsx';
@@ -655,22 +654,22 @@ export const defaultHandlers = [
  */
 export const errorHandlers = {
   networkError: [
-    http.get('/api/schemas/available', (req, res, ctx) => {
+    http.get('/api/schemas/available', (req, res, _ctx) => {
       return res.networkError('Failed to connect');
     }),
-    http.get('/schemas', (req, res, ctx) => {
+    http.get('/schemas', (req, res, _ctx) => {
       return res.networkError('Failed to connect');
     }),
-    http.get('/schema/:schemaName', (req, res, ctx) => {
+    http.get('/schema/:schemaName', (req, res, _ctx) => {
       return res.networkError('Failed to connect');
     }),
-    http.get('/schemas/state/:state', (req, res, ctx) => {
+    http.get('/schemas/state/:state', (req, res, _ctx) => {
       return res.networkError('Failed to connect');
     }),
-    http.get('/api/keys', (req, res, ctx) => {
+    http.get('/api/keys', (req, res, _ctx) => {
       return res.networkError('Failed to connect');
     }),
-    http.patch('/api/keys/:keyId', (req, res, ctx) => {
+    http.patch('/api/keys/:keyId', (req, res, _ctx) => {
       return res.networkError('Failed to connect');
     })
   ],
@@ -832,7 +831,7 @@ export const createMockApiClient = (overrides = {}) => {
  * @param {Object} baseClient - Base API client to use
  * @returns {Object} Mock specialized clients
  */
-export const createMockSpecializedClients = (baseClient) => {
+export const createMockSpecializedClients = (_baseClient) => {
   return {
     schema: {
       getSchemas: vi.fn().mockResolvedValue(Object.values(mockSchemas)),

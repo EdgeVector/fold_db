@@ -155,7 +155,7 @@ export const waitForElement = async (getElement, timeout = 5000) => {
     try {
       const element = getElement();
       if (element) return element;
-    } catch (error) {
+    } catch {
       // Element not found yet, continue waiting
     }
     await new Promise(resolve => setTimeout(resolve, 100));

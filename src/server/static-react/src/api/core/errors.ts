@@ -58,7 +58,7 @@ export class ApiError extends Error {
     if (isNetworkError || isTimeoutError) {
       return true;
     }
-    return RETRY_CONFIG.RETRYABLE_STATUS_CODES.includes(status as any);
+    return (RETRY_CONFIG.RETRYABLE_STATUS_CODES as readonly number[]).includes(status);
   }
 
   /**

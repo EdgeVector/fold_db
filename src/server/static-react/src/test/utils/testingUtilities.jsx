@@ -11,7 +11,7 @@
  */
 
 // Import all utilities from the consolidated testUtilities.jsx
-import testUtilities, {
+import {
   createTestStore,
   renderWithRedux as renderWithProviders,
   createMockSchema,

@@ -1,6 +1,6 @@
 import React from 'react';
-import { screen, fireEvent, waitFor, within } from '@testing-library/react';
-import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { screen, fireEvent, waitFor } from '@testing-library/react';
+import { vi, describe, it, expect, beforeEach } from 'vitest';
 import App, { AppContent } from '../../App.jsx';
 import { renderWithRedux, createTestStore } from '../utils/testHelpers.jsx';
 import { DEFAULT_TAB } from '../../constants';

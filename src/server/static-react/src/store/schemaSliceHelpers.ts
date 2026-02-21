@@ -5,10 +5,12 @@
  * extracted to keep the main slice file focused and maintainable.
  */
 
-import { createAsyncThunk } from '@reduxjs/toolkit';
+import { createAsyncThunk, type PayloadAction } from '@reduxjs/toolkit';
+import type { Draft } from 'immer';
 import { RootState } from './store';
 import {
   Schema,
+  ReduxSchemaState,
   SchemaState as SchemaStateType,
   SchemaOperationParams,
   SchemaOperationSuccessPayload,
@@ -103,7 +105,7 @@ export const validateSchemaOperation = (
   schemaName: string,
   operation: keyof typeof SCHEMA_OPERATION_REQUIREMENTS,
   schema: Schema | undefined,
-  options: { skipValidation?: boolean } = {}
+  _options: { skipValidation?: boolean } = {}
 ): { isValid: boolean; error?: SchemaOperationErrorPayload } => {
   // Skip frontend validation - let the backend handle it
   return { isValid: true };
@@ -114,7 +116,7 @@ export const validateSchemaOperation = (
  */
 export const createSchemaOperationThunk = <T extends keyof typeof SCHEMA_OPERATION_REQUIREMENTS>(
   actionType: string,
-  clientMethod: (schemaName: string) => Promise<EnhancedApiResponse<any>>,
+  clientMethod: (schemaName: string) => Promise<EnhancedApiResponse<unknown>>,
   successState: SchemaStateType,
   errorMessage: string
 ) => {
@@ -142,7 +144,8 @@ export const createSchemaOperationThunk = <T extends keyof typeof SCHEMA_OPERATI
         }
         
         // Extract backfill_hash if present in response data
-        const backfillHash = response.data?.backfill_hash;
+        const responseData = response.data as Record<string, unknown> | undefined;
+        const backfillHash = responseData?.backfill_hash as string | undefined;
         
         return createSuccessPayload(schemaName, successState, undefined, backfillHash);
         
@@ -162,39 +165,39 @@ export const createSchemaOperationThunk = <T extends keyof typeof SCHEMA_OPERATI
  * Helper function to create standardized extra reducers for schema operations
  */
 export const createSchemaOperationReducers = (
-  thunk: ReturnType<typeof createSchemaOperationThunk>,
+  _thunk: ReturnType<typeof createSchemaOperationThunk>,
   operationType: string
 ) => {
   return {
-    pending: (state: any, action: any) => {
+    pending: (state: Draft<ReduxSchemaState>, action: { meta: { arg: SchemaOperationParams } }) => {
       const schemaName = action.meta.arg.schemaName;
       state.loading.operations[schemaName] = true;
       delete state.errors.operations[schemaName];
     },
-    fulfilled: (state: any, action: any) => {
+    fulfilled: (state: Draft<ReduxSchemaState>, action: PayloadAction<SchemaOperationSuccessPayload>) => {
       const { schemaName, newState, updatedSchema } = action.payload;
       state.loading.operations[schemaName] = false;
-      
+
       if (state.schemas[schemaName]) {
         state.schemas[schemaName].state = newState;
         if (updatedSchema) {
           Object.assign(state.schemas[schemaName], updatedSchema);
         }
         state.schemas[schemaName].lastOperation = {
-          type: operationType,
+          type: operationType as 'approve' | 'block' | 'unload' | 'load',
           timestamp: Date.now(),
           success: true
         };
       }
     },
-    rejected: (state: any, action: any) => {
+    rejected: (state: Draft<ReduxSchemaState>, action: { payload: SchemaOperationErrorPayload | undefined }) => {
       const { schemaName, error } = action.payload!;
       state.loading.operations[schemaName] = false;
       state.errors.operations[schemaName] = error;
-      
+
       if (state.schemas[schemaName]) {
         state.schemas[schemaName].lastOperation = {
-          type: operationType,
+          type: operationType as 'approve' | 'block' | 'unload' | 'load',
           timestamp: Date.now(),
           success: false,
           error

@@ -4,7 +4,7 @@
  * Part of UTC-1 Test Coverage Enhancement - Integration Testing
  */
 
-import { render, screen, within, fireEvent, waitFor } from '@testing-library/react';
+import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Provider } from 'react-redux';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -281,7 +281,7 @@ describe('QueryTab Workflow Integration Tests', () => {
 
   describe('Range Schema Workflow', () => {
     it('handles range schema selection and range key input', async () => {
-      const user = userEvent.setup();
+      const _user = userEvent.setup();
       
       mockUseQueryState.mockReturnValue({
         ...defaultQueryState,

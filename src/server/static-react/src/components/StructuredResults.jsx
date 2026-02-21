@@ -151,7 +151,7 @@ const showMoreHashes = useCallback(() => {
 
 function HashRanges({ data, hashKey, rangeOpen, onToggleRange, pageSize, rangeWindow, setRangeWindow }) {
   const allRanges = useMemo(() => getSortedRangeKeys(data, hashKey), [data, hashKey])
-  const effectiveWindow = rangeWindow || { start: 0, count: Math.min(pageSize, allRanges.length) }
+  const effectiveWindow = useMemo(() => rangeWindow || { start: 0, count: Math.min(pageSize, allRanges.length) }, [rangeWindow, pageSize, allRanges.length])
   const visibleRanges = useMemo(() => sliceKeys(allRanges, effectiveWindow.start, effectiveWindow.count), [allRanges, effectiveWindow])
 
   const showMoreRanges = useCallback(() => {

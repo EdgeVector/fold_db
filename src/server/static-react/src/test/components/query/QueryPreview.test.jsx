@@ -4,7 +4,7 @@
  * Part of UTC-1 Test Coverage Enhancement - UCR-1 Component Testing
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import QueryPreview, { formatQueryDisplay } from '../../../components/query/QueryPreview';
 

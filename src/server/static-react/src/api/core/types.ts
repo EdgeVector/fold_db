@@ -241,8 +241,8 @@ export interface SchemaApiClient {
 }
 
 export interface MutationApiClient {
-  executeMutation(mutation: any): Promise<EnhancedApiResponse<Record<string, unknown>>>;
-  executeQuery(query: any): Promise<EnhancedApiResponse<Record<string, unknown>>>;
+  executeMutation(mutation: Record<string, unknown>): Promise<EnhancedApiResponse<Record<string, unknown>>>;
+  executeQuery(query: Record<string, unknown>): Promise<EnhancedApiResponse<Record<string, unknown>>>;
   // validateMutation now a client-side noop; keep optional for compatibility
 }
 
