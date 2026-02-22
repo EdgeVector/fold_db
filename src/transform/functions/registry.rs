@@ -510,6 +510,7 @@ mod tests {
                 ),
                 atom_uuid: "test-uuid".to_string(),
                 source_file_name: None,
+                metadata: None,
             },
             is_text_token: false,
         }
@@ -522,6 +523,7 @@ mod tests {
                 value: serde_json::Value::String(text.to_string()),
                 atom_uuid: "test-uuid".to_string(),
                 source_file_name: None,
+                metadata: None,
             },
             is_text_token: false,
         }
@@ -600,6 +602,7 @@ mod tests {
                     value: serde_json::Value::Number(serde_json::Number::from(10)),
                     atom_uuid: "test-uuid".to_string(),
                     source_file_name: None,
+                    metadata: None,
                 },
                 is_text_token: false,
             },
@@ -609,6 +612,7 @@ mod tests {
                     value: serde_json::Value::Number(serde_json::Number::from(20)),
                     atom_uuid: "test-uuid".to_string(),
                     source_file_name: None,
+                    metadata: None,
                 },
                 is_text_token: false,
             },

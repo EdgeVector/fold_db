@@ -42,6 +42,8 @@ pub fn format_hash_range_fields(results: &HashMap<String, HashMap<KeyValue, Fiel
 pub struct FieldMetadata {
     pub atom_uuid: String,
     pub source_file_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<HashMap<String, String>>,
 }
 
 /// Represents a single logical record keyed by `KeyValue`.
@@ -79,6 +81,7 @@ pub fn records_from_field_map(
                 FieldMetadata {
                     atom_uuid: field_val.atom_uuid.clone(),
                     source_file_name: field_val.source_file_name.clone(),
+                    metadata: field_val.metadata.clone(),
                 },
             );
         }
@@ -111,6 +114,7 @@ mod tests {
                 value: Value::from(1),
                 atom_uuid: "a1".to_string(),
                 source_file_name: None,
+                metadata: None,
             },
         );
         f1_map.insert(
@@ -119,6 +123,7 @@ mod tests {
                 value: Value::from(2),
                 atom_uuid: "a2".to_string(),
                 source_file_name: None,
+                metadata: None,
             },
         );
 
@@ -129,6 +134,7 @@ mod tests {
                 value: Value::from("x"),
                 atom_uuid: "b1".to_string(),
                 source_file_name: None,
+                metadata: None,
             },
         );
 
@@ -159,6 +165,7 @@ mod tests {
                 value: Value::from("Hello World"),
                 atom_uuid: "atom-123".to_string(),
                 source_file_name: Some("tweets.json".to_string()),
+                metadata: None,
             },
         );
 
@@ -169,6 +176,7 @@ mod tests {
                 value: Value::from(42),
                 atom_uuid: "atom-456".to_string(),
                 source_file_name: None,
+                metadata: None,
             },
         );
 
@@ -214,6 +222,7 @@ mod tests {
                 value: Value::from("First post"),
                 atom_uuid: "atom-1".to_string(),
                 source_file_name: Some("file1.json".to_string()),
+                metadata: None,
             },
         );
         field_map.insert(
@@ -222,6 +231,7 @@ mod tests {
                 value: Value::from("Second post"),
                 atom_uuid: "atom-2".to_string(),
                 source_file_name: Some("file2.json".to_string()),
+                metadata: None,
             },
         );
 
@@ -253,6 +263,7 @@ mod tests {
         let metadata = FieldMetadata {
             atom_uuid: "test-atom".to_string(),
             source_file_name: Some("test.json".to_string()),
+            metadata: None,
         };
 
         // Test serialization

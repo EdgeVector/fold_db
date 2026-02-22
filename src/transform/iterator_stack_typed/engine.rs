@@ -156,6 +156,7 @@ impl TypedEngine {
                                             value: serde_json::Value::String(token.clone()),
                                             atom_uuid: item.value.atom_uuid.clone(),
                                             source_file_name: item.value.source_file_name.clone(),
+                                            metadata: item.value.metadata.clone(),
                                         },
                                         is_text_token: true,
                                     })
