@@ -114,19 +114,7 @@ function QueryBuilder({
     rangeKey: resolvedRangeKey
   }), [rest, resolvedSchema, queryState, resolvedSchemas, resolvedSchemaObj, resolvedIsRangeSchema, resolvedRangeKey]);
 
-  let queryBuilder;
-  try {
-    queryBuilder = useQueryBuilder(hookArguments);
-  } catch (err) {
-    queryBuilder = {
-      query: null,
-      validationErrors: [err.message],
-      isValid: false,
-      buildQuery: () => null,
-      validateQuery: () => [err.message],
-      error: err,
-    };
-  }
+  const queryBuilder = useQueryBuilder(hookArguments);
 
   if (typeof children === 'function') {
     return children(queryBuilder);

@@ -37,12 +37,15 @@ function LogSidebar() {
   const handleClear = () => setLogs([])
 
   useEffect(() => {
+    let cancelled = false
+
     systemClient.getLogs().then(r => {
-      if (r.success && r.data) setLogs(Array.isArray(r.data.logs) ? r.data.logs : [])
-    }).catch(() => setLogs([]))
+      if (!cancelled && r.success && r.data) setLogs(Array.isArray(r.data.logs) ? r.data.logs : [])
+    }).catch(() => { if (!cancelled) setLogs([]) })
 
     const eventSource = systemClient.createLogStream(
       (message) => {
+        if (cancelled) return
         setLogs(prev => {
           let entry
           try { entry = JSON.parse(message) }
@@ -55,10 +58,11 @@ function LogSidebar() {
     )
 
     const pollInterval = setInterval(() => {
+      if (cancelled) return
       setLogs(cur => {
         const last = cur[cur.length - 1]
         systemClient.getLogs(last?.timestamp).then(r => {
-          if (r.success && r.data?.logs?.length) {
+          if (!cancelled && r.success && r.data?.logs?.length) {
             setLogs(c => [...c, ...r.data.logs.filter(l => !c.some(e => e.id === l.id))])
           }
         }).catch(() => {})
@@ -66,7 +70,7 @@ function LogSidebar() {
       })
     }, 2000)
 
-    return () => { eventSource.close(); clearInterval(pollInterval) }
+    return () => { cancelled = true; eventSource.close(); clearInterval(pollInterval) }
   }, [])
 
   useEffect(() => {

@@ -107,7 +107,7 @@ export async function checkSchemaServiceStatus(baseUrl: string): Promise<{
       options.body = JSON.stringify({ action: "status" });
     }
 
-    // eslint-disable-next-line no-restricted-globals
+    // eslint-disable-next-line no-restricted-globals -- Cross-origin health check to external schema services; cannot use ApiClient which prefixes /api
     const response = await fetch(url, options);
     const responseTime = Date.now() - startTime;
 

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { ingestionClient } from '../api/clients'
 import { getIndexingStatus } from '../api/clients/indexingClient'
 
@@ -15,6 +15,11 @@ function HeaderProgress() {
   const [indexingStatus, setIndexingStatus] = useState(null)
   const [batchInfo, setBatchInfo] = useState(null)
   const [isLoading, setIsLoading] = useState(true)
+  const dismissTimeoutRef = useRef(null)
+
+  useEffect(() => {
+    return () => { if (dismissTimeoutRef.current) clearTimeout(dismissTimeoutRef.current) }
+  }, [])
 
   // Poll for progress updates (ingestion + indexing + batch status)
   const fetchProgress = useCallback(async () => {
@@ -61,7 +66,8 @@ function HeaderProgress() {
           const s = batchResp.data.status
           if (s === 'Completed' || s === 'Cancelled' || s === 'Failed') {
             // Clear after a short delay so the final state shows briefly
-            setTimeout(() => setBatchInfo(null), 5000)
+            if (dismissTimeoutRef.current) clearTimeout(dismissTimeoutRef.current)
+            dismissTimeoutRef.current = setTimeout(() => setBatchInfo(null), 5000)
           }
         } else {
           setBatchInfo(null)

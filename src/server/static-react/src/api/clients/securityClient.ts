@@ -154,10 +154,11 @@ export class UnifiedSecurityClient implements SecurityApiClient {
         format: "Ed25519",
         length: 32,
       };
-    } catch (error) {
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
       return {
         isValid: false,
-        error: `Validation error: ${error.message}`,
+        error: `Validation error: ${message}`,
       };
     }
   }

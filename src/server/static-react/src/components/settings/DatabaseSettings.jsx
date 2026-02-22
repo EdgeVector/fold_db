@@ -17,11 +17,15 @@ function DatabaseSettings({ configSaveStatus, setConfigSaveStatus, onClose }) {
   const [resetResult, setResetResult] = useState(null)
   const pollIntervalRef = useRef(null)
   const fallbackTimeoutRef = useRef(null)
+  const reloadTimeoutRef = useRef(null)
+  const statusTimeoutRef = useRef(null)
 
   useEffect(() => {
     return () => {
       if (pollIntervalRef.current) clearInterval(pollIntervalRef.current)
       if (fallbackTimeoutRef.current) clearTimeout(fallbackTimeoutRef.current)
+      if (reloadTimeoutRef.current) clearTimeout(reloadTimeoutRef.current)
+      if (statusTimeoutRef.current) clearTimeout(statusTimeoutRef.current)
     }
   }, [])
 
@@ -45,19 +49,19 @@ function DatabaseSettings({ configSaveStatus, setConfigSaveStatus, onClose }) {
       let config
       if (dbType === 'local') config = { type: 'local', path: dbPath }
       else if (dbType === 'dynamodb') {
-        if (!dynamoTableName || !dynamoRegion) { setConfigSaveStatus({ success: false, message: 'Table name and region required' }); setTimeout(() => setConfigSaveStatus(null), 3000); return }
+        if (!dynamoTableName || !dynamoRegion) { setConfigSaveStatus({ success: false, message: 'Table name and region required' }); statusTimeoutRef.current = setTimeout(() => setConfigSaveStatus(null), 3000); return }
         config = { type: 'dynamodb', table_name: dynamoTableName, region: dynamoRegion, user_id: dynamoUserId || undefined }
       } else if (dbType === 's3') {
-        if (!s3Bucket || !s3Region) { setConfigSaveStatus({ success: false, message: 'Bucket and region required' }); setTimeout(() => setConfigSaveStatus(null), 3000); return }
+        if (!s3Bucket || !s3Region) { setConfigSaveStatus({ success: false, message: 'Bucket and region required' }); statusTimeoutRef.current = setTimeout(() => setConfigSaveStatus(null), 3000); return }
         config = { type: 's3', bucket: s3Bucket, region: s3Region, prefix: s3Prefix || 'folddb', local_path: s3LocalPath || '/tmp/folddb-data' }
       }
       const response = await updateDatabaseConfig(config)
       if (response.success) {
         setConfigSaveStatus({ success: true, message: response.data.requires_restart ? 'Saved. Please restart server.' : response.data.message || 'Saved and restarted' })
-        setTimeout(() => { setConfigSaveStatus(null); if (!response.data.requires_restart) onClose() }, 3000)
+        statusTimeoutRef.current = setTimeout(() => { setConfigSaveStatus(null); if (!response.data.requires_restart) onClose() }, 3000)
       } else setConfigSaveStatus({ success: false, message: response.error || 'Failed to save' })
     } catch (error) { setConfigSaveStatus({ success: false, message: error.message || 'Failed to save' }) }
-    setTimeout(() => setConfigSaveStatus(null), 5000)
+    statusTimeoutRef.current = setTimeout(() => setConfigSaveStatus(null), 5000)
   }
 
   const handleResetDatabase = async () => {
@@ -70,13 +74,13 @@ function DatabaseSettings({ configSaveStatus, setConfigSaveStatus, onClose }) {
             try {
               const pr = await ingestionClient.getJobProgress(response.data.job_id)
               if (pr.success && pr.data) {
-                if (pr.data.is_complete) { clearInterval(pollIntervalRef.current); pollIntervalRef.current = null; setResetResult({ type: 'success', message: 'Reset complete. Reloading...' }); setTimeout(() => window.location.reload(), 1000) }
+                if (pr.data.is_complete) { clearInterval(pollIntervalRef.current); pollIntervalRef.current = null; setResetResult({ type: 'success', message: 'Reset complete. Reloading...' }); reloadTimeoutRef.current = setTimeout(() => window.location.reload(), 1000) }
                 else if (pr.data.is_failed) { clearInterval(pollIntervalRef.current); pollIntervalRef.current = null; setResetResult({ type: 'error', message: pr.data.error_message || 'Reset failed' }); setIsResetting(false) }
               }
             } catch { /* Polling error - will retry on next interval */ }
           }, 1000)
-          fallbackTimeoutRef.current = setTimeout(() => { clearInterval(pollIntervalRef.current); pollIntervalRef.current = null; fallbackTimeoutRef.current = null; if (isResetting) { setResetResult({ type: 'success', message: 'Reset likely complete. Reloading...' }); setTimeout(() => window.location.reload(), 1000) } }, 60000)
-        } else { setResetResult({ type: 'success', message: response.data.message || 'Reset successfully' }); setTimeout(() => window.location.reload(), 2000) }
+          fallbackTimeoutRef.current = setTimeout(() => { clearInterval(pollIntervalRef.current); pollIntervalRef.current = null; fallbackTimeoutRef.current = null; if (isResetting) { setResetResult({ type: 'success', message: 'Reset likely complete. Reloading...' }); reloadTimeoutRef.current = setTimeout(() => window.location.reload(), 1000) } }, 60000)
+        } else { setResetResult({ type: 'success', message: response.data.message || 'Reset successfully' }); reloadTimeoutRef.current = setTimeout(() => window.location.reload(), 2000) }
       } else { setResetResult({ type: 'error', message: response.error || 'Reset failed' }); setIsResetting(false) }
     } catch (error) { setResetResult({ type: 'error', message: `Network error: ${error.message}` }); setIsResetting(false) }
   }

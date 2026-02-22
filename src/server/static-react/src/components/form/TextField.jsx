@@ -71,6 +71,16 @@ function TextField({
   useEffect(() => {
     onChangeRef.current = onChange;
   }, [onChange]);
+
+  // Cleanup RAF and timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      if (rafRef.current && typeof window !== 'undefined' && typeof window.cancelAnimationFrame === 'function') {
+        window.cancelAnimationFrame(rafRef.current);
+      }
+    };
+  }, []);
   
   const debouncedOnChange = useCallback((newValue) => {
     setIsDebouncing(true);

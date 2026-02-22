@@ -1,6 +1,6 @@
 // Key Management Tab wrapper component
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAppSelector, useAppDispatch } from '../../store/hooks';
 import { validatePrivateKey, clearAuthentication } from '../../store/authSlice';
 import { ShieldCheckIcon, ClipboardIcon, CheckIcon, KeyIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline';
@@ -15,7 +15,12 @@ function KeyManagementTab({ onResult: _onResult }) {
     const privateKeyBase64 = privateKey;
     
     const [copiedField, setCopiedField] = useState(null);
-    
+    const copiedTimeoutRef = useRef(null);
+
+    useEffect(() => {
+      return () => { if (copiedTimeoutRef.current) clearTimeout(copiedTimeoutRef.current) };
+    }, []);
+
     // Private key input state
     const [privateKeyInput, setPrivateKeyInput] = useState('');
     const [isValidatingPrivateKey, setIsValidatingPrivateKey] = useState(false);
@@ -26,7 +31,8 @@ function KeyManagementTab({ onResult: _onResult }) {
         try {
             await navigator.clipboard.writeText(text);
             setCopiedField(field);
-            setTimeout(() => setCopiedField(null), 2000);
+            if (copiedTimeoutRef.current) clearTimeout(copiedTimeoutRef.current);
+            copiedTimeoutRef.current = setTimeout(() => setCopiedField(null), 2000);
         } catch (err) {
             console.error('Failed to copy:', err);
         }

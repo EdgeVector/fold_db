@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { ingestionClient } from '../../api/clients'
 
 function AiConfigSettings({ configSaveStatus, setConfigSaveStatus, onClose, onConfigSaved }) {
@@ -9,6 +9,11 @@ function AiConfigSettings({ configSaveStatus, setConfigSaveStatus, onClose, onCo
   const [ollamaModel, setOllamaModel] = useState('llama3')
   const [ollamaBaseUrl, setOllamaBaseUrl] = useState('http://localhost:11434')
   const [showAdvanced, setShowAdvanced] = useState(false)
+  const statusTimeoutRef = useRef(null)
+
+  useEffect(() => {
+    return () => { if (statusTimeoutRef.current) clearTimeout(statusTimeoutRef.current) }
+  }, [])
 
   useEffect(() => { loadAiConfig() }, [])
 
@@ -37,14 +42,16 @@ function AiConfigSettings({ configSaveStatus, setConfigSaveStatus, onClose, onCo
       if (response.success) {
         setConfigSaveStatus({ success: true, message: 'Configuration saved successfully' })
         if (onConfigSaved) onConfigSaved()
-        setTimeout(() => { setConfigSaveStatus(null); onClose() }, 1500)
+        if (statusTimeoutRef.current) clearTimeout(statusTimeoutRef.current)
+        statusTimeoutRef.current = setTimeout(() => { setConfigSaveStatus(null); onClose() }, 1500)
       } else {
         setConfigSaveStatus({ success: false, message: 'Failed to save configuration' })
       }
     } catch (error) {
       setConfigSaveStatus({ success: false, message: error.message || 'Failed to save configuration' })
     }
-    setTimeout(() => setConfigSaveStatus(null), 3000)
+    if (statusTimeoutRef.current) clearTimeout(statusTimeoutRef.current)
+    statusTimeoutRef.current = setTimeout(() => setConfigSaveStatus(null), 3000)
   }
 
   return {

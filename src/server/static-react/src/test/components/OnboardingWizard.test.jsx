@@ -19,20 +19,23 @@ vi.mock('../../api/clients', () => ({
       success: true,
       data: { success: true, message: 'Saved' },
     }),
-  },
-  systemClient: {
-    getDatabaseConfig: vi.fn().mockResolvedValue({
+    uploadFile: vi.fn().mockResolvedValue({
       success: true,
-      data: { type: 'local', path: '/tmp/fold_db' },
+      data: { schema_name: 'TestSchema', new_schema_created: true, mutations_executed: 1 },
     }),
-    applySetup: vi.fn().mockResolvedValue({
+    smartFolderScan: vi.fn().mockResolvedValue({
       success: true,
-      data: { success: true, message: 'Setup applied' },
+      data: { total_files: 10, recommendations: [] },
+    }),
+  },
+  llmQueryClient: {
+    agentQuery: vi.fn().mockResolvedValue({
+      data: { answer: 'Test answer' },
     }),
   },
 }))
 
-const { ingestionClient, systemClient } = await import('../../api/clients')
+const { ingestionClient } = await import('../../api/clients')
 
 describe('OnboardingWizard', () => {
   const mockOnClose = vi.fn()
@@ -48,23 +51,23 @@ describe('OnboardingWizard', () => {
     renderWithRedux(<OnboardingWizard isOpen={true} onClose={mockOnClose} userHash={testUserHash} />)
 
     await waitFor(() => {
-      expect(screen.getByText('Welcome to Fold DB')).toBeInTheDocument()
+      expect(screen.getByText('Welcome to FoldDB')).toBeInTheDocument()
     })
     expect(screen.getByText('[Get Started]')).toBeInTheDocument()
-    expect(screen.getByText('Step 1 of 4')).toBeInTheDocument()
+    expect(screen.getByText('Step 1 of 6')).toBeInTheDocument()
   })
 
   it('does not render when closed', () => {
     renderWithRedux(<OnboardingWizard isOpen={false} onClose={mockOnClose} userHash={testUserHash} />)
 
-    expect(screen.queryByText('Welcome to Fold DB')).not.toBeInTheDocument()
+    expect(screen.queryByText('Welcome to FoldDB')).not.toBeInTheDocument()
   })
 
   it('advances from welcome to configure AI', async () => {
     renderWithRedux(<OnboardingWizard isOpen={true} onClose={mockOnClose} userHash={testUserHash} />)
 
     await waitFor(() => {
-      expect(screen.getByText('Welcome to Fold DB')).toBeInTheDocument()
+      expect(screen.getByText('Welcome to FoldDB')).toBeInTheDocument()
     })
 
     fireEvent.click(screen.getByText('[Get Started]'))
@@ -72,7 +75,7 @@ describe('OnboardingWizard', () => {
     await waitFor(() => {
       expect(screen.getByText('CONFIGURE AI')).toBeInTheDocument()
     })
-    expect(screen.getByText('Step 2 of 4')).toBeInTheDocument()
+    expect(screen.getByText('Step 2 of 6')).toBeInTheDocument()
   })
 
   it('marks completed when skipping tutorial', async () => {
@@ -88,7 +91,7 @@ describe('OnboardingWizard', () => {
     expect(mockOnClose).toHaveBeenCalled()
   })
 
-  it('saves AI config and advances', async () => {
+  it('saves AI config and advances to first file step', async () => {
     vi.useFakeTimers()
 
     renderWithRedux(<OnboardingWizard isOpen={true} onClose={mockOnClose} userHash={testUserHash} />)
@@ -125,79 +128,13 @@ describe('OnboardingWizard', () => {
     })
 
     await waitFor(() => {
-      expect(screen.getByText('STORAGE')).toBeInTheDocument()
+      expect(screen.getByText('FIRST FILE')).toBeInTheDocument()
     })
 
     vi.useRealTimers()
   })
 
-  it('displays storage config step with options', async () => {
-    renderWithRedux(<OnboardingWizard isOpen={true} onClose={mockOnClose} userHash={testUserHash} />)
-
-    // Navigate to step 3
-    await waitFor(() => {
-      expect(screen.getByText('[Get Started]')).toBeInTheDocument()
-    })
-    fireEvent.click(screen.getByText('[Get Started]'))
-
-    await waitFor(() => {
-      expect(screen.getByText('CONFIGURE AI')).toBeInTheDocument()
-    })
-    fireEvent.click(screen.getByText('[Skip]'))
-
-    await waitFor(() => {
-      expect(screen.getByText('STORAGE')).toBeInTheDocument()
-    })
-    expect(screen.getByTestId('storage-type-select')).toBeInTheDocument()
-    expect(screen.getByTestId('storage-path-input')).toBeInTheDocument()
-  })
-
-  it('saves storage config and advances', async () => {
-    vi.useFakeTimers()
-
-    renderWithRedux(<OnboardingWizard isOpen={true} onClose={mockOnClose} userHash={testUserHash} />)
-
-    // Navigate to step 3 (Storage)
-    await waitFor(() => {
-      expect(screen.getByText('[Get Started]')).toBeInTheDocument()
-    })
-    fireEvent.click(screen.getByText('[Get Started]'))
-    await waitFor(() => {
-      expect(screen.getByText('CONFIGURE AI')).toBeInTheDocument()
-    })
-    fireEvent.click(screen.getByText('[Skip]'))
-
-    await waitFor(() => {
-      expect(screen.getByText('STORAGE')).toBeInTheDocument()
-    })
-
-    // Change path and save
-    const pathInput = screen.getByTestId('storage-path-input')
-    fireEvent.change(pathInput, { target: { value: 'my_data' } })
-    fireEvent.click(screen.getByText('[Save & Continue]'))
-
-    await waitFor(() => {
-      expect(systemClient.applySetup).toHaveBeenCalledWith({
-        storage: { type: 'local', path: 'my_data' },
-      })
-    })
-
-    await waitFor(() => {
-      expect(screen.getByText('Storage configuration saved!')).toBeInTheDocument()
-    })
-
-    act(() => {
-      vi.advanceTimersByTime(1100)
-    })
-
-    await waitFor(() => {
-      expect(screen.getByText("You're all set.")).toBeInTheDocument()
-    })
-
-    vi.useRealTimers()
-  })
-
-  it('completes wizard on final step', async () => {
+  it('skips through all steps to done', async () => {
     renderWithRedux(<OnboardingWizard isOpen={true} onClose={mockOnClose} userHash={testUserHash} />)
 
     // Step 1 -> 2
@@ -214,11 +151,47 @@ describe('OnboardingWizard', () => {
 
     // Step 3 -> 4
     await waitFor(() => {
-      expect(screen.getByText('STORAGE')).toBeInTheDocument()
+      expect(screen.getByText('FIRST FILE')).toBeInTheDocument()
+    })
+    fireEvent.click(screen.getByText('[Skip for now]'))
+
+    // Step 4 -> 5
+    await waitFor(() => {
+      expect(screen.getByText('AI QUERY')).toBeInTheDocument()
     })
     fireEvent.click(screen.getByText('[Skip]'))
 
-    // Step 4 (Done)
+    // Step 5 -> 6
+    await waitFor(() => {
+      expect(screen.getByText('SMART FOLDER')).toBeInTheDocument()
+    })
+    fireEvent.click(screen.getByText('[Skip]'))
+
+    // Step 6 (Done)
+    await waitFor(() => {
+      expect(screen.getByText("You're all set.")).toBeInTheDocument()
+    })
+  })
+
+  it('completes wizard on final step', async () => {
+    renderWithRedux(<OnboardingWizard isOpen={true} onClose={mockOnClose} userHash={testUserHash} />)
+
+    // Navigate through all steps to Done
+    await waitFor(() => { expect(screen.getByText('[Get Started]')).toBeInTheDocument() })
+    fireEvent.click(screen.getByText('[Get Started]'))
+
+    await waitFor(() => { expect(screen.getByText('CONFIGURE AI')).toBeInTheDocument() })
+    fireEvent.click(screen.getByText('[Skip]'))
+
+    await waitFor(() => { expect(screen.getByText('FIRST FILE')).toBeInTheDocument() })
+    fireEvent.click(screen.getByText('[Skip for now]'))
+
+    await waitFor(() => { expect(screen.getByText('AI QUERY')).toBeInTheDocument() })
+    fireEvent.click(screen.getByText('[Skip]'))
+
+    await waitFor(() => { expect(screen.getByText('SMART FOLDER')).toBeInTheDocument() })
+    fireEvent.click(screen.getByText('[Skip]'))
+
     await waitFor(() => {
       expect(screen.getByText("You're all set.")).toBeInTheDocument()
     })

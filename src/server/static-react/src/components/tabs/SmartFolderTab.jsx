@@ -78,9 +78,11 @@ function SmartFolderTab({ onResult }) {
   // Poll batch status while running or paused
   useEffect(() => {
     if (!batchId) return
+    let cancelled = false
     const poll = async () => {
       try {
         const resp = await ingestionClient.getBatchStatus(batchId)
+        if (cancelled) return
         if (resp.success && resp.data) {
           setBatchStatus(resp.data)
           // Store for HeaderProgress
@@ -98,7 +100,7 @@ function SmartFolderTab({ onResult }) {
     }
     poll()
     pollRef.current = setInterval(poll, 2000)
-    return () => { clearInterval(pollRef.current); pollRef.current = null }
+    return () => { cancelled = true; clearInterval(pollRef.current); pollRef.current = null }
   }, [batchId])
 
   const acceptSuggestion = (path) => {
@@ -336,8 +338,8 @@ function SmartFolderTab({ onResult }) {
           {/* File list */}
           <div className="border border-border rounded-lg overflow-hidden">
             <div className="space-y-1 max-h-64 overflow-y-auto p-3">
-              {scanResult.recommended_files.map((file, i) => (
-                <div key={i} className="list-item text-sm">
+              {scanResult.recommended_files.map((file) => (
+                <div key={file.path} className="list-item text-sm">
                   <span className="text-gruvbox-green text-xs">+</span>
                   <span className="font-mono text-xs flex-1 truncate">{file.path}</span>
                   <span className="badge badge-neutral">{file.category}</span>
@@ -349,8 +351,8 @@ function SmartFolderTab({ onResult }) {
               <div className="border-t border-border p-3">
                 <p className="text-secondary text-xs mb-2">Skipped ({scanResult.skipped_files.length})</p>
                 <div className="space-y-1 max-h-32 overflow-y-auto">
-                  {scanResult.skipped_files.map((file, i) => (
-                    <div key={i} className="list-item text-sm">
+                  {scanResult.skipped_files.map((file) => (
+                    <div key={file.path} className="list-item text-sm">
                       <span className="text-secondary text-xs">-</span>
                       <span className="text-secondary font-mono text-xs flex-1 truncate">{file.path}</span>
                       <span className="text-secondary text-xs">{file.reason}</span>

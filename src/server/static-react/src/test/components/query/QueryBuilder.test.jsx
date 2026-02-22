@@ -212,22 +212,26 @@ describe('QueryBuilder Component', () => {
   });
 
   describe('error handling', () => {
-    it('should handle hook throwing errors gracefully', () => {
-      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
-      useQueryBuilder.mockImplementation(() => {
-        throw new Error('Hook error');
-      });
+    it('should handle hook returning error state gracefully', () => {
+      const errorResult = {
+        query: null,
+        validationErrors: ['Hook error'],
+        isValid: false,
+        buildQuery: vi.fn(() => null),
+        validateQuery: vi.fn(() => ['Hook error']),
+        error: new Error('Hook error'),
+      };
+      useQueryBuilder.mockReturnValue(errorResult);
 
       const mockRenderFunction = vi.fn(() => <div data-testid="error-content">Error handled</div>);
 
-      // The component should handle the error gracefully and pass error state to render function
       render(
         <QueryBuilder {...mockProps}>
           {mockRenderFunction}
         </QueryBuilder>
       );
 
-      // Should render content (not throw)
+      // Should render content
       expect(screen.getByTestId('error-content')).toBeInTheDocument();
 
       // Should pass error state to render function
@@ -236,8 +240,6 @@ describe('QueryBuilder Component', () => {
       expect(callArgs.validationErrors).toContain('Hook error');
       expect(callArgs.error).toBeInstanceOf(Error);
       expect(callArgs.error.message).toBe('Hook error');
-      
-      consoleError.mockRestore();
     });
 
     it('should handle undefined hook result', () => {
