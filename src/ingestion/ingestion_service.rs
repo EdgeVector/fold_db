@@ -451,7 +451,10 @@ impl IngestionService {
             let top_schema_name = schema_cache
                 .get(&top_level_hash)
                 .map(|c| c.schema_name.clone())
-                .unwrap_or_default();
+                .unwrap_or_else(|| {
+                    log::warn!("Schema cache miss for top-level hash '{}' — returning empty schema name", top_level_hash);
+                    String::new()
+                });
 
             // Mark as completed
             let results = IngestionResults {

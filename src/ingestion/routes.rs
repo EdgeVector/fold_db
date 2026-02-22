@@ -12,7 +12,7 @@ use crate::ingestion::ProgressTracker;
 use crate::log_feature;
 use crate::logging::features::LogFeature;
 use crate::server::http_server::AppState;
-use crate::server::routes::{require_node, require_user_context};
+use crate::server::routes::{handler_error_to_response, require_node, require_user_context};
 use actix_web::{web, HttpResponse, Responder};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -168,18 +168,6 @@ pub struct BatchFolderResponse {
 pub struct FileProgressInfo {
     pub file_name: String,
     pub progress_id: String,
-}
-
-/// Convert a HandlerError to an HttpResponse, mapping status codes.
-fn handler_error_to_response(e: crate::handlers::response::HandlerError) -> HttpResponse {
-    let status_code = match e.status_code() {
-        400 => actix_web::http::StatusCode::BAD_REQUEST,
-        401 => actix_web::http::StatusCode::UNAUTHORIZED,
-        404 => actix_web::http::StatusCode::NOT_FOUND,
-        503 => actix_web::http::StatusCode::SERVICE_UNAVAILABLE,
-        _ => actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
-    };
-    HttpResponse::build(status_code).json(e.to_response())
 }
 
 /// Process JSON ingestion request
@@ -633,10 +621,17 @@ pub async fn smart_folder_scan(
     );
 
     // Get user context
-    let _user_id = match require_user_context() {
+    let user_id = match require_user_context() {
         Ok(hash) => hash,
         Err(response) => return response,
     };
+
+    log_feature!(
+        LogFeature::Ingestion,
+        info,
+        "Smart folder scan for user: {}",
+        user_id
+    );
 
     // Resolve folder path
     let folder_path = resolve_folder_path(&request.folder_path);
@@ -646,7 +641,7 @@ pub async fn smart_folder_scan(
     }
 
     let max_depth = request.max_depth.unwrap_or(10);
-    let max_files = request.max_files.unwrap_or(2000);
+    let max_files = request.max_files.unwrap_or(100);
 
     // Delegate to shared logic
     let service_opt = get_ingestion_service(&ingestion_service).await;

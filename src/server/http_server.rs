@@ -117,7 +117,10 @@ impl FoldHttpServer {
 
         // Initialize upload storage from environment config
         let upload_storage_config =
-            crate::storage::config::UploadStorageConfig::from_env().unwrap_or_default();
+            crate::storage::config::UploadStorageConfig::from_env().unwrap_or_else(|e| {
+                log_feature!(LogFeature::HttpServer, warn, "Failed to load upload storage config from env: {}. Using default.", e);
+                crate::storage::config::UploadStorageConfig::default()
+            });
 
         let upload_storage = match upload_storage_config {
             crate::storage::config::UploadStorageConfig::Local { path } => {

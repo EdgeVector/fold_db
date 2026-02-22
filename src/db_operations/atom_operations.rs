@@ -85,9 +85,12 @@ impl DbOperations {
                 let ref_key = format!("ref:{}", uuid);
                 if seen_keys.insert(ref_key.clone()) {
                     let value = match mol_data {
-                        MoleculeData::Single(mol) => serde_json::to_value(mol).unwrap(),
-                        MoleculeData::Range(mol) => serde_json::to_value(mol).unwrap(),
-                        MoleculeData::HashRange(mol) => serde_json::to_value(mol).unwrap(),
+                        MoleculeData::Single(mol) => serde_json::to_value(mol)
+                            .expect("Molecule is always serializable"),
+                        MoleculeData::Range(mol) => serde_json::to_value(mol)
+                            .expect("MoleculeRange is always serializable"),
+                        MoleculeData::HashRange(mol) => serde_json::to_value(mol)
+                            .expect("MoleculeHashRange is always serializable"),
                     };
                     Some((ref_key, value))
                 } else {

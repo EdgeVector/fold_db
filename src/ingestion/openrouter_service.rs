@@ -89,7 +89,7 @@ impl OpenRouterService {
                 role: "user".to_string(),
                 content: prompt.to_string(),
             }],
-            max_tokens: Some(4000),
+            max_tokens: Some(16000),
             temperature: Some(0.1),
         };
 
@@ -122,7 +122,10 @@ impl OpenRouterService {
             let error_text = response
                 .text()
                 .await
-                .unwrap_or_else(|_| "Unknown error".to_string());
+                .unwrap_or_else(|e| {
+                    log::warn!("Failed to read OpenRouter error response body: {}", e);
+                    "Unknown error (response body unreadable)".to_string()
+                });
             return Err(IngestionError::openrouter_error(format!(
                 "API request failed with status {}: {}",
                 status, error_text

@@ -36,13 +36,13 @@ impl InMemoryProgressStore {
 #[async_trait]
 impl ProgressStore for InMemoryProgressStore {
     async fn save_status(&self, status: &IndexingStatus) -> FoldDbResult<()> {
-        let mut guard = self.status.write().unwrap();
+        let mut guard = self.status.write().unwrap_or_else(|poisoned| poisoned.into_inner());
         *guard = status.clone();
         Ok(())
     }
 
     async fn load_status(&self) -> FoldDbResult<IndexingStatus> {
-        let guard = self.status.read().unwrap();
+        let guard = self.status.read().unwrap_or_else(|poisoned| poisoned.into_inner());
         Ok(guard.clone())
     }
 }

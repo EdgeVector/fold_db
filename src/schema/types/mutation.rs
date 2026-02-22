@@ -74,14 +74,17 @@ impl Mutation {
     pub fn content_hash(&self) -> String {
         let mut hasher = Sha256::new();
         hasher.update(self.schema_name.as_bytes());
-        hasher.update(serde_json::to_string(&self.mutation_type).unwrap().as_bytes());
-        hasher.update(serde_json::to_string(&self.key_value).unwrap().as_bytes());
+        hasher.update(serde_json::to_string(&self.mutation_type)
+            .expect("MutationType is always serializable").as_bytes());
+        hasher.update(serde_json::to_string(&self.key_value)
+            .expect("KeyValue is always serializable").as_bytes());
         // Sort keys for deterministic ordering of HashMap
         let mut sorted_fields: Vec<_> = self.fields_and_values.iter().collect();
         sorted_fields.sort_by_key(|(k, _)| (*k).clone());
         for (k, v) in sorted_fields {
             hasher.update(k.as_bytes());
-            hasher.update(serde_json::to_string(v).unwrap().as_bytes());
+            hasher.update(serde_json::to_string(v)
+                .expect("serde_json::Value is always serializable").as_bytes());
         }
         hasher.update(self.pub_key.as_bytes());
         hasher.update(self.trust_distance.to_le_bytes());
