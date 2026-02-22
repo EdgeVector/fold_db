@@ -184,7 +184,7 @@ export class UnifiedSystemClient {
    * @returns Promise resolving to auto identity (user_id, user_hash, public_key)
    */
   async getAutoIdentity(): Promise<EnhancedApiResponse<AutoIdentityResponse>> {
-    return this.client.get<AutoIdentityResponse>('/system/auto-identity', {
+    return this.client.get<AutoIdentityResponse>(API_ENDPOINTS.AUTO_IDENTITY, {
       requiresAuth: false,
       timeout: API_TIMEOUTS.QUICK,
       retries: API_RETRIES.STANDARD,
@@ -302,7 +302,7 @@ export class UnifiedSystemClient {
    * @returns Promise resolving to database configuration
    */
   async getDatabaseConfig(): Promise<EnhancedApiResponse<DatabaseConfigDto>> {
-    return this.client.get<DatabaseConfigDto>('/system/database-config', {
+    return this.client.get<DatabaseConfigDto>(API_ENDPOINTS.GET_DATABASE_CONFIG, {
       requiresAuth: false,
       timeout: API_TIMEOUTS.STANDARD,
       retries: API_RETRIES.STANDARD,
@@ -323,7 +323,7 @@ export class UnifiedSystemClient {
     const request: DatabaseConfigRequest = { database: config };
     
     return this.client.post<DatabaseConfigResponse>(
-      '/system/database-config',
+      API_ENDPOINTS.UPDATE_DATABASE_CONFIG,
       request,
       {
         timeout: API_TIMEOUTS.STANDARD,

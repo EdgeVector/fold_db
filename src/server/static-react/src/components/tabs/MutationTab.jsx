@@ -24,8 +24,6 @@ function MutationTab({ onResult }) {
   const [result, setResult] = useState(null)
   const [rangeKeyValue, setRangeKeyValue] = useState('')
 
-  // Local validation state
-  const [errors] = useState({})
 
   const handleSchemaChange = (schemaName) => {
     setSelectedSchema(schemaName)
@@ -84,7 +82,7 @@ function MutationTab({ onResult }) {
         setRangeKeyValue('')
       }
     } catch (error) {
-      const errData = { error: `Network error: ${error.message}`, details: error }
+      const errData = { error: `Network error: ${error instanceof Error ? error.message : String(error)}`, details: error }
       setResult(errData)
       onResult(errData)
     }
@@ -137,7 +135,7 @@ function MutationTab({ onResult }) {
               onChange={setRangeKeyValue}
               placeholder={`Enter ${rangeKey} value`}
               required={mutationType !== 'Delete'}
-              error={errors.rangeKey}
+              error={undefined}
               helpText={
                 mutationType !== 'Delete'
                   ? FORM_LABELS.rangeKeyRequired

@@ -132,7 +132,7 @@ function MutationEditor({ fields, mutationType, mutationData, onFieldChange, isR
                   <p className="text-sm text-secondary italic">No key-value pairs added yet</p>
                 ) : (
                   rangeEntries.map(([key, val], index) => (
-                    <div key={index} className="flex items-center space-x-2">
+                    <div key={`${index}-${key}`} className="flex items-center space-x-2">
                       <input
                         type="text"
                         placeholder="Key"

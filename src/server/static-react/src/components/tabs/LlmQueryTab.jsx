@@ -164,9 +164,10 @@ function LlmQueryTab({ onResult }) {
         await runAgentQuery();
       }
     } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
       console.error('Error processing input:', error);
-      addToLog('system', `❌ Error: ${error.message}`);
-      onResult({ error: error.message });
+      addToLog('system', `❌ Error: ${msg}`);
+      onResult({ error: msg });
     } finally {
       dispatch(setIsProcessing(false));
     }
@@ -304,8 +305,8 @@ function LlmQueryTab({ onResult }) {
             </p>
           </div>
         ) : (
-          conversationLog.map((entry, idx) => (
-            <div key={idx} className="mb-3">
+          conversationLog.map((entry) => (
+            <div key={entry.timestamp} className="mb-3">
               {entry.type === 'user' && (
                 <div className="flex justify-end">
                   <div className="max-w-[80%] px-4 py-3 bg-gruvbox-elevated border border-gruvbox-orange text-primary rounded-lg">

@@ -1,5 +1,6 @@
 import { ApiClient, getSharedClient } from '../core/client';
 import { API_ENDPOINTS } from '../endpoints';
+import { API_TIMEOUTS, API_RETRIES, API_CACHE_TTL } from '../../constants/api';
 import type { EnhancedApiResponse } from '../core/types';
 
 export interface NativeIndexResult {
@@ -18,12 +19,15 @@ export class NativeIndexClient {
   }
 
   async search(term: string): Promise<EnhancedApiResponse<NativeIndexResult[]>> {
+    if (!term || typeof term !== 'string') {
+      return { success: false, error: 'Search term is required', status: 400, data: [] };
+    }
     const url = `${API_ENDPOINTS.NATIVE_INDEX_SEARCH}?term=${encodeURIComponent(term)}`;
     return this.client.get<NativeIndexResult[]>(url, {
-      timeout: 8000,
-      retries: 2,
+      timeout: API_TIMEOUTS.STANDARD,
+      retries: API_RETRIES.STANDARD,
       cacheable: true,
-      cacheTtl: 60000,
+      cacheTtl: API_CACHE_TTL.QUERY_RESULTS,
     });
   }
 }

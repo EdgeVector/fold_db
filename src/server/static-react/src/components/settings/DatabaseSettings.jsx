@@ -60,7 +60,7 @@ function DatabaseSettings({ configSaveStatus, setConfigSaveStatus, onClose }) {
         setConfigSaveStatus({ success: true, message: response.data.requires_restart ? 'Saved. Please restart server.' : response.data.message || 'Saved and restarted' })
         statusTimeoutRef.current = setTimeout(() => { setConfigSaveStatus(null); if (!response.data.requires_restart) onClose() }, 3000)
       } else setConfigSaveStatus({ success: false, message: response.error || 'Failed to save' })
-    } catch (error) { setConfigSaveStatus({ success: false, message: error.message || 'Failed to save' }) }
+    } catch (error) { setConfigSaveStatus({ success: false, message: (error instanceof Error ? error.message : String(error)) || 'Failed to save' }) }
     statusTimeoutRef.current = setTimeout(() => setConfigSaveStatus(null), 5000)
   }
 
@@ -82,7 +82,7 @@ function DatabaseSettings({ configSaveStatus, setConfigSaveStatus, onClose }) {
           fallbackTimeoutRef.current = setTimeout(() => { clearInterval(pollIntervalRef.current); pollIntervalRef.current = null; fallbackTimeoutRef.current = null; if (isResetting) { setResetResult({ type: 'success', message: 'Reset likely complete. Reloading...' }); reloadTimeoutRef.current = setTimeout(() => window.location.reload(), 1000) } }, 60000)
         } else { setResetResult({ type: 'success', message: response.data.message || 'Reset successfully' }); reloadTimeoutRef.current = setTimeout(() => window.location.reload(), 2000) }
       } else { setResetResult({ type: 'error', message: response.error || 'Reset failed' }); setIsResetting(false) }
-    } catch (error) { setResetResult({ type: 'error', message: `Network error: ${error.message}` }); setIsResetting(false) }
+    } catch (error) { setResetResult({ type: 'error', message: `Network error: ${error instanceof Error ? error.message : String(error)}` }); setIsResetting(false) }
   }
 
   return {

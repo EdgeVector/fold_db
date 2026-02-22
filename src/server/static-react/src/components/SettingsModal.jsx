@@ -1,18 +1,57 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import TransformsTab from './tabs/TransformsTab'
 import KeyManagementTab from './tabs/KeyManagementTab'
 import AiConfigSettings from './settings/AiConfigSettings'
 import SchemaServiceSettings from './settings/SchemaServiceSettings'
 import DatabaseSettings from './settings/DatabaseSettings'
 
+const NOOP = () => {}
+
 function SettingsModal({ isOpen, onClose, onConfigSaved, initialTab }) {
   const [activeTab, setActiveTab] = useState(initialTab || 'ai')
   const [configSaveStatus, setConfigSaveStatus] = useState(null)
+
+  const modalRef = useRef(null)
+  const previousFocusRef = useRef(null)
 
   useEffect(() => {
     if (isOpen && initialTab) setActiveTab(initialTab)
   }, [isOpen, initialTab])
 
+  // Focus trap and restore
+  useEffect(() => {
+    if (!isOpen) return
+    previousFocusRef.current = document.activeElement
+    const modal = modalRef.current
+    if (modal) {
+      const firstFocusable = modal.querySelector('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')
+      if (firstFocusable) firstFocusable.focus()
+    }
+    return () => {
+      if (previousFocusRef.current && typeof previousFocusRef.current.focus === 'function') {
+        previousFocusRef.current.focus()
+      }
+    }
+  }, [isOpen])
+
+  const handleKeyDown = useCallback((e) => {
+    if (e.key === 'Escape') { onClose(); return }
+    if (e.key !== 'Tab') return
+    const modal = modalRef.current
+    if (!modal) return
+    const focusable = modal.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')
+    if (focusable.length === 0) return
+    const first = focusable[0]
+    const last = focusable[focusable.length - 1]
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault(); last.focus()
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault(); first.focus()
+    }
+  }, [onClose])
+
+  // Custom hook pattern: these use React hooks internally and MUST be
+  // called unconditionally before the early return below.
   const aiConfig = AiConfigSettings({ configSaveStatus, setConfigSaveStatus, onClose, onConfigSaved })
   const dbConfig = DatabaseSettings({ configSaveStatus, setConfigSaveStatus, onClose })
 
@@ -32,8 +71,8 @@ function SettingsModal({ isOpen, onClose, onConfigSaved, initialTab }) {
   }
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
+    <div className="modal-overlay" onClick={onClose} onKeyDown={handleKeyDown}>
+      <div className="modal" ref={modalRef} role="dialog" aria-modal="true" aria-label="Settings" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <h3 className="text-lg font-medium">Settings</h3>
           <button onClick={onClose} className="btn-secondary btn-sm p-1">
@@ -57,8 +96,8 @@ function SettingsModal({ isOpen, onClose, onConfigSaved, initialTab }) {
 
         <div className="modal-body">
           {activeTab === 'ai' && aiConfig.content}
-          {activeTab === 'transforms' && <TransformsTab onResult={() => {}} />}
-          {activeTab === 'keys' && <KeyManagementTab onResult={() => {}} />}
+          {activeTab === 'transforms' && <TransformsTab onResult={NOOP} />}
+          {activeTab === 'keys' && <KeyManagementTab onResult={NOOP} />}
           {activeTab === 'schema-service' && <SchemaServiceSettings />}
           {activeTab === 'database' && dbConfig.content}
         </div>

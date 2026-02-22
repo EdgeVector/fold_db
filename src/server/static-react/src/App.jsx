@@ -16,6 +16,7 @@ import DataBrowserTab from './components/tabs/DataBrowserTab'
 import SettingsModal from './components/SettingsModal'
 import OnboardingWizard from './components/OnboardingWizard'
 import LogSidebar from './components/LogSidebar'
+import ErrorBoundary from './components/ErrorBoundary'
 import { useApprovedSchemas } from './hooks/useApprovedSchemas.js'
 import { useIngestionStatus } from './hooks/useIngestionStatus'
 import { useAppSelector, useAppDispatch } from './store/hooks'
@@ -290,9 +291,11 @@ export function AppContent() {
 
 function App() {
   return (
-    <FoldDbProvider>
-      <AppContent />
-    </FoldDbProvider>
+    <ErrorBoundary>
+      <FoldDbProvider>
+        <AppContent />
+      </FoldDbProvider>
+    </ErrorBoundary>
   )
 }
 

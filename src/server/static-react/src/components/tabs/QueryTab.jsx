@@ -80,7 +80,7 @@ function QueryTab({ onResult }) {
     } catch (error) {
       console.error('Failed to execute query:', error);
       onResult({
-        error: `Network error: ${error.message}`,
+        error: `Network error: ${error instanceof Error ? error.message : String(error)}`,
         details: error
       });
     } finally {

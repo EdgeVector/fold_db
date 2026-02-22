@@ -136,8 +136,8 @@ function QueryPreview({
               <span className="text-sm font-medium text-gruvbox-red">Validation Errors</span>
             </div>
             <ul className="space-y-1">
-              {validationErrors.map((error, index) => (
-                <li key={index} className="text-sm text-gruvbox-red">
+              {validationErrors.map((error) => (
+                <li key={error} className="text-sm text-gruvbox-red">
                   {error}
                 </li>
               ))}
@@ -177,10 +177,10 @@ function QueryPreview({
             </label>
             <div className="flex flex-wrap gap-1">
               {formattedQuery?.fields && formattedQuery.fields.length > 0 ? (
-                formattedQuery.fields.map((field, index) => {
+                formattedQuery.fields.map((field) => {
                   const fieldValue = formattedQuery.fieldValues?.[field];
                   return (
-                    <div key={index} className="inline-flex flex-col items-start">
+                    <div key={field} className="inline-flex flex-col items-start">
                       <span className="inline-flex items-center badge badge-success text-sm">
                         {field}
                       </span>
@@ -208,8 +208,8 @@ function QueryPreview({
               <div className="space-y-2">
                 {Array.isArray(formattedQuery.filters) ? (
                   // Handle filters as array (from test mocks)
-                  formattedQuery.filters.map((filter, index) => (
-                    <div key={index} className="card card-warning p-3">
+                  formattedQuery.filters.map((filter) => (
+                    <div key={`${filter.field}-${filter.operator}-${filter.value}`} className="card card-warning p-3">
                       <div className="text-sm text-gruvbox-yellow">
                         {filter.field} {filter.operator} "{filter.value}"
                       </div>

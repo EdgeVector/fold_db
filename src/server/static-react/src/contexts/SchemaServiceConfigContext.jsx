@@ -1,4 +1,4 @@
-import { createContext, useContext, useState } from 'react'
+import { createContext, useContext, useState, useMemo, useCallback } from 'react'
 import { resetSchemaClient } from '../api/clients/configuredSchemaClient'
 import { BROWSER_CONFIG } from '../constants/config'
 
@@ -44,7 +44,7 @@ export function SchemaServiceConfigProvider({ children }) {
     return SCHEMA_SERVICE_ENVIRONMENTS.LOCAL
   })
 
-  const setEnvironment = (envId) => {
+  const setEnvironment = useCallback((envId) => {
     const envConfig = Object.values(SCHEMA_SERVICE_ENVIRONMENTS).find(env => env.id === envId)
     if (envConfig) {
       setEnvironmentState(envConfig)
@@ -52,14 +52,18 @@ export function SchemaServiceConfigProvider({ children }) {
       // Reset the schema client to pick up new configuration
       resetSchemaClient()
     }
-  }
+  }, [])
 
-  const getSchemaServiceBaseUrl = () => {
+  const getSchemaServiceBaseUrl = useCallback(() => {
     return environment.baseUrl || ''
-  }
+  }, [environment])
+
+  const value = useMemo(() => ({
+    environment, setEnvironment, getSchemaServiceBaseUrl
+  }), [environment, setEnvironment, getSchemaServiceBaseUrl])
 
   return (
-    <SchemaServiceConfigContext.Provider value={{ environment, setEnvironment, getSchemaServiceBaseUrl }}>
+    <SchemaServiceConfigContext.Provider value={value}>
       {children}
     </SchemaServiceConfigContext.Provider>
   )

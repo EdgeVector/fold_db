@@ -33,7 +33,7 @@ function LogSidebar() {
     )
   }
 
-  const handleCopy = () => navigator.clipboard.writeText(logs.map(formatLog).join('\n')).catch(() => {})
+  const handleCopy = () => navigator.clipboard.writeText(logs.map(formatLog).join('\n')).catch(() => { /* clipboard not available */ })
   const handleClear = () => setLogs([])
 
   useEffect(() => {
@@ -65,7 +65,7 @@ function LogSidebar() {
           if (!cancelled && r.success && r.data?.logs?.length) {
             setLogs(c => [...c, ...r.data.logs.filter(l => !c.some(e => e.id === l.id))])
           }
-        }).catch(() => {})
+        }).catch(() => { /* polling failure - next interval will retry */ })
         return cur
       })
     }, 2000)

@@ -85,7 +85,7 @@ function FileUploadTab({ onResult }) {
     } catch (error) {
       onResult({
         success: false,
-        error: error.message || 'Failed to process file'
+        error: (error instanceof Error ? error.message : String(error)) || 'Failed to process file'
       })
     } finally {
       setIsUploading(false)

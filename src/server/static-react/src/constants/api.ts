@@ -19,7 +19,7 @@ export const API_TIMEOUTS = {
   CONFIG: 10000, // Config changes, state changes, load/unload
   MUTATION: 15000, // Mutations, parameterized queries, AI validation
   BATCH: 30000, // Batch operations, database reset
-  AI_PROCESSING: 60000, // Extended AI processing operations
+  AI_PROCESSING: 120000, // Extended AI processing operations
 
   // Legacy support
   DEFAULT: 8000,

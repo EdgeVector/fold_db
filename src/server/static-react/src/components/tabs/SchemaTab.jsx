@@ -150,9 +150,12 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
 
     return (
       <div key={schema.name} className="card overflow-hidden">
-        <div
-          className="px-4 py-3 bg-surface-secondary cursor-pointer select-none"
+        <button
+          type="button"
+          className="w-full px-4 py-3 bg-surface-secondary cursor-pointer select-none text-left"
           onClick={() => toggleSchema(schema.name)}
+          aria-expanded={isExpanded}
+          aria-label={`${isExpanded ? 'Collapse' : 'Expand'} schema ${getDisplayName(schema)}`}
         >
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-2">
@@ -206,7 +209,7 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
               )}
             </div>
           </div>
-        </div>
+        </button>
 
         {isExpanded && schema.fields && (
           <div className="p-4 border-t border-border">

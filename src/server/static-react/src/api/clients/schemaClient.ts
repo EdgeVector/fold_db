@@ -259,7 +259,7 @@ export class UnifiedSchemaClient {
    * SCHEMA-002 Compliance: Only available schemas can be approved
    */
   async approveSchema(name: string): Promise<EnhancedApiResponse<{ backfill_hash?: string }>> {
-    return this.client.post<{ backfill_hash?: string }>(
+    const result = await this.client.post<{ backfill_hash?: string }>(
       API_ENDPOINTS.APPROVE_SCHEMA(name),
       {}, // Empty body, schema name is in URL
       {
@@ -272,6 +272,8 @@ export class UnifiedSchemaClient {
         retries: 1 // Limited retries for state-changing operations
       }
     );
+    if (result.success) this.clearCache();
+    return result;
   }
 
   /**
@@ -280,7 +282,7 @@ export class UnifiedSchemaClient {
    * SCHEMA-002 Compliance: Only approved schemas can be blocked
    */
   async blockSchema(name: string): Promise<EnhancedApiResponse<void>> {
-    return this.client.post<void>(
+    const result = await this.client.post<void>(
       API_ENDPOINTS.BLOCK_SCHEMA(name),
       {}, // Empty body, schema name is in URL
       {
@@ -293,6 +295,8 @@ export class UnifiedSchemaClient {
         retries: 1 // Limited retries for state-changing operations
       }
     );
+    if (result.success) this.clearCache();
+    return result;
   }
 
   /**
@@ -374,7 +378,7 @@ export class UnifiedSchemaClient {
    * UNPROTECTED - No authentication required
    */
   async getBackfillStatus(backfillHash: string): Promise<EnhancedApiResponse<unknown>> {
-    return this.client.get<unknown>(`/api/backfill/${backfillHash}`, {
+    return this.client.get<unknown>(API_ENDPOINTS.GET_BACKFILL_STATUS(backfillHash), {
       cacheable: false, // Don't cache backfill status as it changes frequently
       timeout: 5000
     });

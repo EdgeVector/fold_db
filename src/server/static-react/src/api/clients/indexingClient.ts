@@ -4,7 +4,7 @@
  * Provides methods for querying the background indexing system status.
  */
 
-import * as React from 'react';
+import { useState, useEffect } from 'react';
 import { defaultApiClient } from '../core/client';
 import { API_ENDPOINTS } from '../endpoints';
 
@@ -35,10 +35,10 @@ export async function getIndexingStatus(): Promise<IndexingStatus> {
  * Hook to poll indexing status at regular intervals
  */
 export function useIndexingStatus(pollInterval: number = 1000) {
-  const [status, setStatus] = React.useState<IndexingStatus | null>(null);
-  const [error, setError] = React.useState<Error | null>(null);
+  const [status, setStatus] = useState<IndexingStatus | null>(null);
+  const [error, setError] = useState<Error | null>(null);
 
-  React.useEffect(() => {
+  useEffect(() => {
     let mounted = true;
     let timeoutId: NodeJS.Timeout;
 

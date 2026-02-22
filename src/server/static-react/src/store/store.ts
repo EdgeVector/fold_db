@@ -32,7 +32,7 @@ export const store = configureStore({
         ignoredPaths: ["auth.privateKey", "schemas.schemas.*.definition"],
       },
     }),
-  devTools: true, // Enable Redux DevTools for debugging
+  devTools: import.meta.env.DEV,
 });
 
 export type RootState = ReturnType<typeof store.getState>;

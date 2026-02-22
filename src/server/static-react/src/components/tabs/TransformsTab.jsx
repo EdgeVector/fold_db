@@ -50,7 +50,7 @@ const TransformsTab = ({ onResult }) => {
       }
     } catch (error) {
       console.error('Failed to fetch transforms:', error)
-      setTransformsError(error.message || 'Failed to load transforms')
+      setTransformsError((error instanceof Error ? error.message : String(error)) || 'Failed to load transforms')
       setTransforms([])
     } finally {
       setIsLoadingTransforms(false)
@@ -99,7 +99,7 @@ const TransformsTab = ({ onResult }) => {
       await fetchQueueInfo()
     } catch (error) {
       console.error('Failed to add transform to queue:', error)
-      setErrors(prev => ({ ...prev, [transformId]: error.message || 'Failed to add transform to queue' }))
+      setErrors(prev => ({ ...prev, [transformId]: (error instanceof Error ? error.message : String(error)) || 'Failed to add transform to queue' }))
     } finally {
       setLoading(prev => ({ ...prev, [transformId]: false }))
     }

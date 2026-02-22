@@ -87,7 +87,7 @@ export default function DataBrowserTab() {
           setSchemaErrors((p) => ({ ...p, [name]: res.error || 'Failed to fetch keys' }))
         }
       } catch (e) {
-        setSchemaErrors((p) => ({ ...p, [name]: e.message || 'Network error' }))
+        setSchemaErrors((p) => ({ ...p, [name]: (e instanceof Error ? e.message : String(e)) || 'Network error' }))
       } finally {
         setSchemaLoading((p) => ({ ...p, [name]: false }))
       }
@@ -145,7 +145,7 @@ export default function DataBrowserTab() {
         } else {
           setKeyRecords((p) => ({ ...p, [id]: {} }))
         }
-      } catch {
+      } catch { /* show empty fields on error - user can re-expand */
         setKeyRecords((p) => ({ ...p, [id]: {} }))
       } finally {
         setKeyLoading((p) => ({ ...p, [id]: false }))

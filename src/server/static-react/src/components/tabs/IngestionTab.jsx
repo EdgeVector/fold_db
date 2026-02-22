@@ -23,7 +23,7 @@ function IngestionTab({ onResult }) {
         onResult({ success: false, error: 'Failed to process ingestion' })
       }
     } catch (error) {
-      onResult({ success: false, error: error.message || 'Failed to process ingestion' })
+      onResult({ success: false, error: (error instanceof Error ? error.message : String(error)) || 'Failed to process ingestion' })
     } finally {
       setIsLoading(false)
     }

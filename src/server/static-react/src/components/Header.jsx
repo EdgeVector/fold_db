@@ -35,10 +35,10 @@ function Header({ onSettingsClick, onAiSettingsClick, ingestionStatus }) {
         setStorageMode(res.data.type === 'dynamodb' ? 'Cloud' : 'Local')
         if (res.data.storage_size_bytes) setStorageSize(res.data.storage_size_bytes)
       }
-    }).catch(() => {})
+    }).catch(() => { /* best-effort - header info is non-critical */ })
     systemClient.getSystemStatus().then(res => {
       if (res.data) setSchemaEnv(classifySchemaEnv(res.data.schema_service_url))
-    }).catch(() => {})
+    }).catch(() => { /* best-effort - header info is non-critical */ })
   }, [])
 
   const handleLogout = () => {

@@ -90,6 +90,9 @@ export interface SmartFolderScanResponse {
   skipped_files: FileRecommendation[];
   summary: Record<string, number>;
   total_estimated_cost: number;
+  scan_truncated: boolean;
+  max_depth_used: number;
+  max_files_used: number;
 }
 
 export interface SmartFolderIngestResponse {
@@ -402,8 +405,8 @@ export class UnifiedIngestionClient {
    */
   async smartFolderScan(
     folderPath: string,
-    maxDepth = 5,
-    maxFiles = 500,
+    maxDepth = 10,
+    maxFiles = 100,
   ): Promise<EnhancedApiResponse<SmartFolderScanResponse>> {
     return this.client.post<SmartFolderScanResponse>(
       "/ingestion/smart-folder/scan",
@@ -413,8 +416,8 @@ export class UnifiedIngestionClient {
         max_files: maxFiles,
       },
       {
-        timeout: 60000,
-        retries: 0,
+        timeout: API_TIMEOUTS.AI_PROCESSING,
+        retries: API_RETRIES.NONE,
         cacheable: false,
       },
     );
@@ -440,8 +443,8 @@ export class UnifiedIngestionClient {
         file_costs: fileCosts ?? null,
       },
       {
-        timeout: 60000,
-        retries: 0,
+        timeout: API_TIMEOUTS.AI_PROCESSING,
+        retries: API_RETRIES.NONE,
         cacheable: false,
       },
     );
@@ -456,8 +459,8 @@ export class UnifiedIngestionClient {
     return this.client.get<BatchStatusResponse>(
       `/ingestion/batch/${batchId}`,
       {
-        timeout: 5000,
-        retries: 0,
+        timeout: API_TIMEOUTS.QUICK,
+        retries: API_RETRIES.NONE,
         cacheable: false,
       },
     );
@@ -474,8 +477,8 @@ export class UnifiedIngestionClient {
       "/ingestion/smart-folder/resume",
       { batch_id: batchId, new_spend_limit: newSpendLimit },
       {
-        timeout: 5000,
-        retries: 0,
+        timeout: API_TIMEOUTS.QUICK,
+        retries: API_RETRIES.NONE,
         cacheable: false,
       },
     );
@@ -491,8 +494,8 @@ export class UnifiedIngestionClient {
       "/ingestion/smart-folder/cancel",
       { batch_id: batchId },
       {
-        timeout: 5000,
-        retries: 0,
+        timeout: API_TIMEOUTS.QUICK,
+        retries: API_RETRIES.NONE,
         cacheable: false,
       },
     );
@@ -508,8 +511,8 @@ export class UnifiedIngestionClient {
       "/system/complete-path",
       { partial_path: partialPath },
       {
-        timeout: 2000,
-        retries: 0,
+        timeout: API_TIMEOUTS.QUICK,
+        retries: API_RETRIES.NONE,
         cacheable: false,
       },
     );
@@ -540,7 +543,7 @@ export class UnifiedIngestionClient {
     formData.append('pubKey', options.pubKey ?? 'default');
 
     return this.client.post<FileUploadResponse>(
-      '/ingestion/upload',
+      API_ENDPOINTS.INGESTION_UPLOAD,
       formData,
       {
         headers: { 'Content-Type': CONTENT_TYPES.FORM_DATA },

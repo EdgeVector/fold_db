@@ -105,18 +105,15 @@ export class UnifiedMutationClient implements MutationApiClient {
    * @returns Promise resolving to array of mutation IDs
    */
   async executeMutationsBatch(
-    mutations: Record<string, unknown>[],
+    _mutations: Record<string, unknown>[],
   ): Promise<EnhancedApiResponse<string[]>> {
-    return this.client.post<string[]>(
-      API_ENDPOINTS.EXECUTE_MUTATIONS_BATCH,
-      mutations,
-      {
-        validateSchema: false, // Skip schema validation for mutations
-        timeout: 30000, // Longer timeout for batch operations
-        retries: 0, // No retries for mutations to prevent duplicate operations
-        cacheable: false, // Never cache mutation results
-      },
-    );
+    // Server has no batch mutation endpoint
+    return {
+      success: false,
+      error: "Batch mutations not supported",
+      status: 501,
+      data: [],
+    };
   }
 
   /**
@@ -265,17 +262,20 @@ export class UnifiedMutationClient implements MutationApiClient {
         };
       }
 
-      const schema = response.data as Record<string, unknown>;
-      const isApproved = schema.state === SCHEMA_STATES.APPROVED;
+      const schema = response.data;
+      const state = schema && typeof schema === 'object' && 'state' in schema
+        ? String((schema as Record<string, unknown>).state)
+        : 'unknown';
+      const isApproved = state === SCHEMA_STATES.APPROVED;
 
       return {
         isValid: true,
-        schemaState: schema.state,
+        schemaState: state,
         canMutate: isApproved,
         canQuery: isApproved,
         error: isApproved
           ? undefined
-          : `Schema '${schemaName}' is not approved (current state: ${schema.state})`,
+          : `Schema '${schemaName}' is not approved (current state: ${state})`,
       };
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);

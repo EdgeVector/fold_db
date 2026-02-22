@@ -48,7 +48,7 @@ function AiConfigSettings({ configSaveStatus, setConfigSaveStatus, onClose, onCo
         setConfigSaveStatus({ success: false, message: 'Failed to save configuration' })
       }
     } catch (error) {
-      setConfigSaveStatus({ success: false, message: error.message || 'Failed to save configuration' })
+      setConfigSaveStatus({ success: false, message: (error instanceof Error ? error.message : String(error)) || 'Failed to save configuration' })
     }
     if (statusTimeoutRef.current) clearTimeout(statusTimeoutRef.current)
     statusTimeoutRef.current = setTimeout(() => setConfigSaveStatus(null), 3000)

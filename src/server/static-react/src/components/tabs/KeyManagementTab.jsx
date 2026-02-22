@@ -61,7 +61,7 @@ function KeyManagementTab({ onResult: _onResult }) {
         } catch (error) {
             setPrivateKeyValidation({
                 valid: false,
-                error: `Validation failed: ${error.message}`
+                error: `Validation failed: ${error instanceof Error ? error.message : String(error)}`
             });
         } finally {
             setIsValidatingPrivateKey(false);

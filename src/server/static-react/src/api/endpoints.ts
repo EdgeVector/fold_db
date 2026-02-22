@@ -66,6 +66,15 @@ export const API_BASE_URLS = {
   TRANSFORMS: '/api/transforms',
 } as const;
 
-// Export generated endpoints directly (no hardcoded aliases)
-export const API_ENDPOINTS = API_ENDPOINTS_DERIVED;
+// Endpoints not yet in OpenAPI spec but used by the backend
+const API_ENDPOINTS_MANUAL = {
+  ANALYZE_FOLLOWUP: '/llm-query/analyze-followup',
+  AGENT_QUERY: '/llm-query/agent',
+  AUTO_IDENTITY: '/system/auto-identity',
+  UPDATE_DATABASE_CONFIG: '/system/database-config',
+  INGESTION_UPLOAD: '/ingestion/upload',
+} as const;
+
+// Export merged endpoints (generated + manual)
+export const API_ENDPOINTS = { ...API_ENDPOINTS_DERIVED, ...API_ENDPOINTS_MANUAL };
 export type ApiEndpoint = typeof API_ENDPOINTS[keyof typeof API_ENDPOINTS];

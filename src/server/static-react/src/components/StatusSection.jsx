@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import { CheckCircleIcon, TrashIcon, ArrowPathIcon, ClockIcon, XCircleIcon } from '@heroicons/react/24/solid'
 import { systemClient } from '../api/clients/systemClient'
 import { ingestionClient } from '../api/clients'
@@ -10,34 +10,29 @@ function StatusSection() {
   const [jobs, setJobs] = useState([])
   const [isLoadingJobs, setIsLoadingJobs] = useState(true)
 
-  // Poll for progress updates
-  const fetchProgress = useCallback(async () => {
-    try {
-      const response = await ingestionClient.getAllProgress()
-      // Handle both { success, data } wrapper and { ok, progress } backend format
-      const progressData = response.data?.progress || response.data || response.progress || []
-      if (Array.isArray(progressData)) {
-        setJobs(progressData)
-      } else {
-        setJobs([])
-      }
-    } catch (error) {
-      console.error('Failed to fetch progress:', error)
-      setJobs([])
-    } finally {
-      setIsLoadingJobs(false)
-    }
-  }, [])
-
   useEffect(() => {
-    // Initial fetch
-    fetchProgress()
+    let cancelled = false
 
-    // Set up polling - poll every 2 seconds
+    const fetchProgress = async () => {
+      try {
+        const response = await ingestionClient.getAllProgress()
+        if (cancelled) return
+        const progressData = response.data?.progress || response.data || response.progress || []
+        setJobs(Array.isArray(progressData) ? progressData : [])
+      } catch (error) {
+        if (cancelled) return
+        console.error('Failed to fetch progress:', error)
+        setJobs([])
+      } finally {
+        if (!cancelled) setIsLoadingJobs(false)
+      }
+    }
+
+    fetchProgress()
     const intervalId = setInterval(fetchProgress, 2000)
 
-    return () => clearInterval(intervalId)
-  }, [fetchProgress])
+    return () => { cancelled = true; clearInterval(intervalId) }
+  }, [])
 
   const handleResetDatabase = async () => {
     setIsResetting(true)
@@ -70,7 +65,8 @@ function StatusSection() {
         setIsResetting(false)
       }
     } catch (error) {
-      setResetResult({ type: 'error', message: `Network error: ${error.message}` })
+      const msg = error instanceof Error ? error.message : String(error)
+      setResetResult({ type: 'error', message: `Network error: ${msg}` })
       setShowConfirmDialog(false)
       setIsResetting(false)
     }

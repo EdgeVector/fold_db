@@ -6,7 +6,6 @@ const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__
 
 /** Format a dollar amount for display */
 const fmtCost = (v) => `$${Number(v).toFixed(2)}`
-const fmtCostShort = (v) => `$${Number(v).toFixed(3)}`
 
 function SmartFolderTab({ onResult }) {
   const [folderPath, setFolderPath] = useState('~/Documents')
@@ -46,7 +45,7 @@ function SmartFolderTab({ onResult }) {
         setSuggestions([])
         setShowSuggestions(false)
       }
-    } catch {
+    } catch { /* autocomplete is best-effort */
       setSuggestions([])
       setShowSuggestions(false)
     }
@@ -158,7 +157,7 @@ function SmartFolderTab({ onResult }) {
     }
   }
 
-  const handleScan = async () => {
+  const handleScan = async (maxFiles) => {
     if (!folderPath.trim()) return
     setShowSuggestions(false)
     setIsScanning(true)
@@ -167,7 +166,7 @@ function SmartFolderTab({ onResult }) {
     setBatchStatus(null)
     onResult(null)
     try {
-      const response = await ingestionClient.smartFolderScan(folderPath.trim())
+      const response = await ingestionClient.smartFolderScan(folderPath.trim(), 10, maxFiles)
       if (response.success) {
         setScanResult(response.data)
         // Default spend limit to total estimate
@@ -176,11 +175,13 @@ function SmartFolderTab({ onResult }) {
         onResult({ success: false, error: 'Failed to scan folder' })
       }
     } catch (error) {
-      onResult({ success: false, error: error.message || 'Failed to scan folder' })
+      onResult({ success: false, error: (error instanceof Error ? error.message : String(error)) || 'Failed to scan folder' })
     } finally {
       setIsScanning(false)
     }
   }
+
+  const handleLoadMore = () => handleScan(500)
 
   const handleIngest = async () => {
     if (!scanResult) return
@@ -202,7 +203,7 @@ function SmartFolderTab({ onResult }) {
         onResult({ success: false, error: 'Failed to start ingestion' })
       }
     } catch (error) {
-      onResult({ success: false, error: error.message || 'Failed to start ingestion' })
+      onResult({ success: false, error: (error instanceof Error ? error.message : String(error)) || 'Failed to start ingestion' })
     } finally {
       setIsIngesting(false)
     }
@@ -215,7 +216,7 @@ function SmartFolderTab({ onResult }) {
     try {
       await ingestionClient.resumeBatch(batchId, limit)
     } catch (error) {
-      onResult({ success: false, error: error.message || 'Failed to resume' })
+      onResult({ success: false, error: (error instanceof Error ? error.message : String(error)) || 'Failed to resume' })
     }
   }
 
@@ -226,7 +227,7 @@ function SmartFolderTab({ onResult }) {
       localStorage.removeItem('activeBatchId')
       localStorage.removeItem('activeBatchStatus')
     } catch (error) {
-      onResult({ success: false, error: error.message || 'Failed to cancel' })
+      onResult({ success: false, error: (error instanceof Error ? error.message : String(error)) || 'Failed to cancel' })
     }
   }
 
@@ -298,7 +299,7 @@ function SmartFolderTab({ onResult }) {
             )}
           </div>
           {isTauri && <button onClick={openFolderPicker} disabled={isScanning} className="btn-secondary" title="Browse">Browse</button>}
-          <button onClick={handleScan} disabled={isScanning || !folderPath.trim()} className="btn-primary flex items-center gap-2">
+          <button onClick={() => handleScan()} disabled={isScanning || !folderPath.trim()} className="btn-primary flex items-center gap-2">
             {isScanning ? <><span className="spinner" />Scanning...</> : <>Scan</>}
           </button>
         </div>
@@ -337,10 +338,13 @@ function SmartFolderTab({ onResult }) {
             </label>
           </div>
 
-          {/* Truncation warning */}
+          {/* Truncation warning with Load more */}
           {scanResult.scan_truncated && (
-            <div className="bg-gruvbox-yellow/10 border border-gruvbox-yellow/30 rounded-lg px-3 py-2 text-sm text-gruvbox-yellow">
-              Scan was truncated at {scanResult.max_files_used} files (depth {scanResult.max_depth_used}). Some files may not be shown.
+            <div className="bg-gruvbox-yellow/10 border border-gruvbox-yellow/30 rounded-lg px-3 py-2 text-sm text-gruvbox-yellow flex items-center justify-between">
+              <span>Scan was truncated at {scanResult.max_files_used} files. Some files may not be shown.</span>
+              <button onClick={handleLoadMore} disabled={isScanning} className="btn-secondary text-xs ml-3 flex items-center gap-1">
+                {isScanning ? <><span className="spinner" />Loading...</> : 'Load more (500)'}
+              </button>
             </div>
           )}
 

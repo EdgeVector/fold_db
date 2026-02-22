@@ -65,8 +65,9 @@ export default function NativeIndexTab({ onResult }) {
         onResult({ error: res.error || 'Search failed', status: res.status })
       }
     } catch (e) {
-      setError(e.message || 'Network error')
-      onResult({ error: e.message || 'Network error' })
+      const msg = e instanceof Error ? e.message : String(e)
+      setError(msg || 'Network error')
+      onResult({ error: msg || 'Network error' })
     } finally {
       setIsSearching(false)
     }
@@ -149,7 +150,7 @@ export default function NativeIndexTab({ onResult }) {
 
   useEffect(() => {
     if (results.length > 0) {
-      fetchAllDetails().catch(() => {})
+      fetchAllDetails().catch(() => { /* detail fetch is best-effort */ })
     }
   }, [results, fetchAllDetails])
 
