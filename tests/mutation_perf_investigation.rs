@@ -83,6 +83,7 @@ async fn _test_mutation_generation_performance() {
                 0,
                 "test_pub_key".to_string(),
                 None,
+                None,
             )
             .expect("Failed to generate mutations");
 
