@@ -14,15 +14,27 @@ function classifySchemaEnv(url) {
   return { label: 'Custom', color: 'text-secondary' }
 }
 
+function formatStorageSize(bytes) {
+  if (!bytes || bytes <= 0) return null
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`
+}
+
 function Header({ onSettingsClick, onAiSettingsClick, ingestionStatus }) {
   const dispatch = useAppDispatch()
   const { isAuthenticated, user } = useAppSelector(state => state.auth)
   const [storageMode, setStorageMode] = useState(null)
+  const [storageSize, setStorageSize] = useState(null)
   const [schemaEnv, setSchemaEnv] = useState(null)
 
   useEffect(() => {
     systemClient.getDatabaseConfig().then(res => {
-      if (res.data) setStorageMode(res.data.type === 'dynamodb' ? 'Cloud' : 'Local')
+      if (res.data) {
+        setStorageMode(res.data.type === 'dynamodb' ? 'Cloud' : 'Local')
+        if (res.data.storage_size_bytes) setStorageSize(res.data.storage_size_bytes)
+      }
     }).catch(() => {})
     systemClient.getSystemStatus().then(res => {
       if (res.data) setSchemaEnv(classifySchemaEnv(res.data.schema_service_url))
@@ -36,6 +48,8 @@ function Header({ onSettingsClick, onAiSettingsClick, ingestionStatus }) {
   }
 
   const aiReady = ingestionStatus?.enabled && ingestionStatus?.configured
+  const isLocal = storageMode === 'Local'
+  const formattedSize = formatStorageSize(storageSize)
 
   return (
     <header className="bg-surface border-b border-border px-8 py-3 flex-shrink-0">
@@ -50,15 +64,26 @@ function Header({ onSettingsClick, onAiSettingsClick, ingestionStatus }) {
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2 text-sm text-secondary font-mono">
             <span>{storageMode || '...'}</span>
+            {formattedSize && <><span className="text-tertiary">/</span><span className="text-secondary">{formattedSize}</span></>}
             {schemaEnv && <><span className="text-tertiary">/</span><span className={schemaEnv.color}>Schema: {schemaEnv.label}</span></>}
             {ingestionStatus && (
               <><span className="text-tertiary">/</span><button
                 onClick={onAiSettingsClick}
                 className={`bg-transparent border-none cursor-pointer p-0 font-mono text-sm ${aiReady ? 'text-gruvbox-green' : 'text-gruvbox-red'} hover:text-primary`}
-                title={aiReady ? `${ingestionStatus.provider} · ${ingestionStatus.model}` : 'AI not configured — click to open Settings'}
+                title={aiReady ? `${ingestionStatus.provider} · ${ingestionStatus.model}` : 'AI not configured -- click to open Settings'}
               >
                 {aiReady ? `AI: ${ingestionStatus.provider}` : 'AI: off'}
               </button></>
+            )}
+            {isLocal && (
+              <><span className="text-tertiary">/</span><a
+                href="https://exemem.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-gruvbox-blue no-underline hover:text-primary text-sm font-mono cursor-pointer"
+              >
+                Upgrade to Cloud
+              </a></>
             )}
           </div>
           {isAuthenticated && (
