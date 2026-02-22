@@ -18,6 +18,7 @@ pub fn generate_mutations(
     trust_distance: u32,
     pub_key: String,
     source_file_name: Option<String>,
+    metadata: Option<HashMap<String, String>>,
 ) -> IngestionResult<Vec<Mutation>> {
     log_feature!(
         LogFeature::Ingestion,
@@ -101,6 +102,10 @@ pub fn generate_mutations(
             mutation = mutation.with_source_file_name(filename);
         }
 
+        if let Some(meta) = metadata {
+            mutation = mutation.with_metadata(meta);
+        }
+
         mutations.push(mutation);
         log_feature!(
             LogFeature::Ingestion,
@@ -145,6 +150,7 @@ mod tests {
             &mappers,
             0,
             "test-key".to_string(),
+            None,
             None,
         )
         .unwrap();

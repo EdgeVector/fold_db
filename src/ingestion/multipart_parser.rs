@@ -15,7 +15,7 @@ use tokio::fs;
 #[derive(Debug)]
 pub struct UploadFormData {
     pub file_path: PathBuf,
-    /// The unique filename as saved to disk (HASH_originalname format).
+    /// The unique filename as saved to disk (full SHA256 hex hash).
     /// This matches the filename in data/uploads/ directory.
     pub original_filename: String,
     pub auto_execute: bool,
@@ -24,15 +24,19 @@ pub struct UploadFormData {
     /// Whether this file already existed (true = duplicate upload)
     pub already_exists: bool,
     pub progress_id: Option<String>,
+    /// Full SHA256 hex hash of the uploaded file content
+    pub file_hash: String,
 }
 
 /// Extract and parse multipart form data
 pub async fn parse_multipart(
     mut payload: Multipart,
     upload_storage: &UploadStorage,
+    encryption_key: &[u8; 32],
 ) -> Result<UploadFormData, HttpResponse> {
     let mut file_path: Option<PathBuf> = None;
     let mut original_filename: Option<String> = None;
+    let mut file_hash: Option<String> = None;
     let mut already_exists = false;
     let mut auto_execute = true;
     let mut trust_distance = 0;
@@ -65,10 +69,11 @@ pub async fn parse_multipart(
 
         match field_name.as_deref() {
             Some("file") => {
-                let (path, filename, exists) = save_uploaded_file(field, upload_storage).await?;
+                let (path, filename, exists, hash) = save_uploaded_file(field, upload_storage, encryption_key).await?;
                 file_path = Some(path);
                 original_filename = Some(filename);
                 already_exists = exists;
+                file_hash = Some(hash);
             }
             #[cfg(feature = "aws-backend")]
             Some("s3FilePath") => {
@@ -141,24 +146,21 @@ pub async fn parse_multipart(
         pub_key,
         already_exists,
         progress_id,
+        file_hash: file_hash.unwrap_or_default(),
     })
 }
 
-/// Save uploaded file from multipart field with content-based hash
-/// Returns (file_path, unique_filename, already_exists) where:
-/// - unique_filename has format: HASH_originalname (first 16 chars of SHA256)
+/// Save uploaded file from multipart field with content-based hash and encryption
+/// Returns (file_path, unique_filename, already_exists, file_hash) where:
+/// - unique_filename is the full SHA256 hex hash (content-addressed)
 /// - already_exists is true if this exact file was already uploaded
+/// - file_hash is the full SHA256 hex hash string
 async fn save_uploaded_file(
     mut field: actix_multipart::Field,
     upload_storage: &UploadStorage,
-) -> Result<(PathBuf, String, bool), HttpResponse> {
+    encryption_key: &[u8; 32],
+) -> Result<(PathBuf, String, bool, String), HttpResponse> {
     use sha2::{Digest, Sha256};
-
-    let filename = field
-        .content_disposition()
-        .get_filename()
-        .unwrap_or("uploaded_file")
-        .to_string();
 
     // Read file contents and compute hash simultaneously
     let mut hasher = Sha256::new();
@@ -185,17 +187,24 @@ async fn save_uploaded_file(
         file_data.extend_from_slice(&data);
     }
 
-    // Generate hash-based filename (use first 16 chars of hex for readability)
+    // Use full SHA256 hex hash as content-addressed filename
     let hash_result = hasher.finalize();
     let hash_hex = format!("{:x}", hash_result);
-    let short_hash = &hash_hex[..16]; // First 16 characters provides plenty of uniqueness
-    let unique_filename = format!("{}_{}", short_hash, &filename);
+    let unique_filename = hash_hex.clone();
 
-    // Atomically save file only if it doesn't exist (prevents race condition)
-    // Note: user_id is None here - HTTP endpoints don't have user context
-    // For multi-tenant Lambda, user_id should be extracted from request/auth
-    let (storage_path, already_exists) = match upload_storage
-        .save_file_if_not_exists(&unique_filename, &file_data, None)
+    // Encrypt file data before storage
+    let encrypted_data = crate::crypto::envelope::encrypt_envelope(encryption_key, &file_data)
+        .map_err(|e| {
+            log_feature!(LogFeature::Ingestion, error, "Failed to encrypt file: {}", e);
+            HttpResponse::InternalServerError().json(json!({
+                "success": false,
+                "error": format!("Failed to encrypt file: {}", e)
+            }))
+        })?;
+
+    // Content-addressed storage: user_id=None (same file = same hash = same object)
+    let (_storage_path, already_exists) = match upload_storage
+        .save_file_if_not_exists(&unique_filename, &encrypted_data, None)
         .await
     {
         Ok((path, exists)) => (path, exists),
@@ -210,9 +219,6 @@ async fn save_uploaded_file(
 
     // Handle duplicate detection
     if already_exists {
-        // File already exists (duplicate upload detected atomically)
-        let filepath = storage_path; // storage_path is already the permanent path
-
         log_feature!(
             LogFeature::Ingestion,
             info,
@@ -220,57 +226,46 @@ async fn save_uploaded_file(
             unique_filename,
             upload_storage.get_display_path(&unique_filename, None)
         );
-        return Ok((filepath, unique_filename, true));
+        // For processing, we need unencrypted data on a local path
+        let process_path = write_unencrypted_for_processing(&unique_filename, &file_data, upload_storage).await?;
+        return Ok((process_path, unique_filename, true, hash_hex));
     }
 
-    // File was newly created, determine processing path
-    let filepath = match upload_storage {
-        UploadStorage::Local { .. } => {
-            // For local storage: file already saved, use that path for processing
-            log_feature!(
-                LogFeature::Ingestion,
-                info,
-                "File saved to local storage: {} at {}",
-                unique_filename,
-                upload_storage.get_display_path(&unique_filename, None)
-            );
-            storage_path
-        }
-        #[cfg(feature = "aws-backend")]
-        UploadStorage::S3 { .. } => {
-            // For S3 storage: file is in S3, but file_to_json needs local file
-            // Write to /tmp for processing
-            let temp_path = std::env::temp_dir().join(&unique_filename);
-            if let Err(e) = fs::write(&temp_path, &file_data).await {
-                log_feature!(
-                    LogFeature::Ingestion,
-                    error,
-                    "Failed to write S3-uploaded file to /tmp: {}",
-                    e
-                );
-                return Err(HttpResponse::InternalServerError().json(json!({
-                    "success": false,
-                    "error": format!("Failed to write file to temp directory: {}", e)
-                })));
-            }
-            log_feature!(
-                LogFeature::Ingestion,
-                info,
-                "File saved to S3: {} and copied to temp for processing",
-                upload_storage.get_display_path(&unique_filename, None)
-            );
-            temp_path
-        }
-    };
+    // Storage has encrypted data; file_to_json needs unencrypted data on a local path
+    let filepath = write_unencrypted_for_processing(&unique_filename, &file_data, upload_storage).await?;
 
     log_feature!(
         LogFeature::Ingestion,
         info,
-        "File ready for processing (new upload): {}",
-        unique_filename
+        "File encrypted and saved to storage: {}. Unencrypted copy at {:?} for processing.",
+        upload_storage.get_display_path(&unique_filename, None),
+        filepath
     );
 
-    Ok((filepath, unique_filename, false))
+    Ok((filepath, unique_filename, false, hash_hex))
+}
+
+/// Write unencrypted file data to a temp path for processing by file_to_json.
+/// Storage holds encrypted data; this provides the plaintext for conversion.
+async fn write_unencrypted_for_processing(
+    filename: &str,
+    file_data: &[u8],
+    _upload_storage: &UploadStorage,
+) -> Result<PathBuf, HttpResponse> {
+    let temp_path = std::env::temp_dir().join(format!("folddb_proc_{}", filename));
+    tokio::fs::write(&temp_path, file_data).await.map_err(|e| {
+        log_feature!(
+            LogFeature::Ingestion,
+            error,
+            "Failed to write unencrypted file to temp for processing: {}",
+            e
+        );
+        HttpResponse::InternalServerError().json(json!({
+            "success": false,
+            "error": format!("Failed to write file to temp directory: {}", e)
+        }))
+    })?;
+    Ok(temp_path)
 }
 
 /// Parse multipart field as boolean
@@ -407,26 +402,19 @@ mod tests {
 
     #[test]
     fn test_unique_filename_format() {
-        // Verify the unique filename format matches HASH_originalname pattern
+        // Verify the unique filename is the full SHA256 hex hash (content-addressed)
         let test_content = b"test file content";
         let mut hasher = Sha256::new();
         hasher.update(test_content);
         let hash_result = hasher.finalize();
         let hash_hex = format!("{:x}", hash_result);
-        let short_hash = &hash_hex[..16];
 
-        let original = "tweets.js";
-        let unique = format!("{}_{}", short_hash, original);
+        // Full hash is 64 hex chars
+        assert_eq!(hash_hex.len(), 64);
 
-        // Verify format
-        assert!(unique.contains('_'));
-        assert!(unique.ends_with("tweets.js"));
-
-        // Verify we can extract the original name if needed
-        let parts: Vec<&str> = unique.splitn(2, '_').collect();
-        assert_eq!(parts.len(), 2);
-        assert_eq!(parts[0].len(), 16); // Short hash is 16 chars
-        assert_eq!(parts[1], original);
+        // The filename IS the hash (content-addressed)
+        let unique_filename = hash_hex.clone();
+        assert_eq!(unique_filename, hash_hex);
     }
 
     #[test]

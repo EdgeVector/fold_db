@@ -427,6 +427,13 @@ impl IngestionService {
             )
             .await?;
 
+            // Build metadata from file_hash if present
+            let decomposed_metadata = request.file_hash.as_ref().map(|hash| {
+                let mut meta = HashMap::new();
+                meta.insert("file_hash".to_string(), hash.clone());
+                meta
+            });
+
             // Process each item: recursively handle children, then generate parent mutation.
             // Pass the top-level structure hash so the cache lookup matches.
             for item in &items {
@@ -439,6 +446,7 @@ impl IngestionService {
                         trust_distance,
                         &pub_key,
                         request.source_file_name.clone(),
+                        decomposed_metadata.clone(),
                         request.auto_execute,
                         0,
                     )
@@ -522,6 +530,13 @@ impl IngestionService {
                 manager
             };
 
+            // Build metadata from file_hash if present
+            let metadata = request.file_hash.as_ref().map(|hash| {
+                let mut meta = HashMap::new();
+                meta.insert("file_hash".to_string(), hash.clone());
+                meta
+            });
+
             // Collect items to process — normalize single object to a one-element slice
             let items: Vec<&serde_json::Map<String, Value>> = if let Some(array) = flattened_data.as_array() {
                 array
@@ -555,6 +570,7 @@ impl IngestionService {
                     trust_distance,
                     pub_key.clone(),
                     request.source_file_name.clone(),
+                    metadata.clone(),
                 )?;
 
                 mutations.extend(item_mutations);
@@ -1130,6 +1146,7 @@ impl IngestionService {
         trust_distance: u32,
         pub_key: &str,
         source_file_name: Option<String>,
+        metadata: Option<HashMap<String, String>>,
         auto_execute: bool,
         depth: usize,
     ) -> IngestionResult<(usize, usize, Option<KeyValue>)> {
@@ -1162,6 +1179,7 @@ impl IngestionService {
                     trust_distance,
                     pub_key,
                     source_file_name.clone(),
+                    metadata.clone(),
                     auto_execute,
                     depth + 1,
                 ))
@@ -1279,6 +1297,7 @@ impl IngestionService {
                 trust_distance,
                 pub_key.to_string(),
                 source_file_name,
+                metadata,
             )?;
 
             // Extract the key_value from the first mutation before execution

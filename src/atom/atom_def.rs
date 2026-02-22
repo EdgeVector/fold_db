@@ -2,6 +2,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
+use std::collections::HashMap;
 
 /// An immutable data container that represents a single version of content in the database.
 ///
@@ -21,6 +22,10 @@ pub struct Atom {
     source_schema_name: String,
     source_pub_key: String,
     source_file_name: Option<String>,
+    /// General-purpose metadata (e.g., file_hash, source info).
+    /// Not included in content-based UUID — metadata doesn't affect deduplication.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    metadata: Option<HashMap<String, String>>,
     created_at: DateTime<Utc>,
     content: Value,
 }
@@ -64,6 +69,7 @@ impl Atom {
             source_schema_name,
             source_pub_key,
             source_file_name: None,
+            metadata: None,
             created_at: Utc::now(),
             content,
         }
@@ -74,6 +80,17 @@ impl Atom {
     pub fn with_source_file_name(mut self, file_name: String) -> Self {
         self.source_file_name = Some(file_name);
         self
+    }
+
+    #[must_use]
+    pub fn with_metadata(mut self, metadata: HashMap<String, String>) -> Self {
+        self.metadata = Some(metadata);
+        self
+    }
+
+    #[must_use]
+    pub fn metadata(&self) -> Option<&HashMap<String, String>> {
+        self.metadata.as_ref()
     }
 
     /// Returns a reference to the Atom's content.

@@ -45,8 +45,18 @@ pub async fn upload_file(
 ) -> impl Responder {
     log_feature!(LogFeature::Ingestion, info, "Received file upload request");
 
-    // Extract file and form data from multipart request
-    let form_data = match parse_multipart(payload, &upload_storage).await {
+    // Get node first (for encryption key)
+    let (user_id, node_arc) = match require_node(&state).await {
+        Ok(res) => res,
+        Err(response) => return response,
+    };
+    let encryption_key = {
+        let node = node_arc.read().await;
+        node.get_encryption_key()
+    };
+
+    // Extract file and form data from multipart request (encrypts before save)
+    let form_data = match parse_multipart(payload, &upload_storage, &encryption_key).await {
         Ok(data) => data,
         Err(response) => return response,
     };
@@ -89,11 +99,6 @@ pub async fn upload_file(
         .clone()
         .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
 
-    let (user_id, node_arc) = match require_node(&state).await {
-        Ok(res) => res,
-        Err(response) => return response,
-    };
-
     // Build ingestion request and delegate to the shared handler
     let request = IngestionRequest {
         data: json_value,
@@ -102,6 +107,7 @@ pub async fn upload_file(
         pub_key: form_data.pub_key,
         source_file_name: Some(form_data.original_filename.clone()),
         progress_id: Some(progress_id),
+        file_hash: Some(form_data.file_hash.clone()),
     };
 
     // Extract ingestion service

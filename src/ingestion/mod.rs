@@ -100,6 +100,9 @@ pub struct IngestionRequest {
     /// Progress tracking ID (optional, generated if not provided)
     #[serde(default)]
     pub progress_id: Option<String>,
+    /// SHA256 hash of the original source file content (hex string)
+    #[serde(default)]
+    pub file_hash: Option<String>,
 }
 
 /// Response from the ingestion process

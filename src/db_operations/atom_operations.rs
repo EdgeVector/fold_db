@@ -4,6 +4,7 @@ use crate::schema::types::field::FieldVariant;
 use crate::schema::SchemaError;
 use crate::storage::traits::TypedStore;
 use serde_json::Value;
+use std::collections::HashMap;
 
 /// Enum to hold different molecule types for batch storage
 #[derive(Clone)]
@@ -21,10 +22,14 @@ impl DbOperations {
         pub_key: &str,
         value: Value,
         source_file_name: Option<String>,
+        metadata: Option<HashMap<String, String>>,
     ) -> Atom {
         let mut atom = Atom::new(schema_name.to_string(), pub_key.to_string(), value);
         if let Some(filename) = source_file_name {
             atom = atom.with_source_file_name(filename);
+        }
+        if let Some(meta) = metadata {
+            atom = atom.with_metadata(meta);
         }
         atom
     }
@@ -124,12 +129,18 @@ impl DbOperations {
         pub_key: &str,
         value: Value,
         source_file_name: Option<String>,
+        metadata: Option<HashMap<String, String>>,
     ) -> Result<Atom, SchemaError> {
         let mut new_atom = Atom::new(schema_name.to_string(), pub_key.to_string(), value);
 
         // Set source filename if provided
         if let Some(filename) = source_file_name {
             new_atom = new_atom.with_source_file_name(filename);
+        }
+
+        // Set metadata if provided
+        if let Some(meta) = metadata {
+            new_atom = new_atom.with_metadata(meta);
         }
 
         // Check if atom with this content-based UUID already exists

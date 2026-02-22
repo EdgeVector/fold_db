@@ -199,6 +199,7 @@ impl MutationManager {
                         &mutation.pub_key,
                         value.clone(),
                         mutation.source_file_name.clone(),
+                        mutation.metadata.clone(),
                     );
                     atoms_to_store.push(atom.clone());
                     atom_results.push((idx, field_name.clone(), atom));

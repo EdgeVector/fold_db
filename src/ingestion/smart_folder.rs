@@ -68,9 +68,37 @@ pub struct SmartFolderScanResponse {
     pub max_files_used: usize,
 }
 
+/// Result of scanning a directory tree with context for LLM classification.
+pub struct DirectoryScanResult {
+    /// Flat list of relative file paths for processing
+    pub file_paths: Vec<String>,
+    /// Indented tree display for LLM context
+    pub tree_display: String,
+    /// Whether the scan was truncated due to reaching max_files
+    pub truncated: bool,
+}
+
 // ---- Directory scanning ----
 
-/// Recursively scan a directory tree up to max_depth
+/// Recursively scan a directory tree up to max_depth, returning both
+/// a flat file list and an indented tree string for LLM context.
+pub fn scan_directory_tree_with_context(
+    root: &Path,
+    max_depth: usize,
+    max_files: usize,
+) -> IngestionResult<DirectoryScanResult> {
+    let mut files = Vec::new();
+    scan_directory_recursive(root, root, 0, max_depth, max_files, &mut files)?;
+    let truncated = files.len() >= max_files;
+    let tree_display = build_directory_tree_string(&files);
+    Ok(DirectoryScanResult {
+        file_paths: files,
+        tree_display,
+        truncated,
+    })
+}
+
+/// Recursively scan a directory tree up to max_depth (flat list only).
 pub fn scan_directory_tree(
     root: &Path,
     max_depth: usize,
@@ -90,6 +118,11 @@ fn scan_directory_recursive(
     files: &mut Vec<String>,
 ) -> IngestionResult<()> {
     if depth > max_depth || files.len() >= max_files {
+        return Ok(());
+    }
+
+    // Skip non-root directories that are git repos (code repositories)
+    if current != root && current.join(".git").exists() {
         return Ok(());
     }
 
@@ -121,6 +154,29 @@ fn scan_directory_recursive(
             ".cache",
             "venv",
             ".venv",
+            ".idea",
+            ".vscode",
+            "Pods",
+            ".gradle",
+            "vendor",
+            "cmake-build-debug",
+            "cmake-build-release",
+            ".terraform",
+            ".next",
+            ".nuxt",
+            "__MACOSX",
+            ".tox",
+            ".eggs",
+            ".mypy_cache",
+            ".pytest_cache",
+            ".cargo",
+            "bower_components",
+            ".bundle",
+            "DerivedData",
+            "_build",
+            "deps",
+            "artifacts",
+            "cache",
         ];
         if path.is_dir() && skip_dirs.contains(&file_name) {
             continue;
@@ -139,183 +195,162 @@ fn scan_directory_recursive(
     Ok(())
 }
 
-// ---- Three-way file classification ----
+/// Build an indented directory tree string from a list of relative file paths.
+///
+/// Example output:
+/// ```text
+/// Photos/
+///   vacation_2024/
+///     IMG_001.jpg
+/// Bank of America/
+///   Statements/
+///     statement.pdf
+///     ajax-loader.gif
+/// ```
+pub fn build_directory_tree_string(file_paths: &[String]) -> String {
+    use std::collections::BTreeSet;
 
-/// Result of classifying a file by its extension and path patterns.
-#[derive(Debug, Clone, PartialEq)]
-pub enum FileClassification {
-    /// File can be skipped without consulting the LLM.
-    Skip {
-        category: &'static str,
-        reason: &'static str,
-    },
-    /// File should be ingested without consulting the LLM.
-    Ingest {
-        category: &'static str,
-        reason: &'static str,
-    },
-    /// Cannot determine from extension/path alone — send to LLM.
-    Ambiguous,
+    // Collect all directory prefixes and files in sorted order
+    let mut dirs: BTreeSet<String> = BTreeSet::new();
+    let mut all_paths: BTreeSet<String> = BTreeSet::new();
+
+    for path in file_paths {
+        all_paths.insert(path.clone());
+        let p = Path::new(path);
+        // Collect all ancestor directories
+        let mut ancestor = p.parent();
+        while let Some(dir) = ancestor {
+            let dir_str = dir.to_string_lossy().to_string();
+            if dir_str.is_empty() {
+                break;
+            }
+            dirs.insert(dir_str);
+            ancestor = dir.parent();
+        }
+    }
+
+    let mut lines = Vec::new();
+
+    // Merge dirs and files into a sorted list of entries
+    // We want to show directories with trailing "/" followed by their contents
+    let mut entries: Vec<(String, bool)> = Vec::new(); // (path, is_dir)
+    for d in &dirs {
+        entries.push((d.clone(), true));
+    }
+    for f in &all_paths {
+        entries.push((f.clone(), false));
+    }
+    entries.sort_by(|a, b| a.0.cmp(&b.0));
+
+    // Track which directories we've already printed
+    let mut printed_dirs: HashSet<String> = HashSet::new();
+
+    for (path, is_dir) in &entries {
+        let depth = path.matches('/').count();
+        let indent = "  ".repeat(depth);
+        if *is_dir {
+            if !printed_dirs.contains(path) {
+                let name = Path::new(path)
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or(path);
+                lines.push(format!("{}{}/", indent, name));
+                printed_dirs.insert(path.clone());
+            }
+        } else {
+            let name = Path::new(path)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or(path);
+            lines.push(format!("{}{}", indent, name));
+        }
+    }
+
+    lines.join("\n")
 }
 
-/// Extensions that are always skipped.
-const SKIP_EXTS: &[&str] = &[
-    // Binary/compiled
-    "exe", "dll", "so", "dylib", "o", "a", "lib", "bin", "class", "pyc", "pyo",
-    // Archives/installers
-    "zip", "tar", "gz", "bz2", "xz", "7z", "rar", "dmg", "iso", "pkg", "deb", "rpm", "msi",
+// ---- Binary file detection ----
+
+/// Extensions for truly binary files that can never contain personal data.
+/// Everything NOT in this list goes to the LLM for classification.
+const BINARY_SKIP_EXTS: &[&str] = &[
+    // Compiled binaries
+    "exe", "dll", "so", "dylib", "o", "a", "lib", "class", "pyc", "pyo",
+    "beam", "wasm",
     // Fonts
     "woff", "woff2", "eot", "ttf", "otf",
-    // Database/lock
-    "db", "sqlite", "sqlite3", "lock",
-    // Source maps
-    "map",
-    // Logs
-    "log",
+    // Source maps / lock files
+    "map", "lock",
 ];
 
-/// Extensions that are always ingested as personal_data.
-const INGEST_PERSONAL_EXTS: &[&str] = &[
-    // Documents
-    "doc", "docx", "pdf", "rtf", "odt", "pages",
-    // Spreadsheets
-    "xlsx", "xls", "csv", "ods", "numbers",
-    // Presentations
-    "pptx", "ppt", "odp", "key",
-    // Email/contacts
-    "eml", "mbox", "vcf",
-];
-
-/// Extensions that are always ingested as media.
-const INGEST_MEDIA_EXTS: &[&str] = &[
-    // Photos
-    "jpg", "jpeg", "png", "gif", "heic", "heif", "webp", "bmp", "tiff", "raw", "cr2", "nef", "arw",
-    // Video
-    "mp4", "mov", "avi", "mkv", "m4v", "wmv",
-    // Audio
-    "mp3", "wav", "flac", "aac", "m4a", "ogg", "wma",
-];
-
-/// Classify a file path into Skip, Ingest, or Ambiguous based on extension and path patterns.
-pub fn classify_file(path: &str) -> FileClassification {
-    let lower = path.to_lowercase();
+/// Returns true if the file is a truly binary format that can never contain personal data.
+/// These files are auto-skipped without consulting the LLM.
+pub fn is_never_personal_data(path: &str) -> bool {
     let ext = Path::new(path)
         .extension()
         .and_then(|e| e.to_str())
         .unwrap_or("")
         .to_lowercase();
-
-    // --- Path-pattern skips (checked first) ---
-    if lower.contains("node_modules/") || lower.contains("twemoji/") {
-        return FileClassification::Skip {
-            category: "website_scaffolding",
-            reason: "Website scaffolding directory",
-        };
-    }
-
-    // Filename patterns: runtime.*.js or modules.*.js
-    if let Some(file_name) = Path::new(path).file_name().and_then(|n| n.to_str()) {
-        let fn_lower = file_name.to_lowercase();
-        if (fn_lower.starts_with("runtime.") && fn_lower.ends_with(".js"))
-            || (fn_lower.starts_with("modules.") && fn_lower.ends_with(".js"))
-        {
-            return FileClassification::Skip {
-                category: "website_scaffolding",
-                reason: "Bundled JS scaffolding file",
-            };
-        }
-    }
-
-    // /assets/ with font/emoji extension
-    if lower.contains("/assets/") {
-        let font_emoji_exts = ["woff", "woff2", "eot", "ttf", "otf", "svg"];
-        if font_emoji_exts.contains(&ext.as_str()) {
-            return FileClassification::Skip {
-                category: "website_scaffolding",
-                reason: "Font/emoji asset file",
-            };
-        }
-    }
-
-    // --- Extension-based skip ---
-    if SKIP_EXTS.contains(&ext.as_str()) {
-        return FileClassification::Skip {
-            category: "binary_or_system",
-            reason: "Binary, archive, or system file",
-        };
-    }
-
-    // --- Extension-based ingest: media (with asset guard) ---
-    if INGEST_MEDIA_EXTS.contains(&ext.as_str()) {
-        // Media files in /assets/ or twemoji paths are scaffolding, not personal media
-        if lower.contains("/assets/") || lower.contains("twemoji") {
-            return FileClassification::Skip {
-                category: "website_scaffolding",
-                reason: "UI asset, not personal media",
-            };
-        }
-        return FileClassification::Ingest {
-            category: "media",
-            reason: "User media file",
-        };
-    }
-
-    // --- Extension-based ingest: personal data ---
-    if INGEST_PERSONAL_EXTS.contains(&ext.as_str()) {
-        return FileClassification::Ingest {
-            category: "personal_data",
-            reason: "Personal document file",
-        };
-    }
-
-    // --- Everything else is ambiguous ---
-    FileClassification::Ambiguous
+    BINARY_SKIP_EXTS.contains(&ext.as_str())
 }
 
 // ---- LLM analysis ----
 
-/// Create the LLM prompt for file analysis
-pub fn create_smart_folder_prompt(file_tree: &[String]) -> String {
-    let files_list = file_tree.join("\n");
+/// Create the LLM prompt for file analysis with directory tree context.
+///
+/// The prompt includes the full directory tree so the LLM can reason about
+/// what folders represent (e.g. a .gif inside a "Bank of America" HTML save
+/// is scaffolding, not personal media).
+pub fn create_smart_folder_prompt(tree_display: &str, file_paths: &[String]) -> String {
+    let files_list = file_paths.join("\n");
 
     format!(
-        r#"Analyze this directory listing and categorize each file for personal data ingestion.
+        r#"You are classifying files in a user's personal folder for ingestion into their personal database.
 
-NOTE: These files could not be auto-classified by extension alone (obvious media, documents,
-binaries, and archives have already been handled). Focus on path context and file names to decide.
+DIRECTORY TREE (for context — understand what each folder represents):
+{tree_display}
 
-DIRECTORY LISTING:
-{}
+FILES TO CLASSIFY:
+{files_list}
 
-For each file, determine:
-1. Should it be ingested into a personal database?
+For each file path listed in FILES TO CLASSIFY, determine:
+1. Should it be ingested into the user's personal database?
 2. What category does it belong to?
 
+IMPORTANT: Use the directory tree to understand context. For example:
+- A .gif inside a "Bank of America" saved HTML page is website scaffolding, NOT personal media
+- A .js file inside a Twitter data export IS personal data
+- A .css or .html file inside a saved webpage folder is scaffolding
+- A .pdf in a "Statements" folder IS personal financial data
+- Source code files (.py, .rs, .js) in a code project folder are NOT personal data
+- But a .py notebook in a "Research" folder might be personal work
+
 CATEGORIES:
-- personal_data: Personal documents, notes, journals, photos, messages, financial records, health data, creative work, personal projects
-- media: Images, videos, audio (user-created content, not UI assets)
+- personal_data: Personal documents, notes, journals, financial records, health data, creative work, personal projects
+- media: Images, videos, audio that are user-created content (NOT UI assets or website graphics)
 - config: Application configs, settings files, dotfiles
-- website_scaffolding: HTML templates, CSS, JS bundles, emoji assets, fonts, node_modules contents
+- website_scaffolding: HTML templates, CSS, JS bundles, emoji assets, fonts, saved webpage resources
 - work: Work/corporate files, professional documents
 - unknown: Cannot determine
 
 SKIP CRITERIA (should_ingest = false):
-- Application scaffolding (runtime.js, modules.js, twemoji/, fonts/)
-- Config files (.config, .env, settings.json unless personal)
+- Website scaffolding (CSS, JS bundles, images that are part of saved web pages)
+- Application config files
+- Source code (unless it's personal creative work)
 - Cache and temporary files
-- Binary executables
 - Downloaded installers/archives
-- Organizational/corporate files (company policies, HR forms) — but personal work output like reports, presentations, or notes you authored should be ingested
 
 INGEST CRITERIA (should_ingest = true):
 - Personal documents (letters, notes, journals)
 - Photos and videos (user-created, not UI assets)
 - Messages and chat logs
-- Financial records (statements, budgets)
+- Financial records (statements, budgets, tax documents)
 - Health data
 - Creative work (writing, art, music)
-- Data exports from services (Twitter, Facebook, etc.)
-- Personal work output (reports, presentations, research, notes you authored)
+- Data exports from services (Twitter, Facebook, Google Takeout, etc.)
+- Personal work output (reports, presentations, research notes)
+
+When in doubt, set should_ingest to false.
 
 Respond with a JSON array of objects:
 ```json
@@ -325,8 +360,7 @@ Respond with a JSON array of objects:
 ]
 ```
 
-Only return the JSON array, no other text."#,
-        files_list
+Only return the JSON array, no other text."#
     )
 }
 
@@ -361,7 +395,8 @@ pub fn parse_llm_file_recommendations(
 
 // ---- Heuristic fallback ----
 
-/// Apply heuristic-based filtering when LLM fails
+/// Apply conservative heuristic-based filtering when LLM fails.
+/// When in doubt, marks files as should_ingest = false.
 pub fn apply_heuristic_filtering(file_tree: &[String]) -> Vec<FileRecommendation> {
     file_tree
         .iter()
@@ -373,78 +408,40 @@ pub fn apply_heuristic_filtering(file_tree: &[String]) -> Vec<FileRecommendation
                 .unwrap_or("")
                 .to_lowercase();
 
-            // Website scaffolding patterns
-            let is_scaffolding = lower.contains("node_modules")
-                || lower.contains("twemoji")
-                || lower.contains("/assets/")
-                || lower.contains("runtime.")
-                || lower.contains("modules.")
-                || ext == "woff"
-                || ext == "woff2"
-                || ext == "eot"
-                || ext == "ttf"
-                || (ext == "svg" && lower.contains("emoji"));
+            // Strong personal data signals (documents with well-known personal formats)
+            let is_personal_doc = matches!(
+                ext.as_str(),
+                "doc" | "docx" | "pdf" | "rtf" | "odt" | "pages"
+                    | "xlsx" | "xls" | "csv" | "ods" | "numbers"
+                    | "pptx" | "ppt" | "odp" | "key"
+                    | "eml" | "mbox" | "vcf"
+            );
 
-            // Config patterns
-            let is_config = lower.starts_with(".")
-                || lower.contains(".config")
-                || lower.contains("config/")
-                || ext == "env"
-                || ext == "ini"
-                || ext == "yaml"
-                || ext == "yml";
+            // Strong media signals
+            let is_media = matches!(
+                ext.as_str(),
+                "jpg" | "jpeg" | "png" | "gif" | "heic" | "heif" | "webp" | "bmp" | "tiff"
+                    | "raw" | "cr2" | "nef" | "arw"
+                    | "mp4" | "mov" | "avi" | "mkv" | "m4v" | "wmv"
+                    | "mp3" | "wav" | "flac" | "aac" | "m4a" | "ogg" | "wma"
+            );
 
-            // Personal data patterns
-            let is_personal = ext == "json"
-                || ext == "csv"
-                || ext == "txt"
-                || ext == "md"
-                || ext == "doc"
-                || ext == "docx"
-                || ext == "pdf"
-                || ext == "js"
-                || ext == "xlsx"
-                || ext == "xls"
-                || ext == "pptx"
-                || ext == "ppt"
-                || ext == "rtf"
-                || ext == "html"
-                || ext == "htm"
-                || ext == "eml"
-                || lower.contains("data/")
-                || lower.contains("export")
-                || lower.contains("backup");
+            // Data export patterns (high confidence personal data)
+            let is_data_export = lower.contains("export")
+                || lower.contains("backup")
+                || lower.contains("takeout");
 
-            // Media patterns
-            let is_media = ext == "jpg"
-                || ext == "jpeg"
-                || ext == "png"
-                || ext == "gif"
-                || ext == "mp4"
-                || ext == "mp3"
-                || ext == "wav"
-                || ext == "heic"
-                || ext == "heif"
-                || ext == "mov"
-                || ext == "webp"
-                || ext == "bmp"
-                || ext == "tiff"
-                || ext == "svg";
-
-            let (should_ingest, category, reason) = if is_scaffolding {
-                (
-                    false,
-                    "website_scaffolding",
-                    "Appears to be website/app scaffolding",
-                )
-            } else if is_config {
-                (false, "config", "Appears to be configuration file")
-            } else if is_media && !lower.contains("twemoji") && !lower.contains("/assets/") {
-                (true, "media", "User media file")
-            } else if is_personal {
-                (true, "personal_data", "Potential personal data file")
+            let (should_ingest, category, reason) = if is_personal_doc {
+                (true, "personal_data", "Personal document file")
+            } else if is_media && is_data_export {
+                (true, "media", "Media in data export")
+            } else if is_data_export {
+                (true, "personal_data", "Data export file")
+            } else if is_media {
+                // Without LLM context, we can't tell if media is personal or scaffolding
+                (false, "media", "Media file (needs review)")
             } else {
-                (false, "unknown", "Unknown file type")
+                (false, "unknown", "Could not classify without AI")
             };
 
             FileRecommendation {
@@ -557,6 +554,50 @@ pub fn read_file_as_json(file_path: &Path) -> IngestionResult<Value> {
     serde_json::from_str(&json_string).map_err(|e| IngestionError::InvalidInput(format!("Failed to parse JSON: {}", e)))
 }
 
+/// Read a file, compute its SHA256 hash, and convert to JSON.
+/// Returns `(json_value, sha256_hex_hash)`.
+pub fn read_file_with_hash(file_path: &Path) -> IngestionResult<(Value, String)> {
+    use sha2::{Digest, Sha256};
+
+    let raw_bytes = std::fs::read(file_path)
+        .map_err(|e| IngestionError::InvalidInput(format!("Failed to read file: {}", e)))?;
+
+    let hash_hex = format!("{:x}", Sha256::digest(&raw_bytes));
+
+    let content = String::from_utf8(raw_bytes)
+        .map_err(|e| IngestionError::InvalidInput(format!("File is not valid UTF-8: {}", e)))?;
+
+    let ext = file_path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+
+    let json_string = match ext.as_str() {
+        "json" => content,
+        "js" => twitter_js_to_json(&content)?,
+        "csv" => csv_to_json(&content)?,
+        "txt" | "md" => {
+            let file_name = file_path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("unknown");
+            serde_json::to_string(&serde_json::json!({
+                "content": content,
+                "source_file": file_name,
+                "file_type": ext
+            }))
+            .map_err(|e| IngestionError::InvalidInput(format!("Failed to wrap text content: {}", e)))?
+        }
+        _ => return Err(IngestionError::InvalidInput(format!("Unsupported file type: {}", ext))),
+    };
+
+    let value = serde_json::from_str(&json_string)
+        .map_err(|e| IngestionError::InvalidInput(format!("Failed to parse JSON: {}", e)))?;
+
+    Ok((value, hash_hex))
+}
+
 // ---- Cost estimation ----
 
 /// Estimate the ingestion cost for a single file based on its size and type.
@@ -618,17 +659,21 @@ fn file_size_bytes(path: &Path, root: &Path) -> u64 {
 ///
 /// This is the core logic shared between the HTTP handler and the CLI.
 /// If `service` is `None`, an `IngestionService` is created from the environment.
+///
+/// The new LLM-first approach:
+/// 1. Scan directory tree (with context for LLM)
+/// 2. Auto-skip only truly binary files (exe, dll, wasm, fonts, etc.)
+/// 3. Send ALL other files to the LLM with the full directory tree for context
+/// 4. Fall back to conservative heuristics if LLM fails
 pub async fn perform_smart_folder_scan(
     folder_path: &Path,
     max_depth: usize,
     max_files: usize,
     service: Option<&crate::ingestion::ingestion_service::IngestionService>,
 ) -> IngestionResult<SmartFolderScanResponse> {
-    let file_tree = scan_directory_tree(folder_path, max_depth, max_files)?;
+    let scan = scan_directory_tree_with_context(folder_path, max_depth, max_files)?;
 
-    let scan_truncated = file_tree.len() >= max_files;
-
-    if file_tree.is_empty() {
+    if scan.file_paths.is_empty() {
         return Ok(SmartFolderScanResponse {
             success: true,
             total_files: 0,
@@ -643,54 +688,39 @@ pub async fn perform_smart_folder_scan(
                 unknown_count: 0,
             },
             total_estimated_cost: 0.0,
-            scan_truncated,
+            scan_truncated: scan.truncated,
             max_depth_used: max_depth,
             max_files_used: max_files,
         });
     }
 
-    // Three-way classify each file: Skip, Ingest, or Ambiguous
-    let mut hardcoded_recs: Vec<FileRecommendation> = Vec::new();
-    let mut ambiguous_paths: Vec<String> = Vec::new();
+    // Split files: binary auto-skip vs everything else goes to LLM
+    let mut binary_skipped: Vec<FileRecommendation> = Vec::new();
+    let mut llm_candidates: Vec<String> = Vec::new();
 
-    for path in &file_tree {
-        match classify_file(path) {
-            FileClassification::Skip { category, reason } => {
-                hardcoded_recs.push(FileRecommendation {
-                    path: path.clone(),
-                    should_ingest: false,
-                    category: category.to_string(),
-                    reason: reason.to_string(),
-                    file_size_bytes: 0,
-                    estimated_cost: 0.0,
-                });
-            }
-            FileClassification::Ingest { category, reason } => {
-                hardcoded_recs.push(FileRecommendation {
-                    path: path.clone(),
-                    should_ingest: true,
-                    category: category.to_string(),
-                    reason: reason.to_string(),
-                    file_size_bytes: 0,
-                    estimated_cost: 0.0,
-                });
-            }
-            FileClassification::Ambiguous => {
-                ambiguous_paths.push(path.clone());
-            }
+    for path in &scan.file_paths {
+        if is_never_personal_data(path) {
+            binary_skipped.push(FileRecommendation {
+                path: path.clone(),
+                should_ingest: false,
+                category: "binary_or_system".to_string(),
+                reason: "Binary/system file".to_string(),
+                file_size_bytes: 0,
+                estimated_cost: 0.0,
+            });
+        } else {
+            llm_candidates.push(path.clone());
         }
     }
 
     log::info!(
-        "File classification: {} hardcoded ({} ingest, {} skip), {} ambiguous → LLM",
-        hardcoded_recs.len(),
-        hardcoded_recs.iter().filter(|r| r.should_ingest).count(),
-        hardcoded_recs.iter().filter(|r| !r.should_ingest).count(),
-        ambiguous_paths.len(),
+        "File classification: {} binary-skipped, {} candidates → LLM",
+        binary_skipped.len(),
+        llm_candidates.len(),
     );
 
-    // Send only ambiguous files to the LLM (if any)
-    let ambiguous_recs = if ambiguous_paths.is_empty() {
+    // Send all non-binary files to LLM in batches (with tree context)
+    let llm_recs = if llm_candidates.is_empty() {
         Vec::new()
     } else {
         // Create service from env if not provided
@@ -703,11 +733,11 @@ pub async fn perform_smart_folder_scan(
             }
         };
 
-        let batch_size = 500;
+        let batch_size = 100;
         let mut all_recs = Vec::new();
-        for chunk in ambiguous_paths.chunks(batch_size) {
+        for chunk in llm_candidates.chunks(batch_size) {
             let chunk_vec: Vec<String> = chunk.to_vec();
-            let prompt = create_smart_folder_prompt(&chunk_vec);
+            let prompt = create_smart_folder_prompt(&scan.tree_display, &chunk_vec);
             match call_llm_for_file_analysis(&prompt, svc).await {
                 Ok(llm_response) => match parse_llm_file_recommendations(&llm_response, &chunk_vec) {
                     Ok(recs) => all_recs.extend(recs),
@@ -725,10 +755,10 @@ pub async fn perform_smart_folder_scan(
         all_recs
     };
 
-    // Merge hardcoded + ambiguous recommendations
-    let recommendations: Vec<FileRecommendation> = hardcoded_recs
+    // Merge binary-skipped + LLM recommendations
+    let recommendations: Vec<FileRecommendation> = binary_skipped
         .into_iter()
-        .chain(ambiguous_recs)
+        .chain(llm_recs)
         .collect();
 
     // Split into recommended and skipped, build summary, compute costs
@@ -769,12 +799,12 @@ pub async fn perform_smart_folder_scan(
 
     Ok(SmartFolderScanResponse {
         success: true,
-        total_files: file_tree.len(),
+        total_files: scan.file_paths.len(),
         recommended_files,
         skipped_files,
         summary,
         total_estimated_cost,
-        scan_truncated,
+        scan_truncated: scan.truncated,
         max_depth_used: max_depth,
         max_files_used: max_files,
     })
@@ -846,7 +876,16 @@ mod tests {
     }
 
     #[test]
-    fn test_heuristic_filtering_json_file() {
+    fn test_heuristic_filtering_personal_doc() {
+        let files = vec!["reports/q1.pdf".to_string()];
+        let recs = apply_heuristic_filtering(&files);
+        assert_eq!(recs.len(), 1);
+        assert!(recs[0].should_ingest);
+        assert_eq!(recs[0].category, "personal_data");
+    }
+
+    #[test]
+    fn test_heuristic_filtering_data_export() {
         let files = vec!["data/export.json".to_string()];
         let recs = apply_heuristic_filtering(&files);
         assert_eq!(recs.len(), 1);
@@ -855,21 +894,31 @@ mod tests {
     }
 
     #[test]
-    fn test_heuristic_filtering_scaffolding() {
-        let files = vec!["assets/twemoji/1f600.svg".to_string()];
+    fn test_heuristic_filtering_media_without_context() {
+        // Without LLM, media files default to should_ingest=false (conservative)
+        let files = vec!["photos/vacation.jpg".to_string()];
         let recs = apply_heuristic_filtering(&files);
         assert_eq!(recs.len(), 1);
         assert!(!recs[0].should_ingest);
-        assert_eq!(recs[0].category, "website_scaffolding");
+        assert_eq!(recs[0].category, "media");
     }
 
     #[test]
-    fn test_heuristic_filtering_js_file() {
-        let files = vec!["data/tweet.js".to_string()];
+    fn test_heuristic_filtering_media_in_export() {
+        // Media in data export paths should be ingested
+        let files = vec!["export/photos/vacation.jpg".to_string()];
         let recs = apply_heuristic_filtering(&files);
         assert_eq!(recs.len(), 1);
         assert!(recs[0].should_ingest);
-        assert_eq!(recs[0].category, "personal_data");
+        assert_eq!(recs[0].category, "media");
+    }
+
+    #[test]
+    fn test_heuristic_filtering_unknown_file() {
+        let files = vec!["random/stuff.xyz".to_string()];
+        let recs = apply_heuristic_filtering(&files);
+        assert_eq!(recs.len(), 1);
+        assert!(!recs[0].should_ingest);
     }
 
     #[test]
@@ -878,144 +927,180 @@ mod tests {
         assert!(result.is_err());
     }
 
-    // ---- classify_file tests ----
+    // ---- is_never_personal_data tests ----
 
     #[test]
-    fn test_classify_binary_skip() {
-        assert_eq!(
-            classify_file("program.exe"),
-            FileClassification::Skip {
-                category: "binary_or_system",
-                reason: "Binary, archive, or system file",
-            }
-        );
-        assert_eq!(
-            classify_file("lib/native.so"),
-            FileClassification::Skip {
-                category: "binary_or_system",
-                reason: "Binary, archive, or system file",
-            }
-        );
+    fn test_binary_files_are_never_personal() {
+        assert!(is_never_personal_data("program.exe"));
+        assert!(is_never_personal_data("lib/native.so"));
+        assert!(is_never_personal_data("module.dll"));
+        assert!(is_never_personal_data("code.class"));
+        assert!(is_never_personal_data("script.pyc"));
+        assert!(is_never_personal_data("app.wasm"));
     }
 
     #[test]
-    fn test_classify_archive_skip() {
-        assert_eq!(
-            classify_file("backup.zip"),
-            FileClassification::Skip {
-                category: "binary_or_system",
-                reason: "Binary, archive, or system file",
-            }
-        );
+    fn test_fonts_are_never_personal() {
+        assert!(is_never_personal_data("font.woff"));
+        assert!(is_never_personal_data("font.woff2"));
+        assert!(is_never_personal_data("font.ttf"));
+        assert!(is_never_personal_data("font.otf"));
+        assert!(is_never_personal_data("font.eot"));
     }
 
     #[test]
-    fn test_classify_photo_ingest() {
-        assert_eq!(
-            classify_file("photos/vacation.jpg"),
-            FileClassification::Ingest {
-                category: "media",
-                reason: "User media file",
-            }
-        );
+    fn test_lock_and_map_are_never_personal() {
+        assert!(is_never_personal_data("package-lock.lock"));
+        assert!(is_never_personal_data("bundle.map"));
     }
 
     #[test]
-    fn test_classify_photo_in_assets_skip() {
-        assert_eq!(
-            classify_file("static/assets/icon.png"),
-            FileClassification::Skip {
-                category: "website_scaffolding",
-                reason: "UI asset, not personal media",
-            }
-        );
+    fn test_common_files_go_to_llm() {
+        // These should NOT be auto-skipped — they go to the LLM
+        assert!(!is_never_personal_data("photo.jpg"));
+        assert!(!is_never_personal_data("document.pdf"));
+        assert!(!is_never_personal_data("notes.txt"));
+        assert!(!is_never_personal_data("data.json"));
+        assert!(!is_never_personal_data("style.css"));
+        assert!(!is_never_personal_data("page.html"));
+        assert!(!is_never_personal_data("script.js"));
+        assert!(!is_never_personal_data("code.py"));
+        assert!(!is_never_personal_data("archive.zip"));
+        assert!(!is_never_personal_data("image.gif"));
+        assert!(!is_never_personal_data("song.mp3"));
+        assert!(!is_never_personal_data("video.mp4"));
+        assert!(!is_never_personal_data("spreadsheet.xlsx"));
+        assert!(!is_never_personal_data("config.yaml"));
+        assert!(!is_never_personal_data("readme.md"));
     }
 
     #[test]
-    fn test_classify_document_ingest() {
-        assert_eq!(
-            classify_file("reports/q1.pdf"),
-            FileClassification::Ingest {
-                category: "personal_data",
-                reason: "Personal document file",
-            }
-        );
-        assert_eq!(
-            classify_file("notes.docx"),
-            FileClassification::Ingest {
-                category: "personal_data",
-                reason: "Personal document file",
-            }
-        );
+    fn test_no_extension_goes_to_llm() {
+        assert!(!is_never_personal_data("README"));
+        assert!(!is_never_personal_data("Makefile"));
+    }
+
+    // ---- build_directory_tree_string tests ----
+
+    #[test]
+    fn test_tree_string_flat_files() {
+        let paths = vec!["a.txt".to_string(), "b.pdf".to_string()];
+        let tree = build_directory_tree_string(&paths);
+        assert!(tree.contains("a.txt"));
+        assert!(tree.contains("b.pdf"));
     }
 
     #[test]
-    fn test_classify_json_ambiguous() {
-        assert_eq!(classify_file("data/config.json"), FileClassification::Ambiguous);
+    fn test_tree_string_nested_dirs() {
+        let paths = vec![
+            "Photos/vacation/IMG_001.jpg".to_string(),
+            "Photos/vacation/IMG_002.jpg".to_string(),
+            "Bank of America/statement.pdf".to_string(),
+        ];
+        let tree = build_directory_tree_string(&paths);
+        assert!(tree.contains("Photos/"));
+        assert!(tree.contains("vacation/"));
+        assert!(tree.contains("IMG_001.jpg"));
+        assert!(tree.contains("Bank of America/"));
+        assert!(tree.contains("statement.pdf"));
     }
 
     #[test]
-    fn test_classify_unknown_ext_ambiguous() {
-        assert_eq!(classify_file("something.xyz"), FileClassification::Ambiguous);
+    fn test_tree_string_empty() {
+        let paths: Vec<String> = vec![];
+        let tree = build_directory_tree_string(&paths);
+        assert!(tree.is_empty());
+    }
+
+    // ---- scan_directory_tree_with_context tests ----
+
+    #[test]
+    fn test_scan_with_context_returns_tree() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+
+        std::fs::create_dir_all(root.join("docs")).unwrap();
+        std::fs::write(root.join("docs/notes.txt"), "hello").unwrap();
+        std::fs::write(root.join("photo.jpg"), "fake jpg").unwrap();
+
+        let result = scan_directory_tree_with_context(root, 10, 50000).unwrap();
+
+        assert_eq!(result.file_paths.len(), 2);
+        assert!(!result.truncated);
+        assert!(!result.tree_display.is_empty());
+        assert!(result.tree_display.contains("docs/"));
     }
 
     #[test]
-    fn test_classify_node_modules_skip() {
-        assert_eq!(
-            classify_file("node_modules/react/index.js"),
-            FileClassification::Skip {
-                category: "website_scaffolding",
-                reason: "Website scaffolding directory",
-            }
-        );
+    fn test_scan_with_context_truncation() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+
+        for i in 0..5 {
+            std::fs::write(root.join(format!("file_{}.txt", i)), "data").unwrap();
+        }
+
+        let result = scan_directory_tree_with_context(root, 10, 3).unwrap();
+
+        assert_eq!(result.file_paths.len(), 3);
+        assert!(result.truncated);
+    }
+
+    // ---- scan_directory_recursive tests ----
+
+    #[test]
+    fn test_scan_skips_git_repo_subdirectory() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+
+        // Create a subdirectory that looks like a git repo
+        let repo_dir = root.join("my_project");
+        std::fs::create_dir_all(repo_dir.join(".git")).unwrap();
+        std::fs::write(repo_dir.join("main.rs"), "fn main() {}").unwrap();
+
+        // Create a normal file at the root level
+        std::fs::write(root.join("notes.txt"), "hello").unwrap();
+
+        let files = scan_directory_tree(root, 10, 50000).unwrap();
+
+        // Should find notes.txt but NOT my_project/main.rs
+        assert!(files.contains(&"notes.txt".to_string()));
+        assert!(!files.iter().any(|f| f.contains("main.rs")));
     }
 
     #[test]
-    fn test_classify_runtime_js_skip() {
-        assert_eq!(
-            classify_file("dist/runtime.abc123.js"),
-            FileClassification::Skip {
-                category: "website_scaffolding",
-                reason: "Bundled JS scaffolding file",
-            }
-        );
+    fn test_scan_does_not_skip_root_git_repo() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+
+        // The root itself is a git repo
+        std::fs::create_dir_all(root.join(".git")).unwrap();
+        std::fs::write(root.join("readme.md"), "# Hello").unwrap();
+
+        let files = scan_directory_tree(root, 10, 50000).unwrap();
+
+        // Should still find files in the root even though it has .git
+        assert!(files.contains(&"readme.md".to_string()));
     }
 
     #[test]
-    fn test_classify_twemoji_media_skip() {
-        assert_eq!(
-            classify_file("twemoji/1f600.png"),
-            FileClassification::Skip {
-                category: "website_scaffolding",
-                reason: "Website scaffolding directory",
-            }
-        );
-    }
+    fn test_scan_skips_expanded_skip_dirs() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
 
-    #[test]
-    fn test_classify_font_in_assets_skip() {
-        assert_eq!(
-            classify_file("static/assets/font.woff2"),
-            FileClassification::Skip {
-                category: "website_scaffolding",
-                reason: "Font/emoji asset file",
-            }
-        );
-    }
+        // Create directories from the expanded skip list
+        for dir_name in &[".idea", ".vscode", "Pods", "DerivedData", "vendor", ".next"] {
+            let dir = root.join(dir_name);
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(dir.join("junk.txt"), "junk").unwrap();
+        }
 
-    #[test]
-    fn test_classify_csv_ingest() {
-        assert_eq!(
-            classify_file("data/contacts.csv"),
-            FileClassification::Ingest {
-                category: "personal_data",
-                reason: "Personal document file",
-            }
-        );
-    }
+        // Create a normal file
+        std::fs::write(root.join("personal.txt"), "my data").unwrap();
 
-    #[test]
-    fn test_classify_txt_ambiguous() {
-        assert_eq!(classify_file("readme.txt"), FileClassification::Ambiguous);
+        let files = scan_directory_tree(root, 10, 50000).unwrap();
+
+        // Should only find the normal file
+        assert_eq!(files, vec!["personal.txt".to_string()]);
     }
 }

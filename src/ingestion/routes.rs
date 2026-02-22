@@ -97,6 +97,7 @@ fn validate_folder(path: &Path) -> Result<(), HttpResponse> {
 }
 
 /// Spawn background ingestion tasks for a list of files, each tracked by its progress ID.
+#[allow(clippy::too_many_arguments)]
 fn spawn_file_ingestion_tasks(
     files_with_progress: impl IntoIterator<Item = (std::path::PathBuf, String)>,
     progress_tracker: &ProgressTracker,
@@ -104,12 +105,16 @@ fn spawn_file_ingestion_tasks(
     user_id: &str,
     auto_execute: bool,
     ingestion_service: Arc<IngestionService>,
+    upload_storage: crate::storage::UploadStorage,
+    encryption_key: [u8; 32],
 ) {
     for (file_path, progress_id) in files_with_progress {
         let progress_tracker_clone = progress_tracker.clone();
         let node_arc_clone = node_arc.clone();
         let user_id_clone = user_id.to_string();
         let service_clone = ingestion_service.clone();
+        let upload_storage_clone = upload_storage.clone();
+        let enc_key = encryption_key;
 
         tokio::spawn(async move {
             crate::logging::core::run_with_user(&user_id_clone, async move {
@@ -122,6 +127,8 @@ fn spawn_file_ingestion_tasks(
                     &node_arc_clone,
                     auto_execute,
                     &service_clone,
+                    &upload_storage_clone,
+                    &enc_key,
                 )
                 .await
                 {
@@ -442,6 +449,7 @@ pub async fn batch_folder_ingest(
     progress_tracker: web::Data<ProgressTracker>,
     state: web::Data<AppState>,
     ingestion_service: web::Data<IngestionServiceState>,
+    upload_storage: web::Data<crate::storage::UploadStorage>,
 ) -> impl Responder {
     log_feature!(
         LogFeature::Ingestion,
@@ -530,6 +538,10 @@ pub async fn batch_folder_ingest(
     };
 
     let auto_execute = request.auto_execute.unwrap_or(true);
+    let encryption_key = {
+        let node = node_arc.read().await;
+        node.get_encryption_key()
+    };
 
     spawn_file_ingestion_tasks(
         files_to_ingest
@@ -541,6 +553,8 @@ pub async fn batch_folder_ingest(
         &user_id_for_task,
         auto_execute,
         service,
+        upload_storage.get_ref().clone(),
+        encryption_key,
     );
 
     // Return immediately with batch info
@@ -672,6 +686,7 @@ pub async fn smart_folder_ingest(
     state: web::Data<AppState>,
     ingestion_service: web::Data<IngestionServiceState>,
     batch_controller_map: web::Data<BatchControllerMap>,
+    upload_storage: web::Data<crate::storage::UploadStorage>,
 ) -> impl Responder {
     log_feature!(
         LogFeature::Ingestion,
@@ -773,6 +788,11 @@ pub async fn smart_folder_ingest(
         map_guard.insert(batch_id.clone(), ctrl_arc);
     }
 
+    let encryption_key = {
+        let node = node_arc.read().await;
+        node.get_encryption_key()
+    };
+
     // Spawn the sequential coordinator
     spawn_batch_coordinator(
         batch_id.clone(),
@@ -782,6 +802,8 @@ pub async fn smart_folder_ingest(
         &user_id_task,
         auto_execute,
         service,
+        upload_storage.get_ref().clone(),
+        encryption_key,
     );
 
     HttpResponse::Accepted().json(BatchFolderResponse {
@@ -795,6 +817,7 @@ pub async fn smart_folder_ingest(
 
 /// Spawn a sequential coordinator task that processes files one at a time,
 /// checking the spend limit before each file and pausing when the limit is hit.
+#[allow(clippy::too_many_arguments)]
 fn spawn_batch_coordinator(
     batch_id: String,
     batch_controller_map: web::Data<BatchControllerMap>,
@@ -803,6 +826,8 @@ fn spawn_batch_coordinator(
     user_id: &str,
     auto_execute: bool,
     ingestion_service: Arc<IngestionService>,
+    upload_storage: crate::storage::UploadStorage,
+    encryption_key: [u8; 32],
 ) {
     let progress_tracker = progress_tracker.clone();
     let node_arc = node_arc.clone();
@@ -880,6 +905,8 @@ fn spawn_batch_coordinator(
                     &node_arc,
                     auto_execute,
                     &service_clone,
+                    &upload_storage,
+                    &encryption_key,
                 )
                 .await;
 
@@ -989,7 +1016,10 @@ pub async fn cancel_batch(
     }
 }
 
-/// Process a single file for smart ingest using shared smart_folder module
+/// Process a single file for smart ingest using shared smart_folder module.
+/// Reads the file, computes its SHA256 hash, encrypts and stores in upload storage,
+/// then ingests the JSON content with file_hash metadata.
+#[allow(clippy::too_many_arguments)]
 async fn process_single_file_via_smart_folder(
     file_path: &std::path::Path,
     progress_id: &str,
@@ -997,9 +1027,22 @@ async fn process_single_file_via_smart_folder(
     node_arc: &std::sync::Arc<tokio::sync::RwLock<crate::fold_node::FoldNode>>,
     auto_execute: bool,
     service: &IngestionService,
+    upload_storage: &crate::storage::UploadStorage,
+    encryption_key: &[u8; 32],
 ) -> Result<(), String> {
-    let data = smart_folder::read_file_as_json(file_path)
+    let (data, file_hash) = smart_folder::read_file_with_hash(file_path)
         .map_err(|e| e.to_string())?;
+
+    // Encrypt and store the raw file in upload storage (content-addressed)
+    let raw_bytes = std::fs::read(file_path)
+        .map_err(|e| format!("Failed to read file for encryption: {}", e))?;
+    let encrypted_data = crate::crypto::envelope::encrypt_envelope(encryption_key, &raw_bytes)
+        .map_err(|e| format!("Failed to encrypt file: {}", e))?;
+    // Content-addressed: user_id=None (same file = same hash = same object)
+    upload_storage
+        .save_file_if_not_exists(&file_hash, &encrypted_data, None)
+        .await
+        .map_err(|e| format!("Failed to store encrypted file: {}", e))?;
 
     let node = node_arc.read().await;
     let pub_key = node.get_node_public_key().to_string();
@@ -1014,6 +1057,7 @@ async fn process_single_file_via_smart_folder(
             .and_then(|n| n.to_str())
             .map(|s| s.to_string()),
         progress_id: Some(progress_id.to_string()),
+        file_hash: Some(file_hash),
     };
 
     service

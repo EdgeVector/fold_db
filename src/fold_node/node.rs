@@ -451,6 +451,11 @@ impl FoldNode {
         &self.public_key
     }
 
+    /// Get the E2E encryption key for encrypting files before storage.
+    pub fn get_encryption_key(&self) -> [u8; 32] {
+        self.e2e_keys.encryption_key()
+    }
+
     /// Gets a reference to the security manager.
     pub fn get_security_manager(&self) -> &Arc<SecurityManager> {
         &self.security_manager

@@ -23,6 +23,10 @@ pub struct Mutation {
     /// to enable inline indexing without a separate async LLM call.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub index_terms: Option<HashMap<String, Vec<String>>>,
+    /// General-purpose metadata (e.g., file_hash, provenance info).
+    /// Excluded from content_hash — metadata doesn't affect deduplication.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<HashMap<String, String>>,
 }
 
 impl Mutation {
@@ -47,6 +51,7 @@ impl Mutation {
             backfill_hash: None,
             source_file_name: None,
             index_terms: None,
+            metadata: None,
         }
     }
 
@@ -65,6 +70,12 @@ impl Mutation {
     #[must_use]
     pub fn with_index_terms(mut self, terms: HashMap<String, Vec<String>>) -> Self {
         self.index_terms = Some(terms);
+        self
+    }
+
+    #[must_use]
+    pub fn with_metadata(mut self, metadata: HashMap<String, String>) -> Self {
+        self.metadata = Some(metadata);
         self
     }
 
@@ -271,6 +282,34 @@ mod tests {
         .with_source_file_name("file.json".to_string());
 
         // backfill_hash and source_file_name should not affect the content hash
+        assert_eq!(m1.content_hash(), m2.content_hash());
+    }
+
+    #[test]
+    fn test_content_hash_excludes_general_metadata() {
+        let fields = HashMap::new();
+
+        let m1 = Mutation::new(
+            "Schema".to_string(),
+            fields.clone(),
+            KeyValue::new(None, None),
+            "key".to_string(),
+            0,
+            MutationType::Update,
+        );
+
+        let m2 = Mutation::new(
+            "Schema".to_string(),
+            fields,
+            KeyValue::new(None, None),
+            "key".to_string(),
+            0,
+            MutationType::Update,
+        )
+        .with_metadata(HashMap::from([
+            ("file_hash".to_string(), "abc123def456".to_string()),
+        ]));
+
         assert_eq!(m1.content_hash(), m2.content_hash());
     }
 
