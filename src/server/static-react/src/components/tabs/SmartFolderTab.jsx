@@ -10,6 +10,7 @@ const fmtCost = (v) => `$${Number(v).toFixed(2)}`
 function SmartFolderTab({ onResult }) {
   const [folderPath, setFolderPath] = useState('~/Documents')
   const [isScanning, setIsScanning] = useState(false)
+  const [isLoadingMore, setIsLoadingMore] = useState(false)
   const [isIngesting, setIsIngesting] = useState(false)
   const [scanResult, setScanResult] = useState(null)
 
@@ -181,7 +182,22 @@ function SmartFolderTab({ onResult }) {
     }
   }
 
-  const handleLoadMore = () => handleScan(500)
+  const handleLoadMore = async () => {
+    if (!folderPath.trim() || !scanResult) return
+    const nextLimit = (scanResult.max_files_used || 100) + 400
+    setIsLoadingMore(true)
+    try {
+      const response = await ingestionClient.smartFolderScan(folderPath.trim(), 10, nextLimit)
+      if (response.success) {
+        setScanResult(response.data)
+        setSpendLimit(response.data.total_estimated_cost?.toFixed(2) || '')
+      }
+    } catch (error) {
+      onResult({ success: false, error: (error instanceof Error ? error.message : String(error)) || 'Failed to load more files' })
+    } finally {
+      setIsLoadingMore(false)
+    }
+  }
 
   const handleIngest = async () => {
     if (!scanResult) return
@@ -341,9 +357,9 @@ function SmartFolderTab({ onResult }) {
           {/* Truncation warning with Load more */}
           {scanResult.scan_truncated && (
             <div className="bg-gruvbox-yellow/10 border border-gruvbox-yellow/30 rounded-lg px-3 py-2 text-sm text-gruvbox-yellow flex items-center justify-between">
-              <span>Scan was truncated at {scanResult.max_files_used} files. Some files may not be shown.</span>
-              <button onClick={handleLoadMore} disabled={isScanning} className="btn-secondary text-xs ml-3 flex items-center gap-1">
-                {isScanning ? <><span className="spinner" />Loading...</> : 'Load more (500)'}
+              <span>Showing {scanResult.max_files_used} of more files. Some files may not be shown.</span>
+              <button onClick={handleLoadMore} disabled={isLoadingMore} className="btn-secondary text-xs ml-3 flex items-center gap-1">
+                {isLoadingMore ? <><span className="spinner" />Loading...</> : 'Load more'}
               </button>
             </div>
           )}

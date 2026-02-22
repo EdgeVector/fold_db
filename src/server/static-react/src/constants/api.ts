@@ -20,6 +20,7 @@ export const API_TIMEOUTS = {
   MUTATION: 15000, // Mutations, parameterized queries, AI validation
   BATCH: 30000, // Batch operations, database reset
   AI_PROCESSING: 120000, // Extended AI processing operations
+  FOLDER_SCAN: 300000, // Smart folder scan (multiple sequential LLM calls)
 
   // Legacy support
   DEFAULT: 8000,

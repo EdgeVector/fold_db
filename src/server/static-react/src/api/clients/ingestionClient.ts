@@ -416,7 +416,7 @@ export class UnifiedIngestionClient {
         max_files: maxFiles,
       },
       {
-        timeout: API_TIMEOUTS.AI_PROCESSING,
+        timeout: API_TIMEOUTS.FOLDER_SCAN,
         retries: API_RETRIES.NONE,
         cacheable: false,
       },

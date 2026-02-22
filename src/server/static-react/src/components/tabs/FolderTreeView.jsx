@@ -56,7 +56,7 @@ function FileNode({ file }) {
       <span className={`font-mono text-xs flex-1 truncate ${file.should_ingest ? '' : 'text-secondary'}`}>
         {file.path.split('/').pop()}
       </span>
-      <span className="badge badge-neutral text-xs">{file.category}</span>
+      <span className={`badge text-xs ${file.should_ingest ? 'bg-gruvbox-green/20 text-gruvbox-green border-gruvbox-green/30' : 'badge-neutral'}`}>{file.category}</span>
       {file.should_ingest && (
         <span className="text-secondary text-xs">~{fmtCostShort(file.estimated_cost)}</span>
       )}
