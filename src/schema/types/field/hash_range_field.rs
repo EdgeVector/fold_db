@@ -26,24 +26,6 @@ pub struct HashRangeField {
     pub base: FieldBase<MoleculeHashRange>,
 }
 
-/// Configuration for HashRange field indexing
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HashRangeConfig {
-    /// Maximum iterator depth allowed
-    pub max_depth: usize,
-    /// Whether to enable caching of parsed chains
-    pub enable_caching: bool,
-}
-
-impl Default for HashRangeConfig {
-    fn default() -> Self {
-        Self {
-            max_depth: 10,
-            enable_caching: true,
-        }
-    }
-}
-
 impl HashRangeField {
     /// Creates a new HashRange field
     #[must_use]

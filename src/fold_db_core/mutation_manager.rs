@@ -291,7 +291,8 @@ impl MutationManager {
             let mut molecules_to_store: Vec<(String, MoleculeData)> = Vec::new();
 
             for field_name in modified_fields {
-                let schema_field = schema.runtime_fields.get(&field_name).unwrap();
+                let schema_field = schema.runtime_fields.get(&field_name)
+                    .expect("field_name came from modified_fields which was populated from runtime_fields keys");
                 let molecule_uuid = schema_field.common().molecule_uuid().unwrap().to_string(); // verified is_some above
 
                 match schema_field {

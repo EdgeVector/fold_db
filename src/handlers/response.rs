@@ -112,6 +112,35 @@ impl fmt::Display for HandlerError {
 
 impl std::error::Error for HandlerError {}
 
+/// Convert FoldDbError into the appropriate HandlerError variant
+/// instead of wrapping everything as Internal(500).
+impl From<crate::error::FoldDbError> for HandlerError {
+    fn from(err: crate::error::FoldDbError) -> Self {
+        match &err {
+            crate::error::FoldDbError::Schema(schema_err) => match schema_err {
+                crate::schema::types::SchemaError::NotFound(_) => {
+                    HandlerError::NotFound(err.to_string())
+                }
+                crate::schema::types::SchemaError::InvalidPermission(_) => {
+                    HandlerError::Unauthorized(err.to_string())
+                }
+                _ => HandlerError::BadRequest(err.to_string()),
+            },
+            crate::error::FoldDbError::Permission(_) => {
+                HandlerError::Unauthorized(err.to_string())
+            }
+            crate::error::FoldDbError::Config(_) => HandlerError::BadRequest(err.to_string()),
+            crate::error::FoldDbError::Serialization(_) => {
+                HandlerError::BadRequest(err.to_string())
+            }
+            crate::error::FoldDbError::Network(_) => {
+                HandlerError::ServiceUnavailable(err.to_string())
+            }
+            _ => HandlerError::Internal(err.to_string()),
+        }
+    }
+}
+
 impl HandlerError {
     /// Convert to HTTP status code
     pub fn status_code(&self) -> u16 {

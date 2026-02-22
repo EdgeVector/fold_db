@@ -234,7 +234,6 @@ impl FoldDB {
                 Arc::clone(&transform_manager),
                 orchestrator_tree,
                 Arc::clone(&message_bus),
-                Arc::clone(&db_ops),
             ));
 
             // Start the event listener to drive transforms
@@ -251,7 +250,6 @@ impl FoldDB {
                 Arc::clone(&transform_manager),
                 orchestrator_store,
                 Arc::clone(&message_bus),
-                Arc::clone(&db_ops),
             )
             .await
             {

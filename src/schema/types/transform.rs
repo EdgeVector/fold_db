@@ -49,12 +49,6 @@ pub struct Transform {
 impl Transform {
     /// Creates a new Transform from a schema name.
     #[must_use]
-    pub fn new(schema_name: String) -> Self {
-        Self { schema_name }
-    }
-
-    /// Creates a new Transform from a schema name.
-    #[must_use]
     pub fn from_schema_name(schema_name: String) -> Self {
         Self { schema_name }
     }

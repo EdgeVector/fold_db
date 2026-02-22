@@ -6,10 +6,12 @@ use async_trait::async_trait;
 use std::collections::HashSet;
 use std::sync::Arc;
 
-/// Namespaces that contain personal data and should be encrypted.
+/// Namespaces that contain personal data and are encrypted via E2E encryption.
 ///
-/// Phase 1: `main` (atom content) and `metadata` (derived personal data).
-/// Phase 2 will add `native_index` (requires search redesign).
+/// E2E encryption is the primary mechanism — content is encrypted with
+/// AES-256-GCM before reaching storage. Only `main` (atom content) and
+/// `metadata` (derived personal data) are encrypted. Index terms use
+/// HMAC-SHA256 blind tokens instead of encryption (see `E2eKeys::blind_token`).
 pub const ENCRYPTED_NAMESPACES: &[&str] = &["main", "metadata"];
 
 /// A decorator over any `NamespacedStore` that conditionally wraps

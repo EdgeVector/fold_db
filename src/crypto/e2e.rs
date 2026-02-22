@@ -71,6 +71,19 @@ impl E2eKeys {
                 .await
                 .map_err(|e| CryptoError::KeyError(format!("Failed to write E2E key file: {}", e)))?;
 
+            // Restrict key file permissions to owner-only (Unix)
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let perms = std::fs::Permissions::from_mode(0o600);
+                std::fs::set_permissions(key_path, perms).map_err(|e| {
+                    CryptoError::KeyError(format!(
+                        "Failed to set E2E key file permissions: {}",
+                        e
+                    ))
+                })?;
+            }
+
             log::info!(
                 "Generated new E2E key at {}",
                 key_path.display()

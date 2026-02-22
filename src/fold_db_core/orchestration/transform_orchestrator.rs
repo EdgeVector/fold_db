@@ -8,7 +8,6 @@ use log::{error, info};
 use sled::Tree;
 use std::sync::Arc;
 
-use crate::db_operations::DbOperations;
 use crate::fold_db_core::infrastructure::message_bus::query_events::MutationExecuted;
 use crate::fold_db_core::infrastructure::message_bus::schema_events::{
     TransformExecuted, TransformRegistered, TransformRegistrationRequest,
@@ -63,7 +62,6 @@ impl TransformOrchestrator {
         manager: Arc<TransformManager>,
         tree: Tree,
         message_bus: Arc<AsyncMessageBus>,
-        db_ops: Arc<DbOperations>,
     ) -> Self {
         info!("🏗️ Creating TransformOrchestrator with component delegation (Sled)");
 
@@ -90,7 +88,6 @@ impl TransformOrchestrator {
         let execution_coordinator = ExecutionCoordinator::new(
             Arc::clone(&manager),
             Arc::clone(&message_bus),
-            Arc::clone(&db_ops),
         );
 
         info!("✅ TransformOrchestrator initialized with all components");
@@ -107,7 +104,6 @@ impl TransformOrchestrator {
         manager: Arc<TransformManager>,
         store: Arc<dyn KvStore>,
         message_bus: Arc<AsyncMessageBus>,
-        db_ops: Arc<DbOperations>,
     ) -> Result<Self, SchemaError> {
         info!("🏗️ Creating TransformOrchestrator with component delegation (KvStore)");
 
@@ -137,7 +133,6 @@ impl TransformOrchestrator {
         let execution_coordinator = ExecutionCoordinator::new(
             Arc::clone(&manager),
             Arc::clone(&message_bus),
-            Arc::clone(&db_ops),
         );
 
         info!("✅ TransformOrchestrator initialized with all components");

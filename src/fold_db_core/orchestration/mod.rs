@@ -16,7 +16,7 @@ pub mod keyword_extractor;
 pub mod persistence_manager;
 pub mod queue_manager;
 
-pub use execution_coordinator::{ExecutionCoordinator, ExecutionStats};
+pub use execution_coordinator::ExecutionCoordinator;
 pub use index_status::{IndexStatusTracker, IndexingState, IndexingStatus};
 pub use persistence_manager::PersistenceManager;
 pub use queue_manager::{QueueItem, QueueManager, QueueState};

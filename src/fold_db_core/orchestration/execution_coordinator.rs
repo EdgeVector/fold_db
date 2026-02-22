@@ -19,7 +19,6 @@ use std::time::Instant;
 pub struct ExecutionCoordinator {
     manager: Arc<TransformManager>,
     message_bus: Arc<AsyncMessageBus>,
-    _db_ops: Arc<crate::db_operations::DbOperations>,
 }
 
 impl ExecutionCoordinator {
@@ -27,12 +26,10 @@ impl ExecutionCoordinator {
     pub fn new(
         manager: Arc<TransformManager>,
         message_bus: Arc<AsyncMessageBus>,
-        db_ops: Arc<crate::db_operations::DbOperations>,
     ) -> Self {
         Self {
             manager,
             message_bus,
-            _db_ops: db_ops,
         }
     }
 
@@ -291,17 +288,6 @@ impl ExecutionCoordinator {
         Err(final_error)
     }
 
-    /// Get execution statistics for monitoring
-    pub fn get_execution_stats(&self) -> ExecutionStats {
-        // In a real implementation, this would track actual statistics
-        ExecutionStats {
-            total_executions: 0,
-            successful_executions: 0,
-            failed_executions: 0,
-            average_execution_time_ms: 0,
-        }
-    }
-
     /// Get access to the underlying transform manager
     pub fn get_manager(&self) -> &Arc<TransformManager> {
         &self.manager
@@ -310,32 +296,5 @@ impl ExecutionCoordinator {
     /// Get access to the message bus
     pub fn get_message_bus(&self) -> &Arc<AsyncMessageBus> {
         &self.message_bus
-    }
-}
-
-/// Statistics for transform execution monitoring
-#[derive(Debug, Clone)]
-pub struct ExecutionStats {
-    pub total_executions: u64,
-    pub successful_executions: u64,
-    pub failed_executions: u64,
-    pub average_execution_time_ms: u64,
-}
-
-impl ExecutionStats {
-    pub fn success_rate(&self) -> f64 {
-        if self.total_executions == 0 {
-            0.0
-        } else {
-            self.successful_executions as f64 / self.total_executions as f64
-        }
-    }
-
-    pub fn failure_rate(&self) -> f64 {
-        if self.total_executions == 0 {
-            0.0
-        } else {
-            self.failed_executions as f64 / self.total_executions as f64
-        }
     }
 }

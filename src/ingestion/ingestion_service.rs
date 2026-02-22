@@ -414,7 +414,8 @@ impl IngestionService {
             // Resolve schemas for the representative's structure tree.
             // The top-level item's own structure hash is used to cache its
             // flat-parent schema (after array-of-object fields are removed).
-            let rep = representative_for_decompose.as_ref().unwrap();
+            let rep = representative_for_decompose.as_ref()
+                .expect("representative_for_decompose is Some when has_nested_children is true");
             let top_level_topology = crate::schema::types::topology::JsonTopology::infer_from_value(rep);
             let top_level_hash = top_level_topology.compute_hash();
             self.resolve_schema_for_structure(

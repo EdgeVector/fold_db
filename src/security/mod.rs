@@ -1,9 +1,19 @@
 //! Security module for client key management, message signing, and encryption
 //!
+//! ## Encryption Architecture
+//!
+//! FoldDB uses **end-to-end (E2E) encryption** as its primary encryption mechanism.
+//! E2E keys are derived from a local secret (`~/.fold_db/e2e.key`) via HKDF-SHA256,
+//! producing an AES-256-GCM content key and an HMAC-SHA256 index key. This ensures
+//! atom content and index tokens are encrypted before they ever reach storage.
+//!
+//! **Encrypt-at-rest** (`SecurityConfig::encrypt_at_rest`) is an optional, separate
+//! layer that can be enabled when E2E encryption is not in use (e.g., legacy setups
+//! or specific deployment scenarios). It is disabled by default.
+//!
 //! This module provides:
 //! - Ed25519 key pair generation and management
 //! - Message signing and verification
-//! - AES-GCM encryption/decryption for data at rest
 //! - Integration with network and permissions layers
 
 use base64::{engine::general_purpose, Engine as _};
@@ -68,9 +78,12 @@ pub struct SecurityConfig {
     pub require_tls: bool,
     /// Whether to require signatures on all messages
     pub require_signatures: bool,
-    /// Whether to encrypt sensitive data at rest
+    /// Whether to encrypt sensitive data at rest (optional fallback).
+    /// Not needed when E2E encryption is active — E2E encrypts content before
+    /// it reaches the storage layer. Enable this only if E2E is disabled.
     pub encrypt_at_rest: bool,
-    /// Master key for at-rest encryption (should be securely managed)
+    /// Master key for at-rest encryption (only used when encrypt_at_rest is true).
+    /// Not needed when E2E encryption handles content encryption.
     #[serde(skip)]
     pub master_key: Option<[u8; 32]>,
 }
@@ -80,7 +93,7 @@ impl Default for SecurityConfig {
         Self {
             require_tls: true,
             require_signatures: true,
-            encrypt_at_rest: false, // Disabled by default (enable with a master_key)
+            encrypt_at_rest: false, // Not needed when E2E encryption is active (default)
             master_key: None,
         }
     }
