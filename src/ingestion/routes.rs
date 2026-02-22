@@ -30,13 +30,25 @@ pub async fn get_ingestion_service(
     state.read().await.clone()
 }
 
-/// Resolve a folder path — absolute paths pass through, relative paths
-/// are resolved against the current working directory.
+/// Resolve a folder path — expands `~` to the home directory, absolute paths
+/// pass through, relative paths are resolved against the current working directory.
 fn resolve_folder_path(path: &str) -> PathBuf {
-    if Path::new(path).is_absolute() {
-        PathBuf::from(path)
+    let expanded = if path == "~" {
+        dirs::home_dir().unwrap_or_else(|| PathBuf::from(path))
+    } else if let Some(rest) = path.strip_prefix("~/") {
+        if let Some(home) = dirs::home_dir() {
+            home.join(rest)
+        } else {
+            PathBuf::from(path)
+        }
     } else {
-        std::env::current_dir().unwrap_or_default().join(path)
+        PathBuf::from(path)
+    };
+
+    if expanded.is_absolute() {
+        expanded
+    } else {
+        std::env::current_dir().unwrap_or_default().join(expanded)
     }
 }
 
@@ -633,8 +645,8 @@ pub async fn smart_folder_scan(
         return response;
     }
 
-    let max_depth = request.max_depth.unwrap_or(5);
-    let max_files = request.max_files.unwrap_or(500);
+    let max_depth = request.max_depth.unwrap_or(10);
+    let max_files = request.max_files.unwrap_or(2000);
 
     // Delegate to shared logic
     let service_opt = get_ingestion_service(&ingestion_service).await;
@@ -1097,5 +1109,25 @@ mod tests {
         assert_eq!(parsed.files_found, 3);
         assert_eq!(parsed.file_progress_ids.len(), 2);
         assert_eq!(parsed.file_progress_ids[0].file_name, "file1.json");
+    }
+
+    #[tokio::test]
+    async fn test_resolve_folder_path_tilde() {
+        let result = resolve_folder_path("~/Documents");
+        let home = dirs::home_dir().expect("home_dir must exist for this test");
+        assert_eq!(result, home.join("Documents"));
+    }
+
+    #[tokio::test]
+    async fn test_resolve_folder_path_tilde_only() {
+        let result = resolve_folder_path("~");
+        let home = dirs::home_dir().expect("home_dir must exist for this test");
+        assert_eq!(result, home);
+    }
+
+    #[tokio::test]
+    async fn test_resolve_folder_path_absolute() {
+        let result = resolve_folder_path("/tmp/test");
+        assert_eq!(result, PathBuf::from("/tmp/test"));
     }
 }

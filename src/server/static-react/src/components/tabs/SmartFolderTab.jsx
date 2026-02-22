@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { ingestionClient } from '../../api/clients'
+import FolderTreeView from './FolderTreeView'
 
 const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__
 
@@ -8,7 +9,7 @@ const fmtCost = (v) => `$${Number(v).toFixed(2)}`
 const fmtCostShort = (v) => `$${Number(v).toFixed(3)}`
 
 function SmartFolderTab({ onResult }) {
-  const [folderPath, setFolderPath] = useState('')
+  const [folderPath, setFolderPath] = useState('~/Documents')
   const [isScanning, setIsScanning] = useState(false)
   const [isIngesting, setIsIngesting] = useState(false)
   const [scanResult, setScanResult] = useState(null)
@@ -27,6 +28,7 @@ function SmartFolderTab({ onResult }) {
   const suggestionsRef = useRef(null)
   const debounceRef = useRef(null)
   const pollRef = useRef(null)
+  const treeRef = useRef(null)
 
   const fetchCompletions = useCallback(async (path) => {
     if (!path.includes('/')) {
@@ -335,33 +337,26 @@ function SmartFolderTab({ onResult }) {
             </label>
           </div>
 
-          {/* File list */}
-          <div className="border border-border rounded-lg overflow-hidden">
-            <div className="space-y-1 max-h-64 overflow-y-auto p-3">
-              {scanResult.recommended_files.map((file) => (
-                <div key={file.path} className="list-item text-sm">
-                  <span className="text-gruvbox-green text-xs">+</span>
-                  <span className="font-mono text-xs flex-1 truncate">{file.path}</span>
-                  <span className="badge badge-neutral">{file.category}</span>
-                  <span className="text-secondary text-xs">~{fmtCostShort(file.estimated_cost)}</span>
-                </div>
-              ))}
+          {/* Truncation warning */}
+          {scanResult.scan_truncated && (
+            <div className="bg-gruvbox-yellow/10 border border-gruvbox-yellow/30 rounded-lg px-3 py-2 text-sm text-gruvbox-yellow">
+              Scan was truncated at {scanResult.max_files_used} files (depth {scanResult.max_depth_used}). Some files may not be shown.
             </div>
-            {scanResult.skipped_files.length > 0 && (
-              <div className="border-t border-border p-3">
-                <p className="text-secondary text-xs mb-2">Skipped ({scanResult.skipped_files.length})</p>
-                <div className="space-y-1 max-h-32 overflow-y-auto">
-                  {scanResult.skipped_files.map((file) => (
-                    <div key={file.path} className="list-item text-sm">
-                      <span className="text-secondary text-xs">-</span>
-                      <span className="text-secondary font-mono text-xs flex-1 truncate">{file.path}</span>
-                      <span className="text-secondary text-xs">{file.reason}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+          )}
+
+          {/* Folder tree controls */}
+          <div className="flex items-center gap-2 text-xs text-secondary">
+            <button onClick={() => treeRef.current?.expandAll()} className="hover:text-primary underline">Expand all</button>
+            <span>·</span>
+            <button onClick={() => treeRef.current?.collapseAll()} className="hover:text-primary underline">Collapse all</button>
           </div>
+
+          {/* Folder tree */}
+          <FolderTreeView
+            ref={treeRef}
+            recommendedFiles={scanResult.recommended_files}
+            skippedFiles={scanResult.skipped_files}
+          />
 
           <div className="flex items-center justify-between">
             <button onClick={handleBack} className="btn-secondary" disabled={isIngesting}>Back</button>
