@@ -29,11 +29,16 @@
 pub mod ai_helpers;
 pub mod ai_schema_response;
 pub mod batch_controller;
+pub mod batch_routes;
 pub mod config;
+pub mod cost_estimation;
+pub mod date_handling;
 pub mod decomposer;
 pub mod error;
+pub mod file_conversion;
 pub mod file_upload;
 pub mod ingestion_service;
+pub mod key_extraction;
 pub mod json_processor;
 pub mod multipart_parser;
 pub mod mutation_generator;
@@ -43,6 +48,7 @@ pub mod progress;
 pub mod prompts;
 pub mod routes;
 pub mod smart_folder;
+pub mod smart_folder_routes;
 pub mod structure_analyzer;
 
 use serde::{Deserialize, Serialize};

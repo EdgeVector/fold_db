@@ -6,9 +6,15 @@
 use crate::ingestion::error::IngestionError;
 use crate::ingestion::IngestionResult;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use std::collections::HashSet;
 use std::path::Path;
+
+// Re-export from sibling modules so external callers can still use
+// `smart_folder::estimate_file_cost`, `smart_folder::read_file_as_json`, etc.
+pub use super::cost_estimation::estimate_file_cost;
+pub use super::file_conversion::{csv_to_json, read_file_as_json, read_file_with_hash, twitter_js_to_json};
+
+use super::cost_estimation::file_size_bytes;
 
 // ---- Data types ----
 
@@ -126,8 +132,13 @@ fn scan_directory_recursive(
         return Ok(());
     }
 
-    let entries = std::fs::read_dir(current)
-        .map_err(|e| IngestionError::InvalidInput(format!("Failed to read directory {}: {}", current.display(), e)))?;
+    let entries = std::fs::read_dir(current).map_err(|e| {
+        IngestionError::InvalidInput(format!(
+            "Failed to read directory {}: {}",
+            current.display(),
+            e
+        ))
+    })?;
 
     for entry in entries.flatten() {
         if files.len() >= max_files {
@@ -275,8 +286,7 @@ pub fn build_directory_tree_string(file_paths: &[String]) -> String {
 /// Everything NOT in this list goes to the LLM for classification.
 const BINARY_SKIP_EXTS: &[&str] = &[
     // Compiled binaries
-    "exe", "dll", "so", "dylib", "o", "a", "lib", "class", "pyc", "pyo",
-    "beam", "wasm",
+    "exe", "dll", "so", "dylib", "o", "a", "lib", "class", "pyc", "pyo", "beam", "wasm",
     // Fonts
     "woff", "woff2", "eot", "ttf", "otf",
     // Source maps / lock files
@@ -379,8 +389,8 @@ pub fn parse_llm_file_recommendations(
 ) -> IngestionResult<Vec<FileRecommendation>> {
     let json_str = crate::ingestion::ai_helpers::extract_json_from_response(response)?;
 
-    let parsed: Vec<FileRecommendation> =
-        serde_json::from_str(&json_str).map_err(|e| IngestionError::InvalidInput(format!("Failed to parse JSON: {}", e)))?;
+    let parsed: Vec<FileRecommendation> = serde_json::from_str(&json_str)
+        .map_err(|e| IngestionError::InvalidInput(format!("Failed to parse JSON: {}", e)))?;
 
     // Validate that paths exist in our file tree
     let file_set: HashSet<&str> = file_tree.iter().map(|s| s.as_str()).collect();
@@ -454,203 +464,6 @@ pub fn apply_heuristic_filtering(file_tree: &[String]) -> Vec<FileRecommendation
             }
         })
         .collect()
-}
-
-// ---- File conversion ----
-
-/// Convert CSV content to JSON array
-pub fn csv_to_json(csv_content: &str) -> IngestionResult<String> {
-    let mut reader = csv::ReaderBuilder::new()
-        .has_headers(true)
-        .from_reader(csv_content.as_bytes());
-
-    let headers: Vec<String> = reader
-        .headers()
-        .map_err(|e| IngestionError::InvalidInput(format!("Failed to read CSV headers: {}", e)))?
-        .iter()
-        .map(|h| h.to_string())
-        .collect();
-
-    let mut records: Vec<Value> = Vec::new();
-
-    for result in reader.records() {
-        let record = result.map_err(|e| IngestionError::InvalidInput(format!("Failed to read CSV record: {}", e)))?;
-        let mut obj = serde_json::Map::new();
-
-        for (i, field) in record.iter().enumerate() {
-            if let Some(header) = headers.get(i) {
-                let value = if let Ok(n) = field.parse::<f64>() {
-                    Value::Number(
-                        serde_json::Number::from_f64(n)
-                            .unwrap_or_else(|| serde_json::Number::from(0)),
-                    )
-                } else if field == "true" {
-                    Value::Bool(true)
-                } else if field == "false" {
-                    Value::Bool(false)
-                } else {
-                    Value::String(field.to_string())
-                };
-                obj.insert(header.clone(), value);
-            }
-        }
-
-        records.push(Value::Object(obj));
-    }
-
-    serde_json::to_string(&records).map_err(|e| IngestionError::InvalidInput(format!("Failed to serialize JSON: {}", e)))
-}
-
-/// Convert a Twitter data export `.js` file to JSON.
-///
-/// Twitter data exports use files like `window.YTD.tweet.part0 = [...]`.
-/// This strips the variable assignment prefix and returns the pure JSON.
-pub fn twitter_js_to_json(content: &str) -> IngestionResult<String> {
-    if let Some(eq_pos) = content.find('=') {
-        let json_part = content[eq_pos + 1..].trim();
-        // Validate it parses as JSON
-        serde_json::from_str::<Value>(json_part)
-            .map_err(|e| IngestionError::InvalidInput(format!("Invalid JSON in .js file: {}", e)))?;
-        Ok(json_part.to_string())
-    } else {
-        Err(IngestionError::InvalidInput("Not a Twitter data export .js file (no '=' found)".to_string()))
-    }
-}
-
-// ---- Unified file reader ----
-
-/// Read a file and convert it to a JSON Value regardless of format.
-///
-/// Supported extensions: `.json`, `.js` (Twitter export), `.csv`, `.txt`, `.md`
-pub fn read_file_as_json(file_path: &Path) -> IngestionResult<Value> {
-    let content =
-        std::fs::read_to_string(file_path).map_err(|e| IngestionError::InvalidInput(format!("Failed to read file: {}", e)))?;
-
-    let ext = file_path
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("")
-        .to_lowercase();
-
-    let json_string = match ext.as_str() {
-        "json" => content,
-        "js" => twitter_js_to_json(&content)?,
-        "csv" => csv_to_json(&content)?,
-        "txt" | "md" => {
-            let file_name = file_path
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("unknown");
-            serde_json::to_string(&serde_json::json!({
-                "content": content,
-                "source_file": file_name,
-                "file_type": ext
-            }))
-            .map_err(|e| IngestionError::InvalidInput(format!("Failed to wrap text content: {}", e)))?
-        }
-        _ => return Err(IngestionError::InvalidInput(format!("Unsupported file type: {}", ext))),
-    };
-
-    serde_json::from_str(&json_string).map_err(|e| IngestionError::InvalidInput(format!("Failed to parse JSON: {}", e)))
-}
-
-/// Read a file, compute its SHA256 hash, and convert to JSON.
-/// Returns `(json_value, sha256_hex_hash)`.
-pub fn read_file_with_hash(file_path: &Path) -> IngestionResult<(Value, String)> {
-    use sha2::{Digest, Sha256};
-
-    let raw_bytes = std::fs::read(file_path)
-        .map_err(|e| IngestionError::InvalidInput(format!("Failed to read file: {}", e)))?;
-
-    let hash_hex = format!("{:x}", Sha256::digest(&raw_bytes));
-
-    let content = String::from_utf8(raw_bytes)
-        .map_err(|e| IngestionError::InvalidInput(format!("File is not valid UTF-8: {}", e)))?;
-
-    let ext = file_path
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("")
-        .to_lowercase();
-
-    let json_string = match ext.as_str() {
-        "json" => content,
-        "js" => twitter_js_to_json(&content)?,
-        "csv" => csv_to_json(&content)?,
-        "txt" | "md" => {
-            let file_name = file_path
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("unknown");
-            serde_json::to_string(&serde_json::json!({
-                "content": content,
-                "source_file": file_name,
-                "file_type": ext
-            }))
-            .map_err(|e| IngestionError::InvalidInput(format!("Failed to wrap text content: {}", e)))?
-        }
-        _ => return Err(IngestionError::InvalidInput(format!("Unsupported file type: {}", ext))),
-    };
-
-    let value = serde_json::from_str(&json_string)
-        .map_err(|e| IngestionError::InvalidInput(format!("Failed to parse JSON: {}", e)))?;
-
-    Ok((value, hash_hex))
-}
-
-// ---- Cost estimation ----
-
-/// Estimate the ingestion cost for a single file based on its size and type.
-///
-/// The model accounts for multiple AI calls per file (classification, conversion,
-/// schema recommendation, child schema resolution) plus a base schema-service call.
-pub fn estimate_file_cost(path: &Path, root: &Path) -> f64 {
-    let full_path = root.join(path);
-    let file_size = std::fs::metadata(&full_path)
-        .map(|m| m.len())
-        .unwrap_or(0);
-
-    let ext = path
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("")
-        .to_lowercase();
-
-    // Base cost for schema recommendation call
-    let base_cost = 0.003;
-
-    let content_cost = match ext.as_str() {
-        // PDF: text extraction + conversion
-        "pdf" => {
-            let text_cost = text_cost_by_size(file_size);
-            0.04 + text_cost
-        }
-        // Images: vision model call
-        "jpg" | "jpeg" | "png" | "gif" | "webp" | "heic" | "heif" | "bmp" | "tiff" => 0.02,
-        // Text-like files: cost scales with size
-        _ => text_cost_by_size(file_size),
-    };
-
-    base_cost + content_cost
-}
-
-/// Helper: estimate the AI cost for text content based on byte size.
-fn text_cost_by_size(size: u64) -> f64 {
-    if size < 10_000 {
-        0.005
-    } else if size < 100_000 {
-        0.015
-    } else {
-        0.028
-    }
-}
-
-/// Get the file size for a path relative to root, returning 0 on error.
-fn file_size_bytes(path: &Path, root: &Path) -> u64 {
-    let full_path = root.join(path);
-    std::fs::metadata(&full_path)
-        .map(|m| m.len())
-        .unwrap_or(0)
 }
 
 // ---- Scan orchestration ----
@@ -739,13 +552,18 @@ pub async fn perform_smart_folder_scan(
             let chunk_vec: Vec<String> = chunk.to_vec();
             let prompt = create_smart_folder_prompt(&scan.tree_display, &chunk_vec);
             match call_llm_for_file_analysis(&prompt, svc).await {
-                Ok(llm_response) => match parse_llm_file_recommendations(&llm_response, &chunk_vec) {
-                    Ok(recs) => all_recs.extend(recs),
-                    Err(e) => {
-                        log::warn!("Failed to parse LLM response, using heuristics for batch: {}", e);
-                        all_recs.extend(apply_heuristic_filtering(&chunk_vec));
+                Ok(llm_response) => {
+                    match parse_llm_file_recommendations(&llm_response, &chunk_vec) {
+                        Ok(recs) => all_recs.extend(recs),
+                        Err(e) => {
+                            log::warn!(
+                                "Failed to parse LLM response, using heuristics for batch: {}",
+                                e
+                            );
+                            all_recs.extend(apply_heuristic_filtering(&chunk_vec));
+                        }
                     }
-                },
+                }
                 Err(e) => {
                     log::warn!("LLM call failed, using heuristics for batch: {}", e);
                     all_recs.extend(apply_heuristic_filtering(&chunk_vec));
@@ -756,10 +574,8 @@ pub async fn perform_smart_folder_scan(
     };
 
     // Merge binary-skipped + LLM recommendations
-    let recommendations: Vec<FileRecommendation> = binary_skipped
-        .into_iter()
-        .chain(llm_recs)
-        .collect();
+    let recommendations: Vec<FileRecommendation> =
+        binary_skipped.into_iter().chain(llm_recs).collect();
 
     // Split into recommended and skipped, build summary, compute costs
     let mut recommended_files = Vec::new();
@@ -810,10 +626,10 @@ pub async fn perform_smart_folder_scan(
     })
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::Value;
 
     #[test]
     fn test_twitter_js_to_json_valid() {

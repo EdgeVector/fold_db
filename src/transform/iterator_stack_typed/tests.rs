@@ -25,6 +25,7 @@ mod typed_engine_tests {
                 value: serde_json::json!("hello world"),
                 atom_uuid: "atom-1".to_string(),
                 source_file_name: None,
+                metadata: None,
             },
         );
         input.insert("BlogPost.content".to_string(), field_map);
@@ -50,6 +51,7 @@ mod typed_engine_tests {
                 value: serde_json::json!("alpha beta gamma"),
                 atom_uuid: "atom-2".to_string(),
                 source_file_name: None,
+                metadata: None,
             },
         );
         input.insert("BlogPost.content".to_string(), field_map);
@@ -87,6 +89,7 @@ mod typed_engine_tests {
                 value: serde_json::json!("one"),
                 atom_uuid: "atom-1".to_string(),
                 source_file_name: None,
+                metadata: None,
             },
         );
         field_map.insert(
@@ -95,6 +98,7 @@ mod typed_engine_tests {
                 value: serde_json::json!("two"),
                 atom_uuid: "atom-2".to_string(),
                 source_file_name: None,
+                metadata: None,
             },
         );
         field_map.insert(
@@ -103,6 +107,7 @@ mod typed_engine_tests {
                 value: serde_json::json!("three"),
                 atom_uuid: "atom-3".to_string(),
                 source_file_name: None,
+                metadata: None,
             },
         );
         input.insert("BlogPost.content".to_string(), field_map);
@@ -140,6 +145,7 @@ mod typed_engine_tests {
                 value: serde_json::json!("hello"),
                 atom_uuid: "atom-1".to_string(),
                 source_file_name: None,
+                metadata: None,
             },
         );
         field_map.insert(
@@ -148,6 +154,7 @@ mod typed_engine_tests {
                 value: serde_json::json!("world"),
                 atom_uuid: "atom-2".to_string(),
                 source_file_name: None,
+                metadata: None,
             },
         );
         input.insert("BlogPost.content".to_string(), field_map);
@@ -183,6 +190,7 @@ mod typed_engine_tests {
                 value: serde_json::json!("alpha beta gamma"),
                 atom_uuid: "atom-1".to_string(),
                 source_file_name: None,
+                metadata: None,
             },
         );
         input.insert("BlogPost.content".to_string(), field_map);

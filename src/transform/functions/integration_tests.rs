@@ -180,6 +180,7 @@ fn test_engine_executes_iterator_functions() {
             value: serde_json::Value::String("hello world test".to_string()),
             atom_uuid: "atom-1".to_string(),
             source_file_name: None,
+            metadata: None,
         },
     );
     input.insert("BlogPost.content".to_string(), field_map);
