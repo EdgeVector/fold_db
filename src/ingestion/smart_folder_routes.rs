@@ -63,7 +63,7 @@ pub struct SmartFolderIngestRequest {
 )]
 pub async fn smart_folder_scan(
     request: web::Json<SmartFolderScanRequest>,
-    _state: web::Data<AppState>,
+    state: web::Data<AppState>,
     ingestion_service: web::Data<IngestionServiceState>,
 ) -> impl Responder {
     log_feature!(
@@ -96,12 +96,34 @@ pub async fn smart_folder_scan(
     let max_depth = request.max_depth.unwrap_or(10);
     let max_files = request.max_files.unwrap_or(100);
 
-    // Delegate to shared logic
+    // Get node for dedup checking (best-effort — scan still works without it)
+    let node_arc = require_node(&state).await.ok().map(|(_uid, arc)| arc);
+
     let service_opt = get_ingestion_service(&ingestion_service).await;
     let service_ref = service_opt.as_deref();
-    match smart_folder::perform_smart_folder_scan(&folder_path, max_depth, max_files, service_ref)
+
+    let result = if let Some(ref arc) = node_arc {
+        let node_guard = arc.read().await;
+        smart_folder::perform_smart_folder_scan(
+            &folder_path,
+            max_depth,
+            max_files,
+            service_ref,
+            Some(&*node_guard),
+        )
         .await
-    {
+    } else {
+        smart_folder::perform_smart_folder_scan(
+            &folder_path,
+            max_depth,
+            max_files,
+            service_ref,
+            None,
+        )
+        .await
+    };
+
+    match result {
         Ok(response) => HttpResponse::Ok().json(response),
         Err(e) => HttpResponse::BadRequest().json(json!({
             "success": false,

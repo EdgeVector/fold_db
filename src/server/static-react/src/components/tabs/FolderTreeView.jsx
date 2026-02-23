@@ -20,20 +20,23 @@ function buildTree(files) {
   return root
 }
 
-/** Recursively compute recommended/skipped counts for a folder */
+/** Recursively compute recommended/skipped/alreadyIngested counts for a folder */
 function computeStats(node) {
   let recommended = 0
   let skipped = 0
+  let alreadyIngested = 0
   for (const f of node.files) {
-    if (f.should_ingest) recommended++
+    if (f.already_ingested) alreadyIngested++
+    else if (f.should_ingest) recommended++
     else skipped++
   }
   for (const child of Object.values(node.children)) {
     const childStats = computeStats(child)
     recommended += childStats.recommended
     skipped += childStats.skipped
+    alreadyIngested += childStats.alreadyIngested
   }
-  return { recommended, skipped }
+  return { recommended, skipped, alreadyIngested }
 }
 
 /** Collect all folder paths in the tree */
@@ -48,16 +51,28 @@ function collectPaths(node, prefix = '') {
 }
 
 function FileNode({ file }) {
+  const isIngested = file.already_ingested
+  const iconClass = isIngested
+    ? 'text-gruvbox-blue text-xs'
+    : file.should_ingest
+      ? 'text-gruvbox-green text-xs'
+      : 'text-secondary text-xs'
+  const icon = isIngested ? '\u2713' : file.should_ingest ? '+' : '-'
+  const nameClass = isIngested || !file.should_ingest ? 'text-secondary' : ''
+  const badgeClass = isIngested
+    ? 'bg-gruvbox-blue/20 text-gruvbox-blue border-gruvbox-blue/30'
+    : file.should_ingest
+      ? 'bg-gruvbox-green/20 text-gruvbox-green border-gruvbox-green/30'
+      : 'badge-neutral'
+
   return (
-    <div className="flex items-center gap-2 py-0.5 px-2 hover:bg-surface-secondary rounded text-sm group">
-      <span className={file.should_ingest ? 'text-gruvbox-green text-xs' : 'text-secondary text-xs'}>
-        {file.should_ingest ? '+' : '-'}
-      </span>
-      <span className={`font-mono text-xs flex-1 truncate ${file.should_ingest ? '' : 'text-secondary'}`}>
+    <div className={`flex items-center gap-2 py-0.5 px-2 hover:bg-surface-secondary rounded text-sm group ${isIngested ? 'opacity-60' : ''}`}>
+      <span className={iconClass}>{icon}</span>
+      <span className={`font-mono text-xs flex-1 truncate ${nameClass}`}>
         {file.path.split('/').pop()}
       </span>
-      <span className={`badge text-xs ${file.should_ingest ? 'bg-gruvbox-green/20 text-gruvbox-green border-gruvbox-green/30' : 'badge-neutral'}`}>{file.category}</span>
-      {file.should_ingest && (
+      <span className={`badge text-xs ${badgeClass}`}>{file.category}</span>
+      {file.should_ingest && !isIngested && (
         <span className="text-secondary text-xs">~{fmtCostShort(file.estimated_cost)}</span>
       )}
       <span className="text-secondary text-xs hidden group-hover:inline max-w-48 truncate" title={file.reason}>
@@ -89,6 +104,8 @@ function TreeNode({ node, name, depth, expanded, onToggle, pathPrefix }) {
         <span className="text-xs w-3 text-secondary">{isExpanded ? '\u25BE' : '\u25B8'}</span>
         <span className="text-sm">{name}/</span>
         <span className="text-xs text-secondary ml-auto mr-2">
+          {stats.alreadyIngested > 0 && <span className="text-gruvbox-blue">{stats.alreadyIngested} done</span>}
+          {stats.alreadyIngested > 0 && (stats.recommended > 0 || stats.skipped > 0) && <span> · </span>}
           {stats.recommended > 0 && <span className="text-gruvbox-green">{stats.recommended} ingest</span>}
           {stats.recommended > 0 && stats.skipped > 0 && <span> · </span>}
           {stats.skipped > 0 && <span>{stats.skipped} skip</span>}

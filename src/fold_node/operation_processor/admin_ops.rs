@@ -324,6 +324,7 @@ impl OperationProcessor {
             max_depth,
             max_files,
             None,
+            Some(&self.node),
         )
         .await
         .map_err(|e| FoldDbError::Other(e.to_string()))

@@ -35,6 +35,9 @@ pub struct FileRecommendation {
     /// Estimated ingestion cost in USD
     #[serde(default)]
     pub estimated_cost: f64,
+    /// Whether this file has already been ingested (dedup check)
+    #[serde(default)]
+    pub already_ingested: bool,
 }
 
 /// Summary of smart folder scan — category name → count.
@@ -273,6 +276,17 @@ pub fn build_directory_tree_string(file_paths: &[String]) -> String {
     lines.join("\n")
 }
 
+// ---- File hashing ----
+
+/// Compute SHA256 hash of a file's raw bytes (for dedup checking).
+pub fn compute_file_hash(file_path: &Path) -> IngestionResult<String> {
+    use sha2::{Digest, Sha256};
+    let raw_bytes = std::fs::read(file_path).map_err(|e| {
+        IngestionError::InvalidInput(format!("Failed to read file for hashing: {}", e))
+    })?;
+    Ok(format!("{:x}", Sha256::digest(&raw_bytes)))
+}
+
 // ---- Binary file detection ----
 
 /// Extensions for truly binary files that can never contain personal data.
@@ -454,6 +468,7 @@ pub fn apply_heuristic_filtering(file_tree: &[String]) -> Vec<FileRecommendation
                 reason: reason.to_string(),
                 file_size_bytes: 0,
                 estimated_cost: 0.0,
+                already_ingested: false,
             }
         })
         .collect()
@@ -476,6 +491,7 @@ pub async fn perform_smart_folder_scan(
     max_depth: usize,
     max_files: usize,
     service: Option<&crate::ingestion::ingestion_service::IngestionService>,
+    node: Option<&crate::fold_node::FoldNode>,
 ) -> IngestionResult<SmartFolderScanResponse> {
     let scan = scan_directory_tree_with_context(folder_path, max_depth, max_files)?;
 
@@ -506,6 +522,7 @@ pub async fn perform_smart_folder_scan(
                 reason: "Binary/system file".to_string(),
                 file_size_bytes: 0,
                 estimated_cost: 0.0,
+                already_ingested: false,
             });
         } else {
             llm_candidates.push(path.clone());
@@ -569,18 +586,35 @@ pub async fn perform_smart_folder_scan(
     let mut total_estimated_cost = 0.0;
     let mut summary: SmartFolderSummary = HashMap::new();
 
+    // Get pub_key from node for dedup checking
+    let pub_key = node.map(|n| n.get_node_public_key().to_string());
+
     for mut rec in recommendations {
         // Populate file size and cost estimate
         let rel_path = Path::new(&rec.path);
         rec.file_size_bytes = file_size_bytes(rel_path, folder_path);
         rec.estimated_cost = estimate_file_cost(rel_path, folder_path);
 
-        *summary.entry(rec.category.clone()).or_insert(0) += 1;
-
         if rec.should_ingest {
+            // Check if this file has already been ingested
+            if let (Some(ref pk), Some(n)) = (&pub_key, node) {
+                let full_path = folder_path.join(&rec.path);
+                if let Ok(hash) = compute_file_hash(&full_path) {
+                    if n.is_file_ingested(pk, &hash).await.is_some() {
+                        rec.should_ingest = false;
+                        rec.already_ingested = true;
+                        rec.reason = "Already ingested".to_string();
+                        *summary.entry("already_ingested".to_string()).or_insert(0) += 1;
+                        skipped_files.push(rec);
+                        continue;
+                    }
+                }
+            }
+            *summary.entry(rec.category.clone()).or_insert(0) += 1;
             total_estimated_cost += rec.estimated_cost;
             recommended_files.push(rec);
         } else {
+            *summary.entry(rec.category.clone()).or_insert(0) += 1;
             skipped_files.push(rec);
         }
     }

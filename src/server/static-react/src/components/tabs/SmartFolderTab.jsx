@@ -334,7 +334,10 @@ function SmartFolderTab({ onResult }) {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-6 text-sm">
               <span className="text-primary font-medium">{scanResult.recommended_files.length} files to ingest</span>
-              <span className="text-secondary">{scanResult.skipped_files.length} skipped</span>
+              {scanResult.skipped_files.filter(f => f.already_ingested).length > 0 && (
+                <span className="text-gruvbox-blue">{scanResult.skipped_files.filter(f => f.already_ingested).length} already ingested</span>
+              )}
+              <span className="text-secondary">{scanResult.skipped_files.filter(f => !f.already_ingested).length} skipped</span>
               <span className="text-secondary">{scanResult.total_files} total</span>
             </div>
             {Object.keys(scanResult.summary).length > 0 && (
