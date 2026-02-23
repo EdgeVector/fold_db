@@ -1,0 +1,21 @@
+January 20, 2025
+
+Rough day. The deployment broke production for about 20 minutes this morning.
+Turned out to be a database migration that didn't account for existing NULL values
+in the phone_number column. Learned my lesson — always test migrations against a
+production data snapshot, not just the dev database.
+
+The good news is the post-mortem went well. Nobody pointed fingers and we came up
+with a solid checklist for future deployments. John suggested we add a pre-deploy
+staging step with production data copies. Good idea.
+
+Skipped my run today because of the stress. Ordered Thai food instead. Need to
+get back on track tomorrow.
+
+Started planning the Tokyo trip with the flight booking confirmed. So excited
+about this. It'll be my first time in Japan. Need to learn at least basic phrases:
+- Sumimasen (excuse me)
+- Arigatou gozaimasu (thank you)
+- Eigo o hanasemasu ka? (Do you speak English?)
+
+Going to bed early tonight. Tomorrow is a fresh start.

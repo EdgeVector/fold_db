@@ -1,0 +1,19 @@
+{
+  "tax_year": 2024,
+  "employer": "Acme Corp",
+  "employer_ein": "12-3456789",
+  "employee": {
+    "name": "Alice Johnson",
+    "ssn_last4": "6789",
+    "address": "1500 Main St, Apt 4B, San Jose, CA 95112"
+  },
+  "wages": 102000.00,
+  "federal_tax_withheld": 18360.00,
+  "state_tax_withheld": 7140.00,
+  "social_security_wages": 102000.00,
+  "social_security_tax": 6324.00,
+  "medicare_wages": 102000.00,
+  "medicare_tax": 1479.00,
+  "retirement_401k": 12000.00,
+  "health_insurance_pretax": 3600.00
+}

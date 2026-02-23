@@ -1,0 +1,9 @@
+date,vendor,amount,category,reimbursable,notes
+2025-01-05,Uber,24.50,Transportation,true,Client meeting downtown
+2025-01-08,Blue Bottle Coffee,18.75,Meals,true,Team lunch with new hire
+2025-01-12,Amazon,45.99,Supplies,true,USB-C hub for office
+2025-01-15,Lyft,31.20,Transportation,true,Airport pickup for visiting team
+2025-01-18,Sweetgreen,16.40,Meals,false,Personal lunch
+2025-01-22,WeWork,350.00,Office,true,Monthly desk rental
+2025-01-25,FedEx,12.80,Shipping,true,Sent documents to client
+2025-01-28,Staples,34.99,Supplies,true,Printer paper and toner

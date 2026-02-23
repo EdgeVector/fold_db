@@ -1,0 +1,19 @@
+January 15, 2025
+
+Today was a pretty good day. Had a productive morning at work — finally got the
+authentication module working after wrestling with it for three days. The trick was
+switching from session-based auth to JWT tokens. Mike helped me figure out the
+refresh token flow.
+
+Had lunch with Sarah at the new ramen place on 4th Street. The tonkotsu was
+amazing. Need to go back and try the miso next time.
+
+After work I went for a 3-mile run around the lake. The weather was perfect —
+mid-60s and sunny. Hit a new personal best pace of 8:45/mile. Feeling good about
+the half marathon in April.
+
+Reminder: Call mom this weekend. Her birthday is coming up on the 18th and I
+still need to order her gift. She mentioned wanting that Le Creuset dutch oven
+in the blue color.
+
+Read about 50 pages of "Project Hail Mary" before bed. Such a good book.

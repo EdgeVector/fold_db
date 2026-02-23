@@ -1,0 +1,23 @@
+[
+  {
+    "title": "Getting Started with Rust",
+    "content": "Rust is a systems programming language that runs blazingly fast, prevents segfaults, and guarantees thread safety.",
+    "author": "Alice Johnson",
+    "publish_date": "2025-01-15",
+    "tags": ["rust", "programming", "tutorial"]
+  },
+  {
+    "title": "Understanding WebAssembly",
+    "content": "WebAssembly is a binary instruction format for a stack-based virtual machine. It enables high-performance applications on web pages.",
+    "author": "Bob Smith",
+    "publish_date": "2025-01-18",
+    "tags": ["webassembly", "web", "performance"]
+  },
+  {
+    "title": "Building APIs with Actix-Web",
+    "content": "Actix-web is a powerful, pragmatic, and extremely fast web framework for Rust. Learn how to build REST APIs.",
+    "author": "Carol Williams",
+    "publish_date": "2025-01-20",
+    "tags": ["rust", "actix", "api", "web"]
+  }
+]

@@ -1,0 +1,14 @@
+date,description,amount,balance,category
+2025-01-02,Direct Deposit - Acme Corp,4250.00,15320.45,Income
+2025-01-03,Whole Foods Market,-87.32,15233.13,Groceries
+2025-01-05,Netflix Monthly,-15.99,15217.14,Entertainment
+2025-01-07,Shell Gas Station,-52.40,15164.74,Transportation
+2025-01-10,Rent Payment,-2100.00,13064.74,Housing
+2025-01-12,Amazon.com,-34.99,13029.75,Shopping
+2025-01-15,Verizon Wireless,-85.00,12944.75,Utilities
+2025-01-18,Trader Joe's,-62.17,12882.58,Groceries
+2025-01-20,Gym Membership,-49.99,12832.59,Health
+2025-01-22,Electric Company,-124.50,12708.09,Utilities
+2025-01-25,Coffee Shop,-5.75,12702.34,Dining
+2025-01-28,Target,-43.21,12659.13,Shopping
+2025-01-31,Interest Payment,2.15,12661.28,Interest

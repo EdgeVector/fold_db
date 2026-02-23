@@ -1,0 +1,38 @@
+[
+  {
+    "name": "Mom",
+    "phone": "555-0101",
+    "email": "margaret.johnson@email.com",
+    "address": "42 Oak Street, Springfield, IL 62701",
+    "birthday": "1962-04-18",
+    "relationship": "parent"
+  },
+  {
+    "name": "Dad",
+    "phone": "555-0102",
+    "email": "robert.johnson@email.com",
+    "address": "42 Oak Street, Springfield, IL 62701",
+    "birthday": "1960-09-03",
+    "relationship": "parent"
+  },
+  {
+    "name": "Dr. Sarah Chen",
+    "phone": "555-0200",
+    "email": "office@bayareamedical.com",
+    "address": "1200 Medical Center Dr, San Jose, CA 95128",
+    "notes": "Primary care physician"
+  },
+  {
+    "name": "Mike Rivera",
+    "phone": "555-0303",
+    "email": "mike.r@email.com",
+    "birthday": "1993-11-22",
+    "relationship": "friend"
+  },
+  {
+    "name": "Lisa Park - Dentist",
+    "phone": "555-0400",
+    "address": "890 Dental Way, Suite 3, Palo Alto, CA 94301",
+    "notes": "Cleanings every 6 months"
+  }
+]

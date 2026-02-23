@@ -1,0 +1,9 @@
+{
+  "editor.fontSize": 14,
+  "editor.tabSize": 2,
+  "editor.formatOnSave": true,
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "terminal.integrated.shell.osx": "/bin/zsh",
+  "workbench.colorTheme": "Gruvbox Dark Hard",
+  "files.autoSave": "afterDelay"
+}

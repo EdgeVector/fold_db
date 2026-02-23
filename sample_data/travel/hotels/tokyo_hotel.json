@@ -1,0 +1,13 @@
+{
+  "confirmation_number": "HTL-892341",
+  "hotel": "Shinjuku Granbell Hotel",
+  "address": "2-14-4 Kabukicho, Shinjuku, Tokyo 160-0021",
+  "check_in": "2025-03-16",
+  "check_out": "2025-03-25",
+  "nights": 9,
+  "room_type": "Superior Double",
+  "rate_per_night": 142.00,
+  "total_cost": 1278.00,
+  "guest": "Alice Johnson",
+  "special_requests": "High floor, non-smoking"
+}

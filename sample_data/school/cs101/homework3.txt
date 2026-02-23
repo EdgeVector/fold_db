@@ -1,0 +1,22 @@
+CS 101 - Introduction to Computer Science
+Homework 3: Data Structures
+Due: February 10, 2025
+Student: Alice Johnson (ID: 20251234)
+
+Problem 1: Implement a stack using a linked list.
+- push() should add to the head
+- pop() should remove from the head
+- peek() should return head value without removing
+
+Problem 2: Explain the time complexity of the following operations:
+a) Array access by index: O(1) - direct memory offset calculation
+b) Linked list search: O(n) - must traverse from head
+c) Hash table lookup: O(1) average, O(n) worst case
+d) Binary search tree insert: O(log n) average, O(n) worst case
+
+Problem 3: Compare arrays vs linked lists.
+Arrays: contiguous memory, fast random access, fixed size (or expensive resize)
+Linked lists: scattered memory, sequential access only, dynamic size, extra pointer overhead
+
+Grade: 92/100
+Feedback: Good explanations! Minor deduction on Problem 3 for not mentioning cache locality.

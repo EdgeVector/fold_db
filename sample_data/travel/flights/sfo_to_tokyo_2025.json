@@ -1,0 +1,26 @@
+{
+  "booking_reference": "JL7X4K2",
+  "airline": "Japan Airlines",
+  "passengers": [
+    {"name": "Alice Johnson", "seat": "24A", "meal_preference": "vegetarian"}
+  ],
+  "itinerary": [
+    {
+      "flight": "JL001",
+      "departure": {"airport": "SFO", "date": "2025-03-15", "time": "13:05"},
+      "arrival": {"airport": "NRT", "date": "2025-03-16", "time": "17:30"},
+      "class": "Economy",
+      "duration": "11h 25m"
+    },
+    {
+      "flight": "JL002",
+      "departure": {"airport": "NRT", "date": "2025-03-25", "time": "18:00"},
+      "arrival": {"airport": "SFO", "date": "2025-03-25", "time": "10:45"},
+      "class": "Economy",
+      "duration": "9h 45m"
+    }
+  ],
+  "total_cost": 1245.00,
+  "currency": "USD",
+  "payment_method": "Visa ending in 4532"
+}

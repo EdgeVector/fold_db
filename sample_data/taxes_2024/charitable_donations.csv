@@ -1,0 +1,8 @@
+date,organization,amount,payment_method,receipt
+2024-02-14,American Red Cross,100.00,Credit Card,Yes
+2024-04-22,Local Food Bank,50.00,Check,Yes
+2024-06-15,Habitat for Humanity,200.00,Credit Card,Yes
+2024-09-01,Wikipedia Foundation,25.00,PayPal,Yes
+2024-11-28,Salvation Army,75.00,Cash,No
+2024-12-20,Children's Hospital,150.00,Credit Card,Yes
+2024-12-31,ACLU,100.00,Credit Card,Yes

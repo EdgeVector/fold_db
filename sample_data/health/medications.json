@@ -1,0 +1,22 @@
+[
+  {
+    "medication": "Lisinopril",
+    "dosage": "10mg",
+    "frequency": "Once daily",
+    "prescriber": "Dr. Sarah Chen",
+    "pharmacy": "CVS Pharmacy #4521",
+    "start_date": "2024-03-15",
+    "refills_remaining": 3,
+    "purpose": "Blood pressure management"
+  },
+  {
+    "medication": "Vitamin D3",
+    "dosage": "2000 IU",
+    "frequency": "Once daily",
+    "prescriber": "Dr. Sarah Chen",
+    "pharmacy": "CVS Pharmacy #4521",
+    "start_date": "2024-06-01",
+    "refills_remaining": 5,
+    "purpose": "Vitamin D supplement"
+  }
+]

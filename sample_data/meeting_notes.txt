@@ -1,0 +1,23 @@
+Meeting Notes - Project Alpha Kickoff
+Date: January 25, 2025
+Attendees: John, Sarah, Mike, Lisa
+
+Agenda:
+1. Project overview and goals
+2. Timeline discussion
+3. Resource allocation
+4. Risk assessment
+
+Key Decisions:
+- Project will use Rust for backend services
+- Frontend will be built with React and TypeScript
+- Target launch date: Q2 2025
+- Weekly standup meetings every Monday at 10am
+
+Action Items:
+- John: Set up CI/CD pipeline by Feb 1
+- Sarah: Complete database schema design by Jan 30
+- Mike: Create UI mockups by Feb 5
+- Lisa: Document API specifications by Feb 3
+
+Next Meeting: February 1, 2025 at 2pm

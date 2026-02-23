@@ -1,0 +1,27 @@
+{
+  "portfolio_owner": "Alice Johnson",
+  "as_of_date": "2025-01-31",
+  "accounts": [
+    {
+      "account_type": "401k",
+      "institution": "Fidelity",
+      "balance": 87450.23,
+      "holdings": [
+        {"ticker": "VTI", "shares": 120, "value": 32400.00},
+        {"ticker": "VXUS", "shares": 85, "value": 5100.00},
+        {"ticker": "BND", "shares": 200, "value": 14800.00},
+        {"ticker": "SCHD", "shares": 450, "value": 35150.23}
+      ]
+    },
+    {
+      "account_type": "Roth IRA",
+      "institution": "Vanguard",
+      "balance": 23100.50,
+      "holdings": [
+        {"ticker": "VOO", "shares": 30, "value": 15600.00},
+        {"ticker": "QQQ", "shares": 15, "value": 7500.50}
+      ]
+    }
+  ],
+  "total_value": 110550.73
+}

@@ -286,7 +286,7 @@ function SmartFolderTab({ onResult }) {
   return (
     <div className="space-y-4">
       {/* State 0: Folder input (no scan yet, no batch) */}
-      {!scanResult && !batchId && (
+      {!scanResult && !batchId && (<>
         <div className="flex gap-3">
           <div className="relative flex-1">
             <input
@@ -326,7 +326,16 @@ function SmartFolderTab({ onResult }) {
             {isScanning ? <><span className="spinner" />Scanning...</> : <>Scan</>}
           </button>
         </div>
-      )}
+        {import.meta.env.DEV && (
+          <button
+            onClick={() => setFolderPath('sample_data')}
+            className="text-xs text-secondary hover:text-primary underline"
+            disabled={isScanning}
+          >
+            Try sample data
+          </button>
+        )}
+      </>)}
 
       {/* State 1: Scan results (before Proceed) */}
       {scanResult && !batchId && (

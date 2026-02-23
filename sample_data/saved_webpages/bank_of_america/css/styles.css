@@ -1,0 +1,7 @@
+/* Bank of America saved webpage stylesheet */
+body { font-family: Arial, sans-serif; margin: 0; padding: 20px; }
+.header { background: #012169; color: white; padding: 10px 20px; }
+.header img { height: 30px; vertical-align: middle; }
+.content { padding: 20px; }
+h1 { color: #012169; }
+.spinner { display: none; }

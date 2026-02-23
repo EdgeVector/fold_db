@@ -1,0 +1,29 @@
+[
+  {
+    "user_id": "USR001",
+    "username": "alice_dev",
+    "email": "alice@example.com",
+    "full_name": "Alice Johnson",
+    "role": "developer",
+    "created_at": "2024-06-15T10:30:00Z",
+    "active": true
+  },
+  {
+    "user_id": "USR002",
+    "username": "bob_admin",
+    "email": "bob@example.com",
+    "full_name": "Bob Smith",
+    "role": "admin",
+    "created_at": "2024-03-20T14:45:00Z",
+    "active": true
+  },
+  {
+    "user_id": "USR003",
+    "username": "carol_pm",
+    "email": "carol@example.com",
+    "full_name": "Carol Williams",
+    "role": "project_manager",
+    "created_at": "2024-08-10T09:00:00Z",
+    "active": true
+  }
+]

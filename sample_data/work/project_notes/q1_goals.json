@@ -1,0 +1,28 @@
+{
+  "quarter": "Q1 2025",
+  "team": "Backend Engineering",
+  "goals": [
+    {
+      "title": "Migrate auth to JWT",
+      "status": "completed",
+      "owner": "Alice Johnson",
+      "completion_date": "2025-01-15",
+      "notes": "Switched from session-based to JWT. Refresh token flow added."
+    },
+    {
+      "title": "Reduce API latency by 30%",
+      "status": "in_progress",
+      "owner": "Bob Smith",
+      "target_date": "2025-02-28",
+      "notes": "Database query optimization underway. Currently at 18% improvement."
+    },
+    {
+      "title": "Implement rate limiting",
+      "status": "not_started",
+      "owner": "Carol Williams",
+      "target_date": "2025-03-15",
+      "notes": "Blocked on infrastructure team providing Redis cluster."
+    }
+  ],
+  "team_meetings": "Mondays 10am, Thursdays 2pm"
+}

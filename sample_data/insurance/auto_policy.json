@@ -1,0 +1,29 @@
+{
+  "policy_number": "AUT-7834921",
+  "provider": "State Farm",
+  "policyholder": "Alice Johnson",
+  "vehicle": {
+    "year": 2022,
+    "make": "Toyota",
+    "model": "RAV4",
+    "vin": "2T3RFREV2NW123456",
+    "color": "Lunar Rock"
+  },
+  "coverage": {
+    "liability": "100/300/100",
+    "collision_deductible": 500,
+    "comprehensive_deductible": 250,
+    "uninsured_motorist": true,
+    "roadside_assistance": true
+  },
+  "premium": {
+    "monthly": 142.50,
+    "annual": 1710.00,
+    "next_payment_date": "2025-02-15"
+  },
+  "agent": {
+    "name": "Tom Rivera",
+    "phone": "555-0500",
+    "email": "tom.rivera@statefarm.com"
+  }
+}

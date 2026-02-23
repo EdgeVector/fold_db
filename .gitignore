@@ -8,7 +8,7 @@ Cargo.lock
 datafold_sdk/Cargo.lock
 social_app_example/Cargo.lock
 **/target/**/*.lock
-sample_data/
+
 
 # Root node_modules (e.g. from accidental npm install at repo root)
 /node_modules/

@@ -1,0 +1,6 @@
+product_id,name,description,price,category,in_stock
+PROD001,Wireless Headphones,High-quality Bluetooth headphones with noise cancellation,149.99,Electronics,true
+PROD002,Mechanical Keyboard,RGB mechanical keyboard with Cherry MX switches,129.99,Electronics,true
+PROD003,Standing Desk,Adjustable height standing desk with memory presets,449.99,Furniture,true
+PROD004,Ergonomic Mouse,Vertical ergonomic mouse for reduced wrist strain,59.99,Electronics,true
+PROD005,Monitor Light Bar,LED light bar for screen illumination,79.99,Accessories,false
