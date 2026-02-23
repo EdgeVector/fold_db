@@ -434,8 +434,26 @@ pub(crate) async fn process_single_file_via_smart_folder(
     upload_storage: &crate::storage::UploadStorage,
     encryption_key: &[u8; 32],
 ) -> Result<(), String> {
-    let (data, file_hash, raw_bytes) =
-        crate::ingestion::smart_folder::read_file_with_hash(file_path).map_err(|e| e.to_string())?;
+    // Try native parser first (handles json, js/Twitter, csv, txt, md),
+    // fall back to file_to_json for unsupported types (images, PDFs, etc.)
+    let (data, file_hash, raw_bytes) = match crate::ingestion::smart_folder::read_file_with_hash(
+        file_path,
+    ) {
+        Ok(result) => result,
+        Err(_) => {
+            let raw_bytes = std::fs::read(file_path)
+                .map_err(|e| format!("Failed to read file: {}", e))?;
+            let hash_hex = {
+                use sha2::{Digest, Sha256};
+                format!("{:x}", Sha256::digest(&raw_bytes))
+            };
+            let data =
+                crate::ingestion::json_processor::convert_file_to_json(&file_path.to_path_buf())
+                    .await
+                    .map_err(|e| e.to_string())?;
+            (data, hash_hex, raw_bytes)
+        }
+    };
 
     // Encrypt and store the raw file in upload storage (content-addressed)
     let encrypted_data = crate::crypto::envelope::encrypt_envelope(encryption_key, &raw_bytes)
