@@ -105,7 +105,7 @@ pub async fn hydrate_index_results(
             fields: fields_needed,
             filter,
             as_of: None,
-            rehydrate_depth: None,
+            rehydrate_depth: Some(1),
         };
 
         // Execute the query

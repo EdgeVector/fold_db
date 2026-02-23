@@ -200,6 +200,11 @@ impl LlmQueryService {
         prompt.push_str("1. Analyze the user's request\n");
         prompt.push_str("2. Use tools to gather information or perform actions\n");
         prompt.push_str("3. When you have enough information to answer, provide your final response\n\n");
+        prompt.push_str("## Reference Fields\n\n");
+        prompt.push_str("Some fields are References to records in other schemas. Query results automatically resolve references one level deep.\n");
+        prompt.push_str("If a field value is an array of objects with \"schema\" and \"key\" properties, those are references to child records.\n");
+        prompt.push_str("The referenced data will be included inline when available. If you need deeper data (references within references), ");
+        prompt.push_str("use get_schema to find the child schema's fields, then use query to fetch the child schema's data directly.\n\n");
         prompt.push_str("IMPORTANT: Always respond with valid JSON. Either:\n");
         prompt.push_str("- {\"tool\": \"tool_name\", \"params\": {...}} to call a tool\n");
         prompt.push_str("- {\"answer\": \"your response\"} to provide the final answer\n");

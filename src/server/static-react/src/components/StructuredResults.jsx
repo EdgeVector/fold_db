@@ -35,11 +35,17 @@ function buildFilterFromKey(key) {
   return undefined
 }
 
+function truncateHash(s) {
+  if (typeof s === 'string' && s.length > 16) return s.slice(0, 8) + '...' + s.slice(-8)
+  return s
+}
+
 function referenceLabel(ref) {
   const parts = []
-  if (ref.key.hash) parts.push(`hash:${ref.key.hash}`)
+  if (ref.key.hash) parts.push(`hash:${truncateHash(ref.key.hash)}`)
   if (ref.key.range) parts.push(`range:${ref.key.range}`)
-  return `${ref.schema} (${parts.join(', ')})`
+  const name = truncateHash(ref.schema)
+  return `${name} (${parts.join(', ')})`
 }
 
 function ReferenceValue({ reference }) {
@@ -47,6 +53,7 @@ function ReferenceValue({ reference }) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [expanded, setExpanded] = useState(false)
+  const [displayName, setDisplayName] = useState(null)
 
   const handleFetch = async () => {
     if (fetched) {
@@ -57,8 +64,13 @@ function ReferenceValue({ reference }) {
     setError(null)
     try {
       const schemaRes = await getSchema(reference.schema)
-      const schemaData = schemaRes.data
-      const fieldNames = schemaData?.fields ? Object.keys(schemaData.fields) : []
+      const schema = schemaRes.data?.schema || schemaRes.data
+      if (schema?.descriptive_name) {
+        setDisplayName(schema.descriptive_name)
+      }
+      const fieldNames = Array.isArray(schema?.fields)
+        ? schema.fields
+        : schema?.fields ? Object.keys(schema.fields) : []
       if (fieldNames.length === 0) {
         throw new Error(`No fields found for schema "${reference.schema}"`)
       }
@@ -67,11 +79,19 @@ function ReferenceValue({ reference }) {
       const query = { schema_name: reference.schema, fields: fieldNames }
       if (filter) query.filter = filter
 
-      const queryRes = await executeQuery(query)
+      let queryRes = await executeQuery(query)
       if (!queryRes.success) {
         throw new Error(queryRes.error || 'Query failed')
       }
-      setFetched(queryRes.data)
+      let results = queryRes.data?.results || queryRes.data
+      // If filtered query returned no results, retry without filter
+      if (Array.isArray(results) && results.length === 0 && filter) {
+        const retryRes = await executeQuery({ schema_name: reference.schema, fields: fieldNames })
+        if (retryRes.success) {
+          results = retryRes.data?.results || retryRes.data
+        }
+      }
+      setFetched(results)
       setExpanded(true)
     } catch (e) {
       setError(e.message)
@@ -83,7 +103,7 @@ function ReferenceValue({ reference }) {
   return (
     <div className="space-y-1">
       <div className="flex items-center gap-2">
-        <span className="font-mono text-xs text-secondary">{'\u2192'} {referenceLabel(reference)}</span>
+        <span className="font-mono text-xs text-secondary">{'\u2192'} {displayName || referenceLabel(reference)}</span>
         <button
           type="button"
           className="btn-secondary btn-sm text-xs px-2 py-0.5"
@@ -96,7 +116,11 @@ function ReferenceValue({ reference }) {
       {error && <div className="text-xs text-red-500">{error}</div>}
       {fetched && expanded && (
         <div className="ml-4 border-l border-border pl-2">
-          <StructuredResults results={fetched} />
+          {Array.isArray(fetched) ? fetched.map((item, i) => (
+            <FieldsTable key={i} fields={item.fields || item} />
+          )) : (
+            <FieldsTable fields={fetched.fields || fetched} />
+          )}
         </div>
       )}
     </div>
