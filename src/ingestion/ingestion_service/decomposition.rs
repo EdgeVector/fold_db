@@ -109,7 +109,7 @@ impl IngestionService {
                 manager
             };
 
-            match schema_manager.get_schema(&schema_name) {
+            match schema_manager.get_schema_metadata(&schema_name) {
                 Ok(Some(mut schema)) => {
                     for child_group in &rep_decomp.children {
                         let child_schema_name = schema_cache

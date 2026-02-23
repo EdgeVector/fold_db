@@ -36,8 +36,8 @@ impl QueryExecutor {
         &self,
         query: Query,
     ) -> Result<HashMap<String, HashMap<KeyValue, FieldValue>>, SchemaError> {
-        // query is async, so we can await fetch_schema
-        let mut schema = match self.schema_manager.fetch_schema(&query.schema_name).await? {
+        // query is async, so we can await get_schema
+        let mut schema = match self.schema_manager.get_schema(&query.schema_name).await? {
             Some(s) => s,
             None => {
                 let available = self.schema_manager.get_schemas()?;

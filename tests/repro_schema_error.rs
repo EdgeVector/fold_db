@@ -29,9 +29,9 @@ async fn test_reproduce_schema_mismatch() {
     // We expect this to return None because strict mode is enabled.
     let result = db
         .schema_manager()
-        .fetch_schema("LOWERCASE_HASH")
+        .get_schema("LOWERCASE_HASH")
         .await
-        .expect("fetch_schema failed");
+        .expect("get_schema failed");
     assert!(
         result.is_none(),
         "Strict Mode Verification Failed: Found schema even with case mismatch!"
@@ -41,9 +41,9 @@ async fn test_reproduce_schema_mismatch() {
     // We expect this to return Some(schema)
     let result_exact = db
         .schema_manager()
-        .fetch_schema("lowercase_hash")
+        .get_schema("lowercase_hash")
         .await
-        .expect("fetch_schema failed");
+        .expect("get_schema failed");
     assert!(
         result_exact.is_some(),
         "Exact Match Verification Failed: Could not find schema with correct case!"

@@ -47,7 +47,7 @@ async fn approving_schema_applies_field_mappers() {
         .expect("load target schema");
 
     let initial_target_schema = core
-        .get_schema("UserPublic")
+        .get_schema_metadata("UserPublic")
         .expect("fetch schema")
         .expect("schema exists");
 
@@ -65,7 +65,7 @@ async fn approving_schema_applies_field_mappers() {
         .expect("approve schema");
 
     let approved_schema = core
-        .get_schema("UserPublic")
+        .get_schema_metadata("UserPublic")
         .expect("fetch schema")
         .expect("schema exists");
 

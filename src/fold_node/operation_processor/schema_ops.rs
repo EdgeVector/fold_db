@@ -27,7 +27,7 @@ impl OperationProcessor {
 
         let mgr = &db.schema_manager;
         match mgr
-            .get_schema(name)
+            .get_schema_metadata(name)
             .map_err(|e| FoldDbError::Database(e.to_string()))?
         {
             Some(schema) => {

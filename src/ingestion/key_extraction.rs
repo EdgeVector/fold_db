@@ -22,7 +22,7 @@ pub(crate) async fn extract_key_values_from_data(
 ) -> IngestionResult<HashMap<String, String>> {
     let mut keys_and_values = HashMap::new();
 
-    match schema_manager.get_schema(schema_name) {
+    match schema_manager.get_schema_metadata(schema_name) {
         Ok(Some(schema)) => {
             if let Some(key_def) = &schema.key {
                 // Extract hash field value if present

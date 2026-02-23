@@ -290,7 +290,7 @@ impl SchemaCore {
         Ok(())
     }
 
-    pub fn get_schema(&self, schema_name: &str) -> Result<Option<Schema>, SchemaError> {
+    pub fn get_schema_metadata(&self, schema_name: &str) -> Result<Option<Schema>, SchemaError> {
         Ok(self
             .schemas
             .lock()
@@ -302,9 +302,9 @@ impl SchemaCore {
     /// Fetches a schema by name, checking both in-memory cache and database.
     /// This handles scenarios where the schema was added by another node (stale cache).
     /// Note: This is STRICTLY case-sensitive.
-    pub async fn fetch_schema(&self, schema_name: &str) -> Result<Option<Schema>, SchemaError> {
+    pub async fn get_schema(&self, schema_name: &str) -> Result<Option<Schema>, SchemaError> {
         // 1. Try exact match in memory
-        if let Some(schema) = self.get_schema(schema_name)? {
+        if let Some(schema) = self.get_schema_metadata(schema_name)? {
             return Ok(Some(schema));
         }
 

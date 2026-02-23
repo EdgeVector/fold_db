@@ -147,7 +147,7 @@ impl MutationManager {
             let load_start = std::time::Instant::now();
             let mut schema = self
                 .schema_manager
-                .get_schema(&schema_name)?
+                .get_schema_metadata(&schema_name)?
                 .ok_or_else(|| {
                     SchemaError::InvalidData(format!("Schema '{}' not found", schema_name))
                 })?;

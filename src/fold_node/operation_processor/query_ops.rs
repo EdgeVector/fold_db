@@ -101,7 +101,7 @@ impl OperationProcessor {
 
                 let schema = match db
                     .schema_manager
-                    .get_schema(schema_name)
+                    .get_schema_metadata(schema_name)
                     .map_err(|e| FoldDbError::Database(e.to_string()))?
                 {
                     Some(s) => s,
@@ -132,7 +132,7 @@ impl OperationProcessor {
                     if child_field_map.contains_key(child_schema_name) {
                         continue;
                     }
-                    if let Ok(Some(child_schema)) = db.schema_manager.get_schema(child_schema_name) {
+                    if let Ok(Some(child_schema)) = db.schema_manager.get_schema_metadata(child_schema_name) {
                         let fields = Self::get_queryable_fields(&child_schema);
                         if !fields.is_empty() {
                             child_field_map.insert(child_schema_name.clone(), fields);
@@ -372,6 +372,7 @@ impl OperationProcessor {
         let mut schema = db
             .schema_manager
             .get_schema(schema_name)
+            .await
             .map_err(|e| FoldDbError::Database(e.to_string()))?
             .ok_or_else(|| {
                 FoldDbError::Database(format!("Schema '{}' not found", schema_name))
