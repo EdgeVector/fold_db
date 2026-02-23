@@ -115,7 +115,7 @@ pub fn read_file_as_json(file_path: &Path) -> IngestionResult<Value> {
 
 /// Read a file, compute its SHA256 hash, and convert to JSON.
 /// Returns `(json_value, sha256_hex_hash)`.
-pub fn read_file_with_hash(file_path: &Path) -> IngestionResult<(Value, String)> {
+pub fn read_file_with_hash(file_path: &Path) -> IngestionResult<(Value, String, Vec<u8>)> {
     use sha2::{Digest, Sha256};
 
     let raw_bytes = std::fs::read(file_path)
@@ -123,7 +123,7 @@ pub fn read_file_with_hash(file_path: &Path) -> IngestionResult<(Value, String)>
 
     let hash_hex = format!("{:x}", Sha256::digest(&raw_bytes));
 
-    let content = String::from_utf8(raw_bytes)
+    let content = std::str::from_utf8(&raw_bytes)
         .map_err(|e| IngestionError::InvalidInput(format!("File is not valid UTF-8: {}", e)))?;
 
     let ext = file_path
@@ -132,23 +132,25 @@ pub fn read_file_with_hash(file_path: &Path) -> IngestionResult<(Value, String)>
         .unwrap_or("")
         .to_lowercase();
 
-    let json_string = match ext.as_str() {
-        "json" => content,
-        "js" => twitter_js_to_json(&content)?,
-        "csv" => csv_to_json(&content)?,
+    let json_string: std::borrow::Cow<'_, str> = match ext.as_str() {
+        "json" => std::borrow::Cow::Borrowed(content),
+        "js" => std::borrow::Cow::Owned(twitter_js_to_json(content)?),
+        "csv" => std::borrow::Cow::Owned(csv_to_json(content)?),
         "txt" | "md" => {
             let file_name = file_path
                 .file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("unknown");
-            serde_json::to_string(&serde_json::json!({
-                "content": content,
-                "source_file": file_name,
-                "file_type": ext
-            }))
-            .map_err(|e| {
-                IngestionError::InvalidInput(format!("Failed to wrap text content: {}", e))
-            })?
+            std::borrow::Cow::Owned(
+                serde_json::to_string(&serde_json::json!({
+                    "content": content,
+                    "source_file": file_name,
+                    "file_type": ext
+                }))
+                .map_err(|e| {
+                    IngestionError::InvalidInput(format!("Failed to wrap text content: {}", e))
+                })?,
+            )
         }
         _ => {
             return Err(IngestionError::InvalidInput(format!(
@@ -161,5 +163,5 @@ pub fn read_file_with_hash(file_path: &Path) -> IngestionResult<(Value, String)>
     let value = serde_json::from_str(&json_string)
         .map_err(|e| IngestionError::InvalidInput(format!("Failed to parse JSON: {}", e)))?;
 
-    Ok((value, hash_hex))
+    Ok((value, hash_hex, raw_bytes))
 }
