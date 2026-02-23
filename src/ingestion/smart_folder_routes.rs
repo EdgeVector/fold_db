@@ -386,6 +386,16 @@ fn spawn_batch_coordinator(
                     }
                 }
             }
+
+            // Clean up the controller after a short delay so final status
+            // polls can still read it before it's removed.
+            let map_cleanup = map.clone();
+            let batch_id_cleanup = batch_id.clone();
+            tokio::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_secs(300)).await;
+                let mut map_guard = map_cleanup.lock().await;
+                map_guard.remove(&batch_id_cleanup);
+            });
         })
         .await
     });

@@ -94,6 +94,8 @@ function SmartFolderTab({ onResult }) {
           if (s === 'Completed' || s === 'Cancelled' || s === 'Failed') {
             localStorage.removeItem('activeBatchId')
             localStorage.removeItem('activeBatchStatus')
+            // Stop polling once batch reaches terminal state
+            if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null }
           }
         }
       } catch {
@@ -247,7 +249,12 @@ function SmartFolderTab({ onResult }) {
     }
   }
 
-  const handleBack = () => {
+  const handleBack = async () => {
+    // Cancel any active batch before clearing state
+    // Also cancel when batchStatus is null (batch started but first poll hasn't returned)
+    if (batchId && (!batchStatus || batchStatus.status === 'Running' || batchStatus.status === 'Paused')) {
+      try { await ingestionClient.cancelBatch(batchId) } catch { /* best-effort */ }
+    }
     setScanResult(null)
     setBatchId(null)
     setBatchStatus(null)
@@ -332,8 +339,8 @@ function SmartFolderTab({ onResult }) {
             </div>
             {Object.keys(scanResult.summary).length > 0 && (
               <div className="flex gap-2 flex-wrap">
-                {Object.entries(scanResult.summary).map(([cat, count]) => (
-                  <span key={cat} className="badge badge-neutral">{cat}: {count}</span>
+                {Object.entries(scanResult.summary).filter(([, count]) => count > 0).map(([cat, count]) => (
+                  <span key={cat} className="badge badge-neutral">{cat.replace(/_/g, ' ')}: {count}</span>
                 ))}
               </div>
             )}
@@ -398,11 +405,11 @@ function SmartFolderTab({ onResult }) {
             />
           </div>
           <div className="flex items-center justify-between text-sm text-secondary">
-            <span>{batchStatus.files_completed}/{batchStatus.files_total} files</span>
+            <span>{batchStatus.files_completed}/{batchStatus.files_total} files{batchStatus.files_failed > 0 ? ` (${batchStatus.files_failed} failed)` : ''}</span>
             <span>{fmtCost(batchStatus.accumulated_cost)} spent{batchStatus.spend_limit != null ? ` / ${fmtCost(batchStatus.spend_limit)} limit` : ''}</span>
           </div>
-          <p className="text-xs text-secondary">Track per-file progress in header.</p>
-          <div className="flex justify-end">
+          <div className="flex justify-end gap-2">
+            <button onClick={handleCancel} className="btn-secondary">Cancel</button>
             <button onClick={handleBack} className="btn-secondary">Scan Another</button>
           </div>
         </div>
@@ -462,8 +469,11 @@ function SmartFolderTab({ onResult }) {
 
       {/* Waiting for first batch status poll */}
       {batchId && !batchStatus && (
-        <div className="flex items-center gap-2 text-sm text-secondary">
-          <span className="spinner" /> Starting batch...
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 text-sm text-secondary">
+            <span className="spinner" /> Starting batch...
+          </div>
+          <button onClick={handleBack} className="btn-secondary text-sm">Cancel</button>
         </div>
       )}
     </div>

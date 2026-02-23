@@ -274,21 +274,21 @@ fn render_scan_results(frame: &mut Frame, app: &App, area: Rect) {
         Line::from(vec![
             Span::styled("  Personal data:  ", Style::default().fg(Color::Yellow)),
             Span::styled(
-                scan.summary.personal_data_count.to_string(),
+                scan.summary.get("personal_data").unwrap_or(&0).to_string(),
                 Style::default().fg(Color::Green),
             ),
         ]),
         Line::from(vec![
             Span::styled("  Media:          ", Style::default().fg(Color::Yellow)),
-            Span::raw(scan.summary.media_count.to_string()),
+            Span::raw(scan.summary.get("media").unwrap_or(&0).to_string()),
         ]),
         Line::from(vec![
             Span::styled("  Config:         ", Style::default().fg(Color::Yellow)),
-            Span::raw(scan.summary.config_count.to_string()),
+            Span::raw(scan.summary.get("config").unwrap_or(&0).to_string()),
         ]),
         Line::from(vec![
             Span::styled("  Work:           ", Style::default().fg(Color::Yellow)),
-            Span::raw(scan.summary.work_count.to_string()),
+            Span::raw(scan.summary.get("work").unwrap_or(&0).to_string()),
         ]),
         Line::from(vec![
             Span::styled("  Skipped:        ", Style::default().fg(Color::Yellow)),

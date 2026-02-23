@@ -6,7 +6,7 @@
 use crate::ingestion::error::IngestionError;
 use crate::ingestion::IngestionResult;
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 // Re-export from sibling modules so external callers can still use
@@ -37,16 +37,9 @@ pub struct FileRecommendation {
     pub estimated_cost: f64,
 }
 
-/// Summary of smart folder scan
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SmartFolderSummary {
-    pub personal_data_count: usize,
-    pub media_count: usize,
-    pub config_count: usize,
-    pub website_scaffolding_count: usize,
-    pub work_count: usize,
-    pub unknown_count: usize,
-}
+/// Summary of smart folder scan — category name → count.
+/// Serializes as a flat JSON object like `{"personal_data": 5, "media": 3}`.
+pub type SmartFolderSummary = HashMap<String, usize>;
 
 /// Response from smart folder scanning
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -492,14 +485,7 @@ pub async fn perform_smart_folder_scan(
             total_files: 0,
             recommended_files: vec![],
             skipped_files: vec![],
-            summary: SmartFolderSummary {
-                personal_data_count: 0,
-                media_count: 0,
-                config_count: 0,
-                website_scaffolding_count: 0,
-                work_count: 0,
-                unknown_count: 0,
-            },
+            summary: HashMap::new(),
             total_estimated_cost: 0.0,
             scan_truncated: scan.truncated,
             max_depth_used: max_depth,
@@ -581,14 +567,7 @@ pub async fn perform_smart_folder_scan(
     let mut recommended_files = Vec::new();
     let mut skipped_files = Vec::new();
     let mut total_estimated_cost = 0.0;
-    let mut summary = SmartFolderSummary {
-        personal_data_count: 0,
-        media_count: 0,
-        config_count: 0,
-        website_scaffolding_count: 0,
-        work_count: 0,
-        unknown_count: 0,
-    };
+    let mut summary: SmartFolderSummary = HashMap::new();
 
     for mut rec in recommendations {
         // Populate file size and cost estimate
@@ -596,14 +575,7 @@ pub async fn perform_smart_folder_scan(
         rec.file_size_bytes = file_size_bytes(rel_path, folder_path);
         rec.estimated_cost = estimate_file_cost(rel_path, folder_path);
 
-        match rec.category.as_str() {
-            "personal_data" => summary.personal_data_count += 1,
-            "media" => summary.media_count += 1,
-            "config" => summary.config_count += 1,
-            "website_scaffolding" => summary.website_scaffolding_count += 1,
-            "work" => summary.work_count += 1,
-            _ => summary.unknown_count += 1,
-        }
+        *summary.entry(rec.category.clone()).or_insert(0) += 1;
 
         if rec.should_ingest {
             total_estimated_cost += rec.estimated_cost;
