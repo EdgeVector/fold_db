@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useMemo, useState, Fragment } from 'react'
 import { useAppSelector } from '../../store/hooks'
 import { selectAllSchemas } from '../../store/schemaSlice'
 import { schemaClient } from '../../api/clients/schemaClient'
@@ -29,6 +29,43 @@ function StateBadge({ state }) {
   return <span className={cls}>{state}</span>
 }
 
+function RecordMetadata({ metadata }) {
+  const [expanded, setExpanded] = useState(false)
+
+  if (!metadata || typeof metadata !== 'object') return null
+
+  // Pick the first field entry that has a source_file_name
+  const entries = Object.entries(metadata)
+  const representative = entries.find(([, v]) => v?.source_file_name)?.[1] || entries[0]?.[1]
+  if (!representative) return null
+
+  const sourceFile = representative.source_file_name
+  const fileHash = representative.metadata?.file_hash
+  if (!sourceFile && !fileHash) return null
+
+  return (
+    <div className="mb-1">
+      <button
+        type="button"
+        className="flex items-center gap-1 text-xs text-tertiary hover:text-secondary transition-colors"
+        onClick={() => setExpanded((v) => !v)}
+      >
+        <span>{expanded ? '▾' : '▸'}</span>
+        <span>Source info</span>
+        {sourceFile && !expanded && (
+          <span className="font-mono text-secondary ml-1 truncate max-w-[300px]">{sourceFile}</span>
+        )}
+      </button>
+      {expanded && (
+        <div className="pl-4 pt-1 space-y-0.5 text-xs text-secondary font-mono">
+          {sourceFile && <div>File: {sourceFile}</div>}
+          {fileHash && <div>Hash: {fileHash.length > 16 ? fileHash.slice(0, 16) + '…' : fileHash}</div>}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function DataBrowserTab() {
   const schemas = useAppSelector(selectAllSchemas)
 
@@ -40,7 +77,7 @@ export default function DataBrowserTab() {
 
   // Key-level expand state + cached records
   const [expandedKeys, setExpandedKeys] = useState(() => new Set())
-  const [keyRecords, setKeyRecords] = useState({})        // { compositeId: fields }
+  const [keyRecords, setKeyRecords] = useState({})        // { compositeId: { fields, metadata } }
   const [keyLoading, setKeyLoading] = useState({})        // { compositeId: bool }
 
   const schemaList = useMemo(() => {
@@ -141,12 +178,12 @@ export default function DataBrowserTab() {
             return String(x?.key?.hash || '') === String(kv?.hash || '') &&
                    String(x?.key?.range || '') === String(kv?.range || '')
           }) || arr[0]
-          setKeyRecords((p) => ({ ...p, [id]: match?.fields || {} }))
+          setKeyRecords((p) => ({ ...p, [id]: { fields: match?.fields || {}, metadata: match?.metadata || {} } }))
         } else {
-          setKeyRecords((p) => ({ ...p, [id]: {} }))
+          setKeyRecords((p) => ({ ...p, [id]: { fields: {}, metadata: {} } }))
         }
       } catch { /* show empty fields on error - user can re-expand */
-        setKeyRecords((p) => ({ ...p, [id]: {} }))
+        setKeyRecords((p) => ({ ...p, [id]: { fields: {}, metadata: {} } }))
       } finally {
         setKeyLoading((p) => ({ ...p, [id]: false }))
       }
@@ -220,7 +257,10 @@ export default function DataBrowserTab() {
                       {isKeyOpen && (
                         <div className="pl-6 pb-2">
                           {record ? (
-                            <FieldsTable fields={record} />
+                            <Fragment>
+                              <RecordMetadata metadata={record.metadata} />
+                              <FieldsTable fields={record.fields} />
+                            </Fragment>
                           ) : (
                             <div className="text-xs text-secondary italic">Loading...</div>
                           )}
