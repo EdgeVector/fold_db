@@ -49,6 +49,10 @@ pub struct BatchController {
     pub files_completed: usize,
     pub files_failed: usize,
     pub pending_files: Vec<PendingFile>,
+    /// Name of the file currently being processed.
+    pub current_file_name: Option<String>,
+    /// Progress ID of the file currently being processed.
+    pub current_file_progress_id: Option<String>,
     resume_notify: Arc<Notify>,
 }
 
@@ -68,6 +72,8 @@ impl BatchController {
             files_completed: 0,
             files_failed: 0,
             pending_files,
+            current_file_name: None,
+            current_file_progress_id: None,
             resume_notify: Arc::new(Notify::new()),
         }
     }
@@ -102,15 +108,29 @@ impl BatchController {
         self.resume_notify.notify_one();
     }
 
+    /// Set the file currently being processed.
+    pub fn set_current_file(&mut self, name: String, progress_id: String) {
+        self.current_file_name = Some(name);
+        self.current_file_progress_id = Some(progress_id);
+    }
+
+    /// Clear the current file tracking.
+    fn clear_current_file(&mut self) {
+        self.current_file_name = None;
+        self.current_file_progress_id = None;
+    }
+
     /// Record that a file finished processing with the given actual cost.
     pub fn record_completed(&mut self, cost: f64) {
         self.accumulated_cost += cost;
         self.files_completed += 1;
+        self.clear_current_file();
     }
 
     /// Record that a file failed.
     pub fn record_failed(&mut self) {
         self.files_failed += 1;
+        self.clear_current_file();
     }
 
     /// Pop the next pending file from the front of the queue.
@@ -158,6 +178,12 @@ pub struct BatchStatusResponse {
     pub files_failed: usize,
     pub files_remaining: usize,
     pub estimated_remaining_cost: f64,
+    /// Name of the file currently being processed.
+    pub current_file_name: Option<String>,
+    /// Current processing step message for the active file.
+    pub current_file_step: Option<String>,
+    /// Progress percentage (0-100) for the active file.
+    pub current_file_progress: Option<u8>,
 }
 
 impl BatchStatusResponse {
@@ -172,6 +198,10 @@ impl BatchStatusResponse {
             files_failed: ctrl.files_failed,
             files_remaining: ctrl.files_remaining(),
             estimated_remaining_cost: ctrl.estimated_remaining_cost(),
+            current_file_name: ctrl.current_file_name.clone(),
+            // Filled in by the route handler from ProgressTracker
+            current_file_step: None,
+            current_file_progress: None,
         }
     }
 }

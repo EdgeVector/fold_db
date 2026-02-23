@@ -161,6 +161,11 @@ pub async fn smart_folder_scan(
                 .await
             };
 
+            // Let any in-flight spawned progress-update tasks drain before
+            // writing the final Completed/Failed status.
+            tokio::task::yield_now().await;
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
             // Store result or error in the job
             if let Ok(Some(mut job)) = tracker.load(&pid).await {
                 match result {
@@ -421,6 +426,13 @@ fn spawn_batch_coordinator(
                         (None, Some(ctrl.resume_notifier()))
                     } else {
                         let file = ctrl.pop_next_file();
+                        if let Some(ref f) = file {
+                            let name = f.path.file_name()
+                                .and_then(|n| n.to_str())
+                                .unwrap_or("unknown")
+                                .to_string();
+                            ctrl.set_current_file(name, f.progress_id.clone());
+                        }
                         (file, None)
                     }
                 };

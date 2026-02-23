@@ -178,6 +178,7 @@ pub async fn batch_folder_ingest(
 pub async fn get_batch_status(
     path: web::Path<String>,
     batch_controller_map: web::Data<BatchControllerMap>,
+    progress_tracker: web::Data<ProgressTracker>,
 ) -> impl Responder {
     let batch_id = path.into_inner();
     let map_guard = batch_controller_map.lock().await;
@@ -185,7 +186,26 @@ pub async fn get_batch_status(
     match map_guard.get(&batch_id) {
         Some(ctrl_arc) => {
             let ctrl = ctrl_arc.lock().await;
-            HttpResponse::Ok().json(BatchStatusResponse::from_controller(&ctrl))
+            let mut resp = BatchStatusResponse::from_controller(&ctrl);
+            let progress_id = ctrl.current_file_progress_id.clone();
+            // Drop the lock before the async progress lookup
+            drop(ctrl);
+            drop(map_guard);
+
+            // Enrich with per-file progress from the tracker
+            if let Some(pid) = progress_id {
+                match progress_tracker.load(&pid).await {
+                    Ok(Some(job)) => {
+                        resp.current_file_step = Some(job.message);
+                        resp.current_file_progress = Some(job.progress_percentage);
+                    }
+                    _ => {
+                        resp.current_file_step = Some("Processing...".to_string());
+                        resp.current_file_progress = Some(0);
+                    }
+                }
+            }
+            HttpResponse::Ok().json(resp)
         }
         None => HttpResponse::NotFound().json(json!({
             "error": format!("Batch {} not found", batch_id)

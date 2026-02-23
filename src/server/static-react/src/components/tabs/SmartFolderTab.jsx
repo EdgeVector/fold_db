@@ -7,26 +7,59 @@ const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__
 /** Format a dollar amount for display */
 const fmtCost = (v) => `$${Number(v).toFixed(2)}`
 
+const STORAGE_KEY = 'smartFolderTabState'
+
+/** Load persisted SmartFolderTab state from localStorage */
+function loadPersistedState() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    return raw ? JSON.parse(raw) : null
+  } catch { return null }
+}
+
+/** Save key SmartFolderTab state to localStorage */
+function persistState(state) {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)) } catch { /* best-effort */ }
+}
+
+function clearPersistedState() {
+  localStorage.removeItem(STORAGE_KEY)
+}
+
 function SmartFolderTab({ onResult }) {
-  const [folderPath, setFolderPath] = useState('~/Documents')
-  const [isScanning, setIsScanning] = useState(false)
+  // Restore persisted state on mount
+  const [restored] = useState(() => loadPersistedState())
+
+  const [folderPath, setFolderPath] = useState(() => restored?.folderPath || '~/Documents')
+  const [isScanning, setIsScanning] = useState(() => !!restored?.scanProgressId)
   const [isLoadingMore, setIsLoadingMore] = useState(false)
   const [isIngesting, setIsIngesting] = useState(false)
-  const [scanResult, setScanResult] = useState(null)
+  const [scanResult, setScanResult] = useState(() => restored?.scanResult || null)
 
   // Batch tracking state
-  const [batchId, setBatchId] = useState(null)
+  const [batchId, setBatchId] = useState(() => restored?.batchId || null)
   const [batchStatus, setBatchStatus] = useState(null)
-  const [spendLimit, setSpendLimit] = useState('')
+  const [spendLimit, setSpendLimit] = useState(() => restored?.spendLimit || '')
   const [newLimit, setNewLimit] = useState('')
 
   // Scan progress tracking
-  const [scanProgressId, setScanProgressId] = useState(null)
+  const [scanProgressId, setScanProgressId] = useState(() => restored?.scanProgressId || null)
   const [scanProgress, setScanProgress] = useState(null)
   const scanPollRef = useRef(null)
+  const scanFailCountRef = useRef(0)
 
   // Re-ingest toggle
-  const [includeAlreadyIngested, setIncludeAlreadyIngested] = useState(false)
+  const [includeAlreadyIngested, setIncludeAlreadyIngested] = useState(() => !!restored?.includeAlreadyIngested)
+
+  // Persist key state whenever it changes
+  useEffect(() => {
+    // Only persist when there's something meaningful to save
+    if (!scanProgressId && !scanResult && !batchId) {
+      clearPersistedState()
+      return
+    }
+    persistState({ folderPath, scanProgressId, scanResult, batchId, spendLimit, includeAlreadyIngested })
+  }, [folderPath, scanProgressId, scanResult, batchId, spendLimit, includeAlreadyIngested])
 
   // Autocomplete state
   const [suggestions, setSuggestions] = useState([])
@@ -118,14 +151,16 @@ function SmartFolderTab({ onResult }) {
   // Poll scan progress while scanning
   useEffect(() => {
     if (!scanProgressId) return
+    scanFailCountRef.current = 0
     let cancelled = false
     const poll = async () => {
       try {
         const resp = await ingestionClient.getJobProgress(scanProgressId)
         if (cancelled) return
         if (resp.success && resp.data) {
+          scanFailCountRef.current = 0
           setScanProgress(resp.data)
-          if (resp.data.status === 'Completed') {
+          if (resp.data.is_complete && !resp.data.is_failed) {
             // Fetch the actual scan result
             const result = await ingestionClient.getScanResult(scanProgressId)
             if (result.success && result.data) {
@@ -135,14 +170,31 @@ function SmartFolderTab({ onResult }) {
             setScanProgressId(null)
             setScanProgress(null)
             setIsScanning(false)
-          } else if (resp.data.status === 'Failed') {
-            onResult({ success: false, error: resp.data.error || 'Scan failed' })
+          } else if (resp.data.is_failed) {
+            onResult({ success: false, error: resp.data.error_message || 'Scan failed' })
+            setScanProgressId(null)
+            setScanProgress(null)
+            setIsScanning(false)
+          }
+        } else {
+          scanFailCountRef.current++
+          if (scanFailCountRef.current >= 5) {
+            onResult({ success: false, error: 'Lost connection to scan job' })
             setScanProgressId(null)
             setScanProgress(null)
             setIsScanning(false)
           }
         }
-      } catch { /* ignore transient errors */ }
+      } catch {
+        if (cancelled) return
+        scanFailCountRef.current++
+        if (scanFailCountRef.current >= 5) {
+          onResult({ success: false, error: 'Lost connection to scan job' })
+          setScanProgressId(null)
+          setScanProgress(null)
+          setIsScanning(false)
+        }
+      }
     }
     poll()
     scanPollRef.current = setInterval(poll, 1000)
@@ -202,6 +254,13 @@ function SmartFolderTab({ onResult }) {
     }
   }
 
+  const handleCancelScan = () => {
+    setScanProgressId(null)
+    setScanProgress(null)
+    setIsScanning(false)
+    clearPersistedState()
+  }
+
   const handleScan = async (maxFiles) => {
     if (!folderPath.trim()) return
     setShowSuggestions(false)
@@ -230,14 +289,19 @@ function SmartFolderTab({ onResult }) {
     if (!folderPath.trim() || !scanResult) return
     const nextLimit = (scanResult.max_files_used || 100) + 400
     setIsLoadingMore(true)
+    setIsScanning(true)
     setScanResult(null)
     try {
       const response = await ingestionClient.smartFolderScan(folderPath.trim(), 10, nextLimit)
       if (response.success && response.data?.progress_id) {
         setScanProgressId(response.data.progress_id)
+      } else {
+        onResult({ success: false, error: 'Failed to start scan' })
+        setIsScanning(false)
       }
     } catch (error) {
       onResult({ success: false, error: (error instanceof Error ? error.message : String(error)) || 'Failed to load more files' })
+      setIsScanning(false)
     } finally {
       setIsLoadingMore(false)
     }
@@ -305,6 +369,7 @@ function SmartFolderTab({ onResult }) {
     setBatchId(null)
     setBatchStatus(null)
     setSpendLimit('')
+    clearPersistedState()
     localStorage.removeItem('activeBatchId')
     localStorage.removeItem('activeBatchStatus')
     onResult(null)
@@ -368,9 +433,10 @@ function SmartFolderTab({ onResult }) {
             )}
           </div>
           {isTauri && <button onClick={openFolderPicker} disabled={isScanning} className="btn-secondary" title="Browse">Browse</button>}
-          <button onClick={() => handleScan()} disabled={isScanning || !folderPath.trim()} className="btn-primary flex items-center gap-2">
-            {isScanning ? <><span className="spinner" />Scanning...</> : <>Scan</>}
-          </button>
+          {isScanning
+            ? <button onClick={handleCancelScan} className="btn-secondary">Cancel</button>
+            : <button onClick={() => handleScan()} disabled={!folderPath.trim()} className="btn-primary">Scan</button>
+          }
         </div>
         {isScanning && scanProgress && (
           <div className="space-y-1.5">
@@ -380,7 +446,7 @@ function SmartFolderTab({ onResult }) {
                 style={{ width: `${scanProgress.progress_percentage || 0}%` }}
               />
             </div>
-            <p className="text-xs text-secondary">{scanProgress.message || 'Starting scan...'}</p>
+            <p className="text-xs text-secondary">{scanProgress.status_message || 'Starting scan...'}</p>
           </div>
         )}
         {isScanning && !scanProgress && (
@@ -496,6 +562,24 @@ function SmartFolderTab({ onResult }) {
             <span>{batchStatus.files_completed}/{batchStatus.files_total} files{batchStatus.files_failed > 0 ? ` (${batchStatus.files_failed} failed)` : ''}</span>
             <span>{fmtCost(batchStatus.accumulated_cost)} spent{batchStatus.spend_limit != null ? ` / ${fmtCost(batchStatus.spend_limit)} limit` : ''}</span>
           </div>
+          {/* Current file sub-progress */}
+          {batchStatus.current_file_name && (
+            <div className="bg-surface-secondary border border-border rounded p-2 space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-mono text-primary truncate max-w-[60%]" title={batchStatus.current_file_name}>{batchStatus.current_file_name}</span>
+                <span className="text-xs text-secondary">{batchStatus.current_file_progress ?? 0}%</span>
+              </div>
+              <div className="w-full bg-border rounded-full h-1 overflow-hidden">
+                <div
+                  className="h-full bg-gruvbox-blue transition-all duration-300"
+                  style={{ width: `${batchStatus.current_file_progress ?? 0}%` }}
+                />
+              </div>
+              {batchStatus.current_file_step && (
+                <p className="text-xs text-secondary truncate">{batchStatus.current_file_step}</p>
+              )}
+            </div>
+          )}
           <div className="flex justify-end gap-2">
             <button onClick={handleCancel} className="btn-secondary">Cancel</button>
             <button onClick={handleBack} className="btn-secondary">Scan Another</button>

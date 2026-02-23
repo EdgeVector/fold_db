@@ -624,7 +624,14 @@ pub async fn perform_smart_folder_scan_with_progress(
     // Get pub_key from node for dedup checking
     let pub_key = node.map(|n| n.get_node_public_key().to_string());
 
-    for mut rec in recommendations {
+    let rec_count = recommendations.len();
+    for (idx, mut rec) in recommendations.into_iter().enumerate() {
+        // Report incremental progress every 5 files (80% → 95%)
+        if rec_count > 0 && idx % 5 == 0 {
+            let dedup_pct = (80 + idx * 15 / rec_count).min(95) as u8;
+            report(dedup_pct, format!("Checking dedup status ({}/{})...", idx, rec_count));
+        }
+
         // Populate file size and cost estimate
         let rel_path = Path::new(&rec.path);
         rec.file_size_bytes = file_size_bytes(rel_path, folder_path);
@@ -654,8 +661,11 @@ pub async fn perform_smart_folder_scan_with_progress(
         }
     }
 
-    report(100, format!(
-        "Scan complete. {} to ingest, {} skipped.",
+    // Don't report 100% here — the caller sets JobStatus::Completed after we return.
+    // Reporting 100% via the fire-and-forget spawned callback races with the
+    // caller's completion save and can overwrite Completed back to Running.
+    report(99, format!(
+        "Finalizing... {} to ingest, {} skipped.",
         recommended_files.len(),
         skipped_files.len(),
     ));

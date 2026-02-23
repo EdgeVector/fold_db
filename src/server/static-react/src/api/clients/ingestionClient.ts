@@ -114,6 +114,9 @@ export interface BatchStatusResponse {
   files_failed: number;
   files_remaining: number;
   estimated_remaining_cost: number;
+  current_file_name: string | null;
+  current_file_step: string | null;
+  current_file_progress: number | null;
 }
 
 // Progress tracking types
@@ -204,11 +207,16 @@ export class UnifiedIngestionClient {
   async getJobProgress(jobId: string): Promise<
     EnhancedApiResponse<{
       id: string;
-      status: string;
+      job_type: string;
+      current_step: string;
       progress_percentage: number;
-      message: string;
-      error?: string;
-      result?: Record<string, unknown>;
+      status_message: string;
+      is_complete: boolean;
+      is_failed: boolean;
+      error_message?: string;
+      results?: Record<string, unknown>;
+      started_at: number;
+      completed_at?: number;
     }>
   > {
     return this.client.get(`/ingestion/progress/${jobId}`, {

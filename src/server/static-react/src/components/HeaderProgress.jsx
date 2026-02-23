@@ -121,9 +121,10 @@ function HeaderProgress() {
     const textClass = isPaused ? 'text-gruvbox-yellow' : 'text-gruvbox-blue'
     const barColor = isPaused ? 'bg-gruvbox-yellow' : 'bg-primary'
 
+    const fileLabel = batchInfo.current_file_name ? ` ${batchInfo.current_file_name}` : ''
     const statusText = isPaused
       ? `paused ${fmtCost(batchInfo.accumulated_cost)}/${fmtCost(batchInfo.spend_limit)} limit`
-      : `ingesting ${pct}% ${fmtCost(batchInfo.accumulated_cost)}${batchInfo.spend_limit != null ? `/${fmtCost(batchInfo.spend_limit)}` : ''}`
+      : `ingesting${fileLabel} ${pct}% ${fmtCost(batchInfo.accumulated_cost)}${batchInfo.spend_limit != null ? `/${fmtCost(batchInfo.spend_limit)}` : ''}`
 
     indicators.push(
       <div key="batch" className="flex items-center gap-2 px-3 py-1.5 bg-surface-secondary border border-border">
