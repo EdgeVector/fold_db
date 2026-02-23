@@ -24,6 +24,7 @@ fn test_implicit_cardinality_execution() {
             value: json!("Hello world"),
             atom_uuid: "atom1".to_string(),
             source_file_name: None,
+            metadata: None,
         },
     );
     content_atoms.insert(
@@ -32,6 +33,7 @@ fn test_implicit_cardinality_execution() {
             value: json!("Another test"),
             atom_uuid: "atom2".to_string(),
             source_file_name: None,
+            metadata: None,
         },
     );
     input_data.insert("content".to_string(), content_atoms);

@@ -112,6 +112,7 @@ fn execute_engine_and_convert_to_records() {
                 value: v1,
                 atom_uuid: "a1".to_string(),
                 source_file_name: None,
+                metadata: None,
             },
         );
         m.insert(
@@ -120,6 +121,7 @@ fn execute_engine_and_convert_to_records() {
                 value: v2,
                 atom_uuid: "a2".to_string(),
                 source_file_name: None,
+                metadata: None,
             },
         );
         typed_input.insert(name.to_string(), m);
