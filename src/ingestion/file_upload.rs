@@ -71,6 +71,28 @@ pub async fn upload_file(
         );
     }
 
+    // Check per-user file dedup — skip entire pipeline if this user already ingested this file
+    {
+        let node = node_arc.read().await;
+        let pub_key = node.get_node_public_key().to_string();
+        if let Some(record) = node.is_file_ingested(&pub_key, &form_data.file_hash).await {
+            log_feature!(
+                LogFeature::Ingestion,
+                info,
+                "File already ingested by this user (at {}), skipping: {}",
+                record.ingested_at,
+                form_data.original_filename
+            );
+            return HttpResponse::Ok().json(json!({
+                "success": true,
+                "message": "File already ingested",
+                "duplicate": true,
+                "ingested_at": record.ingested_at,
+                "source_folder": record.source_folder,
+            }));
+        }
+    }
+
     // Convert file to JSON using file_to_json
     let json_value = match convert_file_to_json_http(&form_data.file_path).await {
         Ok(json) => json,
@@ -108,6 +130,7 @@ pub async fn upload_file(
         source_file_name: Some(form_data.original_filename.clone()),
         progress_id: Some(progress_id),
         file_hash: Some(form_data.file_hash.clone()),
+        source_folder: None,
     };
 
     // Extract ingestion service

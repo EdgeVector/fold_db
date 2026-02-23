@@ -5,7 +5,7 @@
 
 mod decomposition;
 
-use crate::fold_node::FoldNode;
+use crate::fold_node::{FileIngestionRecord, FoldNode};
 use crate::ingestion::config::AIProvider;
 use crate::ingestion::decomposer;
 use crate::ingestion::key_extraction::extract_key_values_from_data;
@@ -226,6 +226,19 @@ impl IngestionService {
                     String::new()
                 });
 
+            // Record file as ingested for this user (per-user file-level dedup)
+            if let Some(ref fh) = request.file_hash {
+                let record = FileIngestionRecord {
+                    ingested_at: chrono::Utc::now().to_rfc3339(),
+                    source_folder: request.source_folder.clone(),
+                    source_file_name: request.source_file_name.clone(),
+                    progress_id: request.progress_id.clone(),
+                };
+                if let Err(e) = node.mark_file_ingested(&request.pub_key, fh, record).await {
+                    log::warn!("Failed to record file dedup entry: {}", e);
+                }
+            }
+
             // Mark as completed
             let results = IngestionResults {
                 schema_name: top_schema_name.clone(),
@@ -381,6 +394,19 @@ impl IngestionService {
             } else {
                 0
             };
+
+            // Record file as ingested for this user (per-user file-level dedup)
+            if let Some(ref fh) = request.file_hash {
+                let record = FileIngestionRecord {
+                    ingested_at: chrono::Utc::now().to_rfc3339(),
+                    source_folder: request.source_folder.clone(),
+                    source_file_name: request.source_file_name.clone(),
+                    progress_id: request.progress_id.clone(),
+                };
+                if let Err(e) = node.mark_file_ingested(&request.pub_key, fh, record).await {
+                    log::warn!("Failed to record file dedup entry: {}", e);
+                }
+            }
 
             // Mark as completed
             let results = IngestionResults {

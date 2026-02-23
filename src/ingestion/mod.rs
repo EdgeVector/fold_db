@@ -109,6 +109,9 @@ pub struct IngestionRequest {
     /// SHA256 hash of the original source file content (hex string)
     #[serde(default)]
     pub file_hash: Option<String>,
+    /// Source folder path (set when ingested via smart folder or batch)
+    #[serde(default)]
+    pub source_folder: Option<String>,
 }
 
 /// Response from the ingestion process

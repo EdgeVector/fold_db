@@ -378,6 +378,9 @@ impl OperationProcessor {
                 .map(|s| s.to_string()),
             progress_id: Some(progress_id.clone()),
             file_hash: None,
+            source_folder: file_path
+                .parent()
+                .map(|p| p.to_string_lossy().to_string()),
         };
 
         let service = IngestionService::from_env().map_err(|e| FoldDbError::Other(e.to_string()))?;

@@ -1,6 +1,7 @@
 use crate::log_feature;
 use crate::logging::features::LogFeature;
-use serde::Serialize;
+use crate::storage::traits::TypedStore;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -508,6 +509,49 @@ impl FoldNode {
         let db = self.db.lock().await;
         db.decrement_pending_tasks();
     }
+
+    /// Check if a file has already been ingested by a specific user.
+    ///
+    /// Returns the ingestion record if found, `None` otherwise.
+    pub async fn is_file_ingested(
+        &self,
+        pub_key: &str,
+        file_hash: &str,
+    ) -> Option<FileIngestionRecord> {
+        let key = format!("file:{}:{}", pub_key, file_hash);
+        let db = self.db.lock().await;
+        db.db_ops
+            .idempotency_store()
+            .get_item::<FileIngestionRecord>(&key)
+            .await
+            .ok()
+            .flatten()
+    }
+
+    /// Record that a file has been successfully ingested by a user.
+    pub async fn mark_file_ingested(
+        &self,
+        pub_key: &str,
+        file_hash: &str,
+        record: FileIngestionRecord,
+    ) -> FoldDbResult<()> {
+        let key = format!("file:{}:{}", pub_key, file_hash);
+        let db = self.db.lock().await;
+        db.db_ops
+            .idempotency_store()
+            .put_item(&key, &record)
+            .await
+            .map_err(|e| FoldDbError::Database(e.to_string()))
+    }
+}
+
+/// Metadata stored when a file is successfully ingested by a user.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FileIngestionRecord {
+    pub ingested_at: String,
+    pub source_folder: Option<String>,
+    pub source_file_name: Option<String>,
+    pub progress_id: Option<String>,
 }
 
 #[cfg(test)]

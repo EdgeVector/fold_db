@@ -451,6 +451,25 @@ pub(crate) async fn process_single_file_via_smart_folder(
     let node = node_arc.read().await;
     let pub_key = node.get_node_public_key().to_string();
 
+    // Check per-user file dedup — skip entire pipeline if this user already ingested this file
+    if let Some(record) = node.is_file_ingested(&pub_key, &file_hash).await {
+        log_feature!(
+            LogFeature::Ingestion,
+            info,
+            "File already ingested by this user (at {}), skipping: {}",
+            record.ingested_at,
+            file_path.display()
+        );
+        progress_service
+            .update_progress(
+                progress_id,
+                crate::ingestion::IngestionStep::Completed,
+                format!("Skipped (already ingested at {})", record.ingested_at),
+            )
+            .await;
+        return Ok(());
+    }
+
     let request = IngestionRequest {
         data,
         auto_execute,
@@ -462,6 +481,9 @@ pub(crate) async fn process_single_file_via_smart_folder(
             .map(|s| s.to_string()),
         progress_id: Some(progress_id.to_string()),
         file_hash: Some(file_hash),
+        source_folder: file_path
+            .parent()
+            .map(|p| p.to_string_lossy().to_string()),
     };
 
     service
