@@ -393,6 +393,10 @@ impl FoldHttpServer {
             web::post().to(ingestion_routes::smart_folder_scan),
         )
         .route(
+            "/ingestion/smart-folder/scan/{id}",
+            web::get().to(ingestion_routes::get_scan_result),
+        )
+        .route(
             "/ingestion/smart-folder/ingest",
             web::post().to(ingestion_routes::smart_folder_ingest),
         )

@@ -106,6 +106,7 @@ pub(crate) fn spawn_file_ingestion_tasks(
     ingestion_service: Arc<IngestionService>,
     upload_storage: crate::storage::UploadStorage,
     encryption_key: [u8; 32],
+    force_reingest: bool,
 ) {
     for (file_path, progress_id) in files_with_progress {
         let progress_tracker_clone = progress_tracker.clone();
@@ -128,6 +129,7 @@ pub(crate) fn spawn_file_ingestion_tasks(
                     &service_clone,
                     &upload_storage_clone,
                     &enc_key,
+                    force_reingest,
                 )
                 .await
                 {
@@ -433,6 +435,7 @@ pub(crate) async fn process_single_file_via_smart_folder(
     service: &IngestionService,
     upload_storage: &crate::storage::UploadStorage,
     encryption_key: &[u8; 32],
+    force_reingest: bool,
 ) -> Result<(), String> {
     // Try native parser first (handles json, js/Twitter, csv, txt, md),
     // fall back to file_to_json for unsupported types (images, PDFs, etc.)
@@ -468,22 +471,24 @@ pub(crate) async fn process_single_file_via_smart_folder(
     let pub_key = node.get_node_public_key().to_string();
 
     // Check per-user file dedup — skip entire pipeline if this user already ingested this file
-    if let Some(record) = node.is_file_ingested(&pub_key, &file_hash).await {
-        log_feature!(
-            LogFeature::Ingestion,
-            info,
-            "File already ingested by this user (at {}), skipping: {}",
-            record.ingested_at,
-            file_path.display()
-        );
-        progress_service
-            .update_progress(
-                progress_id,
-                crate::ingestion::IngestionStep::Completed,
-                format!("Skipped (already ingested at {})", record.ingested_at),
-            )
-            .await;
-        return Ok(());
+    if !force_reingest {
+        if let Some(record) = node.is_file_ingested(&pub_key, &file_hash).await {
+            log_feature!(
+                LogFeature::Ingestion,
+                info,
+                "File already ingested by this user (at {}), skipping: {}",
+                record.ingested_at,
+                file_path.display()
+            );
+            progress_service
+                .update_progress(
+                    progress_id,
+                    crate::ingestion::IngestionStep::Completed,
+                    format!("Skipped (already ingested at {})", record.ingested_at),
+                )
+                .await;
+            return Ok(());
+        }
     }
 
     let request = IngestionRequest {

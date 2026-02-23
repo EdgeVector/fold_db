@@ -20,6 +20,14 @@ function SmartFolderTab({ onResult }) {
   const [spendLimit, setSpendLimit] = useState('')
   const [newLimit, setNewLimit] = useState('')
 
+  // Scan progress tracking
+  const [scanProgressId, setScanProgressId] = useState(null)
+  const [scanProgress, setScanProgress] = useState(null)
+  const scanPollRef = useRef(null)
+
+  // Re-ingest toggle
+  const [includeAlreadyIngested, setIncludeAlreadyIngested] = useState(false)
+
   // Autocomplete state
   const [suggestions, setSuggestions] = useState([])
   const [selectedIndex, setSelectedIndex] = useState(-1)
@@ -107,6 +115,40 @@ function SmartFolderTab({ onResult }) {
     return () => { cancelled = true; clearInterval(pollRef.current); pollRef.current = null }
   }, [batchId])
 
+  // Poll scan progress while scanning
+  useEffect(() => {
+    if (!scanProgressId) return
+    let cancelled = false
+    const poll = async () => {
+      try {
+        const resp = await ingestionClient.getJobProgress(scanProgressId)
+        if (cancelled) return
+        if (resp.success && resp.data) {
+          setScanProgress(resp.data)
+          if (resp.data.status === 'Completed') {
+            // Fetch the actual scan result
+            const result = await ingestionClient.getScanResult(scanProgressId)
+            if (result.success && result.data) {
+              setScanResult(result.data)
+              setSpendLimit(result.data.total_estimated_cost?.toFixed(2) || '')
+            }
+            setScanProgressId(null)
+            setScanProgress(null)
+            setIsScanning(false)
+          } else if (resp.data.status === 'Failed') {
+            onResult({ success: false, error: resp.data.error || 'Scan failed' })
+            setScanProgressId(null)
+            setScanProgress(null)
+            setIsScanning(false)
+          }
+        }
+      } catch { /* ignore transient errors */ }
+    }
+    poll()
+    scanPollRef.current = setInterval(poll, 1000)
+    return () => { cancelled = true; clearInterval(scanPollRef.current); scanPollRef.current = null }
+  }, [scanProgressId, onResult])
+
   const acceptSuggestion = (path) => {
     const newPath = path.endsWith('/') ? path : path + '/'
     setFolderPath(newPath)
@@ -167,19 +209,19 @@ function SmartFolderTab({ onResult }) {
     setScanResult(null)
     setBatchId(null)
     setBatchStatus(null)
+    setIncludeAlreadyIngested(false)
+    setScanProgress(null)
     onResult(null)
     try {
       const response = await ingestionClient.smartFolderScan(folderPath.trim(), 10, maxFiles)
-      if (response.success) {
-        setScanResult(response.data)
-        // Default spend limit to total estimate
-        setSpendLimit(response.data.total_estimated_cost?.toFixed(2) || '')
+      if (response.success && response.data?.progress_id) {
+        setScanProgressId(response.data.progress_id)
       } else {
-        onResult({ success: false, error: 'Failed to scan folder' })
+        onResult({ success: false, error: 'Failed to start scan' })
+        setIsScanning(false)
       }
     } catch (error) {
       onResult({ success: false, error: (error instanceof Error ? error.message : String(error)) || 'Failed to scan folder' })
-    } finally {
       setIsScanning(false)
     }
   }
@@ -188,11 +230,11 @@ function SmartFolderTab({ onResult }) {
     if (!folderPath.trim() || !scanResult) return
     const nextLimit = (scanResult.max_files_used || 100) + 400
     setIsLoadingMore(true)
+    setScanResult(null)
     try {
       const response = await ingestionClient.smartFolderScan(folderPath.trim(), 10, nextLimit)
-      if (response.success) {
-        setScanResult(response.data)
-        setSpendLimit(response.data.total_estimated_cost?.toFixed(2) || '')
+      if (response.success && response.data?.progress_id) {
+        setScanProgressId(response.data.progress_id)
       }
     } catch (error) {
       onResult({ success: false, error: (error instanceof Error ? error.message : String(error)) || 'Failed to load more files' })
@@ -203,7 +245,9 @@ function SmartFolderTab({ onResult }) {
 
   const handleIngest = async () => {
     if (!scanResult) return
-    const files = scanResult.recommended_files
+    const files = includeAlreadyIngested
+      ? [...scanResult.recommended_files, ...scanResult.skipped_files.filter(f => f.already_ingested)]
+      : scanResult.recommended_files
     const filePaths = files.map(f => f.path)
     const fileCosts = files.map(f => f.estimated_cost)
     if (filePaths.length === 0) { onResult({ success: false, error: 'No files recommended' }); return }
@@ -212,7 +256,7 @@ function SmartFolderTab({ onResult }) {
     try {
       const limit = spendLimit ? parseFloat(spendLimit) : undefined
       const response = await ingestionClient.smartFolderIngest(
-        folderPath.trim(), filePaths, true, limit, fileCosts
+        folderPath.trim(), filePaths, true, limit, fileCosts, includeAlreadyIngested
       )
       if (response.success) {
         setBatchId(response.data.batch_id)
@@ -256,6 +300,8 @@ function SmartFolderTab({ onResult }) {
       try { await ingestionClient.cancelBatch(batchId) } catch { /* best-effort */ }
     }
     setScanResult(null)
+    setScanProgressId(null)
+    setScanProgress(null)
     setBatchId(null)
     setBatchStatus(null)
     setSpendLimit('')
@@ -326,6 +372,20 @@ function SmartFolderTab({ onResult }) {
             {isScanning ? <><span className="spinner" />Scanning...</> : <>Scan</>}
           </button>
         </div>
+        {isScanning && scanProgress && (
+          <div className="space-y-1.5">
+            <div className="w-full bg-border rounded-full h-1.5 overflow-hidden">
+              <div
+                className="h-full bg-primary rounded-full transition-all duration-300"
+                style={{ width: `${scanProgress.progress_percentage || 0}%` }}
+              />
+            </div>
+            <p className="text-xs text-secondary">{scanProgress.message || 'Starting scan...'}</p>
+          </div>
+        )}
+        {isScanning && !scanProgress && (
+          <p className="text-xs text-secondary">Starting scan...</p>
+        )}
         {import.meta.env.DEV && (
           <button
             onClick={() => setFolderPath('sample_data')}
@@ -344,7 +404,17 @@ function SmartFolderTab({ onResult }) {
             <div className="flex items-center gap-6 text-sm">
               <span className="text-primary font-medium">{scanResult.recommended_files.length} files to ingest</span>
               {scanResult.skipped_files.filter(f => f.already_ingested).length > 0 && (
-                <span className="text-gruvbox-blue">{scanResult.skipped_files.filter(f => f.already_ingested).length} already ingested</span>
+                <label className="flex items-center gap-1.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={includeAlreadyIngested}
+                    onChange={(e) => setIncludeAlreadyIngested(e.target.checked)}
+                    className="accent-gruvbox-blue"
+                  />
+                  <span className={includeAlreadyIngested ? 'text-primary font-medium' : 'text-gruvbox-blue'}>
+                    {scanResult.skipped_files.filter(f => f.already_ingested).length} already ingested
+                  </span>
+                </label>
               )}
               <span className="text-secondary">{scanResult.skipped_files.filter(f => !f.already_ingested).length} skipped</span>
               <span className="text-secondary">{scanResult.total_files} total</span>
@@ -399,9 +469,15 @@ function SmartFolderTab({ onResult }) {
 
           <div className="flex items-center justify-between">
             <button onClick={handleBack} className="btn-secondary" disabled={isIngesting}>Back</button>
-            <button onClick={handleIngest} disabled={isIngesting || scanResult.recommended_files.length === 0} className="btn-primary btn-lg flex items-center gap-2">
-              {isIngesting ? <><span className="spinner" />Starting...</> : <>Proceed ({scanResult.recommended_files.length} files)</>}
-            </button>
+            {(() => {
+              const totalFiles = scanResult.recommended_files.length +
+                (includeAlreadyIngested ? scanResult.skipped_files.filter(f => f.already_ingested).length : 0)
+              return (
+                <button onClick={handleIngest} disabled={isIngesting || totalFiles === 0} className="btn-primary btn-lg flex items-center gap-2">
+                  {isIngesting ? <><span className="spinner" />Starting...</> : <>Proceed ({totalFiles} files)</>}
+                </button>
+              )
+            })()}
           </div>
         </>
       )}

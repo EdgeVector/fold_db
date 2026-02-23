@@ -407,8 +407,8 @@ export class UnifiedIngestionClient {
     folderPath: string,
     maxDepth = 10,
     maxFiles = 100,
-  ): Promise<EnhancedApiResponse<SmartFolderScanResponse>> {
-    return this.client.post<SmartFolderScanResponse>(
+  ): Promise<EnhancedApiResponse<{ success: boolean; progress_id: string }>> {
+    return this.client.post<{ success: boolean; progress_id: string }>(
       "/ingestion/smart-folder/scan",
       {
         folder_path: folderPath,
@@ -416,7 +416,23 @@ export class UnifiedIngestionClient {
         max_files: maxFiles,
       },
       {
-        timeout: API_TIMEOUTS.FOLDER_SCAN,
+        timeout: API_TIMEOUTS.QUICK,
+        retries: API_RETRIES.NONE,
+        cacheable: false,
+      },
+    );
+  }
+
+  /**
+   * Get the completed scan result by progress ID
+   */
+  async getScanResult(
+    progressId: string,
+  ): Promise<EnhancedApiResponse<SmartFolderScanResponse>> {
+    return this.client.get<SmartFolderScanResponse>(
+      `/ingestion/smart-folder/scan/${progressId}`,
+      {
+        timeout: API_TIMEOUTS.QUICK,
         retries: API_RETRIES.NONE,
         cacheable: false,
       },
@@ -432,6 +448,7 @@ export class UnifiedIngestionClient {
     autoExecute = true,
     spendLimit?: number,
     fileCosts?: number[],
+    forceReingest = false,
   ): Promise<EnhancedApiResponse<SmartFolderIngestResponse>> {
     return this.client.post<SmartFolderIngestResponse>(
       "/ingestion/smart-folder/ingest",
@@ -441,6 +458,7 @@ export class UnifiedIngestionClient {
         auto_execute: autoExecute,
         spend_limit: spendLimit ?? null,
         file_costs: fileCosts ?? null,
+        force_reingest: forceReingest,
       },
       {
         timeout: API_TIMEOUTS.AI_PROCESSING,

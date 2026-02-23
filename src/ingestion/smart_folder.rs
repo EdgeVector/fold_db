@@ -476,16 +476,14 @@ pub fn apply_heuristic_filtering(file_tree: &[String]) -> Vec<FileRecommendation
 
 // ---- Scan orchestration ----
 
-/// Perform a smart folder scan: directory walk → LLM classification → recommendations.
+/// Optional progress reporter for scan operations.
+/// Accepts `(percentage, message)` updates.
+pub type ScanProgressFn = Box<dyn Fn(u8, String) + Send + Sync>;
+
+/// Perform a smart folder scan: directory walk, LLM classification, recommendations.
 ///
 /// This is the core logic shared between the HTTP handler and the CLI.
 /// If `service` is `None`, an `IngestionService` is created from the environment.
-///
-/// The new LLM-first approach:
-/// 1. Scan directory tree (with context for LLM)
-/// 2. Auto-skip only truly binary files (exe, dll, wasm, fonts, etc.)
-/// 3. Send ALL other files to the LLM with the full directory tree for context
-/// 4. Fall back to conservative heuristics if LLM fails
 pub async fn perform_smart_folder_scan(
     folder_path: &Path,
     max_depth: usize,
@@ -493,9 +491,29 @@ pub async fn perform_smart_folder_scan(
     service: Option<&crate::ingestion::ingestion_service::IngestionService>,
     node: Option<&crate::fold_node::FoldNode>,
 ) -> IngestionResult<SmartFolderScanResponse> {
+    perform_smart_folder_scan_with_progress(folder_path, max_depth, max_files, service, node, None)
+        .await
+}
+
+pub async fn perform_smart_folder_scan_with_progress(
+    folder_path: &Path,
+    max_depth: usize,
+    max_files: usize,
+    service: Option<&crate::ingestion::ingestion_service::IngestionService>,
+    node: Option<&crate::fold_node::FoldNode>,
+    on_progress: Option<&ScanProgressFn>,
+) -> IngestionResult<SmartFolderScanResponse> {
+    let report = |pct: u8, msg: String| {
+        if let Some(f) = &on_progress {
+            f(pct, msg);
+        }
+    };
+
+    report(5, "Listing files...".into());
     let scan = scan_directory_tree_with_context(folder_path, max_depth, max_files)?;
 
     if scan.file_paths.is_empty() {
+        report(100, "No files found.".into());
         return Ok(SmartFolderScanResponse {
             success: true,
             total_files: 0,
@@ -508,6 +526,8 @@ pub async fn perform_smart_folder_scan(
             max_files_used: max_files,
         });
     }
+
+    report(15, format!("Found {} files. Filtering known extensions...", scan.file_paths.len()));
 
     // Split files: binary auto-skip vs everything else goes to LLM
     let mut binary_skipped: Vec<FileRecommendation> = Vec::new();
@@ -535,6 +555,12 @@ pub async fn perform_smart_folder_scan(
         llm_candidates.len(),
     );
 
+    report(25, format!(
+        "Skipped {} binary files. Classifying {} files with AI...",
+        binary_skipped.len(),
+        llm_candidates.len(),
+    ));
+
     // Send all non-binary files to LLM in batches (with tree context)
     let llm_recs = if llm_candidates.is_empty() {
         Vec::new()
@@ -550,9 +576,16 @@ pub async fn perform_smart_folder_scan(
         };
 
         let batch_size = 100;
+        let chunks: Vec<Vec<String>> = llm_candidates.chunks(batch_size).map(|c| c.to_vec()).collect();
+        let total_batches = chunks.len();
         let mut all_recs = Vec::new();
-        for chunk in llm_candidates.chunks(batch_size) {
-            let chunk_vec: Vec<String> = chunk.to_vec();
+        for (i, chunk_vec) in chunks.into_iter().enumerate() {
+            if total_batches > 1 {
+                report(
+                    25 + ((i as u8) * 50 / total_batches as u8),
+                    format!("Classifying files with AI (batch {}/{})", i + 1, total_batches),
+                );
+            }
             let prompt = create_smart_folder_prompt(&scan.tree_display, &chunk_vec);
             match call_llm_for_file_analysis(&prompt, svc).await {
                 Ok(llm_response) => {
@@ -575,6 +608,8 @@ pub async fn perform_smart_folder_scan(
         }
         all_recs
     };
+
+    report(80, "Checking dedup status...".into());
 
     // Merge binary-skipped + LLM recommendations
     let recommendations: Vec<FileRecommendation> =
@@ -618,6 +653,12 @@ pub async fn perform_smart_folder_scan(
             skipped_files.push(rec);
         }
     }
+
+    report(100, format!(
+        "Scan complete. {} to ingest, {} skipped.",
+        recommended_files.len(),
+        skipped_files.len(),
+    ));
 
     Ok(SmartFolderScanResponse {
         success: true,

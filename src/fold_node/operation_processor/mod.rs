@@ -336,4 +336,158 @@ mod tests {
         let kv = KeyValue::new(None, None);
         assert!(OperationProcessor::filter_from_key_value(&kv).is_none());
     }
+
+    fn object_topology(children: Vec<(&str, TopologyNode)>) -> JsonTopology {
+        let value = children
+            .into_iter()
+            .map(|(k, v)| (k.to_string(), v))
+            .collect();
+        JsonTopology::new(TopologyNode::Object { value })
+    }
+
+    fn string_primitive() -> TopologyNode {
+        TopologyNode::Primitive {
+            value: PrimitiveValueType::String,
+            classifications: None,
+        }
+    }
+
+    /// Test that nested dotted path key resolution works end-to-end through mutation_manager.
+    /// This verifies the fix for schemas where range_field is "departure.date"
+    /// and the mutation has {"departure": {"date": "2025-03-15"}}.
+    #[tokio::test]
+    async fn test_nested_dotted_path_key_resolution_in_mutation() {
+        let (processor, node) = setup_processor().await;
+        let pub_key = processor.get_node_public_key();
+
+        // Create a HashRange schema with nested dotted path in key config
+        let mut schema = DeclarativeSchemaDefinition::new(
+            "FlightBooking".to_string(),
+            SchemaType::HashRange,
+            Some(KeyConfig {
+                hash_field: Some("booking_id".to_string()),
+                range_field: Some("departure.date".to_string()), // nested dotted path
+            }),
+            Some(vec!["booking_id".to_string(), "departure".to_string()]),
+            None,
+            None,
+        );
+        schema.field_topologies.insert("booking_id".to_string(), string_topology());
+        schema.field_topologies.insert(
+            "departure".to_string(),
+            object_topology(vec![
+                ("date", string_primitive()),
+                ("city", string_primitive()),
+            ]),
+        );
+
+        load_and_approve_schema(&node, schema).await;
+        approve_schema(&node, "FlightBooking").await;
+
+        // Execute a mutation with nested data — key_value is intentionally wrong/empty
+        // because mutation_manager re-extracts it via KeyValue::from_mutation()
+        let mut fields = HashMap::new();
+        fields.insert("booking_id".to_string(), json!("BK-001"));
+        fields.insert("departure".to_string(), json!({"date": "2025-03-15", "city": "NYC"}));
+
+        let mutation = Mutation::new(
+            "FlightBooking".to_string(),
+            fields,
+            KeyValue::new(None, None), // intentionally empty — will be re-extracted
+            pub_key.clone(),
+            0,
+            MutationType::Create,
+        );
+
+        let result = processor.execute_mutation_op(mutation).await;
+        assert!(result.is_ok(), "Mutation should succeed: {:?}", result);
+
+        // Query the schema — should return the record with correct keys
+        let query = crate::schema::types::Query::new(
+            "FlightBooking".to_string(),
+            vec!["booking_id".to_string(), "departure".to_string()],
+        );
+        let results = processor.execute_query_json(query).await.unwrap();
+
+        assert_eq!(results.len(), 1, "Should have exactly 1 record");
+        let record = &results[0];
+
+        // Verify the key was correctly extracted from nested path
+        let key = &record["key"];
+        assert_eq!(key["hash"], json!("BK-001"), "Hash should be booking_id value");
+        assert_eq!(key["range"], json!("2025-03-15"), "Range should be departure.date value");
+
+        // Verify field values
+        assert_eq!(record["fields"]["booking_id"], json!("BK-001"));
+        assert_eq!(record["fields"]["departure"]["date"], json!("2025-03-15"));
+        assert_eq!(record["fields"]["departure"]["city"], json!("NYC"));
+    }
+
+    /// Test Range-only schema (no hash_field) — hash should be null in results.
+    #[tokio::test]
+    async fn test_range_only_schema_with_nested_path() {
+        let (processor, node) = setup_processor().await;
+        let pub_key = processor.get_node_public_key();
+
+        // Range schema: only range_field, no hash_field
+        let mut schema = DeclarativeSchemaDefinition::new(
+            "StockPrice".to_string(),
+            SchemaType::Range,
+            Some(KeyConfig {
+                hash_field: None,
+                range_field: Some("ticker".to_string()),
+            }),
+            Some(vec!["ticker".to_string(), "price".to_string()]),
+            None,
+            None,
+        );
+        schema.field_topologies.insert("ticker".to_string(), string_topology());
+        schema.field_topologies.insert(
+            "price".to_string(),
+            JsonTopology::new(TopologyNode::Primitive {
+                value: PrimitiveValueType::Number,
+                classifications: None,
+            }),
+        );
+
+        load_and_approve_schema(&node, schema).await;
+        approve_schema(&node, "StockPrice").await;
+
+        // Insert two records
+        for (ticker, price) in [("VOO", 420.5), ("QQQ", 380.2)] {
+            let mut fields = HashMap::new();
+            fields.insert("ticker".to_string(), json!(ticker));
+            fields.insert("price".to_string(), json!(price));
+
+            processor.execute_mutation_op(Mutation::new(
+                "StockPrice".to_string(),
+                fields,
+                KeyValue::new(None, None),
+                pub_key.clone(),
+                0,
+                MutationType::Create,
+            )).await.unwrap();
+        }
+
+        // Query all records
+        let query = crate::schema::types::Query::new(
+            "StockPrice".to_string(),
+            vec!["ticker".to_string(), "price".to_string()],
+        );
+        let results = processor.execute_query_json(query).await.unwrap();
+
+        assert_eq!(results.len(), 2, "Should have 2 records");
+
+        // Verify keys — hash should be null (no hash_field), range should be ticker
+        for result in &results {
+            let key = &result["key"];
+            assert!(key["hash"].is_null(), "Hash should be null for Range schema");
+            let range = key["range"].as_str().unwrap();
+            assert!(
+                range == "VOO" || range == "QQQ",
+                "Range should be a valid ticker, got: {}",
+                range
+            );
+        }
+    }
 }

@@ -7,9 +7,122 @@ import {
   getFieldsAt,
   sliceKeys
 } from '../utils/hashRangeResults'
+import { executeQuery } from '../api/clients/mutationClient'
+import { getSchema } from '../api/clients/schemaClient'
 
 // Simple, dependency-free lazy list windowing.
 const DEFAULT_PAGE_SIZE = 50
+
+function isReference(value) {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    && typeof value.schema === 'string' && value.key && typeof value.key === 'object'
+}
+
+function isReferenceArray(value) {
+  return Array.isArray(value) && value.length > 0 && value.some(isReference)
+}
+
+function buildFilterFromKey(key) {
+  if (key.hash && key.range) {
+    return { HashRangeKey: { hash: key.hash, range: key.range } }
+  }
+  if (key.hash) {
+    return { HashKey: key.hash }
+  }
+  if (key.range) {
+    return { RangeKey: key.range }
+  }
+  return undefined
+}
+
+function referenceLabel(ref) {
+  const parts = []
+  if (ref.key.hash) parts.push(`hash:${ref.key.hash}`)
+  if (ref.key.range) parts.push(`range:${ref.key.range}`)
+  return `${ref.schema} (${parts.join(', ')})`
+}
+
+function ReferenceValue({ reference }) {
+  const [fetched, setFetched] = useState(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(null)
+  const [expanded, setExpanded] = useState(false)
+
+  const handleFetch = async () => {
+    if (fetched) {
+      setExpanded(!expanded)
+      return
+    }
+    setLoading(true)
+    setError(null)
+    try {
+      const schemaRes = await getSchema(reference.schema)
+      const schemaData = schemaRes.data
+      const fieldNames = schemaData?.fields ? Object.keys(schemaData.fields) : []
+      if (fieldNames.length === 0) {
+        throw new Error(`No fields found for schema "${reference.schema}"`)
+      }
+
+      const filter = buildFilterFromKey(reference.key)
+      const query = { schema_name: reference.schema, fields: fieldNames }
+      if (filter) query.filter = filter
+
+      const queryRes = await executeQuery(query)
+      if (!queryRes.success) {
+        throw new Error(queryRes.error || 'Query failed')
+      }
+      setFetched(queryRes.data)
+      setExpanded(true)
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center gap-2">
+        <span className="font-mono text-xs text-secondary">{'\u2192'} {referenceLabel(reference)}</span>
+        <button
+          type="button"
+          className="btn-secondary btn-sm text-xs px-2 py-0.5"
+          onClick={handleFetch}
+          disabled={loading}
+        >
+          {loading ? 'Loading...' : fetched ? (expanded ? 'Hide' : 'Show') : 'Fetch'}
+        </button>
+      </div>
+      {error && <div className="text-xs text-red-500">{error}</div>}
+      {fetched && expanded && (
+        <div className="ml-4 border-l border-border pl-2">
+          <StructuredResults results={fetched} />
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ReferenceArrayValue({ references }) {
+  return (
+    <div className="space-y-2">
+      <span className="text-xs text-secondary">{references.length} reference{references.length !== 1 ? 's' : ''}</span>
+      {references.map((ref, i) => (
+        <ReferenceValue key={`${ref.schema}-${ref.key?.hash || ''}-${ref.key?.range || ''}-${i}`} reference={ref} />
+      ))}
+    </div>
+  )
+}
+
+function renderFieldValue(value) {
+  if (isReference(value)) {
+    return <ReferenceValue reference={value} />
+  }
+  if (isReferenceArray(value)) {
+    return <ReferenceArrayValue references={value.filter(isReference)} />
+  }
+  return <pre className="font-mono whitespace-pre-wrap break-words">{formatValue(value)}</pre>
+}
 
 function ToggleButton({ isOpen, onClick, label }) {
   return (
@@ -41,7 +154,7 @@ export function FieldsTable({ fields }) {
             <tr key={k} className="bg-surface">
               <td className="align-top text-xs font-medium text-primary pr-4 whitespace-nowrap">{k}</td>
               <td className="align-top text-xs text-primary">
-                <pre className="font-mono whitespace-pre-wrap break-words">{formatValue(v)}</pre>
+                {renderFieldValue(v)}
               </td>
             </tr>
           ))}

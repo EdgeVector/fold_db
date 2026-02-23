@@ -9,6 +9,7 @@ use crate::ingestion::smart_folder;
 use crate::ingestion::ProgressTracker;
 use crate::log_feature;
 use crate::logging::features::LogFeature;
+use crate::progress::{Job, JobStatus, JobType};
 use crate::server::http_server::AppState;
 use crate::server::routes::{require_node, require_user_context};
 use actix_web::{web, HttpResponse, Responder};
@@ -47,24 +48,36 @@ pub struct SmartFolderIngestRequest {
     pub spend_limit: Option<f64>,
     /// Per-file estimated costs (parallel to files_to_ingest). Used for spend tracking.
     pub file_costs: Option<Vec<f64>>,
+    /// When true, bypass per-user file dedup so already-ingested files are reprocessed.
+    #[serde(default)]
+    pub force_reingest: bool,
 }
 
-/// Scan a folder and use LLM to recommend which files contain personal data
+/// Response from initiating an async scan
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SmartFolderScanStartResponse {
+    pub success: bool,
+    pub progress_id: String,
+}
+
+/// Scan a folder and use LLM to recommend which files contain personal data.
+/// Returns a progress_id immediately; poll `/api/ingestion/progress/{id}` for steps,
+/// then fetch `/api/ingestion/smart-folder/scan/{id}` for the result.
 #[utoipa::path(
     post,
     path = "/api/ingestion/smart-folder/scan",
     tag = "ingestion",
     request_body = SmartFolderScanRequest,
     responses(
-        (status = 200, description = "Scan complete with recommendations", body = SmartFolderScanResponse),
+        (status = 202, description = "Scan started", body = SmartFolderScanStartResponse),
         (status = 400, description = "Invalid folder path"),
-        (status = 503, description = "AI service not available")
     )
 )]
 pub async fn smart_folder_scan(
     request: web::Json<SmartFolderScanRequest>,
     state: web::Data<AppState>,
     ingestion_service: web::Data<IngestionServiceState>,
+    progress_tracker: web::Data<ProgressTracker>,
 ) -> impl Responder {
     log_feature!(
         LogFeature::Ingestion,
@@ -79,13 +92,6 @@ pub async fn smart_folder_scan(
         Err(response) => return response,
     };
 
-    log_feature!(
-        LogFeature::Ingestion,
-        info,
-        "Smart folder scan for user: {}",
-        user_id
-    );
-
     // Resolve folder path
     let folder_path = resolve_folder_path(&request.folder_path);
 
@@ -96,38 +102,124 @@ pub async fn smart_folder_scan(
     let max_depth = request.max_depth.unwrap_or(10);
     let max_files = request.max_files.unwrap_or(100);
 
-    // Get node for dedup checking (best-effort — scan still works without it)
+    // Create progress tracking
+    let progress_id = uuid::Uuid::new_v4().to_string();
+    let tracker = progress_tracker.get_ref().clone();
+
+    // Initialize the job
+    let mut job = Job::new(progress_id.clone(), JobType::Other("scan".to_string()));
+    job = job.with_user(user_id.clone());
+    job.message = "Starting scan...".to_string();
+    job.progress_percentage = 0;
+    if let Err(e) = tracker.save(&job).await {
+        log::warn!("Failed to save scan progress: {}", e);
+    }
+
+    // Get shared state for the background task
     let node_arc = require_node(&state).await.ok().map(|(_uid, arc)| arc);
-
     let service_opt = get_ingestion_service(&ingestion_service).await;
-    let service_ref = service_opt.as_deref();
 
-    let result = if let Some(ref arc) = node_arc {
-        let node_guard = arc.read().await;
-        smart_folder::perform_smart_folder_scan(
-            &folder_path,
-            max_depth,
-            max_files,
-            service_ref,
-            Some(&*node_guard),
-        )
-        .await
-    } else {
-        smart_folder::perform_smart_folder_scan(
-            &folder_path,
-            max_depth,
-            max_files,
-            service_ref,
-            None,
-        )
-        .await
-    };
+    // Spawn the scan in the background
+    let pid = progress_id.clone();
+    tokio::spawn(async move {
+        crate::logging::core::run_with_user(&user_id, async move {
+            // Build a progress callback that writes to the tracker
+            let tracker_cb = tracker.clone();
+            let pid_cb = pid.clone();
+            let on_progress: smart_folder::ScanProgressFn = Box::new(move |pct, msg| {
+                let tracker_inner = tracker_cb.clone();
+                let pid_inner = pid_cb.clone();
+                // Fire-and-forget async update via a spawned task
+                tokio::spawn(async move {
+                    if let Ok(Some(mut job)) = tracker_inner.load(&pid_inner).await {
+                        job.update_progress(pct, msg);
+                        let _ = tracker_inner.save(&job).await;
+                    }
+                });
+            });
 
-    match result {
-        Ok(response) => HttpResponse::Ok().json(response),
-        Err(e) => HttpResponse::BadRequest().json(json!({
+            let result = if let Some(ref arc) = node_arc {
+                let node_guard = arc.read().await;
+                smart_folder::perform_smart_folder_scan_with_progress(
+                    &folder_path,
+                    max_depth,
+                    max_files,
+                    service_opt.as_deref(),
+                    Some(&*node_guard),
+                    Some(&on_progress),
+                )
+                .await
+            } else {
+                smart_folder::perform_smart_folder_scan_with_progress(
+                    &folder_path,
+                    max_depth,
+                    max_files,
+                    service_opt.as_deref(),
+                    None,
+                    Some(&on_progress),
+                )
+                .await
+            };
+
+            // Store result or error in the job
+            if let Ok(Some(mut job)) = tracker.load(&pid).await {
+                match result {
+                    Ok(response) => {
+                        let result_json = serde_json::to_value(&response).ok();
+                        job.complete(result_json);
+                    }
+                    Err(e) => {
+                        job.fail(e.to_string());
+                    }
+                }
+                let _ = tracker.save(&job).await;
+            }
+        })
+        .await
+    });
+
+    HttpResponse::Accepted().json(SmartFolderScanStartResponse {
+        success: true,
+        progress_id,
+    })
+}
+
+/// Retrieve the scan result after progress reaches 100%.
+#[utoipa::path(
+    get,
+    path = "/api/ingestion/smart-folder/scan/{id}",
+    tag = "ingestion",
+    responses(
+        (status = 200, description = "Scan result", body = SmartFolderScanResponse),
+        (status = 404, description = "Scan not found or not complete"),
+    )
+)]
+pub async fn get_scan_result(
+    path: web::Path<String>,
+    progress_tracker: web::Data<ProgressTracker>,
+) -> impl Responder {
+    let progress_id = path.into_inner();
+    let tracker = progress_tracker.get_ref();
+
+    match tracker.load(&progress_id).await {
+        Ok(Some(job)) => {
+            if !matches!(job.status, JobStatus::Completed) {
+                return HttpResponse::NotFound().json(json!({
+                    "success": false,
+                    "error": "Scan not yet complete"
+                }));
+            }
+            match job.result {
+                Some(result) => HttpResponse::Ok().json(result),
+                None => HttpResponse::NotFound().json(json!({
+                    "success": false,
+                    "error": "Scan result not available"
+                })),
+            }
+        }
+        _ => HttpResponse::NotFound().json(json!({
             "success": false,
-            "error": e.to_string()
+            "error": "Scan not found"
         })),
     }
 }
@@ -224,6 +316,7 @@ pub async fn smart_folder_ingest(
     };
 
     let auto_execute = request.auto_execute.unwrap_or(true);
+    let force_reingest = request.force_reingest;
 
     // Build pending files for the batch controller
     let pending_files: Vec<PendingFile> = files_to_process
@@ -263,6 +356,7 @@ pub async fn smart_folder_ingest(
         service,
         upload_storage.get_ref().clone(),
         encryption_key,
+        force_reingest,
     );
 
     HttpResponse::Accepted().json(BatchFolderResponse {
@@ -287,6 +381,7 @@ fn spawn_batch_coordinator(
     ingestion_service: Arc<IngestionService>,
     upload_storage: crate::storage::UploadStorage,
     encryption_key: [u8; 32],
+    force_reingest: bool,
 ) {
     let progress_tracker = progress_tracker.clone();
     let node_arc = node_arc.clone();
@@ -366,6 +461,7 @@ fn spawn_batch_coordinator(
                     &service_clone,
                     &upload_storage,
                     &encryption_key,
+                    force_reingest,
                 )
                 .await;
 

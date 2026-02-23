@@ -160,6 +160,7 @@ pub async fn batch_folder_ingest(
         service,
         upload_storage.get_ref().clone(),
         encryption_key,
+        false,
     );
 
     // Return immediately with batch info
