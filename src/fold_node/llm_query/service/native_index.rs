@@ -136,7 +136,7 @@ impl LlmQueryService {
                     .and_then(|s| s.as_str())
                     .ok_or("query tool requires 'schema_name' parameter")?;
 
-                let fields: Vec<String> = params
+                let mut fields: Vec<String> = params
                     .get("fields")
                     .and_then(|f| f.as_array())
                     .map(|arr| {
@@ -145,6 +145,13 @@ impl LlmQueryService {
                             .collect()
                     })
                     .unwrap_or_default();
+
+                // When the agent omits fields, default to all fields from the schema
+                if fields.is_empty() {
+                    if let Ok(Some(schema_with_state)) = processor.get_schema(schema_name).await {
+                        fields = schema_with_state.schema.runtime_fields.keys().cloned().collect();
+                    }
+                }
 
                 let filter = params.get("filter").cloned();
 
