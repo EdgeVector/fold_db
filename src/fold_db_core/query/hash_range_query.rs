@@ -38,8 +38,9 @@ impl HashRangeQueryProcessor {
             current_user
         );
         let mut result = HashMap::new();
+        let return_all = fields.is_empty();
         for (field_name, field) in schema.runtime_fields.iter_mut() {
-            if !fields.contains(field_name) {
+            if !return_all && !fields.contains(field_name) {
                 continue;
             }
             log::debug!("🔍 Resolving field: {}", field_name);

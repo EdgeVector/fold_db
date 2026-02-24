@@ -189,7 +189,7 @@ export default function DataBrowserTab() {
                           {record ? (
                             <Fragment>
                               <RecordMetadata metadata={record.metadata} />
-                              {maxVersion > 0 && <VersionHistory moleculeUuid={molUuid} />}
+                              {maxVersion > 1 && <VersionHistory moleculeUuid={molUuid} />}
                               <FieldsTable fields={record.fields} />
                             </Fragment>
                           ) : (

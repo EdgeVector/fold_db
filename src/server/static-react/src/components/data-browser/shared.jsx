@@ -42,7 +42,7 @@ export function getFirstMoleculeUuid(metadata) {
 }
 
 export function VersionBadge({ version }) {
-  if (!version || version <= 0) return null
+  if (!version || version <= 1) return null
   return (
     <span className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-mono font-semibold rounded bg-gruvbox-blue/20 text-gruvbox-blue">
       v{version}

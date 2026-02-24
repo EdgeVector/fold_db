@@ -233,12 +233,45 @@ pub fn classify_image_type(source_file_name: &str) -> String {
     }
 }
 
-/// Read the file's modified (or created) time and return it as an ISO 8601 string.
-/// Falls back to `Utc::now()` if the metadata cannot be read.
+/// Try to extract the original capture date from EXIF metadata.
+fn get_exif_date(file_path: &std::path::PathBuf) -> Option<String> {
+    let file = std::fs::File::open(file_path).ok()?;
+    let mut bufreader = std::io::BufReader::new(file);
+    let exif_data = exif::Reader::new().read_from_container(&mut bufreader).ok()?;
+
+    let field = exif_data
+        .get_field(exif::Tag::DateTimeOriginal, exif::In::PRIMARY)
+        .or_else(|| exif_data.get_field(exif::Tag::DateTime, exif::In::PRIMARY))?;
+
+    // EXIF format: "2024:07:15 14:30:00" → "2024-07-15 14:30:00"
+    let raw = field.display_value().to_string();
+    let cleaned = raw.trim_matches('"');
+    let mut result = cleaned.to_string();
+    if let Some(pos) = result.find(':') {
+        result.replace_range(pos..pos + 1, "-");
+        if let Some(pos2) = result[pos + 1..].find(':') {
+            let abs = pos + 1 + pos2;
+            if abs < 10 {
+                // still in date part
+                result.replace_range(abs..abs + 1, "-");
+            }
+        }
+    }
+    Some(result)
+}
+
+/// Read the file's creation date, preferring EXIF metadata for images.
+/// Falls back to filesystem timestamps, then `Utc::now()`.
 pub fn get_file_creation_date(file_path: &std::path::PathBuf) -> String {
+    // 1. Try EXIF metadata (actual photo capture date)
+    if let Some(exif_date) = get_exif_date(file_path) {
+        return exif_date;
+    }
+    // 2. Fallback: prefer created() over modified() — created() is less
+    //    likely to be the checkout/copy time on macOS
     std::fs::metadata(file_path)
         .ok()
-        .and_then(|meta| meta.modified().ok().or_else(|| meta.created().ok()))
+        .and_then(|meta| meta.created().ok().or_else(|| meta.modified().ok()))
         .map(|time| {
             let dt: chrono::DateTime<chrono::Utc> = time.into();
             dt.format("%Y-%m-%d %H:%M:%S").to_string()

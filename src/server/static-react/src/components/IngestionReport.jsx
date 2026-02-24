@@ -89,7 +89,19 @@ export default function IngestionReport({ ingestionResult, onDismiss }) {
     if (!keyRecords[id] && !keyLoading[id]) {
       setKeyLoading((p) => ({ ...p, [id]: true }))
       try {
-        const fields = getFieldNames(schemaName)
+        let fields = getFieldNames(schemaName)
+        if (fields.length === 0) {
+          try {
+            const res = await schemaClient.getSchema(schemaName)
+            const schema = res.data?.schema || res.data
+            if (schema) {
+              const f = schema.fields
+              const names = Array.isArray(f) ? f : (f && typeof f === 'object') ? Object.keys(f) : []
+              setFieldNamesCache((p) => ({ ...p, [schemaName]: names }))
+              fields = names
+            }
+          } catch { /* proceed with empty */ }
+        }
         const filter = buildFilter(kv)
         const query = { schema_name: schemaName, fields }
         if (filter) query.filter = filter
@@ -203,7 +215,7 @@ export default function IngestionReport({ ingestionResult, onDismiss }) {
                             {record ? (
                               <Fragment>
                                 <RecordMetadata metadata={record.metadata} />
-                                {maxVersion > 0 && <VersionHistory moleculeUuid={molUuid} />}
+                                {maxVersion > 1 && <VersionHistory moleculeUuid={molUuid} />}
                                 <FieldsTable fields={record.fields} />
                               </Fragment>
                             ) : (
