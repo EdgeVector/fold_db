@@ -4,7 +4,7 @@ import { ChevronDownIcon, ChevronRightIcon } from '@heroicons/react/24/solid'
 /**
  * Recursively renders a topology node with proper styling and indentation
  */
-function TopologyNode({ node, depth = 0, name: _name = null }) {
+function TopologyNode({ node, depth = 0, name: _name = null, onRefClick }) {
   const [isExpanded, setIsExpanded] = useState(depth === 0)
 
   if (!node) {
@@ -54,9 +54,13 @@ function TopologyNode({ node, depth = 0, name: _name = null }) {
     const shortHash = schemaName.length > 16 ? schemaName.substring(0, 12) + '...' : schemaName
     return (
       <span className="inline-flex items-center space-x-2">
-        <span className="font-mono text-sm text-gruvbox-purple">
+        <button
+          className="font-mono text-sm text-gruvbox-purple hover:text-gruvbox-yellow underline decoration-dotted cursor-pointer bg-transparent border-none p-0"
+          title={schemaName}
+          onClick={() => onRefClick?.(schemaName)}
+        >
           Ref&lt;{shortHash}&gt;
-        </span>
+        </button>
       </span>
     )
   }
@@ -66,7 +70,7 @@ function TopologyNode({ node, depth = 0, name: _name = null }) {
     return (
       <div className="inline-flex items-start">
         <span className="font-mono text-sm text-primary">Array&lt;</span>
-        <TopologyNode node={node.value} depth={depth + 1} />
+        <TopologyNode node={node.value} depth={depth + 1} onRefClick={onRefClick} />
         <span className="font-mono text-sm text-primary">&gt;</span>
       </div>
     )
@@ -106,7 +110,7 @@ function TopologyNode({ node, depth = 0, name: _name = null }) {
               <div key={fieldName} className="py-1">
                 <span className="font-mono text-sm text-primary">{fieldName}</span>
                 <span className="font-mono text-sm text-secondary">: </span>
-                <TopologyNode node={fieldNode} depth={depth + 1} name={fieldName} />
+                <TopologyNode node={fieldNode} depth={depth + 1} name={fieldName} onRefClick={onRefClick} />
                 {index < fields.length - 1 && <span className="text-tertiary">,</span>}
               </div>
             ))}
@@ -128,7 +132,7 @@ function TopologyNode({ node, depth = 0, name: _name = null }) {
 /**
  * Main component to display field topology
  */
-export default function TopologyDisplay({ topology, compact = false }) {
+export default function TopologyDisplay({ topology, compact = false, onRefClick }) {
   if (!topology) {
     return (
       <div className="text-xs text-tertiary italic">
@@ -140,7 +144,7 @@ export default function TopologyDisplay({ topology, compact = false }) {
   if (compact) {
     return (
       <div className="inline-flex items-center">
-        <TopologyNode node={topology.root} />
+        <TopologyNode node={topology.root} onRefClick={onRefClick} />
       </div>
     )
   }
@@ -149,7 +153,7 @@ export default function TopologyDisplay({ topology, compact = false }) {
     <div className="mt-2 p-2 card">
       <div className="text-xs font-medium text-secondary mb-1">Type Structure:</div>
       <div className="pl-2">
-        <TopologyNode node={topology.root} />
+        <TopologyNode node={topology.root} onRefClick={onRefClick} />
       </div>
     </div>
   )

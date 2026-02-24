@@ -142,6 +142,21 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
   }
 
 
+  const scrollToSchema = (schemaName) => {
+    // Expand the target schema
+    setExpandedSchemas(prev => ({ ...prev, [schemaName]: true }))
+    // Scroll to it after React re-renders
+    requestAnimationFrame(() => {
+      const el = document.getElementById(`schema-${schemaName}`)
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        // Brief highlight
+        el.classList.add('ring-2', 'ring-gruvbox-purple')
+        setTimeout(() => el.classList.remove('ring-2', 'ring-gruvbox-purple'), 2000)
+      }
+    })
+  }
+
   const renderSchema = (schema) => {
     const isExpanded = expandedSchemas[schema.name]
     const state = schema.state || 'Unknown'
@@ -149,7 +164,7 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
     const hashRangeSchemaInfo = getHashRangeSchemaInfo(schema)
 
     return (
-      <div key={schema.name} className="card overflow-hidden">
+      <div key={schema.name} id={`schema-${schema.name}`} className="card overflow-hidden transition-shadow duration-500">
         <button
           type="button"
           className="w-full px-4 py-3 bg-surface-secondary cursor-pointer select-none text-left"
@@ -260,7 +275,7 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
                               <span className="badge badge-info">Range Key</span>
                             )}
                           </div>
-                          {fieldTopology && <TopologyDisplay topology={fieldTopology} />}
+                          {fieldTopology && <TopologyDisplay topology={fieldTopology} onRefClick={scrollToSchema} />}
                         </div>
                       </div>
                     </div>
