@@ -182,6 +182,86 @@ pub async fn upload_file(
     }
 }
 
+/// Serve an uploaded file by its content hash.
+///
+/// Reads the encrypted file from upload storage, decrypts it, and
+/// returns the raw bytes with an appropriate Content-Type header
+/// derived from the optional `name` query parameter.
+#[utoipa::path(
+    get,
+    path = "/api/file/{hash}",
+    tag = "ingestion",
+    params(
+        ("hash" = String, Path, description = "SHA256 content hash of the file"),
+        ("name" = Option<String>, Query, description = "Original filename for Content-Type detection")
+    ),
+    responses(
+        (status = 200, description = "File content"),
+        (status = 404, description = "File not found"),
+        (status = 500, description = "Internal server error")
+    )
+)]
+pub async fn serve_file(
+    path: web::Path<String>,
+    query: web::Query<std::collections::HashMap<String, String>>,
+    upload_storage: web::Data<UploadStorage>,
+    state: web::Data<AppState>,
+) -> impl Responder {
+    let file_hash = path.into_inner();
+
+    // Get encryption key from node
+    let (_user_id, node_arc) = match require_node(&state).await {
+        Ok(res) => res,
+        Err(response) => return response,
+    };
+    let encryption_key = {
+        let node = node_arc.read().await;
+        node.get_encryption_key()
+    };
+
+    // Read encrypted file (content-addressed, user_id=None)
+    let encrypted_data = match upload_storage.read_file(&file_hash, None).await {
+        Ok(data) => data,
+        Err(_) => {
+            return HttpResponse::NotFound().json(json!({
+                "error": "File not found"
+            }));
+        }
+    };
+
+    // Decrypt
+    let decrypted = match crate::crypto::envelope::decrypt_envelope(&encryption_key, &encrypted_data) {
+        Ok(data) => data,
+        Err(e) => {
+            log_feature!(LogFeature::Ingestion, error, "Failed to decrypt file {}: {}", file_hash, e);
+            return HttpResponse::InternalServerError().json(json!({
+                "error": "Failed to decrypt file"
+            }));
+        }
+    };
+
+    // Determine content type from optional name query param
+    let content_type = query.get("name")
+        .and_then(|name| {
+            let lower = name.to_lowercase();
+            if lower.ends_with(".jpg") || lower.ends_with(".jpeg") { Some("image/jpeg") }
+            else if lower.ends_with(".png") { Some("image/png") }
+            else if lower.ends_with(".gif") { Some("image/gif") }
+            else if lower.ends_with(".webp") { Some("image/webp") }
+            else if lower.ends_with(".svg") { Some("image/svg+xml") }
+            else if lower.ends_with(".pdf") { Some("application/pdf") }
+            else if lower.ends_with(".json") { Some("application/json") }
+            else if lower.ends_with(".csv") { Some("text/csv") }
+            else if lower.ends_with(".txt") { Some("text/plain") }
+            else { None }
+        })
+        .unwrap_or("application/octet-stream");
+
+    HttpResponse::Ok()
+        .content_type(content_type)
+        .body(decrypted)
+}
+
 /// Save JSON to debug file and return path
 fn save_json_debug_file(json: &serde_json::Value) -> Option<String> {
     match save_json_to_temp_file(json) {

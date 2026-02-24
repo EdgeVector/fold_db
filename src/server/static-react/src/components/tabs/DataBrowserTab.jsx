@@ -29,6 +29,8 @@ function StateBadge({ state }) {
   return <span className={cls}>{state}</span>
 }
 
+const IMAGE_EXTENSIONS = /\.(jpe?g|png|gif|webp|svg)$/i
+
 function RecordMetadata({ metadata }) {
   const [expanded, setExpanded] = useState(false)
 
@@ -42,6 +44,9 @@ function RecordMetadata({ metadata }) {
   const sourceFile = representative.source_file_name
   const fileHash = representative.metadata?.file_hash
   if (!sourceFile && !fileHash) return null
+
+  const isImage = sourceFile && IMAGE_EXTENSIONS.test(sourceFile)
+  const fileUrl = fileHash ? `/api/file/${fileHash}?name=${encodeURIComponent(sourceFile || '')}` : null
 
   return (
     <div className="mb-1">
@@ -57,9 +62,19 @@ function RecordMetadata({ metadata }) {
         )}
       </button>
       {expanded && (
-        <div className="pl-4 pt-1 space-y-0.5 text-xs text-secondary font-mono">
+        <div className="pl-4 pt-1 space-y-1 text-xs text-secondary font-mono">
           {sourceFile && <div>File: {sourceFile}</div>}
           {fileHash && <div>Hash: {fileHash.length > 16 ? fileHash.slice(0, 16) + '…' : fileHash}</div>}
+          {isImage && fileUrl && (
+            <div className="mt-2">
+              <img
+                src={fileUrl}
+                alt={sourceFile}
+                className="max-w-xs max-h-64 rounded border border-border object-contain bg-surface-secondary"
+                loading="lazy"
+              />
+            </div>
+          )}
         </div>
       )}
     </div>
