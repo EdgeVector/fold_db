@@ -24,21 +24,32 @@ async fn convert_file_to_json_core(file_path: &PathBuf) -> Result<Value, Ingesti
     // Load fold_db ingestion config
     let ingestion_config = crate::ingestion::IngestionConfig::from_env()?;
 
-    // Only OpenRouter is supported for file_to_json conversion
-    if ingestion_config.provider != AIProvider::OpenRouter {
-        return Err(IngestionError::configuration_error(
-            "File conversion requires OpenRouter provider. Ollama is not supported for this feature."
-        ));
-    }
-
-    // Build file_to_json OpenRouterConfig from fold_db config
-    let file_to_json_config = OpenRouterConfig {
-        api_key: ingestion_config.openrouter.api_key.clone(),
-        model: ingestion_config.openrouter.model.clone(),
-        timeout: Duration::from_secs(ingestion_config.timeout_seconds),
-        fallback_strategy: FallbackStrategy::Chunked,
-        vision_model: Some(ingestion_config.openrouter.model.clone()),
-        max_image_bytes: 5 * 1024 * 1024, // 5MB default
+    // Build file_to_json config based on the selected provider
+    let file_to_json_config = match ingestion_config.provider {
+        AIProvider::OpenRouter => OpenRouterConfig {
+            api_key: ingestion_config.openrouter.api_key.clone(),
+            model: ingestion_config.openrouter.model.clone(),
+            timeout: Duration::from_secs(ingestion_config.timeout_seconds),
+            fallback_strategy: FallbackStrategy::Chunked,
+            vision_model: Some(ingestion_config.openrouter.model.clone()),
+            max_image_bytes: 5 * 1024 * 1024,
+            base_url: None,
+        },
+        AIProvider::Ollama => {
+            let base_url = format!(
+                "{}/v1/chat/completions",
+                ingestion_config.ollama.base_url.trim_end_matches('/')
+            );
+            OpenRouterConfig {
+                api_key: String::new(),
+                model: ingestion_config.ollama.model.clone(),
+                timeout: Duration::from_secs(ingestion_config.timeout_seconds),
+                fallback_strategy: FallbackStrategy::Chunked,
+                vision_model: Some(ingestion_config.ollama.model.clone()),
+                max_image_bytes: 5 * 1024 * 1024,
+                base_url: Some(base_url),
+            }
+        }
     };
 
     let file_path_str = file_path.to_string_lossy().to_string();
