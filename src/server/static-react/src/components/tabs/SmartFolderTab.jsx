@@ -39,6 +39,7 @@ function SmartFolderTab({ onResult }) {
   // Batch tracking state
   const [batchId, setBatchId] = useState(() => restored?.batchId || null)
   const [batchStatus, setBatchStatus] = useState(null)
+  const batchIsRestored = useRef(!!restored?.batchId)
   const [spendLimit, setSpendLimit] = useState(() => restored?.spendLimit || '')
   const [newLimit, setNewLimit] = useState('')
 
@@ -122,11 +123,13 @@ function SmartFolderTab({ onResult }) {
   useEffect(() => {
     if (!batchId) return
     let cancelled = false
+    let failCount = 0
     const poll = async () => {
       try {
         const resp = await ingestionClient.getBatchStatus(batchId)
         if (cancelled) return
         if (resp.success && resp.data) {
+          failCount = 0
           setBatchStatus(resp.data)
           // Store for HeaderProgress
           localStorage.setItem('activeBatchId', batchId)
@@ -138,9 +141,33 @@ function SmartFolderTab({ onResult }) {
             // Stop polling once batch reaches terminal state
             if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null }
           }
+        } else {
+          // Batch not found — clear stale state
+          failCount++
+          if (failCount >= 2) {
+            if (!cancelled) {
+              setBatchId(null)
+              setBatchStatus(null)
+              clearPersistedState()
+              localStorage.removeItem('activeBatchId')
+              localStorage.removeItem('activeBatchStatus')
+            }
+            if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null }
+          }
         }
       } catch {
-        // ignore transient errors
+        failCount++
+        if (failCount >= 2) {
+          // Stale batch — clear it
+          if (!cancelled) {
+            setBatchId(null)
+            setBatchStatus(null)
+            clearPersistedState()
+            localStorage.removeItem('activeBatchId')
+            localStorage.removeItem('activeBatchStatus')
+          }
+          if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null }
+        }
       }
     }
     poll()
@@ -640,7 +667,7 @@ function SmartFolderTab({ onResult }) {
       )}
 
       {/* Waiting for first batch status poll */}
-      {batchId && !batchStatus && (
+      {batchId && !batchStatus && isIngesting && (
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 text-sm text-secondary">
             <span className="spinner" /> Starting batch...
