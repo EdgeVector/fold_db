@@ -11,7 +11,10 @@ import { createSlice, PayloadAction } from '@reduxjs/toolkit';
 // TYPES
 // ============================================================================
 
+let _msgCounter = 0;
+
 export interface ConversationMessage {
+  id: string;
   type: 'user' | 'system' | 'results';
   content: string;
   data?: unknown;
@@ -77,9 +80,10 @@ const aiQuerySlice = createSlice({
     },
     
     // Conversation management
-    addMessage: (state, action: PayloadAction<Omit<ConversationMessage, 'timestamp'>>) => {
+    addMessage: (state, action: PayloadAction<Omit<ConversationMessage, 'id' | 'timestamp'>>) => {
       const message: ConversationMessage = {
         ...action.payload,
+        id: `msg-${++_msgCounter}`,
         timestamp: new Date().toISOString(),
       };
       state.conversationLog.push(message);
@@ -99,9 +103,12 @@ const aiQuerySlice = createSlice({
       state.viewMode = action.payload;
     },
 
-    loadConversation: (state, action: PayloadAction<{ sessionId: string; messages: ConversationMessage[] }>) => {
+    loadConversation: (state, action: PayloadAction<{ sessionId: string; messages: Omit<ConversationMessage, 'id'>[] }>) => {
       state.sessionId = action.payload.sessionId;
-      state.conversationLog = action.payload.messages;
+      state.conversationLog = action.payload.messages.map(m => ({
+        ...m,
+        id: m.id || `msg-${++_msgCounter}`,
+      })) as ConversationMessage[];
       state.viewMode = 'chat';
       state.inputText = '';
       state.isProcessing = false;

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { ChevronDownIcon, ChevronRightIcon } from '@heroicons/react/24/solid'
 import { getRangeSchemaInfo, getHashRangeSchemaInfo } from '../../utils/rangeSchemaHelpers'
 import { useAppSelector, useAppDispatch } from '../../store/hooks'
@@ -10,21 +10,22 @@ import {
 } from '../../store/schemaSlice'
 import schemaClient from '../../api/clients/schemaClient'
 import TopologyDisplay from '../schema/TopologyDisplay'
+import SchemaName from '../shared/SchemaName'
 import { SCHEMA_BADGE_COLORS } from '../../constants/ui'
+import { toErrorMessage } from '../../utils/schemaUtils'
 
 function SchemaTab({ onResult, onSchemaUpdated }) {
+  const highlightTimerRef = useRef(null)
   // Redux state and dispatch
   const dispatch = useAppDispatch()
   const schemas = useAppSelector(selectAllSchemas)
   const [expandedSchemas, setExpandedSchemas] = useState({})
 
-  // Fetch schemas when component mounts
+  // Fetch schemas when component mounts; clean up highlight timer on unmount
   useEffect(() => {
     dispatch(fetchSchemas({ forceRefresh: true }))
+    return () => { if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current) }
   }, [dispatch])
-
-  // Helper to get display name (descriptive_name if available, otherwise name)
-  const getDisplayName = (schema) => schema.descriptive_name || schema.name
 
   // Debug logging
 
@@ -104,8 +105,7 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
     } catch (err) {
       console.error('🔴 SchemaTab: Failed to approve schema:', err)
       if (onResult) {
-        const errorMessage = err instanceof Error ? err.message : String(err)
-        onResult({ error: `Failed to approve schema: ${errorMessage}` })
+        onResult({ error: `Failed to approve schema: ${toErrorMessage(err)}` })
       }
     }
   }
@@ -135,8 +135,7 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
     } catch (err) {
       console.error('Failed to block schema:', err)
       if (onResult) {
-        const errorMessage = err instanceof Error ? err.message : String(err)
-        onResult({ error: `Failed to block schema: ${errorMessage}` })
+        onResult({ error: `Failed to block schema: ${toErrorMessage(err)}` })
       }
     }
   }
@@ -150,9 +149,13 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
       const el = document.getElementById(`schema-${schemaName}`)
       if (el) {
         el.scrollIntoView({ behavior: 'smooth', block: 'start' })
-        // Brief highlight
+        // Brief highlight with tracked timer for cleanup
         el.classList.add('ring-2', 'ring-gruvbox-purple')
-        setTimeout(() => el.classList.remove('ring-2', 'ring-gruvbox-purple'), 2000)
+        if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current)
+        highlightTimerRef.current = setTimeout(() => {
+          el.classList.remove('ring-2', 'ring-gruvbox-purple')
+          highlightTimerRef.current = null
+        }, 2000)
       }
     })
   }
@@ -170,7 +173,7 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
           className="w-full px-4 py-3 bg-surface-secondary cursor-pointer select-none text-left"
           onClick={() => toggleSchema(schema.name)}
           aria-expanded={isExpanded}
-          aria-label={`${isExpanded ? 'Collapse' : 'Expand'} schema ${getDisplayName(schema)}`}
+          aria-label={`${isExpanded ? 'Collapse' : 'Expand'} schema ${schema.descriptive_name || schema.name}`}
         >
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-2">
@@ -179,10 +182,9 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
               ) : (
                 <ChevronRightIcon className="w-4 h-4 text-tertiary transition-transform duration-200" />
               )}
-              <h3 className="font-medium text-primary">{getDisplayName(schema)}</h3>
-              {schema.descriptive_name && schema.descriptive_name !== schema.name && (
-                <span className="text-xs text-secondary" title={schema.name}>({schema.name.length > 12 ? schema.name.slice(0, 8) + '…' : schema.name})</span>
-              )}
+              <h3 className="font-medium text-primary">
+                <SchemaName schema={schema} className="font-medium text-primary" />
+              </h3>
               <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStateColor(state)}`}>
                 {state}
               </span>

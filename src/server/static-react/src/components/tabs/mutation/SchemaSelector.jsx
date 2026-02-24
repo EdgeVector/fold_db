@@ -3,6 +3,7 @@ import SelectField from '../../form/SelectField'
 import { FORM_LABELS, MUTATION_TYPES } from '../../../constants/ui.js'
 import { useAppSelector } from '../../../store/hooks'
 import { selectApprovedSchemas } from '../../../store/schemaSlice'
+import { buildSchemaOptions } from '../../../utils/schemaUtils'
 
 function SchemaSelector({ selectedSchema, mutationType, onSchemaChange, onTypeChange }) {
   // Redux state
@@ -15,10 +16,7 @@ function SchemaSelector({ selectedSchema, mutationType, onSchemaChange, onTypeCh
         label={FORM_LABELS.schema}
         value={selectedSchema}
         onChange={onSchemaChange}
-        options={approvedSchemas.map(schema => ({
-          value: schema.name,
-          label: schema.descriptive_name || schema.name
-        }))}
+        options={buildSchemaOptions(approvedSchemas)}
         placeholder="Select a schema..."
         emptyMessage="No approved schemas available for mutations"
         helpText={FORM_LABELS.schemaHelp}

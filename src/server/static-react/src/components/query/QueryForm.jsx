@@ -13,6 +13,7 @@ import RangeField from '../form/RangeField';
 import { FORM_LABELS } from '../../constants/ui.js';
 import { SCHEMA_ERROR_MESSAGES } from '../../constants/redux.js';
 import { getHashKey, getRangeKey } from '../../utils/rangeSchemaHelpers.js';
+import { buildSchemaOptions, getFieldNames } from '../../utils/schemaUtils';
 
 /**
  * @typedef {Object} QueryFormProps
@@ -95,12 +96,7 @@ function QueryForm({
     ? approvedSchemas.find(s => s.name === queryState.selectedSchema)
     : null;
 
-  // Backend sends fields as an array of strings for regular schemas,
-  // or transform_fields as an object for transform schemas
-  const selectedSchemaFields = selectedSchema?.fields || selectedSchema?.transform_fields || [];
-  const fieldNames = Array.isArray(selectedSchemaFields) 
-    ? selectedSchemaFields 
-    : Object.keys(selectedSchemaFields);
+  const fieldNames = getFieldNames(selectedSchema);
 
   return (
     <div className={`space-y-6 ${className}`}>
@@ -116,10 +112,7 @@ function QueryForm({
           name="schema"
           value={queryState?.selectedSchema || ''}
           onChange={handleSchemaChange}
-          options={approvedSchemas.map(schema => ({
-            value: schema.name,
-            label: schema.descriptive_name || schema.name
-          }))}
+          options={buildSchemaOptions(approvedSchemas)}
           placeholder="Select a schema..."
           emptyMessage={FORM_LABELS.schemaEmpty || 'No schemas available'}
           loading={schemasLoading}

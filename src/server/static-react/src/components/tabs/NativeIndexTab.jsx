@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { useApprovedSchemas } from '../../hooks/useApprovedSchemas.js'
 import { nativeIndexClient, mutationClient } from '../../api/clients'
 import { FieldsTable } from '../StructuredResults'
@@ -7,10 +7,11 @@ import {
   createHashKeyFilter,
   createRangeKeyFilter,
 } from '../../utils/filterUtils'
+import { getSchemaDisplayName, getFieldNames, toggleSetItem, toErrorMessage } from '../../utils/schemaUtils'
 
 function ResultRow({ r, schemaByName }) {
   const schema = schemaByName?.get(r.schema_name)
-  const displayName = schema?.descriptive_name || r.schema_name
+  const displayName = getSchemaDisplayName(schema) || r.schema_name
   return (
     <tr className="border-t">
       <td className="px-2 py-1 text-xs text-secondary">
@@ -65,7 +66,7 @@ export default function NativeIndexTab({ onResult }) {
         onResult({ error: res.error || 'Search failed', status: res.status })
       }
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e)
+      const msg = toErrorMessage(e)
       setError(msg || 'Network error')
       onResult({ error: msg || 'Network error' })
     } finally {
@@ -73,14 +74,6 @@ export default function NativeIndexTab({ onResult }) {
     }
   }, [term, onResult])
 
-
-  const getFieldNames = useCallback((schemaObj) => {
-    if (!schemaObj) return []
-    const f = schemaObj.fields
-    if (Array.isArray(f)) return f.slice()
-    if (f && typeof f === 'object') return Object.keys(f)
-    return []
-  }, [])
 
   const schemaByName = useMemo(() => {
     const map = new Map()
@@ -117,14 +110,11 @@ export default function NativeIndexTab({ onResult }) {
     const arr = Array.isArray(res.data?.results) ? res.data.results : []
     // Prefer exact key match if present
     const match = arr.find(x => {
-      const kh = x?.key?.hash ?? null
-      const kr = x?.key?.range ?? null
-      const h = kv?.hash ?? null
-      const r = kv?.range ?? null
-      return String(kh || '') === String(h || '') && String(kr || '') === String(r || '')
+      return String(x?.key?.hash || '') === String(kv?.hash || '') &&
+             String(x?.key?.range || '') === String(kv?.range || '')
     }) || arr[0]
     return match?.fields || (match && typeof match === 'object' ? match : {})
-  }, [schemaByName, getFieldNames, buildFilterForKey])
+  }, [schemaByName, buildFilterForKey])
 
   const fetchAllDetails = useCallback(async () => {
     const unique = new Map()
@@ -200,18 +190,16 @@ export default function NativeIndexTab({ onResult }) {
                 const isOpen = expanded.has(id)
                 const details = recordDetails.get(id)
                 return (
-                  <>
-                    <ResultRow key={`${id}-row`} r={r} schemaByName={schemaByName} />
-                    <tr key={`${id}-actions`} className="border-b">
+                  <Fragment key={id}>
+                    <ResultRow r={r} schemaByName={schemaByName} />
+                    <tr className="border-b">
                       <td colSpan={5}></td>
                       <td className="px-2 py-1 text-right">
                         <button
                           type="button"
                           className="btn-secondary btn-sm"
                           onClick={async () => {
-                            const next = new Set(expanded)
-                            if (next.has(id)) next.delete(id); else next.add(id)
-                            setExpanded(next)
+                            setExpanded(prev => toggleSetItem(prev, id))
                             if (!recordDetails.has(id)) {
                               try {
                                 const fields = await fetchRecordFor(r.schema_name, r.key_value)
@@ -225,13 +213,13 @@ export default function NativeIndexTab({ onResult }) {
                       </td>
                     </tr>
                     {isOpen && (
-                      <tr key={`${id}-details`}>
+                      <tr>
                         <td colSpan={6} className="px-2 pb-3 bg-surface-secondary">
                           <FieldsTable fields={details || {}} />
                         </td>
                       </tr>
                     )}
-                  </>
+                  </Fragment>
                 )
               })}
               {results.length === 0 && (

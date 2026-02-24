@@ -4,6 +4,8 @@ import { fetchSchemas, selectAllSchemas } from '../store/schemaSlice'
 import { mutationClient } from '../api/clients'
 import { schemaClient } from '../api/clients/schemaClient'
 import { FieldsTable } from './StructuredResults'
+import SchemaName from './shared/SchemaName'
+import { getFieldNames as getFieldNamesUtil, toggleSetItem } from '../utils/schemaUtils'
 import {
   keyId,
   keyLabel,
@@ -55,11 +57,7 @@ export default function IngestionReport({ ingestionResult, onDismiss }) {
 
   const getFieldNames = useCallback((schemaName) => {
     const schema = schemaLookup[schemaName]
-    if (schema) {
-      const f = schema.fields
-      if (Array.isArray(f)) return f.slice()
-      if (f && typeof f === 'object') return Object.keys(f)
-    }
+    if (schema) return getFieldNamesUtil(schema)
     return fieldNamesCache[schemaName] || []
   }, [schemaLookup, fieldNamesCache])
 
@@ -68,12 +66,7 @@ export default function IngestionReport({ ingestionResult, onDismiss }) {
   }, [getFieldNames])
 
   const toggleSchema = useCallback(async (schemaName) => {
-    setExpandedSchemas((prev) => {
-      const next = new Set(prev)
-      if (next.has(schemaName)) next.delete(schemaName)
-      else next.add(schemaName)
-      return next
-    })
+    setExpandedSchemas((prev) => toggleSetItem(prev, schemaName))
 
     // If we don't have field names yet, fetch the schema
     if (!schemaLookup[schemaName] && !fieldNamesCache[schemaName]) {
@@ -91,12 +84,7 @@ export default function IngestionReport({ ingestionResult, onDismiss }) {
 
   const toggleKey = useCallback(async (schemaName, kv) => {
     const id = keyId(schemaName, kv)
-    setExpandedKeys((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
+    setExpandedKeys((prev) => toggleSetItem(prev, id))
 
     if (!keyRecords[id] && !keyLoading[id]) {
       setKeyLoading((p) => ({ ...p, [id]: true }))
@@ -172,14 +160,7 @@ export default function IngestionReport({ ingestionResult, onDismiss }) {
                 onClick={() => toggleSchema(name)}
               >
                 <span className="text-xs text-secondary">{isOpen ? '▾' : '▸'}</span>
-                <span className="font-mono text-sm text-primary font-medium">
-                  {schema?.descriptive_name || name}
-                </span>
-                {schema?.descriptive_name && schema.descriptive_name !== name && (
-                  <span className="text-xs text-tertiary" title={name}>
-                    ({name.length > 16 ? name.slice(0, 12) + '...' : name})
-                  </span>
-                )}
+                <SchemaName schema={schema} name={name} />
                 <span className="text-xs text-tertiary">
                   ({keys.length} record{keys.length !== 1 ? 's' : ''})
                 </span>

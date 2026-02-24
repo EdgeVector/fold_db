@@ -4,6 +4,8 @@ import { selectAllSchemas } from '../../store/schemaSlice'
 import { schemaClient } from '../../api/clients/schemaClient'
 import { mutationClient } from '../../api/clients'
 import { FieldsTable } from '../StructuredResults'
+import SchemaName from '../shared/SchemaName'
+import { getFieldNames, toggleSetItem } from '../../utils/schemaUtils'
 import {
   keyId,
   keyLabel,
@@ -37,32 +39,11 @@ export default function DataBrowserTab() {
     return [...schemas].sort((a, b) => (a.name || '').localeCompare(b.name || ''))
   }, [schemas])
 
-  const getFieldNames = useCallback((schemaObj) => {
-    if (!schemaObj) return []
-    const f = schemaObj.fields
-    if (Array.isArray(f)) return f.slice()
-    if (f && typeof f === 'object') return Object.keys(f)
-    return []
-  }, [])
-
-  const fieldCount = useCallback((schema) => {
-    const f = schema?.fields
-    if (Array.isArray(f)) return f.length
-    if (f && typeof f === 'object') return Object.keys(f).length
-    return 0
-  }, [])
+  const fieldCount = useCallback((schema) => getFieldNames(schema).length, [])
 
   // -- Schema expansion: fetch keys --
   const toggleSchema = useCallback(async (name) => {
-    setExpandedSchemas((prev) => {
-      const next = new Set(prev)
-      if (next.has(name)) {
-        next.delete(name)
-      } else {
-        next.add(name)
-      }
-      return next
-    })
+    setExpandedSchemas((prev) => toggleSetItem(prev, name))
 
     // Fetch keys on first expand (or if not already loaded)
     if (!schemaKeys[name] && !schemaLoading[name]) {
@@ -110,11 +91,7 @@ export default function DataBrowserTab() {
   // -- Key expansion: fetch field values --
   const toggleKey = useCallback(async (schemaName, kv, schema) => {
     const id = keyId(schemaName, kv)
-    setExpandedKeys((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id); else next.add(id)
-      return next
-    })
+    setExpandedKeys((prev) => toggleSetItem(prev, id))
 
     if (!keyRecords[id] && !keyLoading[id]) {
       setKeyLoading((p) => ({ ...p, [id]: true }))
@@ -140,7 +117,7 @@ export default function DataBrowserTab() {
         setKeyLoading((p) => ({ ...p, [id]: false }))
       }
     }
-  }, [keyRecords, keyLoading, getFieldNames])
+  }, [keyRecords, keyLoading])
 
   if (schemaList.length === 0) {
     return (
@@ -168,10 +145,7 @@ export default function DataBrowserTab() {
               onClick={() => toggleSchema(name)}
             >
               <span className="text-xs text-secondary">{isOpen ? '▾' : '▸'}</span>
-              <span className="font-mono text-sm text-primary font-medium">{schema.descriptive_name || name}</span>
-              {schema.descriptive_name && schema.descriptive_name !== name && (
-                <span className="text-xs text-tertiary" title={name}>({name.length > 16 ? name.slice(0, 12) + '...' : name})</span>
-              )}
+              <SchemaName schema={schema} name={name} />
               <span className="text-xs text-tertiary">({fieldCount(schema)} fields)</span>
               <StateBadge state={schema.state || 'available'} />
             </button>

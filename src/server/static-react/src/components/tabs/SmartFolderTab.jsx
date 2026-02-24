@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { toErrorMessage } from '../../utils/schemaUtils'
 import { ingestionClient } from '../../api/clients'
 import FolderTreeView from './FolderTreeView'
 import IngestionReport from '../IngestionReport'
@@ -27,7 +28,11 @@ function clearPersistedState() {
   localStorage.removeItem(STORAGE_KEY)
 }
 
-function SmartFolderTab({ onResult }) {
+function SmartFolderTab({ onResult: onResultProp }) {
+  // Stabilize the onResult callback so polling effects don't restart on every parent render
+  const onResultRef = useRef(onResultProp)
+  useEffect(() => { onResultRef.current = onResultProp })
+  const onResult = useCallback((...args) => onResultRef.current(...args), [])
   // Restore persisted state on mount
   const [restored] = useState(() => loadPersistedState())
 
@@ -281,6 +286,7 @@ function SmartFolderTab({ onResult }) {
     scanPollRef.current = setInterval(poll, 1000)
     return () => { cancelled = true; clearInterval(scanPollRef.current); scanPollRef.current = null }
   }, [scanProgressId, onResult])
+  // onResult is now stable via ref — safe in deps
 
   const acceptSuggestion = (path) => {
     const newPath = path.endsWith('/') ? path : path + '/'
@@ -361,7 +367,7 @@ function SmartFolderTab({ onResult }) {
         setIsScanning(false)
       }
     } catch (error) {
-      onResult({ success: false, error: (error instanceof Error ? error.message : String(error)) || 'Failed to scan folder' })
+      onResult({ success: false, error: toErrorMessage(error) || 'Failed to scan folder' })
       setIsScanning(false)
     }
   }
@@ -381,7 +387,7 @@ function SmartFolderTab({ onResult }) {
         setIsScanning(false)
       }
     } catch (error) {
-      onResult({ success: false, error: (error instanceof Error ? error.message : String(error)) || 'Failed to load more files' })
+      onResult({ success: false, error: toErrorMessage(error) || 'Failed to load more files' })
       setIsScanning(false)
     } finally {
       setIsLoadingMore(false)
@@ -412,7 +418,7 @@ function SmartFolderTab({ onResult }) {
         onResult({ success: false, error: 'Failed to start ingestion' })
       }
     } catch (error) {
-      onResult({ success: false, error: (error instanceof Error ? error.message : String(error)) || 'Failed to start ingestion' })
+      onResult({ success: false, error: toErrorMessage(error) || 'Failed to start ingestion' })
     } finally {
       setIsIngesting(false)
     }
@@ -425,7 +431,7 @@ function SmartFolderTab({ onResult }) {
     try {
       await ingestionClient.resumeBatch(batchId, limit)
     } catch (error) {
-      onResult({ success: false, error: (error instanceof Error ? error.message : String(error)) || 'Failed to resume' })
+      onResult({ success: false, error: toErrorMessage(error) || 'Failed to resume' })
     }
   }
 
@@ -436,7 +442,7 @@ function SmartFolderTab({ onResult }) {
       localStorage.removeItem('activeBatchId')
       localStorage.removeItem('activeBatchStatus')
     } catch (error) {
-      onResult({ success: false, error: (error instanceof Error ? error.message : String(error)) || 'Failed to cancel' })
+      onResult({ success: false, error: toErrorMessage(error) || 'Failed to cancel' })
     }
   }
 

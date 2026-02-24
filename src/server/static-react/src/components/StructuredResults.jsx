@@ -9,6 +9,7 @@ import {
 } from '../utils/hashRangeResults'
 import { executeQuery } from '../api/clients/mutationClient'
 import { getSchema } from '../api/clients/schemaClient'
+import { toggleSetItem, getFieldNames } from '../utils/schemaUtils'
 
 // Simple, dependency-free lazy list windowing.
 const DEFAULT_PAGE_SIZE = 50
@@ -68,9 +69,7 @@ function ReferenceValue({ reference }) {
       if (schema?.descriptive_name) {
         setDisplayName(schema.descriptive_name)
       }
-      const fieldNames = Array.isArray(schema?.fields)
-        ? schema.fields
-        : schema?.fields ? Object.keys(schema.fields) : []
+      const fieldNames = getFieldNames(schema)
       if (fieldNames.length === 0) {
         throw new Error(`No fields found for schema "${reference.schema}"`)
       }
@@ -210,12 +209,7 @@ export default function StructuredResults({ results, pageSize = DEFAULT_PAGE_SIZ
   const [rangeWindows, setRangeWindows] = useState(() => new Map())
 
   const toggleHash = useCallback((h) => {
-    setHashOpen((prev) => {
-      const next = new Set(prev)
-      if (next.has(h)) next.delete(h)
-      else next.add(h)
-      return next
-    })
+    setHashOpen((prev) => toggleSetItem(prev, h))
     setRangeWindows((prev) => {
       if (!hashOpen.has(h)) {
         const total = getSortedRangeKeys(data, h).length
@@ -229,12 +223,7 @@ export default function StructuredResults({ results, pageSize = DEFAULT_PAGE_SIZ
 
   const toggleRange = useCallback((h, r) => {
     const key = h + '||' + r
-    setRangeOpen((prev) => {
-      const next = new Set(prev)
-      if (next.has(key)) next.delete(key)
-      else next.add(key)
-      return next
-    })
+    setRangeOpen((prev) => toggleSetItem(prev, key))
   }, [])
 
 const showMoreHashes = useCallback(() => {

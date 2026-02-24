@@ -327,8 +327,8 @@ function LlmQueryTab({ onResult }) {
             </div>
           </div>
         ) : (
-          conversationLog.map((entry) => (
-            <div key={entry.timestamp} className="mb-3">
+          conversationLog.map((entry, idx) => (
+            <div key={entry.id || `msg-${idx}`} className="mb-3">
               {entry.type === 'user' && (
                 <div className="flex justify-end">
                   <div className="max-w-[80%] px-4 py-3 bg-gruvbox-elevated border border-gruvbox-orange text-primary rounded-lg">
