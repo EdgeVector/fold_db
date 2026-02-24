@@ -244,6 +244,20 @@ export function AppContent() {
         </div>
       )}
 
+      {aiConfigured && ingestionStatus?.provider !== 'Ollama' && (
+        <div className="bg-gruvbox-yellow/15 border-b-2 border-gruvbox-yellow px-8 py-3 flex items-center justify-between">
+          <span className="text-gruvbox-yellow text-sm font-medium">
+            Warning: AI is using {ingestionStatus.provider} — personal data may be sent to external servers. Switch to a local LLM (Ollama) to keep data on your device.
+          </span>
+          <button
+            onClick={() => { setSettingsInitialTab('ai'); setIsSettingsOpen(true) }}
+            className="bg-gruvbox-yellow text-surface text-sm px-4 py-1.5 border-none cursor-pointer hover:bg-gruvbox-orange transition-colors whitespace-nowrap ml-4"
+          >
+            Switch to Local LLM
+          </button>
+        </div>
+      )}
+
       <div className="flex flex-1 overflow-hidden">
         <div className="flex-1 flex flex-col overflow-hidden">
           <TabNavigation
