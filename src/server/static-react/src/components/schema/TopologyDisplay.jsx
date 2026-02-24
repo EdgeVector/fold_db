@@ -48,6 +48,19 @@ function TopologyNode({ node, depth = 0, name: _name = null }) {
     )
   }
 
+  // Handle Reference type
+  if (node.type === 'Reference') {
+    const schemaName = node.schema_name || 'unknown'
+    const shortHash = schemaName.length > 16 ? schemaName.substring(0, 12) + '...' : schemaName
+    return (
+      <span className="inline-flex items-center space-x-2">
+        <span className="font-mono text-sm text-gruvbox-purple">
+          Ref&lt;{shortHash}&gt;
+        </span>
+      </span>
+    )
+  }
+
   // Handle Array type
   if (node.type === 'Array') {
     return (
