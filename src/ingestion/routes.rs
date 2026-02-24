@@ -319,6 +319,7 @@ pub async fn get_ingestion_config() -> impl Responder {
 pub async fn save_ingestion_config(
     request: web::Json<crate::ingestion::config::SavedConfig>,
     ingestion_service: web::Data<IngestionServiceState>,
+    llm_state: web::Data<crate::fold_node::llm_query::LlmQueryState>,
 ) -> impl Responder {
     log_feature!(
         LogFeature::Ingestion,
@@ -349,6 +350,9 @@ pub async fn save_ingestion_config(
                     );
                 }
             }
+            // Also reload the LLM query service so model changes take effect
+            llm_state.reload().await;
+
             HttpResponse::Ok().json(json!({
                 "success": true,
                 "message": "Configuration saved successfully"

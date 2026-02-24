@@ -23,7 +23,7 @@ impl Default for OpenRouterConfig {
     fn default() -> Self {
         Self {
             api_key: String::new(),
-            model: "anthropic/claude-3.5-sonnet".to_string(),
+            model: "google/gemini-2.5-flash".to_string(),
             base_url: "https://openrouter.ai/api/v1".to_string(),
         }
     }
@@ -165,28 +165,35 @@ impl IngestionConfig {
             ..Default::default()
         };
 
-        // Load saved config if it exists
-        if let Ok(saved_config) = Self::load_saved_config() {
+        // Load saved config if it exists — UI choices take precedence over env vars
+        let has_saved_config = if let Ok(saved_config) = Self::load_saved_config() {
             config.provider = saved_config.provider;
             config.openrouter = saved_config.openrouter;
             config.ollama = saved_config.ollama;
-        }
+            true
+        } else {
+            false
+        };
 
-        // Override with environment variables if they are set
+        // API key: env var always wins (secrets shouldn't live in config files)
         if let Ok(key) = env::var("FOLD_OPENROUTER_API_KEY") {
             config.openrouter.api_key = key;
         }
-        if let Ok(model) = env::var("OPENROUTER_MODEL") {
-            config.openrouter.model = model;
-        }
-        if let Ok(url) = env::var("OPENROUTER_BASE_URL") {
-            config.openrouter.base_url = url;
-        }
-        if let Ok(model) = env::var("OLLAMA_MODEL") {
-            config.ollama.model = model;
-        }
-        if let Ok(url) = env::var("OLLAMA_BASE_URL") {
-            config.ollama.base_url = url;
+
+        // Non-secret settings: env vars are only defaults when no saved config exists
+        if !has_saved_config {
+            if let Ok(model) = env::var("OPENROUTER_MODEL") {
+                config.openrouter.model = model;
+            }
+            if let Ok(url) = env::var("OPENROUTER_BASE_URL") {
+                config.openrouter.base_url = url;
+            }
+            if let Ok(model) = env::var("OLLAMA_MODEL") {
+                config.ollama.model = model;
+            }
+            if let Ok(url) = env::var("OLLAMA_BASE_URL") {
+                config.ollama.base_url = url;
+            }
         }
 
         config.enabled = env::var("INGESTION_ENABLED")
@@ -230,7 +237,11 @@ impl IngestionConfig {
         }
 
         let content = fs::read_to_string(&config_path)?;
-        let config: SavedConfig = serde_json::from_str(&content)?;
+        let mut config: SavedConfig = serde_json::from_str(&content)?;
+        // Strip redacted placeholder — it should never be treated as a real key
+        if config.openrouter.api_key == "***configured***" {
+            config.openrouter.api_key = String::new();
+        }
         Ok(config)
     }
 
@@ -257,8 +268,10 @@ impl IngestionConfig {
 
         let config_path = Self::get_config_file_path();
 
-        // Merge: preserve existing api_key when the incoming value is empty
-        let merged = if config.openrouter.api_key.is_empty() {
+        // Merge: preserve existing api_key when the incoming value is empty or redacted
+        let merged = if config.openrouter.api_key.is_empty()
+            || config.openrouter.api_key == "***configured***"
+        {
             if let Ok(existing) = Self::load_saved_config() {
                 if !existing.openrouter.api_key.is_empty() {
                     let mut merged = config.clone();
@@ -312,7 +325,7 @@ mod tests {
         let config = IngestionConfig::default();
         assert!(!config.enabled);
         assert_eq!(config.provider, AIProvider::OpenRouter);
-        assert_eq!(config.openrouter.model, "anthropic/claude-3.5-sonnet");
+        assert_eq!(config.openrouter.model, "google/gemini-2.5-flash");
         assert_eq!(config.openrouter.base_url, "https://openrouter.ai/api/v1");
         assert_eq!(config.ollama.model, "llama3.3");
         assert_eq!(config.ollama.base_url, "http://localhost:11434");

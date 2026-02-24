@@ -5,10 +5,10 @@ import { BROWSER_CONFIG } from '../constants/config'
 const TOTAL_STEPS = 6
 
 const OPENROUTER_MODELS = [
-  { value: 'google/gemini-2.0-flash-001', label: 'Gemini 2.0 Flash' },
-  { value: 'anthropic/claude-sonnet-4', label: 'Claude Sonnet 4' },
-  { value: 'openai/gpt-4o-mini', label: 'GPT-4o Mini' },
-  { value: 'meta-llama/llama-3.1-8b-instruct', label: 'Llama 3.1 8B' },
+  { value: 'google/gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
+  { value: 'anthropic/claude-sonnet-4.6', label: 'Claude Sonnet 4.6' },
+  { value: 'google/gemini-3.1-pro', label: 'Gemini 3.1 Pro' },
+  { value: 'openai/gpt-4.1-mini', label: 'GPT-4.1 Mini' },
 ]
 
 const OLLAMA_MODELS = [

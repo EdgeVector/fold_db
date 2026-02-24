@@ -30,6 +30,15 @@ import {
   selectViewMode,
 } from '../../store/aiQuerySlice';
 
+const STARTER_SUGGESTIONS = [
+  'What data do I have?',
+  'What taxes did I pay?',
+  'Show my upcoming travel plans',
+  'What medications am I taking?',
+  'Search for recent expenses',
+  'Summarize my contacts',
+];
+
 function LlmQueryTab({ onResult }) {
   // Redux state and dispatch
   const dispatch = useAppDispatch();
@@ -89,16 +98,14 @@ function LlmQueryTab({ onResult }) {
   }, [addToLog, dispatch, showResults, onResult]);
 
   /**
-   * Handle user input - run query or ask follow-up
+   * Submit a query — core logic shared by form submit and suggestion clicks
    */
-  const handleSubmit = useCallback(async (e) => {
-    e?.preventDefault();
-
-    if (!inputText.trim() || isProcessing) {
+  const submitQuery = useCallback(async (text) => {
+    const userInput = text.trim();
+    if (!userInput || isProcessing) {
       return;
     }
 
-    const userInput = inputText.trim();
     dispatch(setInputText(''));
     dispatch(setIsProcessing(true));
 
@@ -107,7 +114,6 @@ function LlmQueryTab({ onResult }) {
 
     // Helper: run a fresh agent query (used for new queries and as fallback)
     const runAgentQuery = async () => {
-      addToLog('system', '🤖 Starting AI agent...');
       const agentResponse = await llmQueryClient.agentQuery({
         query: userInput,
         session_id: sessionId,
@@ -171,7 +177,15 @@ function LlmQueryTab({ onResult }) {
     } finally {
       dispatch(setIsProcessing(false));
     }
-  }, [inputText, sessionId, canAskFollowup, isProcessing, processAgentResponse, addToLog, onResult, dispatch]);
+  }, [sessionId, canAskFollowup, isProcessing, processAgentResponse, addToLog, onResult, dispatch]);
+
+  /**
+   * Handle form submit
+   */
+  const handleSubmit = useCallback(async (e) => {
+    e?.preventDefault();
+    await submitQuery(inputText);
+  }, [inputText, submitQuery]);
 
   /**
    * Load a past conversation by session ID
@@ -299,10 +313,18 @@ function LlmQueryTab({ onResult }) {
         ) : conversationLog.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-secondary">
             <div className="text-4xl mb-4">→</div>
-            <p className="text-base mb-2">Start a conversation</p>
-            <p className="text-sm text-tertiary">
-              Try: "What schemas are available?" or "Find tweets mentioning rust" or "Search for blog posts about AI"
-            </p>
+            <p className="text-base mb-4">Start a conversation</p>
+            <div className="flex flex-wrap gap-2 justify-center max-w-lg">
+              {STARTER_SUGGESTIONS.map((suggestion) => (
+                <button
+                  key={suggestion}
+                  onClick={() => submitQuery(suggestion)}
+                  className="border border-border rounded-lg px-4 py-2 text-sm text-secondary hover:bg-surface-hover cursor-pointer bg-transparent"
+                >
+                  {suggestion}
+                </button>
+              ))}
+            </div>
           </div>
         ) : (
           conversationLog.map((entry) => (
@@ -370,6 +392,15 @@ function LlmQueryTab({ onResult }) {
               )}
             </div>
           ))
+        )}
+        {isProcessing && (
+          <div className="flex justify-start mb-3">
+            <div className="px-4 py-3 bg-surface-secondary border border-border rounded-lg flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-tertiary animate-bounce" style={{ animationDelay: '0ms' }} />
+              <span className="w-2 h-2 rounded-full bg-tertiary animate-bounce" style={{ animationDelay: '150ms' }} />
+              <span className="w-2 h-2 rounded-full bg-tertiary animate-bounce" style={{ animationDelay: '300ms' }} />
+            </div>
+          </div>
         )}
         <div ref={conversationEndRef} />
       </div>

@@ -11,7 +11,7 @@ vi.mock('../../api/clients', () => ({
       success: true,
       data: {
         provider: 'OpenRouter',
-        openrouter: { api_key: '', model: 'google/gemini-2.0-flash-001', base_url: '' },
+        openrouter: { api_key: '', model: 'google/gemini-2.5-flash', base_url: '' },
         ollama: { model: 'llama3.1:8b', base_url: '' },
       },
     }),

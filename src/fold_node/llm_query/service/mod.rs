@@ -139,8 +139,10 @@ impl LlmQueryService {
 
     /// Build the system prompt with tool definitions for the agent
     fn build_agent_system_prompt(&self, schemas: &[SchemaWithState]) -> String {
-        let mut prompt = String::from(
-            "You are a helpful database assistant with access to tools. Use the tools to query and manipulate data to answer the user's question.\n\n"
+        let now = chrono::Local::now();
+        let mut prompt = format!(
+            "You are a helpful database assistant with access to tools. Use the tools to query and manipulate data to answer the user's question.\n\nCurrent date and time: {}\n\n",
+            now.format("%A, %B %-d, %Y at %-I:%M %p")
         );
 
         prompt.push_str("## Available Tools\n\n");
@@ -153,8 +155,10 @@ impl LlmQueryService {
         prompt.push_str("- filter (object, optional): Filter to apply. Examples:\n");
         prompt.push_str("  - {\"HashKey\": \"value\"} - exact match on hash key\n");
         prompt.push_str("  - {\"RangePrefix\": \"prefix\"} - prefix match on range key\n");
+        prompt.push_str(&format!("  - {{\"RangeRange\": {{\"start\": \"{}\", \"end\": \"9999-12-31\"}}}} - range key between start and end (inclusive). Use today's date as start for upcoming/future items.\n", chrono::Local::now().format("%Y-%m-%d")));
         prompt.push_str("  - {\"SampleN\": 10} - random sample of N records\n");
         prompt.push_str("  - null - no filter (all records)\n");
+        prompt.push_str("When the user asks for \"upcoming\", \"future\", or \"after today\" items and a schema has a date-based range key, use RangeRange with today's date as start.\n");
         prompt.push_str("Example: {\"tool\": \"query\", \"params\": {\"schema_name\": \"Tweet\", \"fields\": [\"content\", \"author\"], \"filter\": {\"SampleN\": 5}}}\n\n");
 
         prompt.push_str("### list_schemas\n");
@@ -199,7 +203,8 @@ impl LlmQueryService {
         prompt.push_str("\n## Instructions\n\n");
         prompt.push_str("1. Analyze the user's request\n");
         prompt.push_str("2. Use tools to gather information or perform actions\n");
-        prompt.push_str("3. When you have enough information to answer, provide your final response\n\n");
+        prompt.push_str("3. When you have enough information to answer, provide your final response\n");
+        prompt.push_str("4. Use the current date/time above to determine temporal context. Events with dates before today are in the PAST. Events with dates after today are in the FUTURE. Label them accordingly (e.g. \"upcoming\" vs \"past\").\n\n");
         prompt.push_str("## Reference Fields\n\n");
         prompt.push_str("Some fields are References to records in other schemas. Query results automatically resolve references one level deep.\n");
         prompt.push_str("If a field value is an array of objects with \"schema\" and \"key\" properties, those are references to child records.\n");

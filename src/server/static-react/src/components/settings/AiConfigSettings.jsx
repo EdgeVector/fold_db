@@ -4,7 +4,8 @@ import { ingestionClient } from '../../api/clients'
 function AiConfigSettings({ configSaveStatus, setConfigSaveStatus, onClose, onConfigSaved }) {
   const [aiProvider, setAiProvider] = useState('OpenRouter')
   const [openrouterApiKey, setOpenrouterApiKey] = useState('')
-  const [openrouterModel, setOpenrouterModel] = useState('anthropic/claude-3.5-sonnet')
+  const [hasEnvKey, setHasEnvKey] = useState(false)
+  const [openrouterModel, setOpenrouterModel] = useState('google/gemini-2.5-flash')
   const [openrouterBaseUrl, setOpenrouterBaseUrl] = useState('https://openrouter.ai/api/v1')
   const [ollamaModel, setOllamaModel] = useState('llama3')
   const [ollamaBaseUrl, setOllamaBaseUrl] = useState('http://localhost:11434')
@@ -21,8 +22,15 @@ function AiConfigSettings({ configSaveStatus, setConfigSaveStatus, onClose, onCo
     try {
       const response = await ingestionClient.getConfig()
       if (response.success) {
-        setOpenrouterApiKey(response.data.openrouter.api_key || '')
-        setOpenrouterModel(response.data.openrouter.model || 'anthropic/claude-3.5-sonnet')
+        const apiKey = response.data.openrouter.api_key || ''
+        if (apiKey === '***configured***') {
+          setHasEnvKey(true)
+          setOpenrouterApiKey('')
+        } else {
+          setHasEnvKey(false)
+          setOpenrouterApiKey(apiKey)
+        }
+        setOpenrouterModel(response.data.openrouter.model || 'google/gemini-2.5-flash')
         setOpenrouterBaseUrl(response.data.openrouter.base_url || 'https://openrouter.ai/api/v1')
         setOllamaModel(response.data.ollama.model || 'llama3')
         setOllamaBaseUrl(response.data.ollama.base_url || 'http://localhost:11434')
@@ -71,12 +79,12 @@ function AiConfigSettings({ configSaveStatus, setConfigSaveStatus, onClose, onCo
             <label className="label">Model</label>
             {aiProvider === 'OpenRouter' ? (
               <select value={openrouterModel} onChange={(e) => setOpenrouterModel(e.target.value)} className="select">
-                <option value="anthropic/claude-3.5-sonnet">Claude 3.5 Sonnet</option>
-                <option value="anthropic/claude-3.5-haiku">Claude 3.5 Haiku</option>
-                <option value="openai/gpt-4o">GPT-4o</option>
-                <option value="openai/gpt-4o-mini">GPT-4o Mini</option>
-                <option value="google/gemini-2.0-flash-exp">Gemini 2.0 Flash</option>
-                <option value="deepseek/deepseek-chat">DeepSeek Chat</option>
+                <option value="google/gemini-2.5-flash">Gemini 2.5 Flash</option>
+                <option value="anthropic/claude-sonnet-4.6">Claude Sonnet 4.6</option>
+                <option value="google/gemini-3.1-pro">Gemini 3.1 Pro</option>
+                <option value="openai/gpt-4.1-mini">GPT-4.1 Mini</option>
+                <option value="openai/gpt-4.1">GPT-4.1</option>
+                <option value="deepseek/deepseek-chat-v3-0324">DeepSeek V3</option>
               </select>
             ) : (
               <>
@@ -96,7 +104,14 @@ function AiConfigSettings({ configSaveStatus, setConfigSaveStatus, onClose, onCo
         {aiProvider === 'OpenRouter' && (
           <div>
             <label className="label">API Key <span className="text-xs text-secondary">(<a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer" className="text-gruvbox-blue hover:underline">get key</a>)</span></label>
-            <input type="password" value={openrouterApiKey} onChange={(e) => setOpenrouterApiKey(e.target.value)} placeholder="sk-or-..." className="input" />
+            {hasEnvKey && !openrouterApiKey ? (
+              <>
+                <div className="input flex items-center text-sm text-gruvbox-green">Configured via environment variable</div>
+                <p className="text-xs text-secondary mt-1">Enter a new key below to override, or leave as-is to use the environment variable.</p>
+              </>
+            ) : (
+              <input type="password" value={openrouterApiKey} onChange={(e) => setOpenrouterApiKey(e.target.value)} placeholder="sk-or-..." className="input" />
+            )}
           </div>
         )}
 

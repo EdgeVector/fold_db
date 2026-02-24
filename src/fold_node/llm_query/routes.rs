@@ -14,10 +14,11 @@ use crate::server::routes::{handler_error_to_response, require_node};
 use actix_web::{web, HttpResponse, Responder};
 use serde_json::json;
 use std::sync::Arc;
+use tokio::sync::RwLock;
 
 /// Shared state for LLM query routes
 pub struct LlmQueryState {
-    pub service: Option<Arc<LlmQueryService>>,
+    pub service: RwLock<Option<Arc<LlmQueryService>>>,
     pub session_manager: Arc<SessionManager>,
 }
 
@@ -33,8 +34,23 @@ impl LlmQueryState {
         };
         let session_manager = Arc::new(SessionManager::new());
         Self {
-            service,
+            service: RwLock::new(service),
             session_manager,
+        }
+    }
+
+    /// Reload the LLM query service with fresh config
+    pub async fn reload(&self) {
+        let config = IngestionConfig::from_env_allow_empty();
+        match LlmQueryService::new(config) {
+            Ok(svc) => {
+                let mut guard = self.service.write().await;
+                *guard = Some(Arc::new(svc));
+                log::info!("LlmQueryService reloaded with new configuration");
+            }
+            Err(e) => {
+                log::warn!("Failed to reload LlmQueryService: {}", e);
+            }
         }
     }
 }
@@ -46,8 +62,9 @@ impl Default for LlmQueryState {
 }
 
 /// Helper to require LLM service or return error response
-fn require_service(llm_state: &LlmQueryState) -> Result<&Arc<LlmQueryService>, HttpResponse> {
-    llm_state.service.as_ref().ok_or_else(|| {
+async fn require_service(llm_state: &LlmQueryState) -> Result<Arc<LlmQueryService>, HttpResponse> {
+    let guard = llm_state.service.read().await;
+    guard.clone().ok_or_else(|| {
         HttpResponse::ServiceUnavailable().json(json!({
             "error": "LLM Query service not configured",
             "message": "Please configure AI_PROVIDER and FOLD_OPENROUTER_API_KEY or OLLAMA_BASE_URL environment variables to use this feature"
@@ -72,7 +89,7 @@ pub async fn analyze_query(
     app_state: web::Data<AppState>,
     llm_state: web::Data<LlmQueryState>,
 ) -> impl Responder {
-    let service = match require_service(&llm_state) {
+    let service = match require_service(&llm_state).await {
         Ok(svc) => svc,
         Err(response) => return response,
     };
@@ -123,7 +140,8 @@ pub async fn execute_query_plan(
     app_state: web::Data<AppState>,
     llm_state: web::Data<LlmQueryState>,
 ) -> impl Responder {
-    let service = llm_state.service.as_ref().map(|s| s.as_ref());
+    let service_guard = llm_state.service.read().await;
+    let service = service_guard.as_ref().map(|s| s.as_ref());
     let (user_hash, node_arc) = match require_node(&app_state).await {
         Ok(res) => res,
         Err(response) => return response,
@@ -172,7 +190,7 @@ pub async fn analyze_followup(
     app_state: web::Data<AppState>,
     llm_state: web::Data<LlmQueryState>,
 ) -> impl Responder {
-    let service = match require_service(&llm_state) {
+    let service = match require_service(&llm_state).await {
         Ok(svc) => svc,
         Err(response) => return response,
     };
@@ -224,7 +242,7 @@ pub async fn chat(
     app_state: web::Data<AppState>,
     llm_state: web::Data<LlmQueryState>,
 ) -> impl Responder {
-    let service = match require_service(&llm_state) {
+    let service = match require_service(&llm_state).await {
         Ok(svc) => svc,
         Err(response) => return response,
     };
@@ -318,7 +336,7 @@ pub async fn ai_native_index_query(
     app_state: web::Data<AppState>,
     llm_state: web::Data<LlmQueryState>,
 ) -> impl Responder {
-    let service = match require_service(&llm_state) {
+    let service = match require_service(&llm_state).await {
         Ok(svc) => svc,
         Err(response) => return response,
     };
@@ -371,7 +389,7 @@ pub async fn agent_query(
     app_state: web::Data<AppState>,
     llm_state: web::Data<LlmQueryState>,
 ) -> impl Responder {
-    let service = match require_service(&llm_state) {
+    let service = match require_service(&llm_state).await {
         Ok(svc) => svc,
         Err(response) => return response,
     };

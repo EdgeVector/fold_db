@@ -238,6 +238,7 @@ impl LlmQueryService {
 
         // Build the initial system prompt with tool definitions
         let system_prompt = self.build_agent_system_prompt(schemas);
+        let today = chrono::Local::now().format("%A, %B %-d, %Y").to_string();
 
         log::info!(
             "Agent: Starting query with max {} iterations: {}",
@@ -247,11 +248,13 @@ impl LlmQueryService {
 
         for iteration in 0..max_iterations {
             // Build the full prompt with conversation history
+            // Repeat the current date at the end so it's fresh context when generating the answer
             let full_prompt = format!(
-                "{}\n\n{}\n\nUser Query: {}\n\nRespond with a JSON object. Either:\n- {{\"tool\": \"tool_name\", \"params\": {{...}}}} to use a tool\n- {{\"answer\": \"your final response\"}} when you have the answer",
+                "{}\n\n{}\n\nUser Query: {}\n\nReminder: Today is {}. Dates before today are in the past. Dates after today are in the future.\n\nRespond with a JSON object. Either:\n- {{\"tool\": \"tool_name\", \"params\": {{...}}}} to use a tool\n- {{\"answer\": \"your final response\"}} when you have the answer",
                 system_prompt,
                 conversation_context,
-                user_query
+                user_query,
+                today
             );
 
             log::debug!("Agent: Iteration {} - calling LLM", iteration + 1);

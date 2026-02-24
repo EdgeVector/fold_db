@@ -138,18 +138,43 @@ impl LlmQueryService {
         }
     }
 
+    /// Extract the first complete JSON object from a string by tracking brace depth.
+    /// Returns None if no complete object is found.
+    fn extract_first_json_object(text: &str) -> Option<&str> {
+        let start = text.find('{')?;
+        let mut depth = 0i32;
+        let mut in_string = false;
+        let mut escape_next = false;
+        for (i, ch) in text[start..].char_indices() {
+            if escape_next {
+                escape_next = false;
+                continue;
+            }
+            match ch {
+                '\\' if in_string => escape_next = true,
+                '"' => in_string = !in_string,
+                '{' if !in_string => depth += 1,
+                '}' if !in_string => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return Some(&text[start..start + i + 1]);
+                    }
+                }
+                _ => {}
+            }
+        }
+        None
+    }
+
     /// Parse an LLM response into an AgentAction
     pub(super) fn parse_agent_response(&self, response: &str) -> Result<AgentAction, String> {
-        // Try to extract JSON from the response
-        let json_str = if let Some(start) = response.find('{') {
-            if let Some(end) = response.rfind('}') {
-                &response[start..=end]
-            } else {
-                response
+        // Extract the first complete JSON object (not first '{' to last '}')
+        let json_str = match Self::extract_first_json_object(response) {
+            Some(s) => s,
+            None => {
+                // No JSON object found - treat entire response as a plain-text answer
+                return Ok(AgentAction::Answer(response.trim().to_string()));
             }
-        } else {
-            // No JSON object found - treat entire response as a plain-text answer
-            return Ok(AgentAction::Answer(response.trim().to_string()));
         };
 
         // Try parsing as-is first; if that fails, sanitize control characters
