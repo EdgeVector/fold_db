@@ -133,11 +133,17 @@ export interface IngestionProgress {
   results?: IngestionResults;
 }
 
+export interface SchemaWriteRecord {
+  schema_name: string;
+  keys_written: { hash?: string; range?: string }[];
+}
+
 export interface IngestionResults {
   schema_name: string;
   new_schema_created: boolean;
   mutations_generated: number;
   mutations_executed: number;
+  schemas_written?: SchemaWriteRecord[];
 }
 
 export interface FileUploadResponse {

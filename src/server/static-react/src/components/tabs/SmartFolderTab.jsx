@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { ingestionClient } from '../../api/clients'
 import FolderTreeView from './FolderTreeView'
+import IngestionReport from '../IngestionReport'
 
 const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__
 
@@ -42,6 +43,8 @@ function SmartFolderTab({ onResult }) {
   const batchIsRestored = useRef(!!restored?.batchId)
   const [spendLimit, setSpendLimit] = useState(() => restored?.spendLimit || '')
   const [newLimit, setNewLimit] = useState('')
+  const [fileProgressIds, setFileProgressIds] = useState(() => restored?.fileProgressIds || [])
+  const [batchReport, setBatchReport] = useState(null)
 
   // Scan progress tracking
   const [scanProgressId, setScanProgressId] = useState(() => restored?.scanProgressId || null)
@@ -59,8 +62,8 @@ function SmartFolderTab({ onResult }) {
       clearPersistedState()
       return
     }
-    persistState({ folderPath, scanProgressId, scanResult, batchId, spendLimit, includeAlreadyIngested })
-  }, [folderPath, scanProgressId, scanResult, batchId, spendLimit, includeAlreadyIngested])
+    persistState({ folderPath, scanProgressId, scanResult, batchId, spendLimit, includeAlreadyIngested, fileProgressIds })
+  }, [folderPath, scanProgressId, scanResult, batchId, spendLimit, includeAlreadyIngested, fileProgressIds])
 
   // Autocomplete state
   const [suggestions, setSuggestions] = useState([])
@@ -174,6 +177,57 @@ function SmartFolderTab({ onResult }) {
     pollRef.current = setInterval(poll, 2000)
     return () => { cancelled = true; clearInterval(pollRef.current); pollRef.current = null }
   }, [batchId])
+
+  // Aggregate schemas_written when batch completes
+  useEffect(() => {
+    if (!batchId || !batchStatus) return
+    const s = batchStatus.status
+    if (s !== 'Completed' && s !== 'Cancelled') return
+    if (batchReport || fileProgressIds.length === 0) return
+
+    let cancelled = false
+    ;(async () => {
+      try {
+        const resp = await ingestionClient.getAllProgress()
+        if (cancelled) return
+        const progressList = Array.isArray(resp.data?.progress) ? resp.data.progress
+          : Array.isArray(resp.data) ? resp.data : []
+        const idSet = new Set(fileProgressIds.map(f => f.progress_id))
+        const merged = {}
+        let totalGen = 0
+        let totalExec = 0
+        let anyNew = false
+        for (const job of progressList) {
+          if (!idSet.has(job.id)) continue
+          const r = job.results
+          if (!r) continue
+          totalGen += r.mutations_generated || 0
+          totalExec += r.mutations_executed || 0
+          if (r.new_schema_created) anyNew = true
+          for (const sw of (r.schemas_written || [])) {
+            if (!merged[sw.schema_name]) merged[sw.schema_name] = []
+            merged[sw.schema_name].push(...(sw.keys_written || []))
+          }
+        }
+        const schemasWritten = Object.entries(merged).map(([name, keys]) => ({
+          schema_name: name,
+          keys_written: keys,
+        }))
+        if (!cancelled && schemasWritten.length > 0) {
+          setBatchReport({
+            success: true,
+            data: {
+              schemas_written: schemasWritten,
+              mutations_generated: totalGen,
+              mutations_executed: totalExec,
+              new_schema_created: anyNew,
+            },
+          })
+        }
+      } catch { /* best-effort */ }
+    })()
+    return () => { cancelled = true }
+  }, [batchId, batchStatus, batchReport, fileProgressIds])
 
   // Poll scan progress while scanning
   useEffect(() => {
@@ -351,6 +405,8 @@ function SmartFolderTab({ onResult }) {
       )
       if (response.success) {
         setBatchId(response.data.batch_id)
+        setFileProgressIds(response.data.file_progress_ids || [])
+        setBatchReport(null)
         onResult({ success: true, data: { message: response.data.message, batch_id: response.data.batch_id, files_found: response.data.files_found } })
       } else {
         onResult({ success: false, error: 'Failed to start ingestion' })
@@ -396,6 +452,8 @@ function SmartFolderTab({ onResult }) {
     setBatchId(null)
     setBatchStatus(null)
     setSpendLimit('')
+    setFileProgressIds([])
+    setBatchReport(null)
     clearPersistedState()
     localStorage.removeItem('activeBatchId')
     localStorage.removeItem('activeBatchStatus')
@@ -660,6 +718,12 @@ function SmartFolderTab({ onResult }) {
             {batchStatus.files_failed > 0 ? ` (${batchStatus.files_failed} failed)` : ''}
             {' · '}{fmtCost(batchStatus.accumulated_cost)} spent
           </p>
+          {batchReport && (
+            <IngestionReport
+              ingestionResult={batchReport}
+              onDismiss={() => setBatchReport(null)}
+            />
+          )}
           <div className="flex justify-end">
             <button onClick={handleBack} className="btn-secondary">Scan Another</button>
           </div>
