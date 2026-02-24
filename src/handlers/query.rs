@@ -89,6 +89,100 @@ pub async fn native_index_search(
     }
 }
 
+/// Summary of a single mutation event in a molecule's history
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MutationEventSummary {
+    pub timestamp: String,
+    pub version: u64,
+    pub field_key: serde_json::Value,
+    pub old_atom_uuid: Option<String>,
+    pub new_atom_uuid: String,
+}
+
+/// Response for molecule history
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MoleculeHistoryResponse {
+    pub molecule_uuid: String,
+    pub events: Vec<MutationEventSummary>,
+}
+
+/// Response for atom content
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AtomContentResponse {
+    pub atom_uuid: String,
+    pub content: serde_json::Value,
+    pub source_file_name: Option<String>,
+    pub created_at: String,
+}
+
+/// Get mutation history for a molecule
+pub async fn get_molecule_history(
+    molecule_uuid: &str,
+    user_hash: &str,
+    node: &FoldNode,
+) -> HandlerResult<MoleculeHistoryResponse> {
+    let db_guard = node
+        .get_fold_db()
+        .await
+        .map_err(|e| HandlerError::Internal(format!("Failed to access database: {}", e)))?;
+
+    let db_ops = db_guard.get_db_ops();
+
+    let events = db_ops
+        .get_mutation_events(molecule_uuid)
+        .await
+        .map_err(|e| HandlerError::Internal(format!("Failed to load history: {}", e)))?;
+
+    let summaries: Vec<MutationEventSummary> = events
+        .into_iter()
+        .map(|e| MutationEventSummary {
+            timestamp: e.timestamp.to_rfc3339(),
+            version: e.version,
+            field_key: serde_json::to_value(&e.field_key).unwrap_or_default(),
+            old_atom_uuid: e.old_atom_uuid,
+            new_atom_uuid: e.new_atom_uuid,
+        })
+        .collect();
+
+    Ok(ApiResponse::success_with_user(
+        MoleculeHistoryResponse {
+            molecule_uuid: molecule_uuid.to_string(),
+            events: summaries,
+        },
+        user_hash,
+    ))
+}
+
+/// Get content of a specific atom by UUID
+pub async fn get_atom_content(
+    atom_uuid: &str,
+    user_hash: &str,
+    node: &FoldNode,
+) -> HandlerResult<AtomContentResponse> {
+    let db_guard = node
+        .get_fold_db()
+        .await
+        .map_err(|e| HandlerError::Internal(format!("Failed to access database: {}", e)))?;
+
+    let db_ops = db_guard.get_db_ops();
+
+    let atom: crate::atom::Atom = db_ops
+        .get_item(&format!("atom:{}", atom_uuid))
+        .await
+        .map_err(|e| HandlerError::Internal(format!("Failed to fetch atom: {}", e)))?
+        .ok_or_else(|| HandlerError::NotFound(format!("Atom '{}' not found", atom_uuid)))?;
+
+    Ok(ApiResponse::success_with_user(
+        AtomContentResponse {
+            atom_uuid: atom_uuid.to_string(),
+            content: atom.content().clone(),
+            source_file_name: atom.source_file_name().cloned(),
+            created_at: atom.created_at().to_rfc3339(),
+        },
+        user_hash,
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -260,17 +260,30 @@ impl IngestionService {
         } else {
             // ── Original flat path (no nested arrays of objects) ──
 
-            // Step 3: Get AI recommendation
+            // Detect image files to bypass AI and use a deterministic HashRange schema
+            let is_image = request
+                .source_file_name
+                .as_ref()
+                .map(|name| crate::ingestion::is_image_file(name))
+                .unwrap_or(false);
+
+            // Step 3: Get AI recommendation (or build deterministic one for images)
             progress_service
                 .update_progress(
                     &progress_id,
                     IngestionStep::GettingAIRecommendation,
-                    "Analyzing data with AI to determine schema...".to_string(),
+                    if is_image {
+                        "Building image schema...".to_string()
+                    } else {
+                        "Analyzing data with AI to determine schema...".to_string()
+                    },
                 )
                 .await;
-            let ai_response = self
-                .get_ai_recommendation(&flattened_data)
-                .await?;
+            let ai_response = if is_image {
+                build_image_schema_response(&flattened_data)?
+            } else {
+                self.get_ai_recommendation(&flattened_data).await?
+            };
 
             // Step 4: Determine schema to use
             progress_service
@@ -762,4 +775,75 @@ impl IngestionService {
 
         result
     }
+}
+
+/// Build a deterministic `AISchemaResponse` for image files.
+///
+/// Instead of asking the AI to recommend a schema, this constructs a HashRange
+/// schema keyed by `image_type` (hash) and `created_at` (range) so that
+/// multiple images coexist in one schema, grouped by type and ordered by date.
+fn build_image_schema_response(
+    flattened_data: &Value,
+) -> IngestionResult<AISchemaResponse> {
+    use crate::schema::types::topology::{JsonTopology, TopologyNode, PrimitiveValueType};
+
+    // Extract field names from the data (single object or first array element)
+    let sample_obj = if let Some(arr) = flattened_data.as_array() {
+        arr.first().and_then(|v| v.as_object())
+    } else {
+        flattened_data.as_object()
+    };
+
+    let sample_obj = sample_obj.ok_or_else(|| {
+        IngestionError::invalid_input("Image data must be a JSON object")
+    })?;
+
+    let field_names: Vec<String> = sample_obj.keys().cloned().collect();
+
+    // Build field_topologies from the sample data, adding classifications
+    let mut field_topologies = std::collections::HashMap::new();
+    for (field_name, field_value) in sample_obj.iter() {
+        let mut topology = JsonTopology::infer_from_value(field_value);
+
+        // Add classifications to all string primitives
+        if let TopologyNode::Primitive {
+            value: PrimitiveValueType::String,
+            ref mut classifications,
+        } = topology.root
+        {
+            if field_name == "created_at" {
+                *classifications = Some(vec!["date".to_string()]);
+            } else {
+                *classifications = Some(vec!["word".to_string()]);
+            }
+        }
+
+        field_topologies.insert(field_name.clone(), topology);
+    }
+
+    // Build the schema definition as a JSON Value (DeclarativeSchemaDefinition)
+    let schema_def = serde_json::json!({
+        "name": "image_data",
+        "schema_type": "HashRange",
+        "key": {
+            "hash_field": "image_type",
+            "range_field": "created_at"
+        },
+        "fields": field_names,
+        "field_topologies": serde_json::to_value(&field_topologies)
+            .map_err(|e| IngestionError::SchemaCreationError(
+                format!("Failed to serialize field topologies: {}", e)
+            ))?,
+    });
+
+    // Build mutation_mappers: identity mapping (field → same field)
+    let mutation_mappers: HashMap<String, String> = field_names
+        .iter()
+        .map(|name| (name.clone(), name.clone()))
+        .collect();
+
+    Ok(AISchemaResponse {
+        new_schemas: Some(schema_def),
+        mutation_mappers,
+    })
 }

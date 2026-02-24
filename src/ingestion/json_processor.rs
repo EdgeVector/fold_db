@@ -188,6 +188,53 @@ fn flatten_array_elements(value: Value) -> Value {
     }
 }
 
+/// Ensure the JSON object produced by the vision model contains `image_type` and
+/// `created_at` fields.  Existing values are preserved so the model's own output
+/// is respected when present.
+pub fn enrich_image_json(json: &mut Value, file_path: &std::path::PathBuf, source_file_name: Option<&str>) {
+    if let Value::Object(map) = json {
+        // image_type — keep if already set
+        if !map.contains_key("image_type") {
+            let image_type = classify_image_type(source_file_name.unwrap_or(""));
+            map.insert("image_type".to_string(), Value::String(image_type));
+        }
+        // created_at — keep if already set
+        if !map.contains_key("created_at") {
+            let created_at = get_file_creation_date(file_path);
+            map.insert("created_at".to_string(), Value::String(created_at));
+        }
+    }
+}
+
+/// Heuristic classification of an image based on the source filename.
+///
+/// - "screenshot" if the filename contains "screenshot"
+/// - "diagram" for SVG files or filenames containing "chart" or "diagram"
+/// - "photo" otherwise (default)
+pub fn classify_image_type(source_file_name: &str) -> String {
+    let lower = source_file_name.to_lowercase();
+    if lower.contains("screenshot") {
+        "screenshot".to_string()
+    } else if lower.ends_with(".svg") || lower.contains("chart") || lower.contains("diagram") {
+        "diagram".to_string()
+    } else {
+        "photo".to_string()
+    }
+}
+
+/// Read the file's modified (or created) time and return it as an ISO 8601 string.
+/// Falls back to `Utc::now()` if the metadata cannot be read.
+pub fn get_file_creation_date(file_path: &std::path::PathBuf) -> String {
+    std::fs::metadata(file_path)
+        .ok()
+        .and_then(|meta| meta.modified().ok().or_else(|| meta.created().ok()))
+        .map(|time| {
+            let dt: chrono::DateTime<chrono::Utc> = time.into();
+            dt.format("%Y-%m-%d %H:%M:%S").to_string()
+        })
+        .unwrap_or_else(|| chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string())
+}
+
 /// Save JSON to a temporary file that persists for testing
 /// Returns the path to the temporary file
 pub fn save_json_to_temp_file(json: &Value) -> std::io::Result<String> {
@@ -454,5 +501,59 @@ mod tests {
         assert_eq!(arr[1]["text"], "World");
         assert_eq!(arr[1]["user"], "bob");
         assert!(arr[1].get("tweet").is_none());
+    }
+
+    #[test]
+    fn test_classify_image_type_photo() {
+        assert_eq!(classify_image_type("vacation.jpg"), "photo");
+        assert_eq!(classify_image_type("IMG_1234.PNG"), "photo");
+        assert_eq!(classify_image_type(""), "photo");
+    }
+
+    #[test]
+    fn test_classify_image_type_screenshot() {
+        assert_eq!(classify_image_type("Screenshot_2024-01-01.png"), "screenshot");
+        assert_eq!(classify_image_type("my_screenshot.jpg"), "screenshot");
+    }
+
+    #[test]
+    fn test_classify_image_type_diagram() {
+        assert_eq!(classify_image_type("architecture.svg"), "diagram");
+        assert_eq!(classify_image_type("sales_chart.png"), "diagram");
+        assert_eq!(classify_image_type("system_diagram.jpg"), "diagram");
+    }
+
+    #[test]
+    fn test_enrich_image_json_adds_fields() {
+        let mut json = json!({"description": "A sunset"});
+        let path = std::path::PathBuf::from("/tmp/test.jpg");
+        enrich_image_json(&mut json, &path, Some("test.jpg"));
+
+        assert_eq!(json["image_type"], "photo");
+        assert!(json.get("created_at").is_some());
+    }
+
+    #[test]
+    fn test_enrich_image_json_preserves_existing() {
+        let mut json = json!({
+            "description": "A sunset",
+            "image_type": "landscape",
+            "created_at": "2024-06-15 10:00:00"
+        });
+        let path = std::path::PathBuf::from("/tmp/test.jpg");
+        enrich_image_json(&mut json, &path, Some("test.jpg"));
+
+        // Should NOT overwrite existing values
+        assert_eq!(json["image_type"], "landscape");
+        assert_eq!(json["created_at"], "2024-06-15 10:00:00");
+    }
+
+    #[test]
+    fn test_enrich_image_json_noop_for_non_object() {
+        let mut json = json!([1, 2, 3]);
+        let path = std::path::PathBuf::from("/tmp/test.jpg");
+        enrich_image_json(&mut json, &path, Some("test.jpg"));
+        // Should remain unchanged
+        assert!(json.is_array());
     }
 }

@@ -181,6 +181,8 @@ fn test_engine_executes_iterator_functions() {
             atom_uuid: "atom-1".to_string(),
             source_file_name: None,
             metadata: None,
+            molecule_uuid: None,
+            molecule_version: None,
         },
     );
     input.insert("BlogPost.content".to_string(), field_map);

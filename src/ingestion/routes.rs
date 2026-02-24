@@ -454,10 +454,20 @@ pub(crate) async fn process_single_file_via_smart_folder(
                 use sha2::{Digest, Sha256};
                 format!("{:x}", Sha256::digest(&raw_bytes))
             };
-            let data =
+            let mut data =
                 crate::ingestion::json_processor::convert_file_to_json(&file_path.to_path_buf())
                     .await
                     .map_err(|e| e.to_string())?;
+            // Enrich image JSON with image_type and created_at for HashRange schema support
+            if let Some(file_name) = file_path.file_name().and_then(|n| n.to_str()) {
+                if crate::ingestion::is_image_file(file_name) {
+                    crate::ingestion::json_processor::enrich_image_json(
+                        &mut data,
+                        &file_path.to_path_buf(),
+                        Some(file_name),
+                    );
+                }
+            }
             (data, hash_hex, raw_bytes)
         }
     };

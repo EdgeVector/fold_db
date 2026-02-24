@@ -460,5 +460,66 @@ pub async fn get_indexing_status(state: web::Data<AppState>) -> impl Responder {
     }
 }
 
+/// Get mutation history for a molecule.
+#[utoipa::path(
+    get,
+    path = "/api/history/{molecule_uuid}",
+    tag = "query",
+    params(
+        ("molecule_uuid" = String, Path, description = "Molecule UUID")
+    ),
+    responses(
+        (status = 200, description = "Molecule mutation history"),
+        (status = 500, description = "Server error")
+    )
+)]
+pub async fn get_molecule_history(
+    path: web::Path<String>,
+    state: web::Data<AppState>,
+) -> impl Responder {
+    let molecule_uuid = path.into_inner();
+    let (user_hash, node_arc) = match require_node(&state).await {
+        Ok(res) => res,
+        Err(response) => return response,
+    };
+    let node = node_arc.read().await;
+
+    match query_handlers::get_molecule_history(&molecule_uuid, &user_hash, &node).await {
+        Ok(response) => HttpResponse::Ok().json(response),
+        Err(e) => handler_error_to_response(e),
+    }
+}
+
+/// Get atom content by UUID.
+#[utoipa::path(
+    get,
+    path = "/api/atom/{atom_uuid}",
+    tag = "query",
+    params(
+        ("atom_uuid" = String, Path, description = "Atom UUID")
+    ),
+    responses(
+        (status = 200, description = "Atom content"),
+        (status = 404, description = "Atom not found"),
+        (status = 500, description = "Server error")
+    )
+)]
+pub async fn get_atom_content(
+    path: web::Path<String>,
+    state: web::Data<AppState>,
+) -> impl Responder {
+    let atom_uuid = path.into_inner();
+    let (user_hash, node_arc) = match require_node(&state).await {
+        Ok(res) => res,
+        Err(response) => return response,
+    };
+    let node = node_arc.read().await;
+
+    match query_handlers::get_atom_content(&atom_uuid, &user_hash, &node).await {
+        Ok(response) => HttpResponse::Ok().json(response),
+        Err(e) => handler_error_to_response(e),
+    }
+}
+
 #[cfg(test)]
 mod tests {}

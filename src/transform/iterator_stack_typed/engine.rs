@@ -157,6 +157,8 @@ impl TypedEngine {
                                             atom_uuid: item.value.atom_uuid.clone(),
                                             source_file_name: item.value.source_file_name.clone(),
                                             metadata: item.value.metadata.clone(),
+                                            molecule_uuid: None,
+                                            molecule_version: None,
                                         },
                                         is_text_token: true,
                                     })

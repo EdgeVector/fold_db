@@ -21,6 +21,8 @@ fn create_text_item(text: &str, key: &str) -> IterationItem {
             atom_uuid: format!("atom-{}", key),
             source_file_name: None,
             metadata: None,
+            molecule_uuid: None,
+            molecule_version: None,
         },
         is_text_token: false,
     }
@@ -34,6 +36,8 @@ fn create_numeric_item(value: f64, key: &str) -> IterationItem {
             atom_uuid: format!("atom-{}", key),
             source_file_name: None,
             metadata: None,
+            molecule_uuid: None,
+            molecule_version: None,
         },
         is_text_token: false,
     }
@@ -47,6 +51,8 @@ fn create_array_item(values: Vec<serde_json::Value>, key: &str) -> IterationItem
             atom_uuid: format!("atom-{}", key),
             source_file_name: None,
             metadata: None,
+            molecule_uuid: None,
+            molecule_version: None,
         },
         is_text_token: false,
     }
@@ -534,6 +540,8 @@ fn test_functions_with_null_values() {
             atom_uuid: "atom-null".to_string(),
             source_file_name: None,
             metadata: None,
+            molecule_uuid: None,
+            molecule_version: None,
         },
         is_text_token: false,
     };
@@ -577,6 +585,8 @@ fn test_functions_with_complex_json() {
             atom_uuid: "atom-complex".to_string(),
             source_file_name: None,
             metadata: None,
+            molecule_uuid: None,
+            molecule_version: None,
         },
         is_text_token: false,
     };

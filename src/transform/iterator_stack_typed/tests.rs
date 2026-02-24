@@ -26,6 +26,8 @@ mod typed_engine_tests {
                 atom_uuid: "atom-1".to_string(),
                 source_file_name: None,
                 metadata: None,
+                molecule_uuid: None,
+                molecule_version: None,
             },
         );
         input.insert("BlogPost.content".to_string(), field_map);
@@ -52,6 +54,8 @@ mod typed_engine_tests {
                 atom_uuid: "atom-2".to_string(),
                 source_file_name: None,
                 metadata: None,
+                molecule_uuid: None,
+                molecule_version: None,
             },
         );
         input.insert("BlogPost.content".to_string(), field_map);
@@ -90,6 +94,8 @@ mod typed_engine_tests {
                 atom_uuid: "atom-1".to_string(),
                 source_file_name: None,
                 metadata: None,
+                molecule_uuid: None,
+                molecule_version: None,
             },
         );
         field_map.insert(
@@ -99,6 +105,8 @@ mod typed_engine_tests {
                 atom_uuid: "atom-2".to_string(),
                 source_file_name: None,
                 metadata: None,
+                molecule_uuid: None,
+                molecule_version: None,
             },
         );
         field_map.insert(
@@ -108,6 +116,8 @@ mod typed_engine_tests {
                 atom_uuid: "atom-3".to_string(),
                 source_file_name: None,
                 metadata: None,
+                molecule_uuid: None,
+                molecule_version: None,
             },
         );
         input.insert("BlogPost.content".to_string(), field_map);
@@ -146,6 +156,8 @@ mod typed_engine_tests {
                 atom_uuid: "atom-1".to_string(),
                 source_file_name: None,
                 metadata: None,
+                molecule_uuid: None,
+                molecule_version: None,
             },
         );
         field_map.insert(
@@ -155,6 +167,8 @@ mod typed_engine_tests {
                 atom_uuid: "atom-2".to_string(),
                 source_file_name: None,
                 metadata: None,
+                molecule_uuid: None,
+                molecule_version: None,
             },
         );
         input.insert("BlogPost.content".to_string(), field_map);
@@ -191,6 +205,8 @@ mod typed_engine_tests {
                 atom_uuid: "atom-1".to_string(),
                 source_file_name: None,
                 metadata: None,
+                molecule_uuid: None,
+                molecule_version: None,
             },
         );
         input.insert("BlogPost.content".to_string(), field_map);

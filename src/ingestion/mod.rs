@@ -57,6 +57,17 @@ use utoipa::ToSchema;
 #[cfg(feature = "ts-bindings")]
 use ts_rs::TS;
 
+/// File extensions recognized as images (lowercase, without the leading dot).
+pub const IMAGE_EXTENSIONS: &[&str] = &[
+    "jpg", "jpeg", "png", "gif", "webp", "bmp", "tiff", "tif", "svg", "heic", "heif", "avif",
+];
+
+/// Returns `true` when `filename` ends with a known image extension (case-insensitive).
+pub fn is_image_file(filename: &str) -> bool {
+    let lower = filename.to_lowercase();
+    IMAGE_EXTENSIONS.iter().any(|ext| lower.ends_with(&format!(".{}", ext)))
+}
+
 // Public re-exports
 pub use ai_schema_response::AISchemaResponse;
 pub use config::IngestionConfig;

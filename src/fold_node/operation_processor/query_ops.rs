@@ -378,17 +378,25 @@ impl OperationProcessor {
                 FoldDbError::Database(format!("Schema '{}' not found", schema_name))
             })?;
 
-        // Pick the first runtime field to extract keys from
-        let field = schema
-            .runtime_fields
-            .values_mut()
-            .next()
-            .ok_or_else(|| {
-                FoldDbError::Database(format!("Schema '{}' has no fields", schema_name))
-            })?;
+        // Try each runtime field until one returns keys.
+        // HashMap iteration order is non-deterministic, and some fields may
+        // fail to load their molecule, so we try all of them.
+        if schema.runtime_fields.is_empty() {
+            return Err(FoldDbError::Database(format!(
+                "Schema '{}' has no fields",
+                schema_name
+            )));
+        }
 
-        field.refresh_from_db(&db.db_ops).await;
-        let all_keys = field.get_all_keys();
+        let mut all_keys = Vec::new();
+        for field in schema.runtime_fields.values_mut() {
+            field.refresh_from_db(&db.db_ops).await;
+            all_keys = field.get_all_keys();
+            if !all_keys.is_empty() {
+                break;
+            }
+        }
+
         let total = all_keys.len();
         let page = all_keys.into_iter().skip(offset).take(limit).collect();
         Ok((page, total))

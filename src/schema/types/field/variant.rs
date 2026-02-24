@@ -32,6 +32,10 @@ pub struct FieldValue {
     pub source_file_name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub metadata: Option<HashMap<String, String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub molecule_uuid: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub molecule_version: Option<u64>,
 }
 
 // Macro to reduce boilerplate for Field trait implementation
@@ -99,7 +103,17 @@ impl Field for FieldVariant {
             FieldVariant::Range(f) => f.apply_filter(filter),
             FieldVariant::HashRange(f) => f.apply_filter(filter),
         };
-        fetch_atoms_for_matches_async(db_ops, results.matches).await
+        let mut resolved = fetch_atoms_for_matches_async(db_ops, results.matches).await?;
+
+        // Stamp molecule info on each resolved FieldValue
+        let mol_uuid = self.common().molecule_uuid().cloned();
+        let mol_version = self.molecule_version();
+        for fv in resolved.values_mut() {
+            fv.molecule_uuid = mol_uuid.clone();
+            fv.molecule_version = mol_version;
+        }
+
+        Ok(resolved)
     }
 }
 

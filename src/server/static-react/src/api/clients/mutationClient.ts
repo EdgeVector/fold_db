@@ -290,6 +290,46 @@ export class UnifiedMutationClient implements MutationApiClient {
   }
 
   /**
+   * Get mutation history for a molecule by its UUID
+   *
+   * @param moleculeUuid The molecule UUID to get history for
+   * @returns Promise resolving to molecule history events
+   */
+  async getMoleculeHistory(
+    moleculeUuid: string,
+  ): Promise<EnhancedApiResponse<Record<string, unknown>>> {
+    return this.client.get<Record<string, unknown>>(
+      API_ENDPOINTS.GET_MOLECULE_HISTORY(moleculeUuid),
+      {
+        timeout: 10000,
+        retries: 1,
+        cacheable: true,
+        cacheTtl: 30000,
+      },
+    );
+  }
+
+  /**
+   * Get content of a specific atom by its UUID
+   *
+   * @param atomUuid The atom UUID to get content for
+   * @returns Promise resolving to atom content
+   */
+  async getAtomContent(
+    atomUuid: string,
+  ): Promise<EnhancedApiResponse<Record<string, unknown>>> {
+    return this.client.get<Record<string, unknown>>(
+      API_ENDPOINTS.GET_ATOM_CONTENT(atomUuid),
+      {
+        timeout: 10000,
+        retries: 1,
+        cacheable: true,
+        cacheTtl: 60000,
+      },
+    );
+  }
+
+  /**
    * Get API metrics for mutation operations
    */
   getMetrics() {
@@ -329,5 +369,9 @@ export const validateMutation = (mutation: Record<string, unknown>) =>
   mutationClient.validateMutation(mutation);
 export const validateSchemaForMutation = (schemaName: string) =>
   mutationClient.validateSchemaForMutation(schemaName);
+export const getMoleculeHistory = (moleculeUuid: string) =>
+  mutationClient.getMoleculeHistory(moleculeUuid);
+export const getAtomContent = (atomUuid: string) =>
+  mutationClient.getAtomContent(atomUuid);
 
 export default mutationClient;

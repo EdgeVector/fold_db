@@ -94,10 +94,19 @@ pub async fn upload_file(
     }
 
     // Convert file to JSON using file_to_json
-    let json_value = match convert_file_to_json_http(&form_data.file_path).await {
+    let mut json_value = match convert_file_to_json_http(&form_data.file_path).await {
         Ok(json) => json,
         Err(response) => return response,
     };
+
+    // Enrich image JSON with image_type and created_at for HashRange schema support
+    if crate::ingestion::is_image_file(&form_data.original_filename) {
+        crate::ingestion::json_processor::enrich_image_json(
+            &mut json_value,
+            &form_data.file_path,
+            Some(&form_data.original_filename),
+        );
+    }
 
     log_feature!(
         LogFeature::Ingestion,

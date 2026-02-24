@@ -56,6 +56,8 @@ pub async fn fetch_atoms_for_matches_async(
                         atom_uuid: atom_uuid.clone(),
                         source_file_name: atom.source_file_name().cloned(),
                         metadata: atom.metadata().cloned(),
+                        molecule_uuid: None,
+                        molecule_version: None,
                     },
                 );
             }

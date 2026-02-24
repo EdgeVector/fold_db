@@ -73,6 +73,8 @@ const API_ENDPOINTS_MANUAL = {
   AUTO_IDENTITY: '/system/auto-identity',
   UPDATE_DATABASE_CONFIG: '/system/database-config',
   INGESTION_UPLOAD: '/ingestion/upload',
+  GET_MOLECULE_HISTORY: (uuid: string) => `/history/${uuid}`,
+  GET_ATOM_CONTENT: (uuid: string) => `/atom/${uuid}`,
 } as const;
 
 // Export merged endpoints (generated + manual)

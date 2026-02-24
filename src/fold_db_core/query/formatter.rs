@@ -44,6 +44,10 @@ pub struct FieldMetadata {
     pub source_file_name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub metadata: Option<HashMap<String, String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub molecule_uuid: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub molecule_version: Option<u64>,
 }
 
 /// Represents a single logical record keyed by `KeyValue`.
@@ -82,6 +86,8 @@ pub fn records_from_field_map(
                     atom_uuid: field_val.atom_uuid.clone(),
                     source_file_name: field_val.source_file_name.clone(),
                     metadata: field_val.metadata.clone(),
+                    molecule_uuid: field_val.molecule_uuid.clone(),
+                    molecule_version: field_val.molecule_version,
                 },
             );
         }
@@ -115,6 +121,8 @@ mod tests {
                 atom_uuid: "a1".to_string(),
                 source_file_name: None,
                 metadata: None,
+                molecule_uuid: None,
+                molecule_version: None,
             },
         );
         f1_map.insert(
@@ -124,6 +132,8 @@ mod tests {
                 atom_uuid: "a2".to_string(),
                 source_file_name: None,
                 metadata: None,
+                molecule_uuid: None,
+                molecule_version: None,
             },
         );
 
@@ -135,6 +145,8 @@ mod tests {
                 atom_uuid: "b1".to_string(),
                 source_file_name: None,
                 metadata: None,
+                molecule_uuid: None,
+                molecule_version: None,
             },
         );
 
@@ -166,6 +178,8 @@ mod tests {
                 atom_uuid: "atom-123".to_string(),
                 source_file_name: Some("tweets.json".to_string()),
                 metadata: None,
+                molecule_uuid: None,
+                molecule_version: None,
             },
         );
 
@@ -177,6 +191,8 @@ mod tests {
                 atom_uuid: "atom-456".to_string(),
                 source_file_name: None,
                 metadata: None,
+                molecule_uuid: None,
+                molecule_version: None,
             },
         );
 
@@ -223,6 +239,8 @@ mod tests {
                 atom_uuid: "atom-1".to_string(),
                 source_file_name: Some("file1.json".to_string()),
                 metadata: None,
+                molecule_uuid: None,
+                molecule_version: None,
             },
         );
         field_map.insert(
@@ -232,6 +250,8 @@ mod tests {
                 atom_uuid: "atom-2".to_string(),
                 source_file_name: Some("file2.json".to_string()),
                 metadata: None,
+                molecule_uuid: None,
+                molecule_version: None,
             },
         );
 
@@ -264,6 +284,8 @@ mod tests {
             atom_uuid: "test-atom".to_string(),
             source_file_name: Some("test.json".to_string()),
             metadata: None,
+            molecule_uuid: None,
+            molecule_version: None,
         };
 
         // Test serialization
