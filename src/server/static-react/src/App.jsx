@@ -3,6 +3,7 @@ import { FoldDbProvider } from './components/FoldDbProvider'
 import Header from './components/Header'
 import Footer from './components/Footer'
 import ResultsSection from './components/ResultsSection'
+import IngestionReport from './components/IngestionReport'
 import TabNavigation from './components/TabNavigation'
 import SchemaTab from './components/tabs/SchemaTab'
 import QueryTab from './components/tabs/QueryTab'
@@ -25,6 +26,12 @@ import LoginPage from './components/LoginPage'
 import { DEFAULT_TAB } from './constants'
 import { BROWSER_CONFIG } from './constants/config'
 import { getAutoIdentity } from './api/clients/systemClient'
+
+function isIngestionResult(results) {
+  if (!results?.success) return false
+  const d = results?.data ?? results
+  return typeof d === 'object' && Array.isArray(d?.schemas_written) && d.schemas_written.length > 0
+}
 
 // Single lookup for URL hash → tab ID (prevents duplication)
 const HASH_TO_TAB = {
@@ -283,7 +290,13 @@ export function AppContent() {
               {renderActiveTab()}
 
               {/* Results */}
-              {results && (
+              {results && isIngestionResult(results) && (
+                <IngestionReport
+                  ingestionResult={results}
+                  onDismiss={() => setResults(null)}
+                />
+              )}
+              {results && !isIngestionResult(results) && (
                 <div className="mt-6">
                   <div className="text-xs uppercase tracking-widest text-tertiary mb-3">
                     Results

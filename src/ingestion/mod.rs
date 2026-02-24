@@ -74,7 +74,7 @@ pub use config::IngestionConfig;
 pub use error::IngestionError;
 pub use progress::{
     create_progress_tracker, IngestionProgress, IngestionResults, IngestionStep, ProgressService,
-    ProgressTracker,
+    ProgressTracker, SchemaWriteRecord,
 };
 pub use structure_analyzer::StructureAnalyzer;
 
@@ -142,6 +142,8 @@ pub struct IngestionResponse {
     pub mutations_executed: usize,
     /// Any errors that occurred during processing
     pub errors: Vec<String>,
+    /// All schemas and keys written during this ingestion
+    pub schemas_written: Vec<SchemaWriteRecord>,
 }
 
 impl IngestionResponse {
@@ -152,6 +154,7 @@ impl IngestionResponse {
         new_schema_created: bool,
         mutations_generated: usize,
         mutations_executed: usize,
+        schemas_written: Vec<SchemaWriteRecord>,
     ) -> Self {
         Self {
             success: true,
@@ -161,6 +164,7 @@ impl IngestionResponse {
             mutations_generated,
             mutations_executed,
             errors: Vec::new(),
+            schemas_written,
         }
     }
 
@@ -174,6 +178,7 @@ impl IngestionResponse {
             mutations_generated: 0,
             mutations_executed: 0,
             errors,
+            schemas_written: Vec::new(),
         }
     }
 

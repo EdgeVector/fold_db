@@ -3,6 +3,7 @@
 //! Adapts the unified progress tracking (JobTracker) for ingestion workflows.
 
 use crate::progress::{Job, JobStatus, JobType};
+use crate::schema::types::KeyValue;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
@@ -25,6 +26,13 @@ pub enum IngestionStep {
     Failed,
 }
 
+/// A single schema and the keys that were written to it during ingestion.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct SchemaWriteRecord {
+    pub schema_name: String,
+    pub keys_written: Vec<KeyValue>,
+}
+
 /// Results of completed ingestion operation
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct IngestionResults {
@@ -32,6 +40,8 @@ pub struct IngestionResults {
     pub new_schema_created: bool,
     pub mutations_generated: usize,
     pub mutations_executed: usize,
+    /// All schemas and keys written during this ingestion (covers decomposition).
+    pub schemas_written: Vec<SchemaWriteRecord>,
 }
 
 /// Helper struct to map generic Job to IngestionProgress shape for API compatibility

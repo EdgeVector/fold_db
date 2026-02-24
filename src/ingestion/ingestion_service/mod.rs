@@ -12,7 +12,9 @@ use crate::ingestion::key_extraction::extract_key_values_from_data;
 use crate::ingestion::mutation_generator;
 use crate::ingestion::ollama_service::OllamaService;
 use crate::ingestion::openrouter_service::OpenRouterService;
-use crate::ingestion::progress::{IngestionResults, IngestionStep, ProgressService};
+use crate::ingestion::progress::{
+    IngestionResults, IngestionStep, ProgressService, SchemaWriteRecord,
+};
 use crate::ingestion::IngestionRequest;
 use crate::ingestion::{
     AISchemaResponse, IngestionConfig, IngestionError, IngestionResponse, IngestionResult,
@@ -20,7 +22,7 @@ use crate::ingestion::{
 };
 use crate::log_feature;
 use crate::logging::features::LogFeature;
-use crate::schema::types::Mutation;
+use crate::schema::types::{KeyValue, Mutation};
 use serde_json::Value;
 use std::collections::HashMap;
 
@@ -165,6 +167,7 @@ impl IngestionService {
             let mut schema_cache: HashMap<String, CachedSchema> = HashMap::new();
             let mut total_mutations_generated: usize = 0;
             let mut total_mutations_executed: usize = 0;
+            let mut schemas_written_map: HashMap<String, Vec<KeyValue>> = HashMap::new();
 
             // Collect items: either array elements or the single object
             let items: Vec<Value> = if let Some(arr) = flattened_data.as_array() {
@@ -211,6 +214,7 @@ impl IngestionService {
                         decomposed_metadata.clone(),
                         request.auto_execute,
                         0,
+                        &mut schemas_written_map,
                     )
                     .await?;
                 total_mutations_generated += gen;
@@ -225,6 +229,15 @@ impl IngestionService {
                     log::warn!("Schema cache miss for top-level hash '{}' — returning empty schema name", top_level_hash);
                     String::new()
                 });
+
+            // Build schemas_written from accumulator
+            let schemas_written: Vec<SchemaWriteRecord> = schemas_written_map
+                .into_iter()
+                .map(|(name, keys)| SchemaWriteRecord {
+                    schema_name: name,
+                    keys_written: keys,
+                })
+                .collect();
 
             // Record file as ingested for this user (per-user file-level dedup)
             if let Some(ref fh) = request.file_hash {
@@ -245,6 +258,7 @@ impl IngestionService {
                 new_schema_created: true,
                 mutations_generated: total_mutations_generated,
                 mutations_executed: total_mutations_executed,
+                schemas_written: schemas_written.clone(),
             };
             progress_service
                 .complete_progress(&progress_id, results)
@@ -256,6 +270,7 @@ impl IngestionService {
                 true,
                 total_mutations_generated,
                 total_mutations_executed,
+                schemas_written,
             ))
         } else {
             // ── Original flat path (no nested arrays of objects) ──
@@ -280,7 +295,11 @@ impl IngestionService {
                 )
                 .await;
             let ai_response = if is_image {
-                build_image_schema_response(&flattened_data)?
+                build_image_schema_response(
+                    &flattened_data,
+                    request.source_folder.as_deref(),
+                    request.source_file_name.as_deref(),
+                )?
             } else {
                 self.get_ai_recommendation(&flattened_data).await?
             };
@@ -385,6 +404,22 @@ impl IngestionService {
                 mutations.len()
             );
 
+            // Collect schemas_written from generated mutations
+            let schemas_written = {
+                let mut map: HashMap<String, Vec<KeyValue>> = HashMap::new();
+                for m in &mutations {
+                    map.entry(m.schema_name.clone())
+                        .or_default()
+                        .push(m.key_value.clone());
+                }
+                map.into_iter()
+                    .map(|(name, keys)| SchemaWriteRecord {
+                        schema_name: name,
+                        keys_written: keys,
+                    })
+                    .collect::<Vec<_>>()
+            };
+
             // Step 6: Execute mutations if requested
             progress_service
                 .update_progress(
@@ -427,6 +462,7 @@ impl IngestionService {
                 new_schema_created,
                 mutations_generated: mutations_len,
                 mutations_executed,
+                schemas_written: schemas_written.clone(),
             };
             progress_service
                 .complete_progress(&progress_id, results)
@@ -438,6 +474,7 @@ impl IngestionService {
                 new_schema_created,
                 mutations_len,
                 mutations_executed,
+                schemas_written,
             ))
         }
     }
@@ -784,6 +821,8 @@ impl IngestionService {
 /// multiple images coexist in one schema, grouped by type and ordered by date.
 fn build_image_schema_response(
     flattened_data: &Value,
+    source_folder: Option<&str>,
+    source_file_name: Option<&str>,
 ) -> IngestionResult<AISchemaResponse> {
     use crate::schema::types::topology::{JsonTopology, TopologyNode, PrimitiveValueType};
 
@@ -821,9 +860,15 @@ fn build_image_schema_response(
         field_topologies.insert(field_name.clone(), topology);
     }
 
+    // Derive a human-readable name from the folder context
+    let descriptive_name = crate::ingestion::json_processor::derive_image_descriptive_name(
+        source_folder, source_file_name,
+    );
+
     // Build the schema definition as a JSON Value (DeclarativeSchemaDefinition)
     let schema_def = serde_json::json!({
         "name": "image_data",
+        "descriptive_name": descriptive_name,
         "schema_type": "HashRange",
         "key": {
             "hash_field": "image_type",

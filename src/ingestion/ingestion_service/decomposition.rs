@@ -200,6 +200,7 @@ impl IngestionService {
         metadata: Option<HashMap<String, String>>,
         auto_execute: bool,
         depth: usize,
+        schemas_written_map: &mut HashMap<String, Vec<KeyValue>>,
     ) -> IngestionResult<(usize, usize, Option<KeyValue>)> {
         let item_decomp = decomposer::decompose(item);
         let mut total_gen: usize = 0;
@@ -233,6 +234,7 @@ impl IngestionService {
                     metadata.clone(),
                     auto_execute,
                     depth + 1,
+                    schemas_written_map,
                 ))
                 .await?;
                 total_gen += gen;
@@ -353,6 +355,14 @@ impl IngestionService {
 
             // Extract the key_value from the first mutation before execution
             own_key_value = mutations.first().map(|m| m.key_value.clone());
+
+            // Record all (schema_name, key_value) pairs into the accumulator
+            for m in &mutations {
+                schemas_written_map
+                    .entry(m.schema_name.clone())
+                    .or_default()
+                    .push(m.key_value.clone());
+            }
 
             let gen_count = mutations.len();
             total_gen += gen_count;
