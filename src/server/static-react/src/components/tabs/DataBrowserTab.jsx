@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState, Fragment } from 'react'
+import { useCallback, useEffect, useMemo, useState, Fragment } from 'react'
 import { useAppSelector } from '../../store/hooks'
 import { selectAllSchemas } from '../../store/schemaSlice'
 import { schemaClient } from '../../api/clients/schemaClient'
@@ -33,6 +33,7 @@ const IMAGE_EXTENSIONS = /\.(jpe?g|png|gif|webp|svg)$/i
 
 function RecordMetadata({ metadata }) {
   const [expanded, setExpanded] = useState(false)
+  const [blobUrl, setBlobUrl] = useState(null)
 
   if (!metadata || typeof metadata !== 'object') return null
 
@@ -47,6 +48,32 @@ function RecordMetadata({ metadata }) {
 
   const isImage = sourceFile && IMAGE_EXTENSIONS.test(sourceFile)
   const fileUrl = fileHash ? `/api/file/${fileHash}?name=${encodeURIComponent(sourceFile || '')}` : null
+
+  // Fetch image with auth headers and create blob URL
+  useEffect(() => {
+    if (!expanded || !isImage || !fileUrl) return
+    let revoked = false
+    const userHash = localStorage.getItem('fold_user_hash')
+    const headers = {}
+    if (userHash) {
+      headers['x-user-hash'] = userHash
+      headers['x-user-id'] = userHash
+    }
+    fetch(fileUrl, { headers })
+      .then((res) => {
+        if (!res.ok) throw new Error(res.statusText)
+        return res.blob()
+      })
+      .then((blob) => {
+        if (revoked) return
+        setBlobUrl(URL.createObjectURL(blob))
+      })
+      .catch(() => setBlobUrl(null))
+    return () => {
+      revoked = true
+      setBlobUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return null })
+    }
+  }, [expanded, isImage, fileUrl])
 
   return (
     <div className="mb-1">
@@ -65,13 +92,12 @@ function RecordMetadata({ metadata }) {
         <div className="pl-4 pt-1 space-y-1 text-xs text-secondary font-mono">
           {sourceFile && <div>File: {sourceFile}</div>}
           {fileHash && <div>Hash: {fileHash.length > 16 ? fileHash.slice(0, 16) + '…' : fileHash}</div>}
-          {isImage && fileUrl && (
+          {isImage && blobUrl && (
             <div className="mt-2">
               <img
-                src={fileUrl}
+                src={blobUrl}
                 alt={sourceFile}
                 className="max-w-xs max-h-64 rounded border border-border object-contain bg-surface-secondary"
-                loading="lazy"
               />
             </div>
           )}
