@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { ingestionClient } from '../../api/clients'
 
 function AiConfigSettings({ configSaveStatus, setConfigSaveStatus, onClose, onConfigSaved }) {
@@ -7,14 +7,60 @@ function AiConfigSettings({ configSaveStatus, setConfigSaveStatus, onClose, onCo
   const [hasEnvKey, setHasEnvKey] = useState(false)
   const [openrouterModel, setOpenrouterModel] = useState('google/gemini-2.5-flash')
   const [openrouterBaseUrl, setOpenrouterBaseUrl] = useState('https://openrouter.ai/api/v1')
-  const [ollamaModel, setOllamaModel] = useState('llama3')
+  const [ollamaModel, setOllamaModel] = useState('')
   const [ollamaBaseUrl, setOllamaBaseUrl] = useState('http://localhost:11434')
+  const [ollamaModels, setOllamaModels] = useState([])
+  const [ollamaModelsLoading, setOllamaModelsLoading] = useState(false)
+  const [ollamaModelsError, setOllamaModelsError] = useState(null)
   const [showAdvanced, setShowAdvanced] = useState(false)
   const statusTimeoutRef = useRef(null)
+  const ollamaFetchTimeoutRef = useRef(null)
 
   useEffect(() => {
-    return () => { if (statusTimeoutRef.current) clearTimeout(statusTimeoutRef.current) }
+    return () => {
+      if (statusTimeoutRef.current) clearTimeout(statusTimeoutRef.current)
+      if (ollamaFetchTimeoutRef.current) clearTimeout(ollamaFetchTimeoutRef.current)
+    }
   }, [])
+
+  const fetchOllamaModels = useCallback(async (url) => {
+    if (!url) return
+    setOllamaModelsLoading(true)
+    setOllamaModelsError(null)
+    setOllamaModels([])
+    try {
+      const response = await ingestionClient.listOllamaModels(url)
+      const data = response?.data ?? response
+      const models = data?.models ?? []
+      const error = data?.error
+      setOllamaModels(models)
+      if (error) {
+        setOllamaModelsError(error)
+      } else if (models.length === 0) {
+        setOllamaModelsError('No models found. Run: ollama pull <model>')
+      } else {
+        setOllamaModelsError(null)
+        // Auto-select first model if none currently selected
+        setOllamaModel(prev => {
+          if (!prev || !models.some(m => m.name === prev)) return models[0].name
+          return prev
+        })
+      }
+    } catch (err) {
+      setOllamaModels([])
+      setOllamaModelsError(`Could not connect to Ollama: ${err?.message || err}`)
+    } finally {
+      setOllamaModelsLoading(false)
+    }
+  }, [])
+
+  // Fetch Ollama models when provider is Ollama and URL changes (debounced)
+  useEffect(() => {
+    if (aiProvider !== 'Ollama') return
+    if (ollamaFetchTimeoutRef.current) clearTimeout(ollamaFetchTimeoutRef.current)
+    ollamaFetchTimeoutRef.current = setTimeout(() => fetchOllamaModels(ollamaBaseUrl), 500)
+    return () => { if (ollamaFetchTimeoutRef.current) clearTimeout(ollamaFetchTimeoutRef.current) }
+  }, [aiProvider, ollamaBaseUrl, fetchOllamaModels])
 
   useEffect(() => { loadAiConfig() }, [])
 
@@ -88,14 +134,29 @@ function AiConfigSettings({ configSaveStatus, setConfigSaveStatus, onClose, onCo
               </select>
             ) : (
               <>
-                <select value={ollamaModel} onChange={(e) => setOllamaModel(e.target.value)} className="select">
-                  <option value="llama3.3">Llama 3.3 (70B)</option>
-                  <option value="llama3.2">Llama 3.2 (3B)</option>
-                  <option value="llama3">Llama 3 (8B)</option>
-                  <option value="mistral">Mistral (7B)</option>
-                  <option value="deepseek-coder-v2">DeepSeek Coder V2</option>
-                </select>
-                <p className="text-xs text-secondary mt-1">Pull model: <code className="text-gruvbox-blue">ollama pull {ollamaModel}</code></p>
+                {ollamaModelsLoading ? (
+                  <div className="input flex items-center text-sm text-secondary">Loading models...</div>
+                ) : ollamaModels.length > 0 ? (
+                  <select value={ollamaModel} onChange={(e) => setOllamaModel(e.target.value)} className="select">
+                    {ollamaModels.map(m => (
+                      <option key={m.name} value={m.name}>{m.name} ({(m.size / 1e9).toFixed(1)} GB)</option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    type="text"
+                    value={ollamaModel}
+                    onChange={(e) => setOllamaModel(e.target.value)}
+                    placeholder="e.g. llama3"
+                    className="input"
+                  />
+                )}
+                {ollamaModelsError && (
+                  <p className="text-xs text-gruvbox-red mt-1">{ollamaModelsError}</p>
+                )}
+                {ollamaModel && !ollamaModelsError && (
+                  <p className="text-xs text-secondary mt-1">Pull model: <code className="text-gruvbox-blue">ollama pull {ollamaModel}</code></p>
+                )}
               </>
             )}
           </div>

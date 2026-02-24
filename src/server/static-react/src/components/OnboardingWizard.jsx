@@ -11,12 +11,6 @@ const OPENROUTER_MODELS = [
   { value: 'openai/gpt-4.1-mini', label: 'GPT-4.1 Mini' },
 ]
 
-const OLLAMA_MODELS = [
-  { value: 'llama3.1:8b', label: 'Llama 3.1 8B' },
-  { value: 'mistral:7b', label: 'Mistral 7B' },
-  { value: 'gemma2:9b', label: 'Gemma 2 9B' },
-]
-
 // Gruvbox-warm palette matching fold_db_website
 const colors = {
   bg: '#282828',
@@ -167,15 +161,61 @@ function ConfigureAiStep({ onNext, onSkip, onConfigSaved }) {
   const [apiKey, setApiKey] = useState('')
   const [ollamaModel, setOllamaModel] = useState('')
   const [ollamaUrl, setOllamaUrl] = useState('http://localhost:11434')
+  const [ollamaModels, setOllamaModels] = useState([])
+  const [ollamaModelsLoading, setOllamaModelsLoading] = useState(false)
+  const [ollamaModelsError, setOllamaModelsError] = useState(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [saveResult, setSaveResult] = useState(null)
   const [alreadyConfigured, setAlreadyConfigured] = useState(false)
   const advanceTimeoutRef = useRef(null)
+  const ollamaFetchTimeoutRef = useRef(null)
 
   useEffect(() => {
-    return () => { if (advanceTimeoutRef.current) clearTimeout(advanceTimeoutRef.current) }
+    return () => {
+      if (advanceTimeoutRef.current) clearTimeout(advanceTimeoutRef.current)
+      if (ollamaFetchTimeoutRef.current) clearTimeout(ollamaFetchTimeoutRef.current)
+    }
   }, [])
+
+  const fetchOllamaModels = useCallback(async (url) => {
+    if (!url) return
+    setOllamaModelsLoading(true)
+    setOllamaModelsError(null)
+    setOllamaModels([])
+    try {
+      const response = await ingestionClient.listOllamaModels(url)
+      const data = response?.data ?? response
+      const models = data?.models ?? []
+      const error = data?.error
+      setOllamaModels(models)
+      if (error) {
+        setOllamaModelsError(error)
+      } else if (models.length === 0) {
+        setOllamaModelsError('No models found. Run: ollama pull <model>')
+      } else {
+        setOllamaModelsError(null)
+        // Auto-select first model if none currently selected
+        setOllamaModel(prev => {
+          if (!prev || !models.some(m => m.name === prev)) return models[0].name
+          return prev
+        })
+      }
+    } catch (err) {
+      setOllamaModels([])
+      setOllamaModelsError(`Could not connect to Ollama: ${err?.message || err}`)
+    } finally {
+      setOllamaModelsLoading(false)
+    }
+  }, [])
+
+  // Fetch Ollama models when provider is Ollama and URL changes (debounced)
+  useEffect(() => {
+    if (provider !== 'Ollama') return
+    if (ollamaFetchTimeoutRef.current) clearTimeout(ollamaFetchTimeoutRef.current)
+    ollamaFetchTimeoutRef.current = setTimeout(() => fetchOllamaModels(ollamaUrl), 500)
+    return () => { if (ollamaFetchTimeoutRef.current) clearTimeout(ollamaFetchTimeoutRef.current) }
+  }, [provider, ollamaUrl, fetchOllamaModels])
 
   useEffect(() => {
     let cancelled = false
@@ -209,7 +249,7 @@ function ConfigureAiStep({ onNext, onSkip, onConfigSaved }) {
         base_url: 'https://openrouter.ai/api/v1',
       },
       ollama: {
-        model: provider === 'Ollama' ? (ollamaModel || OLLAMA_MODELS[0].value) : '',
+        model: provider === 'Ollama' ? (ollamaModel || (ollamaModels[0]?.name ?? '')) : '',
         base_url: ollamaUrl,
       },
     }
@@ -233,8 +273,7 @@ function ConfigureAiStep({ onNext, onSkip, onConfigSaved }) {
     return <p style={{ color: colors.dim, textAlign: 'center', padding: '24px 0' }}>Loading configuration...</p>
   }
 
-  const models = provider === 'OpenRouter' ? OPENROUTER_MODELS : OLLAMA_MODELS
-  const currentModel = provider === 'OpenRouter' ? (model || OPENROUTER_MODELS[0].value) : (ollamaModel || OLLAMA_MODELS[0].value)
+  const currentModel = provider === 'OpenRouter' ? (model || OPENROUTER_MODELS[0].value) : ollamaModel
   const canSave = saving || (provider === 'OpenRouter' && !apiKey && !alreadyConfigured)
 
   return (
@@ -267,14 +306,41 @@ function ConfigureAiStep({ onNext, onSkip, onConfigSaved }) {
 
       <div style={{ marginTop: '12px' }}>
         <p style={{ color: colors.textBright, fontWeight: 700, marginBottom: '4px' }}>Model</p>
-        <select
-          value={currentModel}
-          onChange={e => provider === 'OpenRouter' ? setModel(e.target.value) : setOllamaModel(e.target.value)}
-          style={styles.select}
-          data-testid="model-select"
-        >
-          {models.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
-        </select>
+        {provider === 'OpenRouter' ? (
+          <select
+            value={currentModel}
+            onChange={e => setModel(e.target.value)}
+            style={styles.select}
+            data-testid="model-select"
+          >
+            {OPENROUTER_MODELS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+          </select>
+        ) : ollamaModelsLoading ? (
+          <div style={{ ...styles.input, display: 'flex', alignItems: 'center', color: colors.dim }}>Loading models...</div>
+        ) : ollamaModels.length > 0 ? (
+          <select
+            value={ollamaModel}
+            onChange={e => setOllamaModel(e.target.value)}
+            style={styles.select}
+            data-testid="model-select"
+          >
+            {ollamaModels.map(m => (
+              <option key={m.name} value={m.name}>{m.name} ({(m.size / 1e9).toFixed(1)} GB)</option>
+            ))}
+          </select>
+        ) : (
+          <input
+            type="text"
+            value={ollamaModel}
+            onChange={e => setOllamaModel(e.target.value)}
+            placeholder="e.g. llama3"
+            style={styles.input}
+            data-testid="model-select"
+          />
+        )}
+        {provider === 'Ollama' && ollamaModelsError && (
+          <p style={{ color: colors.red, fontSize: '12px', marginTop: '4px' }}>{ollamaModelsError}</p>
+        )}
       </div>
 
       {provider === 'OpenRouter' && (

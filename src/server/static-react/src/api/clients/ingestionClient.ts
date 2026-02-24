@@ -150,6 +150,17 @@ export interface FileUploadResponse {
   mutations_executed?: number;
 }
 
+// Ollama model info returned by the backend proxy
+export interface OllamaModel {
+  name: string;
+  size: number;
+}
+
+export interface OllamaModelsResponse {
+  models: OllamaModel[];
+  error?: string;
+}
+
 /**
  * Unified Ingestion API Client Implementation
  */
@@ -575,6 +586,27 @@ export class UnifiedIngestionClient {
         headers: { 'Content-Type': CONTENT_TYPES.FORM_DATA },
         timeout: API_TIMEOUTS.AI_PROCESSING,
         retries: API_RETRIES.LIMITED,
+        cacheable: false,
+      },
+    );
+  }
+
+  /**
+   * List models available on a remote Ollama instance.
+   * Proxies through the backend to avoid CORS issues.
+   *
+   * @param baseUrl The Ollama server URL (e.g. http://localhost:11434)
+   * @returns Promise resolving to the list of available models
+   */
+  async listOllamaModels(
+    baseUrl: string,
+  ): Promise<EnhancedApiResponse<OllamaModelsResponse>> {
+    return this.client.get<OllamaModelsResponse>(
+      `/ingestion/ollama/models?base_url=${encodeURIComponent(baseUrl)}`,
+      {
+        requiresAuth: false,
+        timeout: API_TIMEOUTS.QUICK,
+        retries: API_RETRIES.NONE,
         cacheable: false,
       },
     );

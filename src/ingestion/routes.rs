@@ -524,6 +524,82 @@ pub(crate) async fn process_single_file_via_smart_folder(
     Ok(())
 }
 
+/// Query parameters for the Ollama models endpoint.
+#[derive(Debug, Deserialize)]
+pub struct OllamaModelsQuery {
+    pub base_url: String,
+}
+
+/// A single model entry returned by the Ollama `/api/tags` endpoint.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct OllamaModelInfo {
+    pub name: String,
+    pub size: u64,
+}
+
+/// List models available on a remote Ollama instance.
+///
+/// Proxies `GET {base_url}/api/tags` and returns the model list.
+/// Short timeout (5 s) to avoid hanging on unreachable servers.
+pub async fn list_ollama_models(query: web::Query<OllamaModelsQuery>) -> impl Responder {
+    let base_url = query.base_url.trim_end_matches('/');
+
+    let url = format!("{}/api/tags", base_url);
+
+    let client = match reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            return HttpResponse::Ok().json(json!({
+                "models": [],
+                "error": format!("Failed to create HTTP client: {}", e)
+            }));
+        }
+    };
+
+    match client.get(&url).send().await {
+        Ok(resp) => {
+            if !resp.status().is_success() {
+                return HttpResponse::Ok().json(json!({
+                    "models": [],
+                    "error": format!("Ollama returned status {}", resp.status())
+                }));
+            }
+            match resp.json::<serde_json::Value>().await {
+                Ok(body) => {
+                    let models: Vec<OllamaModelInfo> = body
+                        .get("models")
+                        .and_then(|m| m.as_array())
+                        .map(|arr| {
+                            arr.iter()
+                                .filter_map(|v| {
+                                    let name = v.get("name")?.as_str()?.to_string();
+                                    let size = v
+                                        .get("size")
+                                        .and_then(|s| s.as_u64())
+                                        .unwrap_or(0);
+                                    Some(OllamaModelInfo { name, size })
+                                })
+                                .collect()
+                        })
+                        .unwrap_or_default();
+                    HttpResponse::Ok().json(json!({ "models": models }))
+                }
+                Err(e) => HttpResponse::Ok().json(json!({
+                    "models": [],
+                    "error": format!("Failed to parse Ollama response: {}", e)
+                })),
+            }
+        }
+        Err(e) => HttpResponse::Ok().json(json!({
+            "models": [],
+            "error": format!("Failed to connect to Ollama at {}: {}", base_url, e)
+        })),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

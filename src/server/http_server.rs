@@ -352,6 +352,14 @@ impl FoldHttpServer {
             .route(
                 "/indexing/status",
                 web::get().to(query_routes::get_indexing_status),
+            )
+            .route(
+                "/history/{molecule_uuid}",
+                web::get().to(query_routes::get_molecule_history),
+            )
+            .route(
+                "/atom/{atom_uuid}",
+                web::get().to(query_routes::get_atom_content),
             );
     }
 
@@ -415,6 +423,10 @@ impl FoldHttpServer {
         .route(
             "/file/{hash}",
             web::get().to(crate::ingestion::file_upload::serve_file),
+        )
+        .route(
+            "/ingestion/ollama/models",
+            web::get().to(ingestion_routes::list_ollama_models),
         );
     }
 
