@@ -166,13 +166,30 @@ impl IngestionConfig {
         };
 
         // Load saved config if it exists — UI choices take precedence over env vars
-        let has_saved_config = if let Ok(saved_config) = Self::load_saved_config() {
-            config.provider = saved_config.provider;
-            config.openrouter = saved_config.openrouter;
-            config.ollama = saved_config.ollama;
-            true
-        } else {
-            false
+        let has_saved_config = match Self::load_saved_config() {
+            Ok(saved_config) => {
+                log::info!(
+                    "Loaded saved ingestion config: provider={:?}, model={}",
+                    saved_config.provider,
+                    match saved_config.provider {
+                        AIProvider::Ollama => &saved_config.ollama.model,
+                        AIProvider::OpenRouter => &saved_config.openrouter.model,
+                    }
+                );
+                config.provider = saved_config.provider;
+                config.openrouter = saved_config.openrouter;
+                config.ollama = saved_config.ollama;
+                true
+            }
+            Err(e) => {
+                log::warn!(
+                    "No saved ingestion config found ({}), using env vars/defaults: provider={:?}, model={}",
+                    e,
+                    config.provider,
+                    config.openrouter.model
+                );
+                false
+            }
         };
 
         // API key: env var always wins (secrets shouldn't live in config files)
@@ -227,13 +244,11 @@ impl IngestionConfig {
     /// Load saved configuration from file.
     fn load_saved_config() -> Result<SavedConfig, Box<dyn std::error::Error>> {
         use std::fs;
-        use std::path::Path;
 
-        let config_dir = env::var("FOLD_CONFIG_DIR").unwrap_or_else(|_| "./config".to_string());
-        let config_path = Path::new(&config_dir).join("ingestion_config.json");
+        let config_path = Self::get_config_file_path();
 
         if !config_path.exists() {
-            return Err("Config file does not exist".into());
+            return Err(format!("Config file does not exist at {}", config_path.display()).into());
         }
 
         let content = fs::read_to_string(&config_path)?;
@@ -299,12 +314,46 @@ impl IngestionConfig {
         Ok(())
     }
 
-    /// Get the path to the ingestion configuration file
+    /// Get the path to the ingestion configuration file.
+    ///
+    /// Resolution order:
+    /// 1. `FOLD_CONFIG_DIR` env var (if set)
+    /// 2. `./config` relative to the executable's directory
+    /// 3. `./config` relative to the current working directory (fallback)
     pub fn get_config_file_path() -> std::path::PathBuf {
-        let config_dir =
-            std::env::var("FOLD_CONFIG_DIR").unwrap_or_else(|_| "./config".to_string());
+        if let Ok(dir) = std::env::var("FOLD_CONFIG_DIR") {
+            return std::path::Path::new(&dir).join("ingestion_config.json");
+        }
 
-        std::path::Path::new(&config_dir).join("ingestion_config.json")
+        // Resolve relative to the executable's directory so CWD changes don't break config loading
+        if let Ok(exe) = std::env::current_exe() {
+            if let Some(exe_dir) = exe.parent() {
+                let candidate = exe_dir.join("config").join("ingestion_config.json");
+                if candidate.exists() {
+                    return candidate;
+                }
+            }
+        }
+
+        // Walk up from CWD looking for a config/ directory with the config file.
+        // This handles cases like `cargo run` where the executable is in target/debug/
+        // but the config is in the project root.
+        if let Ok(cwd) = std::env::current_dir() {
+            let mut dir = cwd.as_path();
+            loop {
+                let candidate = dir.join("config").join("ingestion_config.json");
+                if candidate.exists() {
+                    return candidate;
+                }
+                match dir.parent() {
+                    Some(parent) => dir = parent,
+                    None => break,
+                }
+            }
+        }
+
+        // Final fallback: relative path (original behavior)
+        std::path::PathBuf::from("./config/ingestion_config.json")
     }
 }
 
