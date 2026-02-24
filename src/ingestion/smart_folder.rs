@@ -550,18 +550,67 @@ pub async fn perform_smart_folder_scan_with_progress(
     }
 
     log::info!(
-        "File classification: {} binary-skipped, {} candidates → LLM",
+        "File classification: {} binary-skipped, {} candidates for dedup check",
         binary_skipped.len(),
         llm_candidates.len(),
     );
 
+    // --- Dedup check: remove already-ingested files before AI classification ---
+    let pub_key = node.map(|n| n.get_node_public_key().to_string());
+    let mut already_ingested_recs: Vec<FileRecommendation> = Vec::new();
+
+    if let (Some(ref pk), Some(n)) = (&pub_key, node) {
+        report(20, format!(
+            "Skipped {} binary files. Checking {} files for previously ingested...",
+            binary_skipped.len(),
+            llm_candidates.len(),
+        ));
+
+        let total_candidates = llm_candidates.len();
+        let mut remaining = Vec::new();
+        for (idx, path) in llm_candidates.into_iter().enumerate() {
+            if total_candidates > 0 && idx % 10 == 0 {
+                let dedup_pct = (20 + idx * 5 / total_candidates).min(25) as u8;
+                report(dedup_pct, format!(
+                    "Checking for previously ingested files ({}/{})...",
+                    idx, total_candidates
+                ));
+            }
+            let full_path = folder_path.join(&path);
+            if let Ok(hash) = compute_file_hash(&full_path) {
+                if n.is_file_ingested(pk, &hash).await.is_some() {
+                    let size = file_size_bytes(Path::new(&path), folder_path);
+                    already_ingested_recs.push(FileRecommendation {
+                        path,
+                        should_ingest: false,
+                        category: "already_ingested".to_string(),
+                        reason: "Already ingested".to_string(),
+                        file_size_bytes: size,
+                        estimated_cost: 0.0,
+                        already_ingested: true,
+                    });
+                    continue;
+                }
+            }
+            remaining.push(path);
+        }
+        llm_candidates = remaining;
+
+        log::info!(
+            "Dedup check: {} already ingested, {} remaining for LLM",
+            already_ingested_recs.len(),
+            llm_candidates.len(),
+        );
+    }
+
     report(25, format!(
-        "Skipped {} binary files. Classifying {} files with AI...",
-        binary_skipped.len(),
+        "Classifying {} files with AI ({} already ingested, {} binary-skipped)...",
         llm_candidates.len(),
+        already_ingested_recs.len(),
+        binary_skipped.len(),
     ));
 
-    // Send all non-binary files to LLM in batches (with tree context)
+    // Send remaining non-binary, non-ingested files to LLM in batches (with tree context)
     let llm_recs = if llm_candidates.is_empty() {
         Vec::new()
     } else {
@@ -609,9 +658,9 @@ pub async fn perform_smart_folder_scan_with_progress(
         all_recs
     };
 
-    report(80, "Checking dedup status...".into());
+    report(80, "Computing costs and finalizing...".into());
 
-    // Merge binary-skipped + LLM recommendations
+    // Merge binary-skipped + LLM recommendations (already-ingested handled separately)
     let recommendations: Vec<FileRecommendation> =
         binary_skipped.into_iter().chain(llm_recs).collect();
 
@@ -621,15 +670,18 @@ pub async fn perform_smart_folder_scan_with_progress(
     let mut total_estimated_cost = 0.0;
     let mut summary: SmartFolderSummary = HashMap::new();
 
-    // Get pub_key from node for dedup checking
-    let pub_key = node.map(|n| n.get_node_public_key().to_string());
+    // Add already-ingested files to skipped list and summary
+    if !already_ingested_recs.is_empty() {
+        *summary.entry("already_ingested".to_string()).or_insert(0) += already_ingested_recs.len();
+        skipped_files.extend(already_ingested_recs);
+    }
 
     let rec_count = recommendations.len();
     for (idx, mut rec) in recommendations.into_iter().enumerate() {
         // Report incremental progress every 5 files (80% → 95%)
         if rec_count > 0 && idx % 5 == 0 {
-            let dedup_pct = (80 + idx * 15 / rec_count).min(95) as u8;
-            report(dedup_pct, format!("Checking dedup status ({}/{})...", idx, rec_count));
+            let pct = (80 + idx * 15 / rec_count).min(95) as u8;
+            report(pct, format!("Computing costs ({}/{})...", idx, rec_count));
         }
 
         // Populate file size and cost estimate
@@ -638,20 +690,6 @@ pub async fn perform_smart_folder_scan_with_progress(
         rec.estimated_cost = estimate_file_cost(rel_path, folder_path);
 
         if rec.should_ingest {
-            // Check if this file has already been ingested
-            if let (Some(ref pk), Some(n)) = (&pub_key, node) {
-                let full_path = folder_path.join(&rec.path);
-                if let Ok(hash) = compute_file_hash(&full_path) {
-                    if n.is_file_ingested(pk, &hash).await.is_some() {
-                        rec.should_ingest = false;
-                        rec.already_ingested = true;
-                        rec.reason = "Already ingested".to_string();
-                        *summary.entry("already_ingested".to_string()).or_insert(0) += 1;
-                        skipped_files.push(rec);
-                        continue;
-                    }
-                }
-            }
             *summary.entry(rec.category.clone()).or_insert(0) += 1;
             total_estimated_cost += rec.estimated_cost;
             recommended_files.push(rec);
