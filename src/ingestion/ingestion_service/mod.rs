@@ -275,34 +275,34 @@ impl IngestionService {
         } else {
             // ── Original flat path (no nested arrays of objects) ──
 
-            // Detect image files to bypass AI and use a deterministic HashRange schema
+            // Step 3: Get AI recommendation
             let is_image = request
                 .source_file_name
                 .as_ref()
                 .map(|name| crate::ingestion::is_image_file(name))
                 .unwrap_or(false);
-
-            // Step 3: Get AI recommendation (or build deterministic one for images)
             progress_service
                 .update_progress(
                     &progress_id,
                     IngestionStep::GettingAIRecommendation,
-                    if is_image {
-                        "Building image schema...".to_string()
-                    } else {
-                        "Analyzing data with AI to determine schema...".to_string()
-                    },
+                    "Analyzing data with AI to determine schema...".to_string(),
                 )
                 .await;
-            let ai_response = if is_image {
-                build_image_schema_response(
-                    &flattened_data,
-                    request.source_folder.as_deref(),
-                    request.source_file_name.as_deref(),
-                )?
-            } else {
-                self.get_ai_recommendation(&flattened_data).await?
-            };
+            let mut ai_response = self.get_ai_recommendation(&flattened_data).await?;
+
+            // CRITICAL: Images MUST use HashRange(image_type, created_at).
+            // Without this, the AI would pick a Single or Range schema, and
+            // multiple images would overwrite each other in the same schema.
+            // HashRange lets images coexist: partitioned by type, ordered by date.
+            if is_image {
+                if let Some(ref mut schema_def) = ai_response.new_schemas {
+                    schema_def["schema_type"] = serde_json::json!("HashRange");
+                    schema_def["key"] = serde_json::json!({
+                        "hash_field": "image_type",
+                        "range_field": "created_at"
+                    });
+                }
+            }
 
             // Step 4: Determine schema to use
             progress_service
@@ -814,81 +814,3 @@ impl IngestionService {
     }
 }
 
-/// Build a deterministic `AISchemaResponse` for image files.
-///
-/// Instead of asking the AI to recommend a schema, this constructs a HashRange
-/// schema keyed by `image_type` (hash) and `created_at` (range) so that
-/// multiple images coexist in one schema, grouped by type and ordered by date.
-fn build_image_schema_response(
-    flattened_data: &Value,
-    source_folder: Option<&str>,
-    source_file_name: Option<&str>,
-) -> IngestionResult<AISchemaResponse> {
-    use crate::schema::types::topology::{JsonTopology, TopologyNode, PrimitiveValueType};
-
-    // Extract field names from the data (single object or first array element)
-    let sample_obj = if let Some(arr) = flattened_data.as_array() {
-        arr.first().and_then(|v| v.as_object())
-    } else {
-        flattened_data.as_object()
-    };
-
-    let sample_obj = sample_obj.ok_or_else(|| {
-        IngestionError::invalid_input("Image data must be a JSON object")
-    })?;
-
-    let field_names: Vec<String> = sample_obj.keys().cloned().collect();
-
-    // Build field_topologies from the sample data, adding classifications
-    let mut field_topologies = std::collections::HashMap::new();
-    for (field_name, field_value) in sample_obj.iter() {
-        let mut topology = JsonTopology::infer_from_value(field_value);
-
-        // Add classifications to all string primitives
-        if let TopologyNode::Primitive {
-            value: PrimitiveValueType::String,
-            ref mut classifications,
-        } = topology.root
-        {
-            if field_name == "created_at" {
-                *classifications = Some(vec!["date".to_string()]);
-            } else {
-                *classifications = Some(vec!["word".to_string()]);
-            }
-        }
-
-        field_topologies.insert(field_name.clone(), topology);
-    }
-
-    // Derive a human-readable name from the folder context
-    let descriptive_name = crate::ingestion::json_processor::derive_image_descriptive_name(
-        source_folder, source_file_name,
-    );
-
-    // Build the schema definition as a JSON Value (DeclarativeSchemaDefinition)
-    let schema_def = serde_json::json!({
-        "name": "image_data",
-        "descriptive_name": descriptive_name,
-        "schema_type": "HashRange",
-        "key": {
-            "hash_field": "image_type",
-            "range_field": "created_at"
-        },
-        "fields": field_names,
-        "field_topologies": serde_json::to_value(&field_topologies)
-            .map_err(|e| IngestionError::SchemaCreationError(
-                format!("Failed to serialize field topologies: {}", e)
-            ))?,
-    });
-
-    // Build mutation_mappers: identity mapping (field → same field)
-    let mutation_mappers: HashMap<String, String> = field_names
-        .iter()
-        .map(|name| (name.clone(), name.clone()))
-        .collect();
-
-    Ok(AISchemaResponse {
-        new_schemas: Some(schema_def),
-        mutation_mappers,
-    })
-}

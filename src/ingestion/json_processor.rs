@@ -567,4 +567,5 @@ mod tests {
         // Should remain unchanged
         assert!(json.is_array());
     }
+
 }
