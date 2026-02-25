@@ -698,6 +698,29 @@ impl IngestionService {
             }
         }
 
+        // Ensure default classifications for Number fields
+        for topology in schema.field_topologies.values_mut() {
+            if let crate::schema::types::topology::TopologyNode::Primitive {
+                value: crate::schema::types::topology::PrimitiveValueType::Number,
+                classifications,
+            } = &mut topology.root
+            {
+                if classifications.is_none()
+                    || classifications
+                        .as_ref()
+                        .map(|c| c.is_empty())
+                        .unwrap_or(false)
+                {
+                    *classifications = Some(vec!["number".to_string()]);
+                    crate::log_feature!(
+                        crate::logging::features::LogFeature::Ingestion,
+                        info,
+                        "Added default 'number' classification to number field"
+                    );
+                }
+            }
+        }
+
         // Ensure schema has key configuration for mutations to work
         if schema.key.is_none() {
             // Use the first field as the hash key, or generate an ID field if no fields exist

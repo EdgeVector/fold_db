@@ -49,6 +49,7 @@ IMPORTANT - Field Topologies with Classifications:
   * "date" - dates and timestamps
   * "hashtag" - hashtags (from social media)
   * "username" - usernames/handles
+  * "number" - numeric values (amounts, counts, scores, percentages, quantities)
 - Topology structure:
   * Primitives: {"type": "Primitive", "value": "String", "classifications": ["name:person", "word"]}
   * Objects: {"type": "Object", "value": {"field_name": {"type": "Primitive", "value": "String", "classifications": ["word"]}}}
@@ -99,7 +100,7 @@ Example Range schema with ID range_field (only when NO date/timestamp field exis
   "field_topologies": {
     "id": {"root": {"type": "Primitive", "value": "String", "classifications": ["word"]}},
     "name": {"root": {"type": "Primitive", "value": "String", "classifications": ["name:person", "word"]}},
-    "age": {"root": {"type": "Primitive", "value": "Number", "classifications": ["word"]}}
+    "age": {"root": {"type": "Primitive", "value": "Number", "classifications": ["number"]}}
   }
 }
 
@@ -109,8 +110,8 @@ Example Single schema (for one global value):
   "descriptive_name": "Global Counter Statistics",
   "fields": ["count", "total"],
   "field_topologies": {
-    "count": {"root": {"type": "Primitive", "value": "Number", "classifications": ["word"]}},
-    "total": {"root": {"type": "Primitive", "value": "Number", "classifications": ["word"]}}
+    "count": {"root": {"type": "Primitive", "value": "Number", "classifications": ["number"]}},
+    "total": {"root": {"type": "Primitive", "value": "Number", "classifications": ["number"]}}
   }
 }
 
