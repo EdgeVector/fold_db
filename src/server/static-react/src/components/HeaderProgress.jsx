@@ -1,8 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { ingestionClient } from '../api/clients'
 import { getIndexingStatus } from '../api/clients/indexingClient'
-
-const fmtCost = (v) => `$${Number(v).toFixed(2)}`
+import { fmtCost } from '../utils/formatCost'
 
 /**
  * Compact progress indicator for the header

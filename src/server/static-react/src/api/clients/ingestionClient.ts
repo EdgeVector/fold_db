@@ -620,6 +620,19 @@ export class UnifiedIngestionClient {
   }
 
   /**
+   * Get process results (stored keys) for a completed file ingestion job
+   */
+  async getProcessResults(
+    progressId: string,
+  ): Promise<EnhancedApiResponse<{ results: { schema_name: string; key_value: { hash?: string; range?: string } }[] }>> {
+    return this.client.get(`/process-results/${progressId}`, {
+      timeout: API_TIMEOUTS.QUICK,
+      retries: API_RETRIES.NONE,
+      cacheable: false,
+    });
+  }
+
+  /**
    * Get API metrics for ingestion operations
    */
   getMetrics() {
