@@ -57,7 +57,7 @@ async fn convert_file_to_json_core(file_path: &PathBuf) -> Result<Value, Ingesti
     // Run conversion in blocking task
     tokio::task::spawn_blocking(move || {
         let converter = Converter::new(file_to_json_config)
-            .map_err(|_| IngestionError::FileConversionFailed)?;
+            .map_err(|e| IngestionError::FileConversionFailed(format!("Converter init: {}", e)))?;
         converter.convert_path(&file_path_str).map_err(|e| {
             log_feature!(
                 LogFeature::Ingestion,
@@ -65,7 +65,7 @@ async fn convert_file_to_json_core(file_path: &PathBuf) -> Result<Value, Ingesti
                 "Failed to convert file to JSON: {}",
                 e
             );
-            IngestionError::FileConversionFailed
+            IngestionError::FileConversionFailed(e.to_string())
         })
     })
     .await
@@ -76,7 +76,7 @@ async fn convert_file_to_json_core(file_path: &PathBuf) -> Result<Value, Ingesti
             "Failed to spawn blocking task: {}",
             e
         );
-        IngestionError::FileConversionFailed
+        IngestionError::FileConversionFailed(format!("Task join: {}", e))
     })?
 }
 

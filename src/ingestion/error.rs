@@ -62,8 +62,8 @@ pub enum IngestionError {
     FieldMappingError(String),
 
     /// File conversion errors (e.g., PDF to JSON conversion failed)
-    #[error("File conversion failed")]
-    FileConversionFailed,
+    #[error("File conversion failed: {0}")]
+    FileConversionFailed(String),
 
     /// Storage errors (S3, file system, etc.)
     #[error("Storage error: {0}")]
@@ -121,8 +121,8 @@ impl IngestionError {
     }
 
     /// Create a new file conversion error
-    pub fn file_conversion_failed() -> Self {
-        Self::FileConversionFailed
+    pub fn file_conversion_failed(msg: impl Into<String>) -> Self {
+        Self::FileConversionFailed(msg.into())
     }
 
     /// Create a new storage error

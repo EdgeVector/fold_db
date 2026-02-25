@@ -352,7 +352,7 @@ pub async fn smart_folder_ingest(
         node.get_encryption_key()
     };
 
-    let max_concurrent = request.max_concurrent.unwrap_or(4).clamp(1, 8);
+    let max_concurrent = request.max_concurrent.unwrap_or(100).clamp(1, 100);
 
     // Spawn the concurrent coordinator
     spawn_batch_coordinator(
