@@ -187,7 +187,7 @@ pub async fn get_batch_status(
         Some(ctrl_arc) => {
             let ctrl = ctrl_arc.lock().await;
             let mut resp = BatchStatusResponse::from_controller(&ctrl);
-            let progress_id = ctrl.current_file_progress_id.clone();
+            let progress_id = ctrl.in_flight_files.first().map(|f| f.progress_id.clone());
             // Drop the lock before the async progress lookup
             drop(ctrl);
             drop(map_guard);

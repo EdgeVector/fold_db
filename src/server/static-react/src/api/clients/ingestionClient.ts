@@ -114,6 +114,7 @@ export interface BatchStatusResponse {
   files_failed: number;
   files_remaining: number;
   estimated_remaining_cost: number;
+  in_flight_count: number;
   current_file_name: string | null;
   current_file_step: string | null;
   current_file_progress: number | null;

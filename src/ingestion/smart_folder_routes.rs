@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::path::Path;
 use std::sync::Arc;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, Notify};
 
 use super::routes::{
     get_ingestion_service, process_single_file_via_smart_folder, resolve_folder_path,
@@ -51,6 +51,8 @@ pub struct SmartFolderIngestRequest {
     /// When true, bypass per-user file dedup so already-ingested files are reprocessed.
     #[serde(default)]
     pub force_reingest: bool,
+    /// Max files to process concurrently (default: 4, clamped 1..=8).
+    pub max_concurrent: Option<usize>,
 }
 
 /// Response from initiating an async scan
@@ -350,7 +352,9 @@ pub async fn smart_folder_ingest(
         node.get_encryption_key()
     };
 
-    // Spawn the sequential coordinator
+    let max_concurrent = request.max_concurrent.unwrap_or(4).clamp(1, 8);
+
+    // Spawn the concurrent coordinator
     spawn_batch_coordinator(
         batch_id.clone(),
         batch_controller_map,
@@ -362,6 +366,7 @@ pub async fn smart_folder_ingest(
         upload_storage.get_ref().clone(),
         encryption_key,
         force_reingest,
+        max_concurrent,
     );
 
     HttpResponse::Accepted().json(BatchFolderResponse {
@@ -373,8 +378,103 @@ pub async fn smart_folder_ingest(
     })
 }
 
-/// Spawn a sequential coordinator task that processes files one at a time,
-/// checking the spend limit before each file and pausing when the limit is hit.
+/// Result of trying to pop the next file from the batch controller.
+enum PopResult {
+    /// A file was successfully popped and is ready for processing.
+    File(PendingFile),
+    /// The spend limit was hit; the batch is now paused.
+    SpendLimitHit(Arc<Notify>),
+    /// All pending files have been popped (queue empty).
+    Done,
+    /// The batch was cancelled.
+    Cancelled,
+}
+
+/// Lock the controller briefly, check cancellation/empty/spend, pop a file.
+async fn try_pop_file(
+    map: &BatchControllerMap,
+    batch_id: &str,
+) -> PopResult {
+    let map_guard = map.lock().await;
+    let ctrl_arc = match map_guard.get(batch_id) {
+        Some(c) => c.clone(),
+        None => return PopResult::Cancelled,
+    };
+    let mut ctrl = ctrl_arc.lock().await;
+
+    if ctrl.status == BatchStatus::Cancelled {
+        return PopResult::Cancelled;
+    }
+
+    let next_file = match ctrl.pending_files.first() {
+        Some(f) => f.clone(),
+        None => return PopResult::Done,
+    };
+
+    if !ctrl.can_proceed(next_file.estimated_cost) {
+        ctrl.pause();
+        return PopResult::SpendLimitHit(ctrl.resume_notifier());
+    }
+
+    let file = ctrl.pop_next_file().expect("pending_files was non-empty");
+    let name = file
+        .path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("unknown")
+        .to_string();
+    ctrl.add_in_flight(name, file.progress_id.clone());
+    PopResult::File(file)
+}
+
+/// Record the result of processing a single file back into the controller.
+async fn record_file_result(
+    map: &BatchControllerMap,
+    batch_id: &str,
+    file: &PendingFile,
+    result: &Result<(), String>,
+    estimated_cost: f64,
+    progress_service: &ProgressService,
+) {
+    let map_guard = map.lock().await;
+    if let Some(ctrl_arc) = map_guard.get(batch_id) {
+        let mut ctrl = ctrl_arc.lock().await;
+        match result {
+            Ok(()) => ctrl.record_completed(&file.progress_id, estimated_cost),
+            Err(e) => {
+                log_feature!(
+                    LogFeature::Ingestion,
+                    error,
+                    "Batch {}: file {} failed: {}",
+                    batch_id,
+                    file.path.display(),
+                    e
+                );
+                progress_service
+                    .fail_progress(&file.progress_id, format!("Processing failed: {}", e))
+                    .await;
+                ctrl.record_failed(&file.progress_id);
+            }
+        }
+    }
+}
+
+/// Wait for the resume notification, then check for cancellation.
+/// Returns `true` if the batch was cancelled while waiting.
+async fn wait_for_resume(notifier: Arc<Notify>, map: &BatchControllerMap, batch_id: &str) -> bool {
+    notifier.notified().await;
+    let map_guard = map.lock().await;
+    if let Some(ctrl_arc) = map_guard.get(batch_id) {
+        let ctrl = ctrl_arc.lock().await;
+        ctrl.status == BatchStatus::Cancelled
+    } else {
+        true
+    }
+}
+
+/// Spawn a concurrent coordinator task that processes up to `max_concurrent`
+/// files in parallel, checking the spend limit before each file and pausing
+/// when the limit is hit.
 #[allow(clippy::too_many_arguments)]
 fn spawn_batch_coordinator(
     batch_id: String,
@@ -387,6 +487,7 @@ fn spawn_batch_coordinator(
     upload_storage: crate::storage::UploadStorage,
     encryption_key: [u8; 32],
     force_reingest: bool,
+    max_concurrent: usize,
 ) {
     let progress_tracker = progress_tracker.clone();
     let node_arc = node_arc.clone();
@@ -395,114 +496,74 @@ fn spawn_batch_coordinator(
 
     tokio::spawn(async move {
         crate::logging::core::run_with_user(&user_id, async move {
+            let mut join_set = tokio::task::JoinSet::new();
+            let mut all_popped = false;
+
             loop {
-                // Lock the controller briefly to check state and pop next file
-                let (file, resume_notifier) = {
-                    let map_guard = map.lock().await;
-                    let ctrl_arc = match map_guard.get(&batch_id) {
-                        Some(c) => c.clone(),
-                        None => break,
-                    };
-                    let mut ctrl = ctrl_arc.lock().await;
-
-                    // Check for cancellation
-                    if ctrl.status == BatchStatus::Cancelled {
-                        break;
-                    }
-
-                    // Check if any files remain
-                    let next_file = match ctrl.pending_files.first() {
-                        Some(f) => f.clone(),
-                        None => {
-                            // All files processed
-                            ctrl.status = BatchStatus::Completed;
+                // Fill up to max_concurrent workers
+                while !all_popped && join_set.len() < max_concurrent {
+                    match try_pop_file(&map, &batch_id).await {
+                        PopResult::File(file) => {
+                            let node_arc = node_arc.clone();
+                            let service = ingestion_service.clone();
+                            let storage = upload_storage.clone();
+                            let tracker = progress_tracker.clone();
+                            let enc_key = encryption_key;
+                            join_set.spawn(async move {
+                                let progress_service = ProgressService::new(tracker);
+                                let result = process_single_file_via_smart_folder(
+                                    &file.path,
+                                    &file.progress_id,
+                                    &progress_service,
+                                    &node_arc,
+                                    auto_execute,
+                                    &service,
+                                    &storage,
+                                    &enc_key,
+                                    force_reingest,
+                                )
+                                .await;
+                                (file, result)
+                            });
+                        }
+                        PopResult::SpendLimitHit(notifier) => {
+                            // If tasks are still in flight, let them finish
+                            // before blocking on resume.
+                            if join_set.is_empty() {
+                                let cancelled =
+                                    wait_for_resume(notifier, &map, &batch_id).await;
+                                if cancelled {
+                                    all_popped = true;
+                                }
+                            }
+                            // Either way, stop filling for now — the loop will
+                            // drain completions and try filling again.
                             break;
                         }
-                    };
-
-                    // Check spend limit
-                    if !ctrl.can_proceed(next_file.estimated_cost) {
-                        ctrl.pause();
-                        (None, Some(ctrl.resume_notifier()))
-                    } else {
-                        let file = ctrl.pop_next_file();
-                        if let Some(ref f) = file {
-                            let name = f.path.file_name()
-                                .and_then(|n| n.to_str())
-                                .unwrap_or("unknown")
-                                .to_string();
-                            ctrl.set_current_file(name, f.progress_id.clone());
-                        }
-                        (file, None)
-                    }
-                };
-
-                // If paused, wait for the resume notification
-                if let Some(notifier) = resume_notifier {
-                    notifier.notified().await;
-
-                    // After waking, re-check status (might have been cancelled)
-                    let map_guard = map.lock().await;
-                    if let Some(ctrl_arc) = map_guard.get(&batch_id) {
-                        let ctrl = ctrl_arc.lock().await;
-                        if ctrl.status == BatchStatus::Cancelled {
+                        PopResult::Done | PopResult::Cancelled => {
+                            all_popped = true;
                             break;
                         }
-                    } else {
-                        break;
                     }
-                    continue;
                 }
 
-                // Process the file (outside any lock)
-                let file = match file {
-                    Some(f) => f,
-                    None => continue,
-                };
+                if join_set.is_empty() {
+                    break;
+                }
 
-                let progress_service = ProgressService::new(progress_tracker.clone());
-                let service_clone = ingestion_service.clone();
-                let estimated_cost = file.estimated_cost;
-
-                let result = process_single_file_via_smart_folder(
-                    &file.path,
-                    &file.progress_id,
-                    &progress_service,
-                    &node_arc,
-                    auto_execute,
-                    &service_clone,
-                    &upload_storage,
-                    &encryption_key,
-                    force_reingest,
-                )
-                .await;
-
-                // Update controller with result
-                {
-                    let map_guard = map.lock().await;
-                    if let Some(ctrl_arc) = map_guard.get(&batch_id) {
-                        let mut ctrl = ctrl_arc.lock().await;
-                        match &result {
-                            Ok(()) => ctrl.record_completed(estimated_cost),
-                            Err(e) => {
-                                log_feature!(
-                                    LogFeature::Ingestion,
-                                    error,
-                                    "Batch {}: file {} failed: {}",
-                                    batch_id,
-                                    file.path.display(),
-                                    e
-                                );
-                                progress_service
-                                    .fail_progress(
-                                        &file.progress_id,
-                                        format!("Processing failed: {}", e),
-                                    )
-                                    .await;
-                                ctrl.record_failed();
-                            }
-                        }
-                    }
+                // Wait for the next completion, record result, loop to fill more slots
+                if let Some(Ok((file, result))) = join_set.join_next().await {
+                    let estimated_cost = file.estimated_cost;
+                    let progress_service = ProgressService::new(progress_tracker.clone());
+                    record_file_result(
+                        &map,
+                        &batch_id,
+                        &file,
+                        &result,
+                        estimated_cost,
+                        &progress_service,
+                    )
+                    .await;
                 }
             }
 

@@ -39,6 +39,13 @@ pub struct PendingFile {
     pub estimated_cost: f64,
 }
 
+/// A file currently being processed (in-flight).
+#[derive(Debug, Clone)]
+pub struct InFlightFile {
+    pub name: String,
+    pub progress_id: String,
+}
+
 /// Controls a single batch ingestion: spend limit, cost tracking, pause/resume.
 pub struct BatchController {
     pub batch_id: String,
@@ -49,10 +56,8 @@ pub struct BatchController {
     pub files_completed: usize,
     pub files_failed: usize,
     pub pending_files: Vec<PendingFile>,
-    /// Name of the file currently being processed.
-    pub current_file_name: Option<String>,
-    /// Progress ID of the file currently being processed.
-    pub current_file_progress_id: Option<String>,
+    /// Files currently being processed concurrently.
+    pub in_flight_files: Vec<InFlightFile>,
     resume_notify: Arc<Notify>,
 }
 
@@ -72,8 +77,7 @@ impl BatchController {
             files_completed: 0,
             files_failed: 0,
             pending_files,
-            current_file_name: None,
-            current_file_progress_id: None,
+            in_flight_files: Vec::new(),
             resume_notify: Arc::new(Notify::new()),
         }
     }
@@ -108,29 +112,32 @@ impl BatchController {
         self.resume_notify.notify_one();
     }
 
-    /// Set the file currently being processed.
-    pub fn set_current_file(&mut self, name: String, progress_id: String) {
-        self.current_file_name = Some(name);
-        self.current_file_progress_id = Some(progress_id);
+    /// Track a file that has started processing.
+    pub fn add_in_flight(&mut self, name: String, progress_id: String) {
+        self.in_flight_files.push(InFlightFile { name, progress_id });
     }
 
-    /// Clear the current file tracking.
-    fn clear_current_file(&mut self) {
-        self.current_file_name = None;
-        self.current_file_progress_id = None;
+    /// Remove a file from the in-flight list by progress_id.
+    fn remove_in_flight(&mut self, progress_id: &str) {
+        self.in_flight_files.retain(|f| f.progress_id != progress_id);
+    }
+
+    /// Number of files currently being processed.
+    pub fn in_flight_count(&self) -> usize {
+        self.in_flight_files.len()
     }
 
     /// Record that a file finished processing with the given actual cost.
-    pub fn record_completed(&mut self, cost: f64) {
+    pub fn record_completed(&mut self, progress_id: &str, cost: f64) {
         self.accumulated_cost += cost;
         self.files_completed += 1;
-        self.clear_current_file();
+        self.remove_in_flight(progress_id);
     }
 
     /// Record that a file failed.
-    pub fn record_failed(&mut self) {
+    pub fn record_failed(&mut self, progress_id: &str) {
         self.files_failed += 1;
-        self.clear_current_file();
+        self.remove_in_flight(progress_id);
     }
 
     /// Pop the next pending file from the front of the queue.
@@ -178,7 +185,9 @@ pub struct BatchStatusResponse {
     pub files_failed: usize,
     pub files_remaining: usize,
     pub estimated_remaining_cost: f64,
-    /// Name of the file currently being processed.
+    /// Number of files currently being processed concurrently.
+    pub in_flight_count: usize,
+    /// Name of a file currently being processed (first in-flight, for backward compat).
     pub current_file_name: Option<String>,
     /// Current processing step message for the active file.
     pub current_file_step: Option<String>,
@@ -188,6 +197,7 @@ pub struct BatchStatusResponse {
 
 impl BatchStatusResponse {
     pub fn from_controller(ctrl: &BatchController) -> Self {
+        let current_file_name = ctrl.in_flight_files.first().map(|f| f.name.clone());
         Self {
             batch_id: ctrl.batch_id.clone(),
             status: ctrl.status,
@@ -198,7 +208,8 @@ impl BatchStatusResponse {
             files_failed: ctrl.files_failed,
             files_remaining: ctrl.files_remaining(),
             estimated_remaining_cost: ctrl.estimated_remaining_cost(),
-            current_file_name: ctrl.current_file_name.clone(),
+            in_flight_count: ctrl.in_flight_count(),
+            current_file_name,
             // Filled in by the route handler from ProgressTracker
             current_file_step: None,
             current_file_progress: None,
