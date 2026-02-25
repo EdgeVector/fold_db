@@ -30,6 +30,76 @@ import {
   selectViewMode,
 } from '../../store/aiQuerySlice';
 
+const IMAGE_EXTENSIONS = /\.(jpe?g|png|gif|webp|svg)$/i
+
+/** Try to extract fileHash+sourceFile from a metadata-like object */
+function extractImageFromMeta(meta, seen, images) {
+  if (!meta || typeof meta !== 'object') return
+  // Per-field metadata: { field: { source_file_name, metadata: { file_hash } } }
+  const sourceFile = meta.source_file_name
+  const fileHash = meta.metadata?.file_hash || meta.file_hash
+  if (sourceFile && fileHash && IMAGE_EXTENSIONS.test(sourceFile) && !seen.has(fileHash)) {
+    seen.add(fileHash)
+    images.push({ fileHash, sourceFile })
+  }
+}
+
+/** Extract unique image references from tool call results */
+function extractImagesFromToolCalls(toolCalls) {
+  const images = []
+  const seen = new Set()
+  if (!Array.isArray(toolCalls)) return images
+  for (const tc of toolCalls) {
+    const results = Array.isArray(tc.result) ? tc.result : []
+    for (const record of results) {
+      // query tool: { key, fields, metadata: { fieldName: { source_file_name, metadata: { file_hash } } } }
+      const metadata = record?.metadata
+      if (metadata && typeof metadata === 'object') {
+        // Check if metadata itself is a per-field map (query results)
+        for (const val of Object.values(metadata)) {
+          extractImageFromMeta(val, seen, images)
+        }
+        // Also check metadata directly (search/IndexResult: { metadata: { source_file_name, ... } })
+        extractImageFromMeta(metadata, seen, images)
+      }
+    }
+  }
+  return images
+}
+
+/** Fetches and displays an image from the file API */
+function ImageThumbnail({ fileHash, sourceFile }) {
+  const [blobUrl, setBlobUrl] = useState(null)
+
+  useEffect(() => {
+    const url = `/api/file/${fileHash}?name=${encodeURIComponent(sourceFile || '')}`
+    let revoked = false
+    const userHash = localStorage.getItem('fold_user_hash')
+    const headers = {}
+    if (userHash) {
+      headers['x-user-hash'] = userHash
+      headers['x-user-id'] = userHash
+    }
+    fetch(url, { headers })
+      .then((res) => { if (!res.ok) throw new Error(res.statusText); return res.blob() })
+      .then((blob) => { if (!revoked) setBlobUrl(URL.createObjectURL(blob)) })
+      .catch(() => {})
+    return () => {
+      revoked = true
+      setBlobUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return null })
+    }
+  }, [fileHash, sourceFile])
+
+  if (!blobUrl) return null
+  return (
+    <img
+      src={blobUrl}
+      alt={sourceFile}
+      className="max-w-xs max-h-64 rounded border border-border object-contain bg-surface-secondary"
+    />
+  )
+}
+
 const STARTER_SUGGESTIONS = [
   'What data do I have?',
   'What taxes did I pay?',
@@ -90,6 +160,14 @@ function LlmQueryTab({ onResult }) {
 
     // Display the AI's final answer
     addToLog('system', result.answer);
+
+    // Show images from query results inline in the conversation
+    if (result.tool_calls) {
+      const images = extractImagesFromToolCalls(result.tool_calls);
+      if (images.length > 0) {
+        addToLog('images', `${images.length} image(s)`, images);
+      }
+    }
 
     // Show results section if user has expanded details
     if (showResults && result.tool_calls) {
@@ -255,6 +333,17 @@ function LlmQueryTab({ onResult }) {
         if (fields.answer) {
           messages.push({ type: 'system', content: fields.answer, timestamp });
         }
+
+        // Extract images from tool calls for this turn
+        if (fields.tool_calls_json) {
+          try {
+            const toolCalls = JSON.parse(fields.tool_calls_json);
+            const images = extractImagesFromToolCalls(toolCalls);
+            if (images.length > 0) {
+              messages.push({ type: 'images', content: `${images.length} image(s)`, data: images, timestamp });
+            }
+          } catch { /* already handled above */ }
+        }
       }
 
       dispatch(loadConversation({ sessionId: selectedSessionId, messages }));
@@ -343,6 +432,19 @@ function LlmQueryTab({ onResult }) {
                   <div className="max-w-[80%] px-4 py-3 bg-surface-secondary border border-border rounded-lg">
                     <p className="text-xs text-tertiary mb-1">AI Assistant</p>
                     <p className="text-sm text-primary whitespace-pre-wrap">{entry.content}</p>
+                  </div>
+                </div>
+              )}
+
+              {entry.type === 'images' && Array.isArray(entry.data) && entry.data.length > 0 && (
+                <div className="flex justify-start">
+                  <div className="max-w-[80%] px-4 py-3 bg-surface-secondary border border-border rounded-lg">
+                    <p className="text-xs text-tertiary mb-2">{entry.data.length} image{entry.data.length !== 1 ? 's' : ''}</p>
+                    <div className="flex flex-wrap gap-2">
+                      {entry.data.map((img) => (
+                        <ImageThumbnail key={img.fileHash} fileHash={img.fileHash} sourceFile={img.sourceFile} />
+                      ))}
+                    </div>
                   </div>
                 </div>
               )}

@@ -96,7 +96,6 @@ export const BROWSER_CONFIG = {
   STORAGE_KEYS: {
     USER_ID: 'fold_user_id',
     USER_HASH: 'fold_user_hash',
-    SCHEMA_SERVICE_ENV: 'schemaServiceEnvironment',
     ONBOARDING_COMPLETED: 'folddb_onboarding_completed',
   },
   

@@ -301,6 +301,10 @@ impl IngestionService {
                         "hash_field": "image_type",
                         "range_field": "created_at"
                     });
+                    // Use the vision model's descriptive_name for a better schema display name
+                    if let Some(desc) = flattened_data.get("descriptive_name").and_then(|v| v.as_str()) {
+                        schema_def["descriptive_name"] = serde_json::json!(desc);
+                    }
                 }
             }
 

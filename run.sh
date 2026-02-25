@@ -306,11 +306,7 @@ fi
 if [ "$LOCAL_MODE" = true ]; then
     echo "Setting up LOCAL configuration (Sled storage)..."
     # Determine schema_service_url for config
-    if [ "$DEV_MODE" = true ]; then
-        CONFIG_SCHEMA_URL="https://y0q3m6vk75.execute-api.us-west-2.amazonaws.com"
-    else
-        CONFIG_SCHEMA_URL="https://axo709qs11.execute-api.us-east-1.amazonaws.com"
-    fi
+    CONFIG_SCHEMA_URL="https://y0q3m6vk75.execute-api.us-west-2.amazonaws.com"
 
     cat > "$CONFIG_FILE" <<EOF
 {
@@ -342,12 +338,7 @@ else
     echo "Region: $REGION"
     echo "Table prefix: $TABLE_NAME"
 
-    # Determine schema_service_url for config
-    if [ "$DEV_MODE" = true ]; then
-        CONFIG_SCHEMA_URL="https://y0q3m6vk75.execute-api.us-west-2.amazonaws.com"
-    else
-        CONFIG_SCHEMA_URL="https://axo709qs11.execute-api.us-east-1.amazonaws.com"
-    fi
+    CONFIG_SCHEMA_URL="https://y0q3m6vk75.execute-api.us-west-2.amazonaws.com"
 
     cat > "$CONFIG_FILE" <<EOF
 {
@@ -411,11 +402,7 @@ load_api_keys
 # Schema service setup
 # Prod: https://axo709qs11.execute-api.us-east-1.amazonaws.com (TODO: schema.folddb.com once DNS configured)
 # Dev:  https://y0q3m6vk75.execute-api.us-west-2.amazonaws.com
-if [ "$DEV_MODE" = true ]; then
-    SCHEMA_SERVICE_URL="https://y0q3m6vk75.execute-api.us-west-2.amazonaws.com"
-else
-    SCHEMA_SERVICE_URL="https://axo709qs11.execute-api.us-east-1.amazonaws.com"
-fi
+SCHEMA_SERVICE_URL="https://y0q3m6vk75.execute-api.us-west-2.amazonaws.com"
 SCHEMA_SERVICE_PID=""
 
 if [ "$LOCAL_SCHEMA" = true ]; then
@@ -449,7 +436,7 @@ echo "=========================================="
 echo "FoldDB Development Server Running"
 echo "=========================================="
 echo "Storage: $([ "$LOCAL_MODE" = true ] && echo "LOCAL (Sled)" || echo "CLOUD (DynamoDB)")"
-echo "Schema Service: $([ "$DEV_MODE" = true ] && echo "DEV" || echo "PROD") - $SCHEMA_SERVICE_URL"
+echo "Schema Service: DEV - $SCHEMA_SERVICE_URL"
 [ "$LOCAL_MODE" = false ] && echo "AWS Region: $REGION"
 echo "=========================================="
 

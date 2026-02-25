@@ -8,7 +8,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 const DEFAULT_SCHEMA_SERVICE_URL: &str =
-    "https://axo709qs11.execute-api.us-east-1.amazonaws.com";
+    "https://y0q3m6vk75.execute-api.us-west-2.amazonaws.com";
 
 #[derive(Serialize, Deserialize)]
 struct NodeIdentity {

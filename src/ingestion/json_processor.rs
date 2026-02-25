@@ -204,6 +204,8 @@ fn flatten_array_elements(value: Value) -> Value {
 /// is respected when present.
 pub fn enrich_image_json(json: &mut Value, file_path: &std::path::PathBuf, source_file_name: Option<&str>) {
     if let Value::Object(map) = json {
+        // Remove descriptive_name — it's schema metadata, not record data
+        map.remove("descriptive_name");
         // image_type — keep if already set
         if !map.contains_key("image_type") {
             let image_type = classify_image_type(source_file_name.unwrap_or(""));

@@ -20,9 +20,11 @@ CRITICAL - Mutation Mappers:
 - Example: if JSON has {"user": {"id": 1, "name": "Tom"}}, mapper should be {"user": "user"}, NOT {"user.id": "id"}
 
 IMPORTANT - Schema Types:
+- STRONGLY PREFER Range schemas over Single schemas. Most data benefits from a range key.
 - For storing MULTIPLE entities/records, use "key": {"range_field": "field_name"}
-- For storing ONE global value per field, omit the "key" field
+- Only use Single (no "key" field) when the data is truly a single global config/settings object with no records
 - If the user is providing an ARRAY of objects, you MUST use a Range schema with a "key"
+- Even for single objects, if the data has a date/timestamp field, use a Range schema so future records can be added
 - PREFER a date or timestamp field as the range_field (like "created_at", "date", "timestamp", "posted_at") so that data can be queried by time range
 - If NO date/timestamp field exists, fall back to a unique identifier field (like "id", "name", "email")
 
@@ -147,6 +149,7 @@ CRITICAL RULES:
 - If the original input was a JSON array (multiple objects), you MUST create a Range schema with "key": {"range_field": "field_name"}
 - PREFER a date/timestamp field as range_field (e.g., "created_at", "date", "timestamp") — this enables time-based queries. Only use an ID field if no date/timestamp exists.
 - NEVER create a Single-type schema for array inputs - they will overwrite data
+- AVOID Single schemas unless the data is truly a one-off global config. If any field looks like a date, timestamp, or unique ID, use Range instead.
 - NEVER use generic "Object" types - always specify the complete field structure with exact types and classifications
 - ALWAYS provide complete topology definitions with all nested fields explicitly defined
 
