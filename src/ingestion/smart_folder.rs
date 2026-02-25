@@ -5,6 +5,7 @@
 
 use crate::ingestion::error::IngestionError;
 use crate::ingestion::IngestionResult;
+use futures::stream::{self, StreamExt};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -561,38 +562,42 @@ pub async fn perform_smart_folder_scan_with_progress(
 
     if let (Some(ref pk), Some(n)) = (&pub_key, node) {
         report(20, format!(
-            "Skipped {} binary files. Checking {} files for previously ingested...",
+            "Skipped {} binary files. Checking {} files for previously ingested (concurrent)...",
             binary_skipped.len(),
             llm_candidates.len(),
         ));
 
-        let total_candidates = llm_candidates.len();
-        let mut remaining = Vec::new();
-        for (idx, path) in llm_candidates.into_iter().enumerate() {
-            if total_candidates > 0 && idx % 10 == 0 {
-                let dedup_pct = (20 + idx * 5 / total_candidates).min(25) as u8;
-                report(dedup_pct, format!(
-                    "Checking for previously ingested files ({}/{})...",
-                    idx, total_candidates
-                ));
-            }
-            let full_path = folder_path.join(&path);
-            if let Ok(hash) = compute_file_hash(&full_path) {
-                if n.is_file_ingested(pk, &hash).await.is_some() {
-                    let size = file_size_bytes(Path::new(&path), folder_path);
-                    already_ingested_recs.push(FileRecommendation {
-                        path,
-                        should_ingest: false,
-                        category: "already_ingested".to_string(),
-                        reason: "Already ingested".to_string(),
-                        file_size_bytes: size,
-                        estimated_cost: 0.0,
-                        already_ingested: true,
-                    });
-                    continue;
+        // Check dedup concurrently — up to 16 at a time (mixed CPU hash + async DB lookup)
+        let dedup_results: Vec<(String, bool, u64)> = stream::iter(llm_candidates)
+            .map(|path| async {
+                let full_path = folder_path.join(&path);
+                if let Ok(hash) = compute_file_hash(&full_path) {
+                    if n.is_file_ingested(pk, &hash).await.is_some() {
+                        let size = file_size_bytes(Path::new(&path), folder_path);
+                        return (path, true, size);
+                    }
                 }
+                (path, false, 0)
+            })
+            .buffer_unordered(16)
+            .collect()
+            .await;
+
+        let mut remaining = Vec::new();
+        for (path, ingested, size) in dedup_results {
+            if ingested {
+                already_ingested_recs.push(FileRecommendation {
+                    path,
+                    should_ingest: false,
+                    category: "already_ingested".to_string(),
+                    reason: "Already ingested".to_string(),
+                    file_size_bytes: size,
+                    estimated_cost: 0.0,
+                    already_ingested: true,
+                });
+            } else {
+                remaining.push(path);
             }
-            remaining.push(path);
         }
         llm_candidates = remaining;
 
@@ -627,35 +632,41 @@ pub async fn perform_smart_folder_scan_with_progress(
         let batch_size = 100;
         let chunks: Vec<Vec<String>> = llm_candidates.chunks(batch_size).map(|c| c.to_vec()).collect();
         let total_batches = chunks.len();
-        let mut all_recs = Vec::new();
-        for (i, chunk_vec) in chunks.into_iter().enumerate() {
-            if total_batches > 1 {
-                report(
-                    25 + ((i as u8) * 50 / total_batches as u8),
-                    format!("Classifying files with AI (batch {}/{})", i + 1, total_batches),
-                );
-            }
-            let prompt = create_smart_folder_prompt(&scan.tree_display, &chunk_vec);
-            match call_llm_for_file_analysis(&prompt, svc).await {
-                Ok(llm_response) => {
-                    match parse_llm_file_recommendations(&llm_response, &chunk_vec) {
-                        Ok(recs) => all_recs.extend(recs),
-                        Err(e) => {
-                            log::warn!(
-                                "Failed to parse LLM response, using heuristics for batch: {}",
-                                e
-                            );
-                            all_recs.extend(apply_heuristic_filtering(&chunk_vec));
-                        }
+
+        if total_batches > 1 {
+            report(25, format!(
+                "Classifying files with AI ({} batches, up to 4 concurrent)...",
+                total_batches,
+            ));
+        }
+
+        // Run LLM classification batches concurrently — up to 4 at a time (API rate limits)
+        let tree_display = &scan.tree_display;
+        let batch_results: Vec<Vec<FileRecommendation>> = stream::iter(chunks.into_iter().enumerate())
+            .map(|(i, chunk_vec)| async move {
+                let prompt = create_smart_folder_prompt(tree_display, &chunk_vec);
+                match call_llm_for_file_analysis(&prompt, svc).await {
+                    Ok(llm_response) => {
+                        parse_llm_file_recommendations(&llm_response, &chunk_vec)
+                            .unwrap_or_else(|e| {
+                                log::warn!(
+                                    "Failed to parse LLM response for batch {}: {}",
+                                    i, e
+                                );
+                                apply_heuristic_filtering(&chunk_vec)
+                            })
+                    }
+                    Err(e) => {
+                        log::warn!("LLM call failed for batch {}: {}", i, e);
+                        apply_heuristic_filtering(&chunk_vec)
                     }
                 }
-                Err(e) => {
-                    log::warn!("LLM call failed, using heuristics for batch: {}", e);
-                    all_recs.extend(apply_heuristic_filtering(&chunk_vec));
-                }
-            }
-        }
-        all_recs
+            })
+            .buffer_unordered(4)
+            .collect()
+            .await;
+
+        batch_results.into_iter().flatten().collect()
     };
 
     report(80, "Computing costs and finalizing...".into());
@@ -684,10 +695,15 @@ pub async fn perform_smart_folder_scan_with_progress(
             report(pct, format!("Computing costs ({}/{})...", idx, rec_count));
         }
 
-        // Populate file size and cost estimate
+        // Populate file size and cost estimate (local providers are free)
         let rel_path = Path::new(&rec.path);
         rec.file_size_bytes = file_size_bytes(rel_path, folder_path);
-        rec.estimated_cost = estimate_file_cost(rel_path, folder_path);
+        let is_local = service.map_or(false, |s| s.is_local_provider());
+        rec.estimated_cost = if is_local {
+            0.0
+        } else {
+            estimate_file_cost(rel_path, folder_path)
+        };
 
         if rec.should_ingest {
             *summary.entry(rec.category.clone()).or_insert(0) += 1;
