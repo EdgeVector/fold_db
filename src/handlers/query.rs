@@ -183,6 +183,31 @@ pub async fn get_atom_content(
     ))
 }
 
+/// Response for process results query
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProcessResultsResponse {
+    pub results: Vec<crate::fold_node::node::MutationOutcome>,
+}
+
+/// Get process results for a given progress_id (actual stored keys from mutations)
+pub async fn get_process_results(
+    progress_id: &str,
+    user_hash: &str,
+    node: &FoldNode,
+) -> HandlerResult<ProcessResultsResponse> {
+    let results = node
+        .get_process_results(progress_id)
+        .await
+        .map_err(|e| {
+            HandlerError::Internal(format!("Failed to get process results: {}", e))
+        })?;
+
+    Ok(ApiResponse::success_with_user(
+        ProcessResultsResponse { results },
+        user_hash,
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

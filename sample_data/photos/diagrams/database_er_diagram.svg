@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="700" height="350" viewBox="0 0 700 350">
+  <style>
+    text { font-family: Arial, sans-serif; font-size: 12px; fill: #333; }
+    .title { font-size: 16px; font-weight: bold; }
+    .table-name { font-size: 14px; font-weight: bold; fill: white; }
+    .field { font-size: 11px; }
+    .pk { font-weight: bold; }
+    .rel-line { stroke: #666; stroke-width: 2; fill: none; }
+    .rel-text { font-size: 10px; fill: #999; }
+  </style>
+  <text x="350" y="25" text-anchor="middle" class="title">E-Commerce Database Schema</text>
+  <!-- Users table -->
+  <rect x="30" y="50" width="160" height="130" rx="3" fill="white" stroke="#4A90D9" stroke-width="2"/>
+  <rect x="30" y="50" width="160" height="28" rx="3" fill="#4A90D9"/>
+  <text x="110" y="69" text-anchor="middle" class="table-name">Users</text>
+  <text x="40" y="95" class="field pk">PK  user_id (INT)</text>
+  <text x="40" y="112" class="field">    username (VARCHAR)</text>
+  <text x="40" y="129" class="field">    email (VARCHAR)</text>
+  <text x="40" y="146" class="field">    created_at (TIMESTAMP)</text>
+  <text x="40" y="163" class="field">    password_hash (VARCHAR)</text>
+  <!-- Orders table -->
+  <rect x="270" y="50" width="160" height="145" rx="3" fill="white" stroke="#7BC67E" stroke-width="2"/>
+  <rect x="270" y="50" width="160" height="28" rx="3" fill="#7BC67E"/>
+  <text x="350" y="69" text-anchor="middle" class="table-name">Orders</text>
+  <text x="280" y="95" class="field pk">PK  order_id (INT)</text>
+  <text x="280" y="112" class="field">FK  user_id (INT)</text>
+  <text x="280" y="129" class="field">    order_date (TIMESTAMP)</text>
+  <text x="280" y="146" class="field">    total_amount (DECIMAL)</text>
+  <text x="280" y="163" class="field">    status (VARCHAR)</text>
+  <text x="280" y="180" class="field">    shipping_addr (TEXT)</text>
+  <!-- Products table -->
+  <rect x="510" y="50" width="160" height="130" rx="3" fill="white" stroke="#E8A838" stroke-width="2"/>
+  <rect x="510" y="50" width="160" height="28" rx="3" fill="#E8A838"/>
+  <text x="590" y="69" text-anchor="middle" class="table-name">Products</text>
+  <text x="520" y="95" class="field pk">PK  product_id (INT)</text>
+  <text x="520" y="112" class="field">    name (VARCHAR)</text>
+  <text x="520" y="129" class="field">    price (DECIMAL)</text>
+  <text x="520" y="146" class="field">    category (VARCHAR)</text>
+  <text x="520" y="163" class="field">    stock_qty (INT)</text>
+  <!-- Order Items table -->
+  <rect x="380" y="240" width="170" height="100" rx="3" fill="white" stroke="#D9534F" stroke-width="2"/>
+  <rect x="380" y="240" width="170" height="28" rx="3" fill="#D9534F"/>
+  <text x="465" y="259" text-anchor="middle" class="table-name">Order_Items</text>
+  <text x="390" y="285" class="field pk">PK  item_id (INT)</text>
+  <text x="390" y="302" class="field">FK  order_id (INT)</text>
+  <text x="390" y="319" class="field">FK  product_id (INT)</text>
+  <text x="390" y="336" class="field">    quantity (INT)</text>
+  <!-- Relationships -->
+  <line x1="190" y1="112" x2="270" y2="112" class="rel-line"/>
+  <text x="230" y="105" class="rel-text">1:N</text>
+  <line x1="350" y1="195" x2="420" y2="240" class="rel-line"/>
+  <text x="370" y="218" class="rel-text">1:N</text>
+  <line x1="590" y1="180" x2="510" y2="240" class="rel-line"/>
+  <text x="560" y="218" class="rel-text">1:N</text>
+</svg>

@@ -443,10 +443,13 @@ pub(crate) async fn process_single_file_via_smart_folder(
 ) -> Result<(), String> {
     // Try native parser first (handles json, js/Twitter, csv, txt, md),
     // fall back to file_to_json for unsupported types (images, PDFs, etc.)
-    let (data, file_hash, raw_bytes) = match crate::ingestion::smart_folder::read_file_with_hash(
+    let (data, file_hash, raw_bytes, image_descriptive_name) = match crate::ingestion::smart_folder::read_file_with_hash(
         file_path,
     ) {
-        Ok(result) => result,
+        Ok(result) => {
+            let (data, hash, bytes) = result;
+            (data, hash, bytes, None)
+        }
         Err(_) => {
             let raw_bytes = std::fs::read(file_path)
                 .map_err(|e| format!("Failed to read file: {}", e))?;
@@ -459,16 +462,18 @@ pub(crate) async fn process_single_file_via_smart_folder(
                     .await
                     .map_err(|e| e.to_string())?;
             // Enrich image JSON with image_type and created_at for HashRange schema support
-            if let Some(file_name) = file_path.file_name().and_then(|n| n.to_str()) {
-                if crate::ingestion::is_image_file(file_name) {
+            let image_descriptive_name = file_path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .filter(|name| crate::ingestion::is_image_file(name))
+                .and_then(|name| {
                     crate::ingestion::json_processor::enrich_image_json(
                         &mut data,
                         &file_path.to_path_buf(),
-                        Some(file_name),
-                    );
-                }
-            }
-            (data, hash_hex, raw_bytes)
+                        Some(name),
+                    )
+                });
+            (data, hash_hex, raw_bytes, image_descriptive_name)
         }
     };
 
@@ -519,6 +524,7 @@ pub(crate) async fn process_single_file_via_smart_folder(
         source_folder: file_path
             .parent()
             .map(|p| p.to_string_lossy().to_string()),
+        image_descriptive_name,
     };
 
     service

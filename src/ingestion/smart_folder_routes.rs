@@ -453,7 +453,11 @@ async fn record_file_result(
                 progress_service
                     .fail_progress(&file.progress_id, format!("Processing failed: {}", e))
                     .await;
-                ctrl.record_failed(&file.progress_id);
+                ctrl.record_failed(
+                    &file.progress_id,
+                    file.path.display().to_string(),
+                    e.clone(),
+                );
             }
         }
     }

@@ -403,7 +403,8 @@ impl MutationManager {
                 let backfill_hash = mutation.backfill_hash.clone();
                 let key_value = mutation_key_values[idx].clone();
                 let data = mutation.fields_and_values.clone();
-                mutation_contexts.push((mutation_id, backfill_hash, key_value, data, mol_versions.clone()));
+                let metadata = mutation.metadata.clone();
+                mutation_contexts.push((mutation_id, backfill_hash, key_value, data, mol_versions.clone(), metadata));
             }
 
             *timing_breakdown
@@ -431,7 +432,7 @@ impl MutationManager {
                 .or_insert(std::time::Duration::ZERO) += reload_start.elapsed();
 
             // Create events for batch publishing
-            for (mutation_id, backfill_hash, key_value, data, versions) in mutation_contexts {
+            for (mutation_id, backfill_hash, key_value, data, versions, metadata) in mutation_contexts {
                 let mutation_context = Some(crate::fold_db_core::infrastructure::message_bus::atom_events::MutationContext {
                     key_value: Some(key_value),
                     mutation_hash: Some(mutation_id.clone()),
@@ -450,6 +451,7 @@ impl MutationManager {
                     data: Some(vec![data]), // Single data row for this mutation
                     user_id: crate::logging::core::get_current_user_id(),
                     molecule_versions: mol_versions,
+                    metadata,
                 };
 
                 batch_events.push((event, mutation_id.clone()));

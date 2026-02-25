@@ -382,6 +382,7 @@ impl OperationProcessor {
             source_folder: file_path
                 .parent()
                 .map(|p| p.to_string_lossy().to_string()),
+            image_descriptive_name: None,
         };
 
         let service = IngestionService::from_env().map_err(|e| FoldDbError::Other(e.to_string()))?;

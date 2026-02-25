@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 use super::EventType;
 
@@ -32,6 +33,9 @@ pub struct MutationExecuted {
     /// Molecule version numbers at time of mutation
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub molecule_versions: Option<std::collections::HashSet<u64>>,
+    /// General-purpose metadata carried from the originating Mutation (e.g. progress_id)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<HashMap<String, String>>,
 }
 
 impl EventType for MutationExecuted {

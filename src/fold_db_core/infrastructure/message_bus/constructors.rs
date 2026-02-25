@@ -204,6 +204,7 @@ impl MutationExecuted {
             data: None,
             user_id: crate::logging::core::get_current_user_id(),
             molecule_versions: None,
+            metadata: None,
         }
     }
 
@@ -224,6 +225,7 @@ impl MutationExecuted {
             data: None,
             user_id: crate::logging::core::get_current_user_id(),
             molecule_versions: None,
+            metadata: None,
         }
     }
 }

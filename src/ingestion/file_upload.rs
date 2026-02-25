@@ -100,13 +100,15 @@ pub async fn upload_file(
     };
 
     // Enrich image JSON with image_type and created_at for HashRange schema support
-    if crate::ingestion::is_image_file(&form_data.original_filename) {
+    let image_descriptive_name = if crate::ingestion::is_image_file(&form_data.original_filename) {
         crate::ingestion::json_processor::enrich_image_json(
             &mut json_value,
             &form_data.file_path,
             Some(&form_data.original_filename),
-        );
-    }
+        )
+    } else {
+        None
+    };
 
     log_feature!(
         LogFeature::Ingestion,
@@ -140,6 +142,7 @@ pub async fn upload_file(
         progress_id: Some(progress_id),
         file_hash: Some(form_data.file_hash.clone()),
         source_folder: None,
+        image_descriptive_name,
     };
 
     // Extract ingestion service

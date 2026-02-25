@@ -521,5 +521,23 @@ pub async fn get_atom_content(
     }
 }
 
+/// Get process results for a progress_id (actual stored keys from ingestion mutations).
+pub async fn get_process_results(
+    path: web::Path<String>,
+    state: web::Data<AppState>,
+) -> impl Responder {
+    let progress_id = path.into_inner();
+    let (user_hash, node_arc) = match require_node(&state).await {
+        Ok(res) => res,
+        Err(response) => return response,
+    };
+    let node = node_arc.read().await;
+
+    match query_handlers::get_process_results(&progress_id, &user_hash, &node).await {
+        Ok(response) => HttpResponse::Ok().json(response),
+        Err(e) => handler_error_to_response(e),
+    }
+}
+
 #[cfg(test)]
 mod tests {}

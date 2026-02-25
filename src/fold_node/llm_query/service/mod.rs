@@ -173,10 +173,13 @@ impl LlmQueryService {
         prompt.push_str("Example: {\"tool\": \"get_schema\", \"params\": {\"name\": \"Tweet\"}}\n\n");
 
         prompt.push_str("### search\n");
-        prompt.push_str("Full-text search across all indexed fields.\n");
+        prompt.push_str("**PREFERRED for content discovery.** Full-text search across all indexed fields (tags, subjects, names, descriptions, etc.).\n");
+        prompt.push_str("Use this whenever the user asks about finding, searching, or checking if data exists.\n");
         prompt.push_str("Parameters:\n");
-        prompt.push_str("- terms (string, required): Search terms\n");
-        prompt.push_str("Example: {\"tool\": \"search\", \"params\": {\"terms\": \"rust programming\"}}\n\n");
+        prompt.push_str("- terms (string, required): Search keywords (e.g. \"lake\", \"birthday\", \"Leonardo da Vinci\")\n");
+        prompt.push_str("Returns matching records with schema_name, field, key_value, and matched content.\n");
+        prompt.push_str("After getting results, use the **query** tool with the returned schema_name and key to fetch full records.\n");
+        prompt.push_str("Example: {\"tool\": \"search\", \"params\": {\"terms\": \"lake\"}}\n\n");
 
         prompt.push_str("## Available Schemas\n\n");
         for schema in schemas {
@@ -202,9 +205,13 @@ impl LlmQueryService {
 
         prompt.push_str("\n## Instructions\n\n");
         prompt.push_str("1. Analyze the user's request\n");
-        prompt.push_str("2. Use tools to gather information or perform actions\n");
-        prompt.push_str("3. When you have enough information to answer, provide your final response\n");
-        prompt.push_str("4. Use the current date/time above to determine temporal context. Events with dates before today are in the PAST. Events with dates after today are in the FUTURE. Label them accordingly (e.g. \"upcoming\" vs \"past\").\n\n");
+        prompt.push_str("2. **For content discovery questions** (\"do I have\", \"find\", \"show me\", \"any photos of\", \"search for\"), ");
+        prompt.push_str("ALWAYS use the **search** tool first with relevant keywords. ");
+        prompt.push_str("This searches the full-text index and will find records by tags, subjects, descriptions, names, and other indexed content. ");
+        prompt.push_str("After getting search results, use the **query** tool with the returned schema and key to fetch full records.\n");
+        prompt.push_str("3. Use other tools to gather additional information as needed\n");
+        prompt.push_str("4. When you have enough information to answer, provide your final response\n");
+        prompt.push_str("5. Use the current date/time above to determine temporal context. Events with dates before today are in the PAST. Events with dates after today are in the FUTURE. Label them accordingly (e.g. \"upcoming\" vs \"past\").\n\n");
         prompt.push_str("## Reference Fields\n\n");
         prompt.push_str("Some fields are References to records in other schemas. Query results automatically resolve references one level deep.\n");
         prompt.push_str("If a field value is an array of objects with \"schema\" and \"key\" properties, those are references to child records.\n");

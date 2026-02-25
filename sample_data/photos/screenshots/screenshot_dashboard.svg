@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="500" viewBox="0 0 800 500">
+  <rect width="800" height="500" rx="8" fill="#f5f5f5"/>
+  <!-- Browser chrome -->
+  <rect x="0" y="0" width="800" height="35" rx="8" fill="#dee2e6"/>
+  <circle cx="18" cy="17" r="6" fill="#FF5F56"/>
+  <circle cx="38" cy="17" r="6" fill="#FFBD2E"/>
+  <circle cx="58" cy="17" r="6" fill="#27C93F"/>
+  <rect x="100" y="7" width="400" height="21" rx="10" fill="white" stroke="#ccc"/>
+  <text x="300" y="22" text-anchor="middle" font-family="Arial" font-size="11" fill="#666">https://dashboard.example.com/analytics</text>
+  <!-- Sidebar -->
+  <rect x="0" y="35" width="180" height="465" fill="#2c3e50"/>
+  <text x="90" y="65" text-anchor="middle" font-family="Arial" font-size="16" fill="white" font-weight="bold">Analytics</text>
+  <rect x="10" y="80" width="160" height="30" rx="5" fill="#3498db"/>
+  <text x="90" y="100" text-anchor="middle" font-family="Arial" font-size="12" fill="white">Dashboard</text>
+  <text x="90" y="130" text-anchor="middle" font-family="Arial" font-size="12" fill="#95a5a6">Reports</text>
+  <text x="90" y="160" text-anchor="middle" font-family="Arial" font-size="12" fill="#95a5a6">Users</text>
+  <text x="90" y="190" text-anchor="middle" font-family="Arial" font-size="12" fill="#95a5a6">Settings</text>
+  <!-- Main content -->
+  <text x="490" y="65" text-anchor="middle" font-family="Arial" font-size="20" fill="#2c3e50" font-weight="bold">Dashboard Overview</text>
+  <!-- Stat cards -->
+  <rect x="200" y="80" width="140" height="80" rx="8" fill="white" stroke="#e0e0e0"/>
+  <text x="270" y="105" text-anchor="middle" font-family="Arial" font-size="11" fill="#888">Total Users</text>
+  <text x="270" y="135" text-anchor="middle" font-family="Arial" font-size="24" fill="#2c3e50" font-weight="bold">12,847</text>
+  <rect x="355" y="80" width="140" height="80" rx="8" fill="white" stroke="#e0e0e0"/>
+  <text x="425" y="105" text-anchor="middle" font-family="Arial" font-size="11" fill="#888">Revenue</text>
+  <text x="425" y="135" text-anchor="middle" font-family="Arial" font-size="24" fill="#27ae60" font-weight="bold">$48.2K</text>
+  <rect x="510" y="80" width="140" height="80" rx="8" fill="white" stroke="#e0e0e0"/>
+  <text x="580" y="105" text-anchor="middle" font-family="Arial" font-size="11" fill="#888">Conversion</text>
+  <text x="580" y="135" text-anchor="middle" font-family="Arial" font-size="24" fill="#e67e22" font-weight="bold">3.2%</text>
+  <rect x="665" y="80" width="120" height="80" rx="8" fill="white" stroke="#e0e0e0"/>
+  <text x="725" y="105" text-anchor="middle" font-family="Arial" font-size="11" fill="#888">Active Now</text>
+  <text x="725" y="135" text-anchor="middle" font-family="Arial" font-size="24" fill="#3498db" font-weight="bold">573</text>
+  <!-- Chart area -->
+  <rect x="200" y="175" width="380" height="200" rx="8" fill="white" stroke="#e0e0e0"/>
+  <text x="390" y="200" text-anchor="middle" font-family="Arial" font-size="14" fill="#333" font-weight="bold">Monthly Traffic</text>
+  <!-- Bar chart -->
+  <rect x="230" y="320" width="30" height="40" fill="#3498db" opacity="0.7"/>
+  <rect x="270" y="290" width="30" height="70" fill="#3498db" opacity="0.7"/>
+  <rect x="310" y="260" width="30" height="100" fill="#3498db" opacity="0.7"/>
+  <rect x="350" y="240" width="30" height="120" fill="#3498db" opacity="0.8"/>
+  <rect x="390" y="270" width="30" height="90" fill="#3498db" opacity="0.7"/>
+  <rect x="430" y="230" width="30" height="130" fill="#3498db" opacity="0.9"/>
+  <rect x="470" y="250" width="30" height="110" fill="#3498db" opacity="0.8"/>
+  <rect x="510" y="280" width="30" height="80" fill="#3498db" opacity="0.7"/>
+  <text x="245" y="370" text-anchor="middle" font-family="Arial" font-size="9" fill="#888">Jan</text>
+  <text x="285" y="370" text-anchor="middle" font-family="Arial" font-size="9" fill="#888">Feb</text>
+  <text x="325" y="370" text-anchor="middle" font-family="Arial" font-size="9" fill="#888">Mar</text>
+  <text x="365" y="370" text-anchor="middle" font-family="Arial" font-size="9" fill="#888">Apr</text>
+  <text x="405" y="370" text-anchor="middle" font-family="Arial" font-size="9" fill="#888">May</text>
+  <text x="445" y="370" text-anchor="middle" font-family="Arial" font-size="9" fill="#888">Jun</text>
+  <text x="485" y="370" text-anchor="middle" font-family="Arial" font-size="9" fill="#888">Jul</text>
+  <text x="525" y="370" text-anchor="middle" font-family="Arial" font-size="9" fill="#888">Aug</text>
+  <!-- Recent activity table -->
+  <rect x="600" y="175" width="185" height="200" rx="8" fill="white" stroke="#e0e0e0"/>
+  <text x="692" y="200" text-anchor="middle" font-family="Arial" font-size="13" fill="#333" font-weight="bold">Recent Activity</text>
+  <text x="615" y="225" font-family="Arial" font-size="10" fill="#666">New signup - john@email.com</text>
+  <text x="615" y="250" font-family="Arial" font-size="10" fill="#666">Purchase - Order #4521</text>
+  <text x="615" y="275" font-family="Arial" font-size="10" fill="#666">Support ticket #892</text>
+  <text x="615" y="300" font-family="Arial" font-size="10" fill="#666">New signup - sara@mail.io</text>
+  <text x="615" y="325" font-family="Arial" font-size="10" fill="#666">Purchase - Order #4522</text>
+</svg>

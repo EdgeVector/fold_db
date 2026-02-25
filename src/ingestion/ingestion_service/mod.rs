@@ -192,12 +192,15 @@ impl IngestionService {
             )
             .await?;
 
-            // Build metadata from file_hash if present
-            let decomposed_metadata = request.file_hash.as_ref().map(|hash| {
+            // Build metadata from file_hash and progress_id
+            let decomposed_metadata = {
                 let mut meta = HashMap::new();
-                meta.insert("file_hash".to_string(), hash.clone());
-                meta
-            });
+                if let Some(ref hash) = request.file_hash {
+                    meta.insert("file_hash".to_string(), hash.clone());
+                }
+                meta.insert("progress_id".to_string(), progress_id.clone());
+                Some(meta)
+            };
 
             // Process each item: recursively handle children, then generate parent mutation.
             // Pass the top-level structure hash so the cache lookup matches.
@@ -302,7 +305,7 @@ impl IngestionService {
                         "range_field": "created_at"
                     });
                     // Use the vision model's descriptive_name for a better schema display name
-                    if let Some(desc) = flattened_data.get("descriptive_name").and_then(|v| v.as_str()) {
+                    if let Some(ref desc) = request.image_descriptive_name {
                         schema_def["descriptive_name"] = serde_json::json!(desc);
                     }
                 }
@@ -341,12 +344,15 @@ impl IngestionService {
                 manager
             };
 
-            // Build metadata from file_hash if present
-            let metadata = request.file_hash.as_ref().map(|hash| {
+            // Build metadata from file_hash and progress_id
+            let metadata = {
                 let mut meta = HashMap::new();
-                meta.insert("file_hash".to_string(), hash.clone());
-                meta
-            });
+                if let Some(ref hash) = request.file_hash {
+                    meta.insert("file_hash".to_string(), hash.clone());
+                }
+                meta.insert("progress_id".to_string(), progress_id.clone());
+                Some(meta)
+            };
 
             // Collect items to process — normalize single object to a one-element slice
             let items: Vec<&serde_json::Map<String, Value>> = if let Some(array) = flattened_data.as_array() {
@@ -568,6 +574,12 @@ impl IngestionService {
         }
 
         Ok(())
+    }
+
+    /// Returns `true` when the configured AI provider runs locally (e.g. Ollama)
+    /// and therefore incurs no per-token cost.
+    pub fn is_local_provider(&self) -> bool {
+        matches!(self.config.provider, AIProvider::Ollama)
     }
 
     /// Get status information

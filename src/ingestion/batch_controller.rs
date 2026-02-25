@@ -46,6 +46,13 @@ pub struct InFlightFile {
     pub progress_id: String,
 }
 
+/// A file that failed during batch processing.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FailedFile {
+    pub name: String,
+    pub error: String,
+}
+
 /// Controls a single batch ingestion: spend limit, cost tracking, pause/resume.
 pub struct BatchController {
     pub batch_id: String,
@@ -55,6 +62,7 @@ pub struct BatchController {
     pub files_total: usize,
     pub files_completed: usize,
     pub files_failed: usize,
+    pub failed_files: Vec<FailedFile>,
     pub pending_files: Vec<PendingFile>,
     /// Files currently being processed concurrently.
     pub in_flight_files: Vec<InFlightFile>,
@@ -76,6 +84,7 @@ impl BatchController {
             files_total,
             files_completed: 0,
             files_failed: 0,
+            failed_files: Vec::new(),
             pending_files,
             in_flight_files: Vec::new(),
             resume_notify: Arc::new(Notify::new()),
@@ -135,8 +144,9 @@ impl BatchController {
     }
 
     /// Record that a file failed.
-    pub fn record_failed(&mut self, progress_id: &str) {
+    pub fn record_failed(&mut self, progress_id: &str, name: String, error: String) {
         self.files_failed += 1;
+        self.failed_files.push(FailedFile { name, error });
         self.remove_in_flight(progress_id);
     }
 
@@ -183,6 +193,7 @@ pub struct BatchStatusResponse {
     pub files_total: usize,
     pub files_completed: usize,
     pub files_failed: usize,
+    pub failed_files: Vec<FailedFile>,
     pub files_remaining: usize,
     pub estimated_remaining_cost: f64,
     /// Number of files currently being processed concurrently.
@@ -206,6 +217,7 @@ impl BatchStatusResponse {
             files_total: ctrl.files_total,
             files_completed: ctrl.files_completed,
             files_failed: ctrl.files_failed,
+            failed_files: ctrl.failed_files.clone(),
             files_remaining: ctrl.files_remaining(),
             estimated_remaining_cost: ctrl.estimated_remaining_cost(),
             in_flight_count: ctrl.in_flight_count(),

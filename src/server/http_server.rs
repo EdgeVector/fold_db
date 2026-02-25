@@ -360,6 +360,10 @@ impl FoldHttpServer {
             .route(
                 "/atom/{atom_uuid}",
                 web::get().to(query_routes::get_atom_content),
+            )
+            .route(
+                "/process-results/{progress_id}",
+                web::get().to(query_routes::get_process_results),
             );
     }
 

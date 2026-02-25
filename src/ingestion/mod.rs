@@ -123,6 +123,9 @@ pub struct IngestionRequest {
     /// Source folder path (set when ingested via smart folder or batch)
     #[serde(default)]
     pub source_folder: Option<String>,
+    /// Descriptive name from image vision model (schema metadata, not record data)
+    #[serde(default)]
+    pub image_descriptive_name: Option<String>,
 }
 
 /// Response from the ingestion process

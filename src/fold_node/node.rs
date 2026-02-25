@@ -543,6 +543,51 @@ impl FoldNode {
             .await
             .map_err(|e| FoldDbError::Database(e.to_string()))
     }
+
+    /// Query process results for a given progress_id.
+    ///
+    /// Returns actual mutation outcomes (schema_name + key_value as stored)
+    /// written by the ProcessResultsSubscriber during ingestion.
+    pub async fn get_process_results(
+        &self,
+        progress_id: &str,
+    ) -> FoldDbResult<Vec<MutationOutcome>> {
+        let db = self.db.lock().await;
+        let prefix = format!("{}:mut:", progress_id);
+        let items: Vec<(
+            String,
+            crate::fold_db_core::infrastructure::process_results_subscriber::ProcessMutationResult,
+        )> = db
+            .db_ops
+            .process_results_store()
+            .scan_items_with_prefix(&prefix)
+            .await
+            .map_err(|e| FoldDbError::Database(e.to_string()))?;
+
+        Ok(items
+            .into_iter()
+            .map(|(key, result)| {
+                let mutation_id = key
+                    .rsplit(":mut:")
+                    .next()
+                    .unwrap_or("")
+                    .to_string();
+                MutationOutcome {
+                    mutation_id,
+                    schema_name: result.schema_name,
+                    key_value: result.key_value,
+                }
+            })
+            .collect())
+    }
+}
+
+/// A single mutation outcome from the process_results store.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MutationOutcome {
+    pub mutation_id: String,
+    pub schema_name: String,
+    pub key_value: crate::schema::types::KeyValue,
 }
 
 /// Metadata stored when a file is successfully ingested by a user.

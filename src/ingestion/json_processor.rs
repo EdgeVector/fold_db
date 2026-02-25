@@ -202,10 +202,17 @@ fn flatten_array_elements(value: Value) -> Value {
 /// Ensure the JSON object produced by the vision model contains `image_type` and
 /// `created_at` fields.  Existing values are preserved so the model's own output
 /// is respected when present.
-pub fn enrich_image_json(json: &mut Value, file_path: &std::path::PathBuf, source_file_name: Option<&str>) {
+///
+/// Returns the `descriptive_name` extracted from the vision model output (if any)
+/// so it can be injected into the schema definition later.
+pub fn enrich_image_json(json: &mut Value, file_path: &std::path::PathBuf, source_file_name: Option<&str>) -> Option<String> {
+    let mut descriptive_name = None;
     if let Value::Object(map) = json {
-        // Remove descriptive_name — it's schema metadata, not record data
-        map.remove("descriptive_name");
+        // Extract descriptive_name — it's schema metadata, not record data
+        descriptive_name = map.remove("descriptive_name").and_then(|v| match v {
+            Value::String(s) => Some(s),
+            _ => None,
+        });
         // image_type — keep if already set
         if !map.contains_key("image_type") {
             let image_type = classify_image_type(source_file_name.unwrap_or(""));
@@ -217,6 +224,7 @@ pub fn enrich_image_json(json: &mut Value, file_path: &std::path::PathBuf, sourc
             map.insert("created_at".to_string(), Value::String(created_at));
         }
     }
+    descriptive_name
 }
 
 /// Heuristic classification of an image based on the source filename.

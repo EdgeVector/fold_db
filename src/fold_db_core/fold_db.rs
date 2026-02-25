@@ -292,6 +292,14 @@ impl FoldDB {
 
         info!("Started MutationManager event listener");
 
+        // Start ProcessResultsSubscriber to capture actual stored keys for ingestion reports
+        let process_results_subscriber =
+            super::infrastructure::ProcessResultsSubscriber::new(Arc::clone(&db_ops));
+        process_results_subscriber
+            .start_event_listener(Arc::clone(&message_bus))
+            .await;
+        info!("Started ProcessResultsSubscriber for ingestion result tracking");
+
         // AtomManager operates via direct method calls, not event consumption.
         // Event-driven components:
         // - EventMonitor: System observability and statistics
