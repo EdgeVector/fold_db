@@ -85,17 +85,37 @@ impl JsonTopology {
 
     /// Compute a SHA256 hash of this topology
     /// This creates a unique fingerprint of the topology structure.
+    /// Classifications are stripped before hashing because they are
+    /// semantic annotations, not structural shape.
     /// Keys are sorted recursively to ensure deterministic hashing
     /// regardless of HashMap iteration order.
     pub fn compute_hash(&self) -> String {
         let value = serde_json::to_value(&self.root)
             .unwrap_or_else(|_| serde_json::Value::Object(Default::default()));
-        let sorted = sort_json_keys(&value);
+        let stripped = strip_classifications(&value);
+        let sorted = sort_json_keys(&stripped);
         let canonical =
             serde_json::to_string(&sorted).unwrap_or_else(|_| "{}".to_string());
         let mut hasher = Sha256::new();
         hasher.update(canonical.as_bytes());
         format!("{:x}", hasher.finalize())
+    }
+}
+
+/// Recursively strip "classifications" keys from a JSON value so that
+/// semantic annotations do not affect the topology hash.
+fn strip_classifications(value: &JsonValue) -> JsonValue {
+    match value {
+        JsonValue::Object(map) => {
+            let filtered: serde_json::Map<String, JsonValue> = map
+                .iter()
+                .filter(|(k, _)| k.as_str() != "classifications")
+                .map(|(k, v)| (k.clone(), strip_classifications(v)))
+                .collect();
+            JsonValue::Object(filtered)
+        }
+        JsonValue::Array(arr) => JsonValue::Array(arr.iter().map(strip_classifications).collect()),
+        other => other.clone(),
     }
 }
 
@@ -520,6 +540,98 @@ mod tests {
 
         assert_eq!(t1.compute_hash(), t2.compute_hash());
         assert_ne!(t1.compute_hash(), t3.compute_hash());
+    }
+
+    #[test]
+    fn test_compute_hash_ignores_classifications() {
+        // Same type, different classifications → same hash
+        let t1 = JsonTopology::new(TopologyNode::Primitive {
+            value: PrimitiveValueType::String,
+            classifications: Some(vec!["word".to_string()]),
+        });
+        let t2 = JsonTopology::new(TopologyNode::Primitive {
+            value: PrimitiveValueType::String,
+            classifications: Some(vec!["word".to_string(), "name:person".to_string()]),
+        });
+        let t3 = JsonTopology::new(TopologyNode::Primitive {
+            value: PrimitiveValueType::String,
+            classifications: None,
+        });
+
+        assert_eq!(t1.compute_hash(), t2.compute_hash());
+        assert_eq!(t1.compute_hash(), t3.compute_hash());
+    }
+
+    #[test]
+    fn test_compute_hash_different_types_still_differ() {
+        let t_string = JsonTopology::new(TopologyNode::Primitive {
+            value: PrimitiveValueType::String,
+            classifications: Some(vec!["word".to_string()]),
+        });
+        let t_number = JsonTopology::new(TopologyNode::Primitive {
+            value: PrimitiveValueType::Number,
+            classifications: Some(vec!["word".to_string()]),
+        });
+
+        assert_ne!(t_string.compute_hash(), t_number.compute_hash());
+    }
+
+    #[test]
+    fn test_compute_hash_nested_object_ignores_classifications() {
+        let mut fields1 = HashMap::new();
+        fields1.insert(
+            "name".to_string(),
+            TopologyNode::Primitive {
+                value: PrimitiveValueType::String,
+                classifications: Some(vec!["word".to_string()]),
+            },
+        );
+        fields1.insert(
+            "age".to_string(),
+            TopologyNode::Primitive {
+                value: PrimitiveValueType::Number,
+                classifications: Some(vec!["number:age".to_string()]),
+            },
+        );
+
+        let mut fields2 = HashMap::new();
+        fields2.insert(
+            "name".to_string(),
+            TopologyNode::Primitive {
+                value: PrimitiveValueType::String,
+                classifications: Some(vec!["word".to_string(), "name:person".to_string()]),
+            },
+        );
+        fields2.insert(
+            "age".to_string(),
+            TopologyNode::Primitive {
+                value: PrimitiveValueType::Number,
+                classifications: None,
+            },
+        );
+
+        let t1 = JsonTopology::new(TopologyNode::Object { value: fields1 });
+        let t2 = JsonTopology::new(TopologyNode::Object { value: fields2 });
+
+        assert_eq!(t1.compute_hash(), t2.compute_hash());
+    }
+
+    #[test]
+    fn test_compute_hash_array_ignores_classifications() {
+        let t1 = JsonTopology::new(TopologyNode::Array {
+            value: Box::new(TopologyNode::Primitive {
+                value: PrimitiveValueType::String,
+                classifications: Some(vec!["tag".to_string()]),
+            }),
+        });
+        let t2 = JsonTopology::new(TopologyNode::Array {
+            value: Box::new(TopologyNode::Primitive {
+                value: PrimitiveValueType::String,
+                classifications: Some(vec!["tag".to_string(), "keyword".to_string()]),
+            }),
+        });
+
+        assert_eq!(t1.compute_hash(), t2.compute_hash());
     }
 
     #[test]

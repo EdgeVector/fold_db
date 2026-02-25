@@ -167,16 +167,23 @@ impl MutationManager {
             let mut mutation_key_values = Vec::with_capacity(schema_mutations.len());
 
             for (idx, mutation) in schema_mutations.iter().enumerate() {
-                let key_config = schema.key.clone();
-                let key_value = KeyValue::from_mutation(
-                    &mutation.fields_and_values,
-                    key_config.as_ref().ok_or_else(|| {
-                        SchemaError::InvalidData(format!(
-                            "Schema '{}' has no key configuration. Cannot execute mutation.",
-                            schema_name
-                        ))
-                    })?,
-                );
+                // Prefer the pre-computed key_value from the mutation (set by the
+                // ingestion service with date normalization and proper field extraction).
+                // Fall back to KeyValue::from_mutation() only when both fields are None.
+                let key_value = if mutation.key_value.hash.is_some() || mutation.key_value.range.is_some() {
+                    mutation.key_value.clone()
+                } else {
+                    let key_config = schema.key.clone();
+                    KeyValue::from_mutation(
+                        &mutation.fields_and_values,
+                        key_config.as_ref().ok_or_else(|| {
+                            SchemaError::InvalidData(format!(
+                                "Schema '{}' has no key configuration. Cannot execute mutation.",
+                                schema_name
+                            ))
+                        })?,
+                    )
+                };
                 mutation_key_values.push(key_value);
 
                 // Validate all field values against their topologies before processing

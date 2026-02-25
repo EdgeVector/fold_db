@@ -1558,6 +1558,98 @@ mod tests {
         assert!(result.similar_schemas[0].similarity >= result.similar_schemas[1].similarity);
     }
 
+    #[tokio::test]
+    async fn add_schema_deduplicates_across_different_classifications() {
+        let state = make_test_state();
+
+        // Schema 1: classifications = ["word"]
+        let mut schema1 = Schema::new(
+            "ImageA".to_string(),
+            crate::schema::types::SchemaType::Single,
+            None,
+            Some(vec!["artist".to_string(), "title".to_string()]),
+            None,
+            None,
+        );
+        schema1.set_field_topology(
+            "artist".to_string(),
+            crate::schema::types::JsonTopology::new(
+                crate::schema::types::TopologyNode::Primitive {
+                    value: crate::schema::types::PrimitiveType::String,
+                    classifications: Some(vec!["word".to_string()]),
+                },
+            ),
+        );
+        schema1.set_field_topology(
+            "title".to_string(),
+            crate::schema::types::JsonTopology::new(
+                crate::schema::types::TopologyNode::Primitive {
+                    value: crate::schema::types::PrimitiveType::String,
+                    classifications: Some(vec!["word".to_string()]),
+                },
+            ),
+        );
+
+        // Schema 2: same fields/types, but classifications = ["word", "name:person"]
+        let mut schema2 = Schema::new(
+            "ImageB".to_string(),
+            crate::schema::types::SchemaType::Single,
+            None,
+            Some(vec!["artist".to_string(), "title".to_string()]),
+            None,
+            None,
+        );
+        schema2.set_field_topology(
+            "artist".to_string(),
+            crate::schema::types::JsonTopology::new(
+                crate::schema::types::TopologyNode::Primitive {
+                    value: crate::schema::types::PrimitiveType::String,
+                    classifications: Some(vec![
+                        "word".to_string(),
+                        "name:person".to_string(),
+                    ]),
+                },
+            ),
+        );
+        schema2.set_field_topology(
+            "title".to_string(),
+            crate::schema::types::JsonTopology::new(
+                crate::schema::types::TopologyNode::Primitive {
+                    value: crate::schema::types::PrimitiveType::String,
+                    classifications: Some(vec!["word".to_string(), "title".to_string()]),
+                },
+            ),
+        );
+
+        // First schema gets added
+        let outcome1 = state
+            .add_schema(schema1, HashMap::new())
+            .await
+            .expect("failed to add first schema");
+        let first_name = match outcome1 {
+            SchemaAddOutcome::Added(schema, _) => schema.name,
+            SchemaAddOutcome::TooSimilar(_) => panic!("first schema should be added"),
+        };
+
+        // Second schema should be detected as duplicate (same topology hash)
+        let outcome2 = state
+            .add_schema(schema2, HashMap::new())
+            .await
+            .expect("failed to evaluate second schema");
+        match outcome2 {
+            SchemaAddOutcome::TooSimilar(conflict) => {
+                assert_eq!(conflict.similarity, 1.0);
+                assert_eq!(conflict.closest_schema.name, first_name);
+            }
+            SchemaAddOutcome::Added(schema, _) => {
+                panic!(
+                    "schema with same fields/types but different classifications should be rejected as duplicate, got added as '{}'",
+                    schema.name
+                );
+            }
+        }
+    }
+
     #[test]
     fn jaccard_index_both_empty_returns_one() {
         let a: HashSet<String> = HashSet::new();

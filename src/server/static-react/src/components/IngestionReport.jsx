@@ -28,9 +28,13 @@ export default function IngestionReport({ ingestionResult, onDismiss }) {
   const mutationsExecuted = data?.mutations_executed ?? 0
   const newSchemaCreated = data?.new_schema_created ?? false
 
+  // Track whether the initial schema fetch has completed so we can distinguish
+  // "schema still loading" from "schema no longer exists in the database".
+  const [schemasLoaded, setSchemasLoaded] = useState(false)
+
   // Refresh schemas on mount so new ingested schemas are available
   useEffect(() => {
-    dispatch(fetchSchemas({ forceRefresh: true }))
+    dispatch(fetchSchemas({ forceRefresh: true })).finally(() => setSchemasLoaded(true))
   }, [dispatch])
 
   // Build a lookup of schema name -> schema object from Redux store
@@ -112,12 +116,13 @@ export default function IngestionReport({ ingestionResult, onDismiss }) {
             return String(x?.key?.hash || '') === String(kv?.hash || '') &&
                    String(x?.key?.range || '') === String(kv?.range || '')
           }) || arr[0]
-          setKeyRecords((p) => ({ ...p, [id]: { fields: match?.fields || {}, metadata: match?.metadata || {} } }))
+          const notFound = !match
+          setKeyRecords((p) => ({ ...p, [id]: { fields: match?.fields || {}, metadata: match?.metadata || {}, notFound } }))
         } else {
-          setKeyRecords((p) => ({ ...p, [id]: { fields: {}, metadata: {} } }))
+          setKeyRecords((p) => ({ ...p, [id]: { fields: {}, metadata: {}, notFound: true } }))
         }
       } catch {
-        setKeyRecords((p) => ({ ...p, [id]: { fields: {}, metadata: {} } }))
+        setKeyRecords((p) => ({ ...p, [id]: { fields: {}, metadata: {}, notFound: true } }))
       } finally {
         setKeyLoading((p) => ({ ...p, [id]: false }))
       }
@@ -180,6 +185,11 @@ export default function IngestionReport({ ingestionResult, onDismiss }) {
                   <span className="text-xs text-tertiary">({fieldCount(name)} fields)</span>
                 )}
                 {schema && <StateBadge state={schema.state || 'available'} />}
+                {!schema && schemasLoaded && (
+                  <span className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-semibold rounded bg-gruvbox-red/20 text-gruvbox-red">
+                    removed
+                  </span>
+                )}
               </button>
 
               {/* Keys list */}
@@ -213,11 +223,15 @@ export default function IngestionReport({ ingestionResult, onDismiss }) {
                         {isKeyOpen && (
                           <div className="pl-6 pb-2">
                             {record ? (
-                              <Fragment>
-                                <RecordMetadata metadata={record.metadata} />
-                                {maxVersion > 1 && <VersionHistory moleculeUuid={molUuid} />}
-                                <FieldsTable fields={record.fields} />
-                              </Fragment>
+                              record.notFound ? (
+                                <div className="text-xs text-gruvbox-red italic px-3 py-2">Record not found in database</div>
+                              ) : (
+                                <Fragment>
+                                  <RecordMetadata metadata={record.metadata} />
+                                  {maxVersion > 1 && <VersionHistory moleculeUuid={molUuid} />}
+                                  <FieldsTable fields={record.fields} />
+                                </Fragment>
+                              )
                             ) : (
                               <div className="text-xs text-secondary italic">Loading...</div>
                             )}
