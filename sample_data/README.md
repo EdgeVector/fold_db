@@ -72,9 +72,15 @@ sample_data/
 │   └── 2025-01-20.txt           # Daily journal entry
 ├── photos/
 │   ├── profile_pic.png          # 64x64 PNG image
+│   ├── animals/                 # Animal photos (golden retriever, tabby cat, etc.)
+│   ├── diagrams/                # SVG diagrams (architecture, ER diagram, flowchart)
 │   ├── family/
 │   │   ├── christmas_2024.jpg   # 64x64 JPEG image
 │   │   └── thanksgiving_2024.jpg
+│   ├── landscapes/              # Nature landscapes (mountain, ocean, desert, etc.)
+│   ├── paintings/               # Famous paintings (Mona Lisa, Starry Night, etc.)
+│   ├── profile/                 # Portrait photos (studio, outdoor, creative)
+│   ├── screenshots/             # SVG screenshots (terminal, dashboard)
 │   └── vacation_2024/
 │       ├── IMG_4521.jpg         # 64x64 JPEG images
 │       ├── IMG_4522.jpg
@@ -107,6 +113,19 @@ sample_data/
 │   │   └── sfo_to_tokyo_2025.json  # Flight booking
 │   └── hotels/
 │       └── tokyo_hotel.json     # Hotel reservation
+├── coding_projects/                 # Coding projects (should be auto-skipped)
+│   ├── my_website/              # Node.js project (has package.json)
+│   │   ├── package.json
+│   │   ├── index.js
+│   │   └── README.md
+│   ├── rust_cli/                # Rust project (has Cargo.toml)
+│   │   ├── Cargo.toml
+│   │   └── src/
+│   │       └── main.rs
+│   └── data_analysis/           # Python project (has pyproject.toml)
+│       ├── pyproject.toml
+│       ├── analysis.py
+│       └── requirements.txt
 └── work/
     ├── expenses/
     │   └── jan_2025_expenses.csv # Expense report
@@ -123,6 +142,7 @@ The LLM classifier should:
 - **Skip** config files (.bashrc, settings.json), binaries (.exe, .dll), font files (.woff2)
 - **Skip** saved webpage scaffolding (CSS, GIFs inside `bank_of_america/`) while possibly recommending the HTML content
 - **Recommend** photos and PDFs as media/personal data (these are valid files and will be processed via the vision model)
+- **Auto-skip** coding projects (`coding_projects/`) — directories containing manifest files like `package.json`, `Cargo.toml`, or `pyproject.toml` are skipped entirely before LLM classification
 
 ## Dependencies
 

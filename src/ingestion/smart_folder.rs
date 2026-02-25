@@ -191,6 +191,10 @@ fn scan_directory_recursive(
         }
 
         if path.is_dir() {
+            // Skip directories that are coding projects (contain manifest files)
+            if is_coding_project(&path) {
+                continue;
+            }
             scan_directory_recursive(root, &path, depth + 1, max_depth, max_files, files)?;
         } else if path.is_file() {
             // Get relative path from root
@@ -289,6 +293,28 @@ pub fn compute_file_hash(file_path: &Path) -> IngestionResult<String> {
 }
 
 // ---- Binary file detection ----
+
+/// Files whose presence marks a directory as a coding project.
+/// If any of these exist in a subdirectory, the entire directory is skipped.
+const PROJECT_MANIFEST_FILES: &[&str] = &[
+    "package.json",
+    "Cargo.toml",
+    "go.mod",
+    "pyproject.toml",
+    "setup.py",
+    "pom.xml",
+    "build.gradle",
+    "build.gradle.kts",
+    "Gemfile",
+    "composer.json",
+    "CMakeLists.txt",
+];
+
+/// Returns true if the directory contains a project manifest file,
+/// indicating it is a coding project that should be skipped.
+fn is_coding_project(dir: &Path) -> bool {
+    PROJECT_MANIFEST_FILES.iter().any(|f| dir.join(f).exists())
+}
 
 /// Extensions for truly binary files that can never contain personal data.
 /// Everything NOT in this list goes to the LLM for classification.
@@ -1008,6 +1034,60 @@ mod tests {
 
         // Should still find files in the root even though it has .git
         assert!(files.contains(&"readme.md".to_string()));
+    }
+
+    #[test]
+    fn test_scan_skips_coding_projects() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+
+        // Node.js project (package.json)
+        let node_dir = root.join("my_website");
+        std::fs::create_dir_all(&node_dir).unwrap();
+        std::fs::write(node_dir.join("package.json"), r#"{"name":"test"}"#).unwrap();
+        std::fs::write(node_dir.join("index.js"), "console.log('hi')").unwrap();
+
+        // Rust project (Cargo.toml)
+        let rust_dir = root.join("rust_cli");
+        std::fs::create_dir_all(rust_dir.join("src")).unwrap();
+        std::fs::write(rust_dir.join("Cargo.toml"), "[package]\nname = \"test\"").unwrap();
+        std::fs::write(rust_dir.join("src/main.rs"), "fn main() {}").unwrap();
+
+        // Python project (pyproject.toml)
+        let py_dir = root.join("data_analysis");
+        std::fs::create_dir_all(&py_dir).unwrap();
+        std::fs::write(py_dir.join("pyproject.toml"), "[project]\nname = \"test\"").unwrap();
+        std::fs::write(py_dir.join("analysis.py"), "import pandas").unwrap();
+
+        // Normal personal file
+        std::fs::write(root.join("notes.txt"), "my notes").unwrap();
+
+        let files = scan_directory_tree(root, 10, 50000).unwrap();
+
+        // Should find the personal file but none of the coding project files
+        assert!(files.contains(&"notes.txt".to_string()));
+        assert!(!files.iter().any(|f| f.contains("index.js")));
+        assert!(!files.iter().any(|f| f.contains("main.rs")));
+        assert!(!files.iter().any(|f| f.contains("analysis.py")));
+        assert!(!files.iter().any(|f| f.contains("package.json")));
+        assert!(!files.iter().any(|f| f.contains("Cargo.toml")));
+        assert!(!files.iter().any(|f| f.contains("pyproject.toml")));
+    }
+
+    #[test]
+    fn test_scan_does_not_skip_root_coding_project() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+
+        // The root itself contains a package.json
+        std::fs::write(root.join("package.json"), r#"{"name":"root"}"#).unwrap();
+        std::fs::write(root.join("readme.md"), "# Hello").unwrap();
+
+        let files = scan_directory_tree(root, 10, 50000).unwrap();
+
+        // Should still find files in the root even though it has a manifest
+        assert!(files.contains(&"readme.md".to_string()));
+        assert!(files.contains(&"package.json".to_string()));
     }
 
     #[test]
