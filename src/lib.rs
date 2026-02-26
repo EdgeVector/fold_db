@@ -60,11 +60,8 @@ pub use schema::SchemaState;
 
 // Re-export security types
 pub use security::{
-    ClientSecurity, ConditionalEncryption, Ed25519KeyPair, Ed25519PublicKey, EncryptedData,
-    EncryptionManager, EncryptionUtils, KeyRegistrationRequest, KeyRegistrationResponse, KeyUtils,
-    MessageSigner, MessageVerifier, PublicKeyInfo, SecurityConfig,
-    SecurityError, SecurityManager, SecurityMiddleware, SecurityResult, SignedMessage,
-    SigningUtils, VerificationResult,
+    Ed25519KeyPair, EncryptionManager, PublicKeyInfo, SecurityConfig, SecurityError, SecurityManager,
+    SecurityResult,
 };
 
 // Re-export ingestion types

@@ -396,7 +396,7 @@ pub fn create_tracker_with_sled(tree: sled::Tree) -> ProgressTracker {
     Arc::new(SledProgressStore::new(tree))
 }
 
-/// Legacy function - prefer create_tracker_from_config
+/// Create a progress tracker with optional DynamoDB config
 pub async fn create_tracker(dynamo_config: Option<(String, String)>) -> ProgressTracker {
     if let Some((table_name, region)) = dynamo_config {
         #[cfg(feature = "aws-backend")]
