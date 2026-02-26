@@ -255,32 +255,11 @@ impl LlmQueryService {
 mod tests {
     use super::*;
     use crate::schema::types::{
-        DeclarativeSchemaDefinition, JsonTopology, KeyConfig, PrimitiveType, TopologyNode,
+        DeclarativeSchemaDefinition, KeyConfig,
     };
     use crate::schema::{SchemaState, SchemaWithState};
-    use std::collections::HashMap;
 
     fn create_test_hash_range_schema() -> SchemaWithState {
-        let mut field_topologies = HashMap::new();
-        field_topologies.insert(
-            "author".to_string(),
-            JsonTopology {
-                root: TopologyNode::Primitive {
-                    value: PrimitiveType::String,
-                    classifications: Some(vec!["word".to_string()]),
-                },
-            },
-        );
-        field_topologies.insert(
-            "publish_date".to_string(),
-            JsonTopology {
-                root: TopologyNode::Primitive {
-                    value: PrimitiveType::String,
-                    classifications: Some(vec!["word".to_string()]),
-                },
-            },
-        );
-
         let mut schema = DeclarativeSchemaDefinition::new(
             "BlogPostAuthorIndex".to_string(),
             crate::schema::types::schema::DeclarativeSchemaType::HashRange,
@@ -294,7 +273,8 @@ mod tests {
         );
 
         schema.descriptive_name = Some("Blog Post Author Index".to_string());
-        schema.field_topologies = field_topologies;
+        schema.field_classifications.insert("author".to_string(), vec!["word".to_string()]);
+        schema.field_classifications.insert("publish_date".to_string(), vec!["word".to_string()]);
 
         SchemaWithState {
             schema,

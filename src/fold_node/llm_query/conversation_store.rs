@@ -7,8 +7,8 @@
 use crate::fold_node::llm_query::types::ToolCallRecord;
 use crate::fold_node::node::FoldNode;
 use crate::schema::types::{
-    DeclarativeSchemaDefinition, JsonTopology, KeyConfig, KeyValue, Mutation, MutationType,
-    PrimitiveType, SchemaType, TopologyNode,
+    DeclarativeSchemaDefinition, KeyConfig, KeyValue, Mutation, MutationType,
+    SchemaType,
 };
 use crate::schema::SchemaState;
 use chrono::Utc;
@@ -36,41 +36,10 @@ fn build_schema() -> DeclarativeSchemaDefinition {
         None,
     );
 
-    schema.set_field_topology(
-        "session_id".to_string(),
-        JsonTopology::new(TopologyNode::Primitive {
-            value: PrimitiveType::String,
-            classifications: Some(vec!["word".to_string()]),
-        }),
-    );
-    schema.set_field_topology(
-        "timestamp".to_string(),
-        JsonTopology::new(TopologyNode::Primitive {
-            value: PrimitiveType::String,
-            classifications: Some(vec!["date".to_string()]),
-        }),
-    );
-    schema.set_field_topology(
-        "query".to_string(),
-        JsonTopology::new(TopologyNode::Primitive {
-            value: PrimitiveType::String,
-            classifications: Some(vec!["word".to_string()]),
-        }),
-    );
-    schema.set_field_topology(
-        "answer".to_string(),
-        JsonTopology::new(TopologyNode::Primitive {
-            value: PrimitiveType::String,
-            classifications: Some(vec!["word".to_string()]),
-        }),
-    );
-    schema.set_field_topology(
-        "tool_calls_json".to_string(),
-        JsonTopology::new(TopologyNode::Primitive {
-            value: PrimitiveType::String,
-            classifications: None,
-        }),
-    );
+    schema.field_classifications.insert("session_id".to_string(), vec!["word".to_string()]);
+    schema.field_classifications.insert("timestamp".to_string(), vec!["date".to_string()]);
+    schema.field_classifications.insert("query".to_string(), vec!["word".to_string()]);
+    schema.field_classifications.insert("answer".to_string(), vec!["word".to_string()]);
 
     schema
 }

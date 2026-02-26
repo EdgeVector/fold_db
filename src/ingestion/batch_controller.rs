@@ -66,6 +66,8 @@ pub struct BatchController {
     pub pending_files: Vec<PendingFile>,
     /// Files currently being processed concurrently.
     pub in_flight_files: Vec<InFlightFile>,
+    /// Whether the AI provider is local (e.g. Ollama) and therefore free.
+    pub is_local_provider: bool,
     resume_notify: Arc<Notify>,
 }
 
@@ -74,6 +76,7 @@ impl BatchController {
         batch_id: String,
         spend_limit: Option<f64>,
         pending_files: Vec<PendingFile>,
+        is_local_provider: bool,
     ) -> Self {
         let files_total = pending_files.len();
         Self {
@@ -87,6 +90,7 @@ impl BatchController {
             failed_files: Vec::new(),
             pending_files,
             in_flight_files: Vec::new(),
+            is_local_provider,
             resume_notify: Arc::new(Notify::new()),
         }
     }
@@ -204,6 +208,8 @@ pub struct BatchStatusResponse {
     pub current_file_step: Option<String>,
     /// Progress percentage (0-100) for the active file.
     pub current_file_progress: Option<u8>,
+    /// Whether the AI provider is local (e.g. Ollama) and therefore free.
+    pub is_local_provider: bool,
 }
 
 impl BatchStatusResponse {
@@ -225,6 +231,7 @@ impl BatchStatusResponse {
             // Filled in by the route handler from ProgressTracker
             current_file_step: None,
             current_file_progress: None,
+            is_local_provider: ctrl.is_local_provider,
         }
     }
 }

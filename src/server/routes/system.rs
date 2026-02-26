@@ -286,7 +286,7 @@ pub async fn reset_database(
 /// Reset the schema service database
 ///
 /// This endpoint resets the schema service database by calling its reset endpoint.
-/// This is useful when schemas need to be recreated with updated topology inference.
+/// This is useful when schemas need to be recreated with updated classification inference.
 #[utoipa::path(
     post,
     path = "/api/system/reset-schema-service",

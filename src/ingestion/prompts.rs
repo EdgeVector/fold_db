@@ -2,7 +2,7 @@
 //!
 //! Used by both OpenRouter and Ollama services.
 
-/// Prompt header describing the response format, schema structure, and topology rules.
+/// Prompt header describing the response format, schema structure, and classification rules.
 pub const PROMPT_HEADER: &str = r#"Create a schema for this sample json data. Return the value in this format:
 {
   "new_schemas": <single_schema_definition>,
@@ -33,8 +33,8 @@ IMPORTANT - Schema Name and Descriptive Name:
 - ALWAYS include "descriptive_name": a clear, human-readable description of what this schema stores
 - Example: "descriptive_name": "User Profile Information" or "Customer Order Records"
 
-IMPORTANT - Field Topologies with Classifications:
-- EVERY Primitive leaf MUST include "classifications" array
+IMPORTANT - Field Classifications:
+- EVERY field MUST have a "field_classifications" entry
 - Analyze field semantic meaning and assign appropriate classification types
 - Multiple classifications per field are encouraged (e.g., ["name:person", "word"])
 - ALWAYS include "word" classification for any string field that contains searchable text
@@ -50,33 +50,7 @@ IMPORTANT - Field Topologies with Classifications:
   * "hashtag" - hashtags (from social media)
   * "username" - usernames/handles
   * "number" - numeric values (amounts, counts, scores, percentages, quantities)
-- Topology structure:
-  * Primitives: {"type": "Primitive", "value": "String", "classifications": ["name:person", "word"]}
-  * Objects: {"type": "Object", "value": {"field_name": {"type": "Primitive", "value": "String", "classifications": ["word"]}}}
-  * Arrays of Primitives: {"type": "Array", "value": {"type": "Primitive", "value": "String", "classifications": ["hashtag", "word"]}}
-  * Arrays of Objects: {"type": "Array", "value": {"type": "Object", "value": {"field_name": {"type": "Primitive", "value": "String", "classifications": ["word"]}}}}
-
-CRITICAL - Using Flattened Path Structure:
-- The superset structure uses flattened dot-separated paths with actual data types
-- Primitive fields show their type: "name": "string", "age": "number", "active": "boolean"
-- Primitive arrays show element type in brackets: "tags[]": "[string]", "scores[]": "[number]"
-- Object arrays expand their fields: "items[].id": "string", "items[].price": "number"
-- IMPORTANT: Use the EXACT types shown. If a field says "string", use Primitive String. If "number", use Primitive Number.
-- Convert these flattened paths into proper nested topology structures
-- For arrays of objects, paths like "user_mentions[].field" mean:
-  * user_mentions is an Array
-  * Each array element is an Object
-  * Each object has the field "field"
-  * Create topology: {"type": "Array", "value": {"type": "Object", "value": {"field": {"type": "Primitive", "value": "String", "classifications": ["word"]}}}}
-- Group paths by their base path and create proper nested structures
-- IMPORTANT: When you see paths like "user_mentions[].id", "user_mentions[].name", etc., this means:
-  * user_mentions is an Array (not an Object)
-  * Each array element is an Object with fields: id, name, etc.
-  * The topology should be: {"type": "Array", "value": {"type": "Object", "value": {"id": {...}, "name": {...}}}}
-- NEVER create an object with field names like "[0].id" - this is wrong!
-- NEVER use generic "Object" types without specifying the exact fields inside
-- ALWAYS specify the complete structure with all nested fields and their types
-- For example, instead of {"type": "Object"}, use {"type": "Object", "value": {"field1": {"type": "Primitive", "value": "String"}, "field2": {"type": "Array", "value": {...}}}}
+- "field_classifications" is a flat map from field name to list of classification strings
 
 Example Range schema with date range_field (PREFERRED when data has timestamps):
 {
@@ -84,10 +58,10 @@ Example Range schema with date range_field (PREFERRED when data has timestamps):
   "descriptive_name": "Social Media Posts",
   "key": {"range_field": "created_at"},
   "fields": ["created_at", "author", "content"],
-  "field_topologies": {
-    "created_at": {"root": {"type": "Primitive", "value": "String", "classifications": ["date"]}},
-    "author": {"root": {"type": "Primitive", "value": "String", "classifications": ["name:person", "word"]}},
-    "content": {"root": {"type": "Primitive", "value": "String", "classifications": ["word"]}}
+  "field_classifications": {
+    "created_at": ["date"],
+    "author": ["name:person", "word"],
+    "content": ["word"]
   }
 }
 
@@ -97,10 +71,10 @@ Example Range schema with ID range_field (only when NO date/timestamp field exis
   "descriptive_name": "User Profile Information",
   "key": {"range_field": "id"},
   "fields": ["id", "name", "age"],
-  "field_topologies": {
-    "id": {"root": {"type": "Primitive", "value": "String", "classifications": ["word"]}},
-    "name": {"root": {"type": "Primitive", "value": "String", "classifications": ["name:person", "word"]}},
-    "age": {"root": {"type": "Primitive", "value": "Number", "classifications": ["number"]}}
+  "field_classifications": {
+    "id": ["word"],
+    "name": ["name:person", "word"],
+    "age": ["number"]
   }
 }
 
@@ -109,9 +83,9 @@ Example Single schema (for one global value):
   "name": "Schema",
   "descriptive_name": "Global Counter Statistics",
   "fields": ["count", "total"],
-  "field_topologies": {
-    "count": {"root": {"type": "Primitive", "value": "Number", "classifications": ["number"]}},
-    "total": {"root": {"type": "Primitive", "value": "Number", "classifications": ["number"]}}
+  "field_classifications": {
+    "count": ["number"],
+    "total": ["number"]
   }
 }
 
@@ -121,11 +95,11 @@ Example with Arrays and Objects (note: date field used as range_field):
   "descriptive_name": "Social Media Post",
   "key": {"range_field": "posted_at"},
   "fields": ["posted_at", "content", "hashtags", "media"],
-  "field_topologies": {
-    "posted_at": {"root": {"type": "Primitive", "value": "String", "classifications": ["date"]}},
-    "content": {"root": {"type": "Primitive", "value": "String", "classifications": ["word"]}},
-    "hashtags": {"root": {"type": "Array", "value": {"type": "Primitive", "value": "String", "classifications": ["hashtag", "word"]}}},
-    "media": {"root": {"type": "Array", "value": {"type": "Object", "value": {"url": {"type": "Primitive", "value": "String", "classifications": ["url", "word"]}, "type": {"type": "Primitive", "value": "String", "classifications": ["word"]}}}}}
+  "field_classifications": {
+    "posted_at": ["date"],
+    "content": ["word"],
+    "hashtags": ["hashtag", "word"],
+    "media": ["url", "word"]
   }
 }
 
@@ -151,7 +125,6 @@ CRITICAL RULES:
 - PREFER a date/timestamp field as range_field (e.g., "created_at", "date", "timestamp") — this enables time-based queries. Only use an ID field if no date/timestamp exists.
 - NEVER create a Single-type schema for array inputs - they will overwrite data
 - AVOID Single schemas unless the data is truly a one-off global config. If any field looks like a date, timestamp, or unique ID, use Range instead.
-- NEVER use generic "Object" types - always specify the complete field structure with exact types and classifications
-- ALWAYS provide complete topology definitions with all nested fields explicitly defined
+- ALWAYS provide field_classifications for every field
 
 The response must be valid JSON."#;

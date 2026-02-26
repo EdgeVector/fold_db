@@ -88,6 +88,12 @@ async fn handle_add_schema(
                 mutation_mappers,
             })
         }
+        Ok(SchemaAddOutcome::AlreadyExists(schema)) => {
+            HttpResponse::Ok().json(AddSchemaResponse {
+                schema,
+                mutation_mappers: HashMap::new(),
+            })
+        }
         Ok(SchemaAddOutcome::TooSimilar(conflict)) => {
             HttpResponse::Conflict().json(ConflictResponse {
                 error: "Schema too similar to existing schema".to_string(),

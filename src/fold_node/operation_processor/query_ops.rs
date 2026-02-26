@@ -2,7 +2,6 @@ use crate::db_operations::IndexResult;
 use crate::error::{FoldDbError, FoldDbResult};
 use crate::fold_node::response_types::QueryResultMap;
 use crate::schema::types::field::Field;
-use crate::schema::types::topology::TopologyNode;
 use crate::schema::types::{KeyValue, Query};
 #[cfg(test)]
 use crate::schema::types::field::HashRangeFilter;
@@ -108,17 +107,11 @@ impl OperationProcessor {
                     None => return Ok(()),
                 };
 
-                // Find fields with Reference topology
+                // Find reference fields
                 let ref_fields: Vec<(String, String)> = schema
-                    .field_topologies
+                    .ref_fields
                     .iter()
-                    .filter_map(|(field_name, topo)| {
-                        if let TopologyNode::Reference { schema_name } = &topo.root {
-                            Some((field_name.clone(), schema_name.clone()))
-                        } else {
-                            None
-                        }
-                    })
+                    .map(|(field_name, child_schema)| (field_name.clone(), child_schema.clone()))
                     .collect();
 
                 if ref_fields.is_empty() {

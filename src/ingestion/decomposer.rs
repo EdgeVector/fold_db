@@ -3,17 +3,17 @@
 //! Before AI analysis, this module decomposes nested JSON by extracting fields
 //! that are arrays of objects into separate "child groups." Each child group
 //! recursively goes through the full ingestion pipeline (decompose -> AI ->
-//! schema service -> mutations). A structure cache keyed by topology hash
+//! schema service -> mutations). A structure cache keyed by field-name hash
 //! ensures the AI is called only once per unique structure.
 
-use crate::schema::types::topology::JsonTopology;
+use sha2::{Digest, Sha256};
 use serde_json::Value;
 
 /// A group of child items extracted from a parent field, all sharing the same structure.
 pub struct ChildGroup {
     /// Field name in the parent (e.g., "posts", "comments")
     pub field_name: String,
-    /// Topology hash for structure deduplication
+    /// Structure hash for deduplication (SHA256 of sorted field names)
     pub structure_hash: String,
     /// The extracted array items
     pub items: Vec<Value>,
@@ -25,6 +25,21 @@ pub struct DecompositionResult {
     pub parent: Value,
     /// Child groups extracted from the parent
     pub children: Vec<ChildGroup>,
+}
+
+/// Compute a structure hash from sorted field names of a JSON object.
+/// Used for deduplication of structures with the same fields.
+pub fn compute_structure_hash(value: &Value) -> String {
+    let mut field_names: Vec<&str> = if let Some(obj) = value.as_object() {
+        obj.keys().map(|k| k.as_str()).collect()
+    } else {
+        Vec::new()
+    };
+    field_names.sort();
+    let combined = field_names.join(",");
+    let mut hasher = Sha256::new();
+    hasher.update(combined.as_bytes());
+    format!("{:x}", hasher.finalize())
 }
 
 /// Decompose a JSON object by extracting fields that are arrays of objects.
@@ -68,8 +83,7 @@ pub fn decompose(data: &Value) -> DecompositionResult {
         let arr = value.as_array().unwrap();
         let representative = &arr[0];
 
-        let topology = JsonTopology::infer_from_value(representative);
-        let structure_hash = topology.compute_hash();
+        let structure_hash = compute_structure_hash(representative);
 
         children.push(ChildGroup {
             field_name,

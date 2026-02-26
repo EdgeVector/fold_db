@@ -54,6 +54,13 @@ fn verify_outcome_has_schema(outcome: &SchemaAddOutcome) {
                 "added schema must have fields defined"
             );
         }
+        SchemaAddOutcome::AlreadyExists(schema) => {
+            assert!(!schema.name.is_empty(), "existing schema must have a name");
+            assert!(
+                schema.fields.is_some(),
+                "existing schema must have fields defined"
+            );
+        }
         SchemaAddOutcome::TooSimilar(conflict) => {
             assert!(
                 !conflict.closest_schema.name.is_empty(),
@@ -112,14 +119,10 @@ async fn closeness_rejects_identical_schema_with_different_name() {
     verify_outcome_has_schema(&outcome);
 
     match outcome {
-        SchemaAddOutcome::TooSimilar(conflict) => {
-            assert!(
-                !conflict.closest_schema.name.is_empty(),
-                "closest schema must have a name"
-            );
-            assert!(conflict.similarity >= 0.9);
+        SchemaAddOutcome::AlreadyExists(schema) => {
+            assert!(!schema.name.is_empty(), "existing schema must have a name");
         }
-        SchemaAddOutcome::Added(_, _) => panic!("identical schema should have been rejected"),
+        other => panic!("identical schema should return AlreadyExists, got {:?}", other),
     }
 }
 
@@ -156,8 +159,8 @@ async fn closeness_always_returns_schema_on_success() {
             assert!(!response.name.is_empty(), "schema must have a name");
             assert!(response.fields.is_some());
         }
-        SchemaAddOutcome::TooSimilar(_) => {
-            panic!("new unique schema should be added, not rejected")
+        other => {
+            panic!("new unique schema should be added, got {:?}", other)
         }
     }
 }
@@ -209,16 +212,12 @@ async fn closeness_always_returns_schema_on_rejection() {
     verify_outcome_has_schema(&outcome);
 
     match outcome {
-        SchemaAddOutcome::TooSimilar(conflict) => {
-            assert!(
-                !conflict.closest_schema.name.is_empty(),
-                "closest schema must have a name"
-            );
-            assert!(conflict.closest_schema.fields.is_some());
-            assert!(conflict.similarity >= 0.9);
+        SchemaAddOutcome::AlreadyExists(schema) => {
+            assert!(!schema.name.is_empty(), "existing schema must have a name");
+            assert!(schema.fields.is_some());
         }
-        SchemaAddOutcome::Added(_, _) => {
-            panic!("duplicate schema should be rejected with closest schema returned")
+        other => {
+            panic!("duplicate schema should return AlreadyExists, got {:?}", other)
         }
     }
 }
@@ -275,7 +274,7 @@ async fn closeness_allows_dissimilar_schemas() {
         SchemaAddOutcome::Added(response, _) => {
             assert!(!response.name.is_empty(), "schema must have a name");
         }
-        SchemaAddOutcome::TooSimilar(_) => panic!("dissimilar schema should have been accepted"),
+        other => panic!("dissimilar schema should have been accepted, got {:?}", other),
     }
 }
 
@@ -334,8 +333,8 @@ async fn closeness_handles_similar_but_slightly_different_schemas() {
             // Note: field_mappers are no longer automatically created by the schema service
             // They must be provided explicitly when adding the schema
         }
-        SchemaAddOutcome::TooSimilar(_) => {
-            panic!("schema with extra field should have been accepted")
+        other => {
+            panic!("schema with extra field should have been accepted, got {:?}", other)
         }
     }
 }
@@ -387,15 +386,11 @@ async fn closeness_uses_normalized_comparison_for_properties() {
         .expect("failed to evaluate schema similarity");
 
     match outcome {
-        SchemaAddOutcome::TooSimilar(conflict) => {
-            assert!(
-                !conflict.closest_schema.name.is_empty(),
-                "closest schema must have a name"
-            );
-            assert!(conflict.similarity >= 0.9);
+        SchemaAddOutcome::AlreadyExists(schema) => {
+            assert!(!schema.name.is_empty(), "existing schema must have a name");
         }
-        SchemaAddOutcome::Added(_, _) => {
-            panic!("schemas should be detected as identical despite property ordering")
+        other => {
+            panic!("schemas should return AlreadyExists despite property ordering, got {:?}", other)
         }
     }
 }
@@ -443,15 +438,11 @@ async fn closeness_ignores_schema_name_in_comparison() {
         .expect("failed to evaluate schema similarity");
 
     match outcome {
-        SchemaAddOutcome::TooSimilar(conflict) => {
-            assert!(
-                !conflict.closest_schema.name.is_empty(),
-                "closest schema must have a name"
-            );
-            assert!(conflict.similarity >= 0.9);
+        SchemaAddOutcome::AlreadyExists(schema) => {
+            assert!(!schema.name.is_empty(), "existing schema must have a name");
         }
-        SchemaAddOutcome::Added(_, _) => {
-            panic!("schemas should be detected as identical despite different names")
+        other => {
+            panic!("schemas should return AlreadyExists despite different names, got {:?}", other)
         }
     }
 }
@@ -497,15 +488,11 @@ async fn closeness_with_object_style_fields() {
         .expect("failed to evaluate schema similarity");
 
     match outcome {
-        SchemaAddOutcome::TooSimilar(conflict) => {
-            assert!(
-                !conflict.closest_schema.name.is_empty(),
-                "closest schema must have a name"
-            );
-            assert!(conflict.similarity >= 0.9);
+        SchemaAddOutcome::AlreadyExists(schema) => {
+            assert!(!schema.name.is_empty(), "existing schema must have a name");
         }
-        SchemaAddOutcome::Added(_, _) => {
-            panic!("identical object-style schemas should be detected as similar")
+        other => {
+            panic!("identical object-style schemas should return AlreadyExists, got {:?}", other)
         }
     }
 }
@@ -562,8 +549,8 @@ async fn closeness_creates_field_mappers_for_high_field_overlap() {
             // Note: field_mappers are no longer automatically created by the schema service
             // Schemas with different fields/topologies are treated as distinct schemas
         }
-        SchemaAddOutcome::TooSimilar(_) => {
-            panic!("schema with extra fields should be accepted")
+        other => {
+            panic!("schema with extra fields should be accepted, got {:?}", other)
         }
     }
 }
@@ -643,15 +630,11 @@ async fn closeness_with_multiple_existing_schemas_finds_closest() {
         .expect("failed to evaluate schema similarity");
 
     match outcome {
-        SchemaAddOutcome::TooSimilar(conflict) => {
-            assert!(
-                !conflict.closest_schema.name.is_empty(),
-                "closest schema must have a name"
-            );
-            assert!(conflict.similarity >= 0.9);
+        SchemaAddOutcome::AlreadyExists(schema) => {
+            assert!(!schema.name.is_empty(), "existing schema must have a name");
         }
-        SchemaAddOutcome::Added(_, _) => {
-            panic!("schema should match Schema2 as closest duplicate")
+        other => {
+            panic!("schema with same fields as Schema2 should return AlreadyExists, got {:?}", other)
         }
     }
 }
@@ -695,15 +678,11 @@ async fn closeness_with_nested_objects() {
         .expect("failed to evaluate schema similarity");
 
     match outcome {
-        SchemaAddOutcome::TooSimilar(conflict) => {
-            assert!(
-                !conflict.closest_schema.name.is_empty(),
-                "closest schema must have a name"
-            );
-            assert!(conflict.similarity >= 0.9);
+        SchemaAddOutcome::AlreadyExists(schema) => {
+            assert!(!schema.name.is_empty(), "existing schema must have a name");
         }
-        SchemaAddOutcome::Added(_, _) => {
-            panic!("identical nested schemas should be detected as similar")
+        other => {
+            panic!("identical nested schemas should return AlreadyExists, got {:?}", other)
         }
     }
 }
@@ -760,8 +739,8 @@ async fn closeness_field_overlap_below_threshold_without_high_similarity() {
         SchemaAddOutcome::Added(response, _) => {
             assert!(!response.name.is_empty(), "schema must have a name");
         }
-        SchemaAddOutcome::TooSimilar(_) => {
-            panic!("low field overlap should allow schema addition")
+        other => {
+            panic!("low field overlap should allow schema addition, got {:?}", other)
         }
     }
 }
@@ -821,8 +800,8 @@ async fn closeness_respects_field_mapper_preservation() {
                 "explicitly provided email mapper should be preserved"
             );
         }
-        SchemaAddOutcome::TooSimilar(_) => {
-            panic!("schema with extra field should be accepted")
+        other => {
+            panic!("schema with extra field should be accepted, got {:?}", other)
         }
     }
 }

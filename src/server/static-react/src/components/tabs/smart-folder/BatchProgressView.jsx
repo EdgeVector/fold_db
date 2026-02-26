@@ -85,10 +85,10 @@ export default function BatchProgressView({
         </div>
         <div className="flex items-center justify-between text-sm text-secondary">
           <span>{batchStatus.files_completed}/{batchStatus.files_total} files {batchStatus.files_failed > 0 && <FailedFilesBadge count={batchStatus.files_failed} files={batchStatus.failed_files} />}</span>
-          {Number(batchStatus.accumulated_cost) > 0 || batchStatus.spend_limit != null ? (
-            <span>{fmtCost(batchStatus.accumulated_cost)} spent{batchStatus.spend_limit != null ? ` / ${fmtCost(batchStatus.spend_limit)} limit` : ''}</span>
-          ) : (
+          {batchStatus.is_local_provider ? (
             <span>Free (local)</span>
+          ) : (
+            <span>{fmtCost(batchStatus.accumulated_cost)} spent{batchStatus.spend_limit != null ? ` / ${fmtCost(batchStatus.spend_limit)} limit` : ''}</span>
           )}
         </div>
         {/* Current file sub-progress */}
@@ -165,7 +165,7 @@ export default function BatchProgressView({
           <span>
             {batchStatus.files_completed} files ingested
             {' '}{batchStatus.files_failed > 0 && <FailedFilesBadge count={batchStatus.files_failed} files={batchStatus.failed_files} />}
-            {Number(batchStatus.accumulated_cost) > 0 ? ` · ${fmtCost(batchStatus.accumulated_cost)} spent` : ' · Free (local)'}
+            {batchStatus.is_local_provider ? ' · Free (local)' : ` · ${fmtCost(batchStatus.accumulated_cost)} spent`}
           </span>
         </div>
         {batchReport && (

@@ -2,7 +2,7 @@
 ///
 /// Run with: cargo run --example test_timeout
 use fold_db::fold_node::schema_client::SchemaServiceClient;
-use fold_db::schema::types::{JsonTopology, PrimitiveType, Schema, SchemaType, TopologyNode};
+use fold_db::schema::types::{Schema, SchemaType};
 use std::collections::HashMap;
 use std::time::Instant;
 
@@ -24,24 +24,11 @@ async fn main() {
         None,
     );
 
-    // Add required field topologies
-    schema.set_field_topology(
-        "id".to_string(),
-        JsonTopology::new(TopologyNode::Primitive {
-            value: PrimitiveType::String,
-            classifications: Some(vec!["word".to_string()]),
-        }),
-    );
+    // Add field classifications
+    schema.field_classifications.insert("id".to_string(), vec!["word".to_string()]);
+    schema.field_classifications.insert("name".to_string(), vec!["word".to_string()]);
 
-    schema.set_field_topology(
-        "name".to_string(),
-        JsonTopology::new(TopologyNode::Primitive {
-            value: PrimitiveType::String,
-            classifications: Some(vec!["word".to_string()]),
-        }),
-    );
-
-    schema.compute_schema_topology_hash();
+    schema.compute_identity_hash();
 
     println!("📡 Attempting to connect to: http://127.0.0.1:9999/api/schemas");
     println!("   (This service doesn't exist - testing timeout behavior)\n");

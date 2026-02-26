@@ -109,17 +109,15 @@ impl LlmQueryService {
                 \"indexed_field\": \"SourceSchema.field.transform()\",\n\
                 \"other_field\": \"SourceSchema.map().other_field\"\n\
               },\n\
-              \"field_topologies\": {\n\
-                \"indexed_field\": {\"root\": {\"type\": \"Primitive\", \"value\": \"String\"}},\n\
-                \"other_field\": {\"root\": {\"type\": \"Primitive\", \"value\": \"String\"}}\n\
+              \"field_classifications\": {\n\
+                \"indexed_field\": [\"word\"],\n\
+                \"other_field\": [\"word\"]\n\
               }\n\
             }\n\n\
-            CRITICAL TOPOLOGY FORMAT:\n\
-            - Every field in field_topologies MUST have format: {\"root\": {\"type\": \"Primitive\", \"value\": \"TYPE\"}}\n\
-            - The \"value\" field is REQUIRED for Primitive types\n\
-            - Valid values: \"String\", \"Number\", \"Boolean\", \"Null\"\n\
-            - Arrays: {\"root\": {\"type\": \"Array\", \"value\": {\"type\": \"Primitive\", \"value\": \"String\"}}}\n\
-            - Objects: {\"root\": {\"type\": \"Object\", \"value\": {\"field1\": {\"type\": \"Primitive\", \"value\": \"String\"}}}}\n\n\
+            FIELD CLASSIFICATIONS:\n\
+            - Each field maps to an array of classification tags\n\
+            - Common tags: \"word\", \"name:person\", \"date\", \"number\", \"name:place\"\n\
+            - Example: \"author\": [\"name:person\", \"word\"], \"price\": [\"number\"]\n\n\
             Transform functions available:\n\
             - split_by_word() - splits text into individual words\n\
             - split_array() - splits array into individual elements\n\
@@ -137,11 +135,11 @@ impl LlmQueryService {
                 \"author\": \"BlogPost.map().author\",\n\
                 \"publish_date\": \"BlogPost.map().publish_date\"\n\
               },\n\
-              \"field_topologies\": {\n\
-                \"word\": {\"root\": {\"type\": \"Primitive\", \"value\": \"String\"}},\n\
-                \"title\": {\"root\": {\"type\": \"Primitive\", \"value\": \"String\"}},\n\
-                \"author\": {\"root\": {\"type\": \"Primitive\", \"value\": \"String\"}},\n\
-                \"publish_date\": {\"root\": {\"type\": \"Primitive\", \"value\": \"String\"}}\n\
+              \"field_classifications\": {\n\
+                \"word\": [\"word\"],\n\
+                \"title\": [\"word\"],\n\
+                \"author\": [\"name:person\", \"word\"],\n\
+                \"publish_date\": [\"date\"]\n\
               }\n\
             }\n\n\
             2. Author lookup index:\n\
@@ -155,11 +153,11 @@ impl LlmQueryService {
                 \"content\": \"BlogPost.map().content\",\n\
                 \"publish_date\": \"BlogPost.map().publish_date\"\n\
               },\n\
-              \"field_topologies\": {\n\
-                \"author\": {\"root\": {\"type\": \"Primitive\", \"value\": \"String\"}},\n\
-                \"title\": {\"root\": {\"type\": \"Primitive\", \"value\": \"String\"}},\n\
-                \"content\": {\"root\": {\"type\": \"Primitive\", \"value\": \"String\"}},\n\
-                \"publish_date\": {\"root\": {\"type\": \"Primitive\", \"value\": \"String\"}}\n\
+              \"field_classifications\": {\n\
+                \"author\": [\"name:person\", \"word\"],\n\
+                \"title\": [\"word\"],\n\
+                \"content\": [\"word\"],\n\
+                \"publish_date\": [\"date\"]\n\
               }\n\
             }\n\n\
             3. Tag search index (array splitting):\n\
@@ -174,12 +172,12 @@ impl LlmQueryService {
                 \"price\": \"Product.map().price\",\n\
                 \"created_at\": \"Product.map().created_at\"\n\
               },\n\
-              \"field_topologies\": {\n\
-                \"tag\": {\"root\": {\"type\": \"Primitive\", \"value\": \"String\"}},\n\
-                \"product_id\": {\"root\": {\"type\": \"Primitive\", \"value\": \"String\"}},\n\
-                \"name\": {\"root\": {\"type\": \"Primitive\", \"value\": \"String\"}},\n\
-                \"price\": {\"root\": {\"type\": \"Primitive\", \"value\": \"Number\"}},\n\
-                \"created_at\": {\"root\": {\"type\": \"Primitive\", \"value\": \"String\"}}\n\
+              \"field_classifications\": {\n\
+                \"tag\": [\"word\"],\n\
+                \"product_id\": [\"word\"],\n\
+                \"name\": [\"word\"],\n\
+                \"price\": [\"number\"],\n\
+                \"created_at\": [\"date\"]\n\
               }\n\
             }\n\n\
             IMPORTANT: \n\
@@ -188,7 +186,7 @@ impl LlmQueryService {
             - For \"most recent\", \"latest\", or \"newest\" queries, use null filter (NOT SampleN)\n\
             - Prefer existing approved schemas; only recommend index_schema if no efficient schema exists\n\
             - Index schemas must always have schema_type \"HashRange\" (implicit)\n\
-            - Always include field_topologies for all fields in transform_fields\n\
+            - Always include field_classifications for all fields in transform_fields\n\
             - Choose hash_field based on what will be queried (word, author, tag, etc.)\n\
             - Choose range_field as a timestamp or ID for natural ordering"
         );

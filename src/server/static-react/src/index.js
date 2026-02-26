@@ -23,7 +23,6 @@ export { default as TransformsTab } from "./components/tabs/TransformsTab";
 
 // Schema Components
 export { default as SchemaStatusBadge } from "./components/schema/SchemaStatusBadge";
-export { default as TopologyDisplay } from "./components/schema/TopologyDisplay";
 
 // Form Components
 export { default as FieldWrapper } from "./components/form/FieldWrapper";

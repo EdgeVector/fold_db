@@ -9,7 +9,6 @@ import {
   fetchSchemas
 } from '../../store/schemaSlice'
 import schemaClient from '../../api/clients/schemaClient'
-import TopologyDisplay from '../schema/TopologyDisplay'
 import SchemaName from '../shared/SchemaName'
 import { SCHEMA_BADGE_COLORS } from '../../constants/ui'
 import { toErrorMessage } from '../../utils/schemaUtils'
@@ -260,7 +259,8 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
               {/* Declarative schema: fields is an array of strings */}
               {Array.isArray(schema.fields) ? (
                 schema.fields.map(fieldName => {
-                  const fieldTopology = schema.field_topologies?.[fieldName]
+                  const classifications = schema.field_classifications?.[fieldName]
+                  const refSchema = schema.ref_fields?.[fieldName]
                   return (
                     <div key={fieldName} className="card p-3">
                       <div className="flex items-center justify-between">
@@ -276,8 +276,25 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
                             {hashRangeSchemaInfo?.rangeField === fieldName && (
                               <span className="badge badge-info">Range Key</span>
                             )}
+                            {classifications && classifications.length > 0 && (
+                              <span className="flex space-x-1">
+                                {classifications.map(cls => (
+                                  <span key={cls} className="px-1.5 py-0.5 text-xs bg-surface-secondary text-primary rounded-full font-mono">
+                                    {cls}
+                                  </span>
+                                ))}
+                              </span>
+                            )}
+                            {refSchema && (
+                              <button
+                                className="font-mono text-xs text-gruvbox-purple hover:text-gruvbox-yellow underline decoration-dotted cursor-pointer bg-transparent border-none p-0"
+                                title={refSchema}
+                                onClick={() => scrollToSchema(refSchema)}
+                              >
+                                Ref&lt;{refSchema.length > 16 ? refSchema.slice(0, 12) + '...' : refSchema}&gt;
+                              </button>
+                            )}
                           </div>
-                          {fieldTopology && <TopologyDisplay topology={fieldTopology} onRefClick={scrollToSchema} />}
                         </div>
                       </div>
                     </div>

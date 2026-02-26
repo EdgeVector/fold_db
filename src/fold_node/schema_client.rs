@@ -309,6 +309,12 @@ mod tests {
                                         mutation_mappers,
                                     })
                                 }
+                                Ok(SchemaAddOutcome::AlreadyExists(schema)) => {
+                                    HttpResponse::Ok().json(AddSchemaResponse {
+                                        schema,
+                                        mutation_mappers: HashMap::new(),
+                                    })
+                                }
                                 Ok(SchemaAddOutcome::TooSimilar(conflict)) => {
                                     HttpResponse::Conflict().json(ConflictResponse {
                                         error: "Schema too similar to existing schema".to_string(),
@@ -360,23 +366,15 @@ mod tests {
             None,
         );
 
-        // Add required topology
-        schema.set_field_topology(
-            "id".to_string(),
-            crate::schema::types::JsonTopology::new(
-                crate::schema::types::TopologyNode::Primitive {
-                    value: crate::schema::types::PrimitiveType::String,
-                    classifications: Some(vec!["word".to_string()]),
-                },
-            ),
-        );
+        // Add classifications
+        schema.field_classifications.insert("id".to_string(), vec!["word".to_string()]);
 
         let response = client
             .add_schema(&schema, HashMap::new())
             .await
             .expect("schema addition should succeed");
 
-        // Schema name should be the topology_hash (64 char hex string)
+        // Schema name should be the identity_hash (64 char hex string)
         assert_eq!(response.schema.name.len(), 64);
 
         handle.stop(true).await;

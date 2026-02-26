@@ -338,7 +338,8 @@ pub async fn smart_folder_ingest(
         .collect();
 
     // Create the batch controller
-    let controller = BatchController::new(batch_id.clone(), request.spend_limit, pending_files);
+    let is_local = service.is_local_provider();
+    let controller = BatchController::new(batch_id.clone(), request.spend_limit, pending_files, is_local);
     let ctrl_arc = Arc::new(Mutex::new(controller));
 
     // Register in the global map

@@ -9,7 +9,6 @@ use crate::ingestion::mutation_generator;
 use crate::ingestion::{IngestionError, IngestionResult};
 use crate::log_feature;
 use crate::logging::features::LogFeature;
-use crate::schema::types::topology::{JsonTopology, TopologyNode};
 use crate::schema::types::KeyValue;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -95,7 +94,7 @@ impl IngestionService {
             },
         );
 
-        // Update the parent schema with Reference topologies for each decomposed child field.
+        // Update the parent schema with ref_fields for each decomposed child field.
         // Children are resolved depth-first above, so their schema names are already in the cache.
         // Only do this when we actually resolved children (not at depth limit).
         if !rep_decomp.children.is_empty() && depth < MAX_DECOMPOSITION_DEPTH {
@@ -121,11 +120,9 @@ impl IngestionService {
                                     child_group.structure_hash, child_group.field_name
                                 ))
                             })?;
-                        schema.set_field_topology(
+                        schema.ref_fields.insert(
                             child_group.field_name.clone(),
-                            JsonTopology::new(TopologyNode::Reference {
-                                schema_name: child_schema_name,
-                            }),
+                            child_schema_name,
                         );
 
                         // Register the Reference field as a queryable schema field
@@ -150,7 +147,7 @@ impl IngestionService {
 
                     schema_manager.update_schema(&schema).await.map_err(|e| {
                         IngestionError::SchemaCreationError(format!(
-                            "Failed to update schema with Reference topologies: {}",
+                            "Failed to update schema with ref_fields: {}",
                             e
                         ))
                     })?;
@@ -159,7 +156,7 @@ impl IngestionService {
                     log_feature!(
                         LogFeature::Ingestion,
                         warn,
-                        "Schema '{}' not found when updating Reference topologies — child references will not be linked",
+                        "Schema '{}' not found when updating ref_fields — child references will not be linked",
                         schema_name
                     );
                 }
@@ -167,7 +164,7 @@ impl IngestionService {
                     log_feature!(
                         LogFeature::Ingestion,
                         error,
-                        "Failed to get schema '{}' for Reference topology update: {}",
+                        "Failed to get schema '{}' for ref_fields update: {}",
                         schema_name,
                         e
                     );
@@ -181,7 +178,7 @@ impl IngestionService {
     /// Process a single item through decomposition: recursively handle its
     /// children, then generate and execute a mutation for the flat parent.
     ///
-    /// `structure_hash` is the topology hash of the full item (before decomposition),
+    /// `structure_hash` is the identity hash of the full item (before decomposition),
     /// matching the key used in `resolve_schema_for_structure`.
     ///
     /// Returns (mutations_generated, mutations_executed, own_key_value).

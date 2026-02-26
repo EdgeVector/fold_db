@@ -113,6 +113,8 @@ fn execute_engine_and_convert_to_records() {
                 atom_uuid: "a1".to_string(),
                 source_file_name: None,
                 metadata: None,
+                molecule_uuid: None,
+                molecule_version: None,
             },
         );
         m.insert(
@@ -122,6 +124,8 @@ fn execute_engine_and_convert_to_records() {
                 atom_uuid: "a2".to_string(),
                 source_file_name: None,
                 metadata: None,
+                molecule_uuid: None,
+                molecule_version: None,
             },
         );
         typed_input.insert(name.to_string(), m);

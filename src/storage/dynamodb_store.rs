@@ -1,11 +1,11 @@
 //! DynamoDB storage backend for schema service
 //!
 //! Uses DynamoDB as the primary storage for schemas, eliminating the need
-//! for distributed locking since topology hashes are deterministic and unique.
+//! for distributed locking since identity hashes are deterministic and unique.
 //!
 //! Key structure:
 //! - Partition Key (PK): user_id (or "default" for single-tenant)
-//! - Sort Key (SK): schema_name (topology_hash)
+//! - Sort Key (SK): schema_name (identity_hash)
 //! - Value: SchemaJson, MutationMappers, CreatedAt, UpdatedAt
 
 use aws_sdk_dynamodb::types::AttributeValue;
@@ -166,7 +166,7 @@ impl DynamoDbSchemaStore {
         self.get_current_user_id()
     }
 
-    /// Get a schema by its topology hash
+    /// Get a schema by its identity hash
     /// Includes retry logic for transient failures
     pub async fn get_schema(&self, schema_name: &str) -> FoldDbResult<Option<Schema>> {
         let pk = self.get_partition_key()?;
@@ -211,7 +211,7 @@ impl DynamoDbSchemaStore {
     }
 
     /// Put a schema into DynamoDB
-    /// Note: This is idempotent - writing the same schema (same topology_hash) multiple times is safe
+    /// Note: This is idempotent - writing the same schema (same identity_hash) multiple times is safe
     /// CreatedAt is only set if the schema doesn't exist, UpdatedAt is always set
     pub async fn put_schema(
         &self,

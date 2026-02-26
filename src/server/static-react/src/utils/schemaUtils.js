@@ -11,7 +11,7 @@
 
 /**
  * Get the human-readable display name for a schema.
- * Prefers descriptive_name, falls back to the topology-hash name.
+ * Prefers descriptive_name, falls back to the identity-hash name.
  */
 export function getSchemaDisplayName(schema) {
   return schema?.descriptive_name || schema?.name || ''

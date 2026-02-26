@@ -347,13 +347,43 @@ impl SchemaCore {
         let existing_schema = self.db_ops.get_schema(&name).await?;
 
         if existing_schema.is_some() {
-            // Existing schema - update in-memory cache with new schema
-            // The schema already has field_molecule_uuids persisted and restored
+            // Existing schema — update the in-memory cache, but protect molecule
+            // state. When the schema service returns a schema definition during
+            // ingestion, it doesn't carry field_molecule_uuids. If we replaced the
+            // cached schema unconditionally, molecule state would be lost and
+            // subsequent mutations would create new molecules instead of appending.
+            //
+            // When the mutation_manager calls this after writing, the incoming
+            // schema DOES have field_molecule_uuids (from sync_molecule_uuids),
+            // so we allow the replacement.
             {
                 let mut schemas = self.schemas.lock().map_err(|_| {
                     SchemaError::InvalidData("Failed to acquire schemas lock".to_string())
                 })?;
-                schemas.insert(name.clone(), schema);
+
+                let incoming_has_molecules = schema.field_molecule_uuids
+                    .as_ref()
+                    .is_some_and(|m| !m.is_empty());
+
+                if incoming_has_molecules {
+                    // Incoming schema carries molecule state (from mutation_manager) — use it
+                    schemas.insert(name.clone(), schema);
+                } else if let Some(cached) = schemas.get(&name) {
+                    let cached_has_molecules = cached.field_molecule_uuids
+                        .as_ref()
+                        .is_some_and(|m| !m.is_empty());
+                    if cached_has_molecules {
+                        // Cached schema has molecule state, incoming doesn't — preserve cache
+                        log::debug!(
+                            "load_schema_internal: preserving cached molecule state for '{}'",
+                            name
+                        );
+                    } else {
+                        schemas.insert(name.clone(), schema);
+                    }
+                } else {
+                    schemas.insert(name.clone(), schema);
+                }
             } // Drop the lock before await
 
             // Preserve existing state from database
@@ -622,5 +652,64 @@ mod tests {
             .expect("load from file");
         let schemas = core.get_schemas().expect("get_schemas");
         assert!(schemas.contains_key("BlogPostWordIndex"));
+    }
+
+    #[tokio::test]
+    async fn reload_schema_from_json_preserves_molecule_uuids() {
+        // Simulate the bug: load a schema, set molecule UUIDs (as mutation_manager does),
+        // then reload from JSON (as ingestion does for each file). The molecule UUIDs
+        // on the cached schema should survive the reload.
+        let core = SchemaCore::new_for_testing().await.expect("init core");
+
+        // Load schema for the first time
+        core.load_schema_from_json(&blogpost_schema_json())
+            .await
+            .expect("load blogpost");
+
+        // Simulate what mutation_manager does: set molecule_uuid on a runtime field
+        // and sync to field_molecule_uuids
+        {
+            let mut schemas = core.schemas.lock().unwrap();
+            let schema = schemas.get_mut("BlogPost").expect("schema exists");
+            let field = schema
+                .runtime_fields
+                .get_mut("title")
+                .expect("title field");
+            field.common_mut().set_molecule_uuid("mol-uuid-title".to_string());
+            schema.sync_molecule_uuids();
+
+            // Persist to DB so load_schema_internal sees it exists
+        }
+        // Also store to DB
+        {
+            let schemas = core.schemas.lock().unwrap();
+            let schema = schemas.get("BlogPost").unwrap();
+            core.db_ops
+                .store_schema("BlogPost", schema)
+                .await
+                .expect("store schema");
+        }
+
+        // Now reload from JSON (simulates what ingestion does for each file)
+        // The JSON from the schema service does NOT have field_molecule_uuids
+        core.load_schema_from_json(&blogpost_schema_json())
+            .await
+            .expect("reload blogpost");
+
+        // Verify the molecule UUID survived the reload
+        let schemas = core.get_schemas().expect("get_schemas");
+        let schema = schemas.get("BlogPost").expect("BlogPost exists");
+
+        // The persisted field_molecule_uuids should still have our molecule UUID
+        // because load_schema_internal should preserve existing state
+        let mol_uuids = schema
+            .field_molecule_uuids
+            .as_ref()
+            .expect("field_molecule_uuids should exist");
+        assert_eq!(
+            mol_uuids.get("title"),
+            Some(&"mol-uuid-title".to_string()),
+            "molecule UUID for title should survive schema reload"
+        );
     }
 }

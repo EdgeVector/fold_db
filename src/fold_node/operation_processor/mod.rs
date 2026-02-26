@@ -29,7 +29,6 @@ mod tests {
     use crate::schema::types::key_config::KeyConfig;
     use crate::schema::types::operations::MutationType;
     use crate::schema::types::schema::DeclarativeSchemaType as SchemaType;
-    use crate::schema::types::topology::{JsonTopology, TopologyNode, PrimitiveValueType};
     use crate::schema::types::{KeyValue, Mutation};
     use crate::schema::SchemaState;
     use crate::security::Ed25519KeyPair;
@@ -81,13 +80,6 @@ mod tests {
         let _ = check_methods;
     }
 
-    fn string_topology() -> JsonTopology {
-        JsonTopology::new(TopologyNode::Primitive {
-            value: PrimitiveValueType::String,
-            classifications: None,
-        })
-    }
-
     /// Helper: create a child HashRange schema with hash+range keys and one data field.
     /// Uses `field` as hash key and `_rk` as range key, both included in `fields`.
     fn make_child_schema(name: &str, field: &str) -> DeclarativeSchemaDefinition {
@@ -102,12 +94,12 @@ mod tests {
             None,
             None,
         );
-        schema.field_topologies.insert(field.to_string(), string_topology());
-        schema.field_topologies.insert("_rk".to_string(), string_topology());
+        schema.field_classifications.insert(field.to_string(), vec!["word".to_string()]);
+        schema.field_classifications.insert("_rk".to_string(), vec!["word".to_string()]);
         schema
     }
 
-    /// Helper: create a parent HashRange schema with a name field and a Reference field.
+    /// Helper: create a parent HashRange schema with a name field and a reference field.
     fn make_parent_schema(name: &str, ref_field: &str, child_schema_name: &str) -> DeclarativeSchemaDefinition {
         let mut schema = DeclarativeSchemaDefinition::new(
             name.to_string(),
@@ -120,14 +112,9 @@ mod tests {
             None,
             None,
         );
-        schema.field_topologies.insert("name".to_string(), string_topology());
-        schema.field_topologies.insert("_rk".to_string(), string_topology());
-        schema.field_topologies.insert(
-            ref_field.to_string(),
-            JsonTopology::new(TopologyNode::Reference {
-                schema_name: child_schema_name.to_string(),
-            }),
-        );
+        schema.field_classifications.insert("name".to_string(), vec!["word".to_string()]);
+        schema.field_classifications.insert("_rk".to_string(), vec!["word".to_string()]);
+        schema.ref_fields.insert(ref_field.to_string(), child_schema_name.to_string());
         schema
     }
 
@@ -337,21 +324,6 @@ mod tests {
         assert!(OperationProcessor::filter_from_key_value(&kv).is_none());
     }
 
-    fn object_topology(children: Vec<(&str, TopologyNode)>) -> JsonTopology {
-        let value = children
-            .into_iter()
-            .map(|(k, v)| (k.to_string(), v))
-            .collect();
-        JsonTopology::new(TopologyNode::Object { value })
-    }
-
-    fn string_primitive() -> TopologyNode {
-        TopologyNode::Primitive {
-            value: PrimitiveValueType::String,
-            classifications: None,
-        }
-    }
-
     /// Test that nested dotted path key resolution works end-to-end through mutation_manager.
     /// This verifies the fix for schemas where range_field is "departure.date"
     /// and the mutation has {"departure": {"date": "2025-03-15"}}.
@@ -372,14 +344,8 @@ mod tests {
             None,
             None,
         );
-        schema.field_topologies.insert("booking_id".to_string(), string_topology());
-        schema.field_topologies.insert(
-            "departure".to_string(),
-            object_topology(vec![
-                ("date", string_primitive()),
-                ("city", string_primitive()),
-            ]),
-        );
+        schema.field_classifications.insert("booking_id".to_string(), vec!["word".to_string()]);
+        schema.field_classifications.insert("departure".to_string(), vec!["word".to_string()]);
 
         load_and_approve_schema(&node, schema).await;
         approve_schema(&node, "FlightBooking").await;
@@ -441,14 +407,8 @@ mod tests {
             None,
             None,
         );
-        schema.field_topologies.insert("ticker".to_string(), string_topology());
-        schema.field_topologies.insert(
-            "price".to_string(),
-            JsonTopology::new(TopologyNode::Primitive {
-                value: PrimitiveValueType::Number,
-                classifications: None,
-            }),
-        );
+        schema.field_classifications.insert("ticker".to_string(), vec!["word".to_string()]);
+        schema.field_classifications.insert("price".to_string(), vec!["number".to_string()]);
 
         load_and_approve_schema(&node, schema).await;
         approve_schema(&node, "StockPrice").await;

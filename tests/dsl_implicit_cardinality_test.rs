@@ -25,6 +25,8 @@ fn test_implicit_cardinality_execution() {
             atom_uuid: "atom1".to_string(),
             source_file_name: None,
             metadata: None,
+            molecule_uuid: None,
+            molecule_version: None,
         },
     );
     content_atoms.insert(
@@ -34,6 +36,8 @@ fn test_implicit_cardinality_execution() {
             atom_uuid: "atom2".to_string(),
             source_file_name: None,
             metadata: None,
+            molecule_uuid: None,
+            molecule_version: None,
         },
     );
     input_data.insert("content".to_string(), content_atoms);

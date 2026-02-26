@@ -35,6 +35,7 @@ pub struct SchemaSimilarityResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum SchemaAddOutcome {
     Added(Schema, HashMap<String, String>), // Schema and mutation_mappers
+    AlreadyExists(Schema),                  // Exact same identity hash
     TooSimilar(SchemaSimilarityResponse),
 }
 
@@ -190,7 +191,7 @@ impl SchemaServiceState {
     }
 
     /// Create a new schema service state with Cloud storage
-    /// No locking needed - topology hashes ensure idempotent writes!
+    /// No locking needed - identity hashes ensure idempotent writes!
     #[cfg(feature = "aws-backend")]
     pub async fn new_with_cloud(config: CloudConfig) -> FoldDbResult<Self> {
         log_feature!(
@@ -304,46 +305,34 @@ impl SchemaServiceState {
         mut schema: Schema,
         mutation_mappers: HashMap<String, String>,
     ) -> FoldDbResult<SchemaAddOutcome> {
-        // Validate that all fields have topologies defined
-        if let Some(ref fields) = schema.fields {
-            for field_name in fields {
-                if !schema.field_topologies.contains_key(field_name) {
-                    return Err(FoldDbError::Config(format!(
-                        "Field '{}' is missing a topology definition. All fields must have a topology.",
-                        field_name
-                    )));
-                }
-            }
-        }
-
-        // Ensure topology_hash is computed
-        if schema.topology_hash.is_none() {
-            schema.compute_schema_topology_hash();
+        // Ensure identity_hash is computed
+        if schema.identity_hash.is_none() {
+            schema.compute_identity_hash();
         }
 
         // Get the original schema name before we modify it
         let original_schema_name = schema.name.clone();
 
-        // Use topology_hash as the schema identifier
-        let topology_hash = schema
-            .get_topology_hash()
+        // Use identity_hash as the schema identifier
+        let identity_hash = schema
+            .get_identity_hash()
             .ok_or_else(|| {
-                FoldDbError::Config("Schema must have topology_hash computed".to_string())
+                FoldDbError::Config("Schema must have identity_hash computed".to_string())
             })?
             .clone();
 
         log_feature!(
             LogFeature::Schema,
             info,
-            "Schema '{}' topology_hash: {}",
+            "Schema '{}' identity_hash: {}",
             original_schema_name,
-            topology_hash
+            identity_hash
         );
 
-        // Use topology_hash as unique identifier (already includes field names)
-        let schema_name = topology_hash.clone();
+        // Use identity_hash as unique identifier (SHA256 of sorted field names)
+        let schema_name = identity_hash.clone();
 
-        // Check if this exact combination already exists
+        // Check if this exact schema already exists (same identity hash = same fields)
         {
             let schemas = self.schemas.read().map_err(|_| {
                 FoldDbError::Config("Failed to acquire schemas read lock".to_string())
@@ -353,14 +342,11 @@ impl SchemaServiceState {
                 log_feature!(
                     LogFeature::Schema,
                     info,
-                    "Schema '{}' already exists - using existing schema",
+                    "Schema '{}' already exists - returning existing schema",
                     schema_name
                 );
 
-                return Ok(SchemaAddOutcome::TooSimilar(SchemaSimilarityResponse {
-                    similarity: 1.0,
-                    closest_schema: existing_schema.clone(),
-                }));
+                return Ok(SchemaAddOutcome::AlreadyExists(existing_schema.clone()));
             }
         }
 
@@ -398,7 +384,7 @@ impl SchemaServiceState {
             }
             #[cfg(feature = "aws-backend")]
             SchemaStorage::Cloud { store } => {
-                // No locking needed! Topology hash ensures idempotent writes
+                // No locking needed! Identity hash ensures idempotent writes
                 store.put_schema(&schema, &mutation_mappers).await?;
 
                 log_feature!(
@@ -732,6 +718,12 @@ async fn add_schema(
                 mutation_mappers,
             })
         }
+        Ok(SchemaAddOutcome::AlreadyExists(schema)) => {
+            HttpResponse::Ok().json(AddSchemaResponse {
+                schema,
+                mutation_mappers: HashMap::new(),
+            })
+        }
         Ok(SchemaAddOutcome::TooSimilar(conflict)) => {
             HttpResponse::Conflict().json(ConflictResponse {
                 error: "Schema too similar to existing schema".to_string(),
@@ -970,25 +962,9 @@ mod tests {
             None,
         );
 
-        // Add required topologies
-        new_schema.set_field_topology(
-            "id".to_string(),
-            crate::schema::types::JsonTopology::new(
-                crate::schema::types::TopologyNode::Primitive {
-                    value: crate::schema::types::PrimitiveType::String,
-                    classifications: Some(vec!["word".to_string()]),
-                },
-            ),
-        );
-        new_schema.set_field_topology(
-            "value".to_string(),
-            crate::schema::types::JsonTopology::new(
-                crate::schema::types::TopologyNode::Primitive {
-                    value: crate::schema::types::PrimitiveType::String,
-                    classifications: Some(vec!["word".to_string()]),
-                },
-            ),
-        );
+        // Add classifications
+        new_schema.field_classifications.insert("id".to_string(), vec!["word".to_string()]);
+        new_schema.field_classifications.insert("value".to_string(), vec!["word".to_string()]);
 
         let outcome = state
             .add_schema(new_schema.clone(), HashMap::new())
@@ -997,15 +973,18 @@ mod tests {
 
         let added_schema = match outcome {
             SchemaAddOutcome::Added(schema, _mutation_mappers) => schema,
-            SchemaAddOutcome::TooSimilar(_) => panic!("schema should have been added"),
+            SchemaAddOutcome::AlreadyExists(_) | SchemaAddOutcome::TooSimilar(_) => {
+                panic!("schema should have been added")
+            }
         };
 
-        // Schema name should be the topology_hash (64 char hex string)
+        // Schema name should be the identity_hash (64 char hex string)
         assert_eq!(added_schema.name.len(), 64); // 64 char hash
-        assert_eq!(&added_schema.name, new_schema.get_topology_hash().unwrap());
+        new_schema.compute_identity_hash();
+        assert_eq!(&added_schema.name, new_schema.get_identity_hash().unwrap());
 
-        // Topology should match
-        assert_eq!(added_schema.field_topologies, new_schema.field_topologies);
+        // Classifications should match
+        assert_eq!(added_schema.field_classifications, new_schema.field_classifications);
 
         let stored_schemas = state
             .schemas
@@ -1055,25 +1034,9 @@ mod tests {
             None,
         );
 
-        // Add required topologies
-        existing_schema.set_field_topology(
-            "id".to_string(),
-            crate::schema::types::JsonTopology::new(
-                crate::schema::types::TopologyNode::Primitive {
-                    value: crate::schema::types::PrimitiveType::String,
-                    classifications: Some(vec!["word".to_string()]),
-                },
-            ),
-        );
-        existing_schema.set_field_topology(
-            "value".to_string(),
-            crate::schema::types::JsonTopology::new(
-                crate::schema::types::TopologyNode::Primitive {
-                    value: crate::schema::types::PrimitiveType::String,
-                    classifications: Some(vec!["word".to_string()]),
-                },
-            ),
-        );
+        // Add classifications
+        existing_schema.field_classifications.insert("id".to_string(), vec!["word".to_string()]);
+        existing_schema.field_classifications.insert("value".to_string(), vec!["word".to_string()]);
 
         let mut similar_schema = Schema::new(
             "PotentialDuplicate".to_string(),
@@ -1084,25 +1047,9 @@ mod tests {
             None,
         );
 
-        // Add required topologies
-        similar_schema.set_field_topology(
-            "id".to_string(),
-            crate::schema::types::JsonTopology::new(
-                crate::schema::types::TopologyNode::Primitive {
-                    value: crate::schema::types::PrimitiveType::String,
-                    classifications: Some(vec!["word".to_string()]),
-                },
-            ),
-        );
-        similar_schema.set_field_topology(
-            "value".to_string(),
-            crate::schema::types::JsonTopology::new(
-                crate::schema::types::TopologyNode::Primitive {
-                    value: crate::schema::types::PrimitiveType::String,
-                    classifications: Some(vec!["word".to_string()]),
-                },
-            ),
-        );
+        // Add classifications
+        similar_schema.field_classifications.insert("id".to_string(), vec!["word".to_string()]);
+        similar_schema.field_classifications.insert("value".to_string(), vec!["word".to_string()]);
 
         // First schema gets added
         let outcome1 = state
@@ -1112,36 +1059,37 @@ mod tests {
 
         let existing_name = match outcome1 {
             SchemaAddOutcome::Added(schema, _) => {
-                // Should be topology_hash (64 char hex string)
+                // Should be identity_hash (64 char hex string)
                 assert_eq!(schema.name.len(), 64);
                 schema.name
             }
-            SchemaAddOutcome::TooSimilar(_) => panic!("first schema should be added"),
+            SchemaAddOutcome::AlreadyExists(_) | SchemaAddOutcome::TooSimilar(_) => {
+                panic!("first schema should be added")
+            }
         };
 
-        // Second schema with SAME topology and SAME name should be detected as exact duplicate
+        // Second schema with SAME fields should be detected as already existing
         let outcome2 = state
             .add_schema(similar_schema.clone(), HashMap::new())
             .await
             .expect("failed to evaluate schema similarity");
 
         match outcome2 {
-            SchemaAddOutcome::TooSimilar(conflict) => {
-                assert_eq!(conflict.similarity, 1.0); // Exact duplicate
-                assert_eq!(conflict.closest_schema.name, existing_name);
+            SchemaAddOutcome::AlreadyExists(schema) => {
+                assert_eq!(schema.name, existing_name);
                 assert_eq!(
-                    conflict.closest_schema.field_topologies,
-                    existing_schema.field_topologies
+                    schema.field_classifications,
+                    existing_schema.field_classifications
                 );
             }
-            SchemaAddOutcome::Added(_, _) => {
-                panic!("schema with same name and topology should be rejected as duplicate")
+            SchemaAddOutcome::Added(_, _) | SchemaAddOutcome::TooSimilar(_) => {
+                panic!("schema with same fields should return AlreadyExists")
             }
         }
     }
 
     #[tokio::test]
-    async fn add_schema_with_different_topology_creates_separate_schema() {
+    async fn add_schema_with_different_fields_creates_separate_schema() {
         let temp_dir = tempdir().expect("failed to create temp directory");
         let db_path = temp_dir
             .path()
@@ -1161,25 +1109,8 @@ mod tests {
             None,
             None,
         );
-
-        schema1.set_field_topology(
-            "id".to_string(),
-            crate::schema::types::JsonTopology::new(
-                crate::schema::types::TopologyNode::Primitive {
-                    value: crate::schema::types::PrimitiveType::String,
-                    classifications: Some(vec!["word".to_string()]),
-                },
-            ),
-        );
-        schema1.set_field_topology(
-            "name".to_string(),
-            crate::schema::types::JsonTopology::new(
-                crate::schema::types::TopologyNode::Primitive {
-                    value: crate::schema::types::PrimitiveType::String,
-                    classifications: Some(vec!["word".to_string()]),
-                },
-            ),
-        );
+        schema1.field_classifications.insert("id".to_string(), vec!["word".to_string()]);
+        schema1.field_classifications.insert("name".to_string(), vec!["name:person".to_string(), "word".to_string()]);
 
         let outcome1 = state
             .add_schema(schema1.clone(), HashMap::new())
@@ -1191,7 +1122,7 @@ mod tests {
             other => panic!("expected schema addition, got {:?}", other),
         };
 
-        // Second schema: 3 fields (different topology!)
+        // Second schema: 3 fields (different field set)
         let mut schema2 = Schema::new(
             "UserExtended".to_string(),
             crate::schema::types::SchemaType::Single,
@@ -1204,34 +1135,9 @@ mod tests {
             None,
             None,
         );
-
-        schema2.set_field_topology(
-            "id".to_string(),
-            crate::schema::types::JsonTopology::new(
-                crate::schema::types::TopologyNode::Primitive {
-                    value: crate::schema::types::PrimitiveType::String,
-                    classifications: Some(vec!["word".to_string()]),
-                },
-            ),
-        );
-        schema2.set_field_topology(
-            "name".to_string(),
-            crate::schema::types::JsonTopology::new(
-                crate::schema::types::TopologyNode::Primitive {
-                    value: crate::schema::types::PrimitiveType::String,
-                    classifications: Some(vec!["word".to_string()]),
-                },
-            ),
-        );
-        schema2.set_field_topology(
-            "email".to_string(),
-            crate::schema::types::JsonTopology::new(
-                crate::schema::types::TopologyNode::Primitive {
-                    value: crate::schema::types::PrimitiveType::String,
-                    classifications: Some(vec!["word".to_string()]),
-                },
-            ),
-        );
+        schema2.field_classifications.insert("id".to_string(), vec!["word".to_string()]);
+        schema2.field_classifications.insert("name".to_string(), vec!["name:person".to_string(), "word".to_string()]);
+        schema2.field_classifications.insert("email".to_string(), vec!["email".to_string()]);
 
         let outcome2 = state
             .add_schema(schema2.clone(), HashMap::new())
@@ -1243,47 +1149,12 @@ mod tests {
             other => panic!("expected schema addition, got {:?}", other),
         };
 
-        // Should be topology hashes (64 char hex strings)
+        // Should be identity hashes (64 char hex strings)
         assert_eq!(schema1_name.len(), 64);
         assert_eq!(schema2_name.len(), 64);
 
-        // Different topologies should produce different names
+        // Different field sets should produce different names
         assert_ne!(schema1_name, schema2_name);
-    }
-
-    #[tokio::test]
-    async fn add_schema_rejects_missing_topology() {
-        let temp_dir = tempdir().expect("failed to create temp directory");
-        let db_path = temp_dir
-            .path()
-            .join("test_schema_db")
-            .to_string_lossy()
-            .to_string();
-
-        let state = SchemaServiceState::new(db_path.clone())
-            .expect("failed to initialize schema service state");
-
-        // Schema without topology
-        let invalid_schema = Schema::new(
-            "TestSchema".to_string(),
-            crate::schema::types::SchemaType::Single,
-            None,
-            Some(vec!["id".to_string()]),
-            None,
-            None,
-        );
-
-        let error = state
-            .add_schema(invalid_schema, HashMap::new())
-            .await
-            .expect_err("schema without topology should be rejected");
-
-        match error {
-            FoldDbError::Config(message) => {
-                assert!(message.contains("missing a topology definition"));
-            }
-            other => panic!("expected config error, got {:?}", other),
-        }
     }
 
     #[tokio::test]
@@ -1310,35 +1181,9 @@ mod tests {
             None,
             None,
         );
-
-        // Add required topologies for schema1
-        schema1.set_field_topology(
-            "user_id".to_string(),
-            crate::schema::types::JsonTopology::new(
-                crate::schema::types::TopologyNode::Primitive {
-                    value: crate::schema::types::PrimitiveType::String,
-                    classifications: Some(vec!["word".to_string()]),
-                },
-            ),
-        );
-        schema1.set_field_topology(
-            "username".to_string(),
-            crate::schema::types::JsonTopology::new(
-                crate::schema::types::TopologyNode::Primitive {
-                    value: crate::schema::types::PrimitiveType::String,
-                    classifications: Some(vec!["word".to_string()]),
-                },
-            ),
-        );
-        schema1.set_field_topology(
-            "email".to_string(),
-            crate::schema::types::JsonTopology::new(
-                crate::schema::types::TopologyNode::Primitive {
-                    value: crate::schema::types::PrimitiveType::String,
-                    classifications: Some(vec!["word".to_string()]),
-                },
-            ),
-        );
+        schema1.field_classifications.insert("user_id".to_string(), vec!["word".to_string()]);
+        schema1.field_classifications.insert("username".to_string(), vec!["word".to_string()]);
+        schema1.field_classifications.insert("email".to_string(), vec!["word".to_string()]);
 
         let mut schema2 = Schema::new(
             "ProductSchema".to_string(),
@@ -1353,44 +1198,10 @@ mod tests {
             None,
             None,
         );
-
-        // Add required topologies for schema2
-        schema2.set_field_topology(
-            "product_id".to_string(),
-            crate::schema::types::JsonTopology::new(
-                crate::schema::types::TopologyNode::Primitive {
-                    value: crate::schema::types::PrimitiveType::String,
-                    classifications: Some(vec!["word".to_string()]),
-                },
-            ),
-        );
-        schema2.set_field_topology(
-            "title".to_string(),
-            crate::schema::types::JsonTopology::new(
-                crate::schema::types::TopologyNode::Primitive {
-                    value: crate::schema::types::PrimitiveType::String,
-                    classifications: Some(vec!["word".to_string()]),
-                },
-            ),
-        );
-        schema2.set_field_topology(
-            "price".to_string(),
-            crate::schema::types::JsonTopology::new(
-                crate::schema::types::TopologyNode::Primitive {
-                    value: crate::schema::types::PrimitiveType::Number,
-                    classifications: Some(vec!["word".to_string()]),
-                },
-            ),
-        );
-        schema2.set_field_topology(
-            "description".to_string(),
-            crate::schema::types::JsonTopology::new(
-                crate::schema::types::TopologyNode::Primitive {
-                    value: crate::schema::types::PrimitiveType::String,
-                    classifications: Some(vec!["word".to_string()]),
-                },
-            ),
-        );
+        schema2.field_classifications.insert("product_id".to_string(), vec!["word".to_string()]);
+        schema2.field_classifications.insert("title".to_string(), vec!["word".to_string()]);
+        schema2.field_classifications.insert("price".to_string(), vec!["number".to_string()]);
+        schema2.field_classifications.insert("description".to_string(), vec!["word".to_string()]);
 
         let outcome1 = state
             .add_schema(schema1.clone(), HashMap::new())
@@ -1416,7 +1227,7 @@ mod tests {
             .expect("failed to acquire read lock on schemas");
         assert_eq!(schemas.len(), 2);
 
-        // Schemas are now stored by topology_hash
+        // Schemas are now stored by identity_hash
         assert!(schemas.contains_key(&schema1_name));
         assert!(schemas.contains_key(&schema2_name));
 
@@ -1426,16 +1237,7 @@ mod tests {
 
     // ========== find_similar_schemas tests ==========
 
-    fn make_string_topology() -> crate::schema::types::JsonTopology {
-        crate::schema::types::JsonTopology::new(
-            crate::schema::types::TopologyNode::Primitive {
-                value: crate::schema::types::PrimitiveType::String,
-                classifications: Some(vec!["word".to_string()]),
-            },
-        )
-    }
-
-    /// Helper: create a schema with the given fields, add topologies, and insert it via state.add_schema
+    /// Helper: create a schema with the given fields, add classifications, and insert it via state.add_schema
     async fn add_test_schema(
         state: &SchemaServiceState,
         name: &str,
@@ -1451,7 +1253,7 @@ mod tests {
             None,
         );
         for f in &field_strings {
-            schema.set_field_topology(f.clone(), make_string_topology());
+            schema.field_classifications.insert(f.clone(), vec!["word".to_string()]);
         }
         let outcome = state
             .add_schema(schema, HashMap::new())
@@ -1459,6 +1261,7 @@ mod tests {
             .expect("failed to add test schema");
         match outcome {
             SchemaAddOutcome::Added(s, _) => s.name,
+            SchemaAddOutcome::AlreadyExists(s) => s.name,
             SchemaAddOutcome::TooSimilar(c) => c.closest_schema.name,
         }
     }
@@ -1478,7 +1281,7 @@ mod tests {
     #[tokio::test]
     async fn find_similar_identical_fields_returns_similarity_1() {
         let state = make_test_state();
-        // Two schemas with identical fields produce the same topology_hash,
+        // Two schemas with identical fields produce the same identity_hash,
         // so only one gets stored. We need schemas with different topologies
         // but same field names. Instead, test with overlapping but not identical schemas.
         // Schema A: {a, b}  Schema B: {a, b, c}  → Jaccard = 2/3
@@ -1571,26 +1374,10 @@ mod tests {
             None,
             None,
         );
-        schema1.set_field_topology(
-            "artist".to_string(),
-            crate::schema::types::JsonTopology::new(
-                crate::schema::types::TopologyNode::Primitive {
-                    value: crate::schema::types::PrimitiveType::String,
-                    classifications: Some(vec!["word".to_string()]),
-                },
-            ),
-        );
-        schema1.set_field_topology(
-            "title".to_string(),
-            crate::schema::types::JsonTopology::new(
-                crate::schema::types::TopologyNode::Primitive {
-                    value: crate::schema::types::PrimitiveType::String,
-                    classifications: Some(vec!["word".to_string()]),
-                },
-            ),
-        );
+        schema1.field_classifications.insert("artist".to_string(), vec!["word".to_string()]);
+        schema1.field_classifications.insert("title".to_string(), vec!["word".to_string()]);
 
-        // Schema 2: same fields/types, but classifications = ["word", "name:person"]
+        // Schema 2: same fields but different classifications
         let mut schema2 = Schema::new(
             "ImageB".to_string(),
             crate::schema::types::SchemaType::Single,
@@ -1599,27 +1386,8 @@ mod tests {
             None,
             None,
         );
-        schema2.set_field_topology(
-            "artist".to_string(),
-            crate::schema::types::JsonTopology::new(
-                crate::schema::types::TopologyNode::Primitive {
-                    value: crate::schema::types::PrimitiveType::String,
-                    classifications: Some(vec![
-                        "word".to_string(),
-                        "name:person".to_string(),
-                    ]),
-                },
-            ),
-        );
-        schema2.set_field_topology(
-            "title".to_string(),
-            crate::schema::types::JsonTopology::new(
-                crate::schema::types::TopologyNode::Primitive {
-                    value: crate::schema::types::PrimitiveType::String,
-                    classifications: Some(vec!["word".to_string(), "title".to_string()]),
-                },
-            ),
-        );
+        schema2.field_classifications.insert("artist".to_string(), vec!["word".to_string(), "name:person".to_string()]);
+        schema2.field_classifications.insert("title".to_string(), vec!["word".to_string(), "title".to_string()]);
 
         // First schema gets added
         let outcome1 = state
@@ -1628,23 +1396,24 @@ mod tests {
             .expect("failed to add first schema");
         let first_name = match outcome1 {
             SchemaAddOutcome::Added(schema, _) => schema.name,
-            SchemaAddOutcome::TooSimilar(_) => panic!("first schema should be added"),
+            SchemaAddOutcome::AlreadyExists(_) | SchemaAddOutcome::TooSimilar(_) => {
+                panic!("first schema should be added")
+            }
         };
 
-        // Second schema should be detected as duplicate (same topology hash)
+        // Second schema should be detected as already existing (same identity hash — same field names)
         let outcome2 = state
             .add_schema(schema2, HashMap::new())
             .await
             .expect("failed to evaluate second schema");
         match outcome2 {
-            SchemaAddOutcome::TooSimilar(conflict) => {
-                assert_eq!(conflict.similarity, 1.0);
-                assert_eq!(conflict.closest_schema.name, first_name);
+            SchemaAddOutcome::AlreadyExists(schema) => {
+                assert_eq!(schema.name, first_name);
             }
-            SchemaAddOutcome::Added(schema, _) => {
+            other => {
                 panic!(
-                    "schema with same fields/types but different classifications should be rejected as duplicate, got added as '{}'",
-                    schema.name
+                    "schema with same fields but different classifications should return AlreadyExists, got {:?}",
+                    other
                 );
             }
         }

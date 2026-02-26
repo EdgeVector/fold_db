@@ -181,8 +181,7 @@ impl IngestionService {
             // flat-parent schema (after array-of-object fields are removed).
             let rep = representative_for_decompose.as_ref()
                 .expect("representative_for_decompose is Some when has_nested_children is true");
-            let top_level_topology = crate::schema::types::topology::JsonTopology::infer_from_value(rep);
-            let top_level_hash = top_level_topology.compute_hash();
+            let top_level_hash = crate::ingestion::decomposer::compute_structure_hash(rep);
             self.resolve_schema_for_structure(
                 &top_level_hash,
                 rep,
@@ -641,93 +640,43 @@ impl IngestionService {
         log_feature!(
             LogFeature::Ingestion,
             info,
-            "Deserialized schema with {} field topologies from AI",
-            schema.field_topologies.len()
+            "Deserialized schema with {} field classifications from AI",
+            schema.field_classifications.len()
         );
 
-        // Only infer if the schema is completely missing topologies
-        if schema.field_topologies.is_empty() {
-            log_feature!(
-                LogFeature::Ingestion,
-                warn,
-                "AI did not provide field_topologies, inferring from sample data"
-            );
-
-            let sample_for_topology = if let Some(array) = sample_data.as_array() {
+        // Ensure default classifications for fields that are missing them
+        if let Some(fields) = &schema.fields {
+            let sample_for_defaults = if let Some(array) = sample_data.as_array() {
                 array.first().unwrap_or(sample_data)
             } else {
                 sample_data
             };
 
-            if let Some(sample_obj) = sample_for_topology.as_object() {
-                let sample_map: std::collections::HashMap<String, serde_json::Value> = sample_obj
-                    .iter()
-                    .map(|(k, v)| (k.clone(), v.clone()))
-                    .collect();
-                schema.infer_topologies_from_data(&sample_map);
-                log_feature!(
-                    LogFeature::Ingestion,
-                    info,
-                    "Inferred topologies for {} fields (no AI topologies)",
-                    sample_map.len()
-                );
-            }
-        }
-
-        // Ensure default classifications for String fields (force indexing)
-        // This must run AFTER inference to catch inferred fields
-        for topology in schema.field_topologies.values_mut() {
-            if let crate::schema::types::topology::TopologyNode::Primitive {
-                value: crate::schema::types::topology::PrimitiveValueType::String,
-                classifications,
-            } = &mut topology.root
-            {
-                if classifications.is_none()
-                    || classifications
-                        .as_ref()
-                        .map(|c| c.is_empty())
-                        .unwrap_or(false)
-                {
-                    *classifications = Some(vec!["word".to_string()]);
-                    crate::log_feature!(
-                        crate::logging::features::LogFeature::Ingestion,
+            for field_name in fields {
+                if !schema.field_classifications.contains_key(field_name) {
+                    let default = match sample_for_defaults.get(field_name) {
+                        Some(Value::Number(_)) => vec!["number".to_string()],
+                        _ => vec!["word".to_string()],
+                    };
+                    log_feature!(
+                        LogFeature::Ingestion,
                         info,
-                        "Added default 'word' classification to string field"
+                        "Added default classification {:?} to field '{}'",
+                        default,
+                        field_name
                     );
-                }
-            }
-        }
-
-        // Ensure default classifications for Number fields
-        for topology in schema.field_topologies.values_mut() {
-            if let crate::schema::types::topology::TopologyNode::Primitive {
-                value: crate::schema::types::topology::PrimitiveValueType::Number,
-                classifications,
-            } = &mut topology.root
-            {
-                if classifications.is_none()
-                    || classifications
-                        .as_ref()
-                        .map(|c| c.is_empty())
-                        .unwrap_or(false)
-                {
-                    *classifications = Some(vec!["number".to_string()]);
-                    crate::log_feature!(
-                        crate::logging::features::LogFeature::Ingestion,
-                        info,
-                        "Added default 'number' classification to number field"
-                    );
+                    schema.field_classifications.insert(field_name.clone(), default);
                 }
             }
         }
 
         // Ensure schema has key configuration for mutations to work
         if schema.key.is_none() {
-            // Use the first field as the hash key, or generate an ID field if no fields exist
+            // Use the first field as the hash key
             let hash_field = if let Some(fields) = &schema.fields {
                 fields.first().cloned()
-            } else if !schema.field_topologies.is_empty() {
-                schema.field_topologies.keys().next().cloned()
+            } else if !schema.field_classifications.is_empty() {
+                schema.field_classifications.keys().next().cloned()
             } else {
                 None
             };
@@ -750,18 +699,18 @@ impl IngestionService {
             }
         }
 
-        // Use topology_hash as schema name for structure-based deduplication
-        schema.compute_schema_topology_hash();
-        let topology_hash = schema
-            .get_topology_hash()
+        // Use identity_hash as schema name for structure-based deduplication
+        schema.compute_identity_hash();
+        let identity_hash = schema
+            .get_identity_hash()
             .ok_or_else(|| {
                 IngestionError::SchemaCreationError(
-                    "Schema must have topology_hash computed".to_string(),
+                    "Schema must have identity_hash computed".to_string(),
                 )
             })?
             .clone();
 
-        schema.name = topology_hash.clone();
+        schema.name = identity_hash.clone();
 
         // Add schema to the schema service via the node
         let schema_response = {
@@ -790,10 +739,21 @@ impl IngestionService {
             manager
         };
 
-        match schema_manager.load_schema_from_json(&json_str).await {
-            Ok(_) => {}
-            Err(error) => return Err(IngestionError::SchemaCreationError(error.to_string())),
-        };
+        // Only load the schema if it doesn't already exist locally.
+        // Re-loading from the schema service JSON would overwrite the cached schema's
+        // molecule state (field_molecule_uuids, runtime_fields), causing subsequent
+        // mutations to create new molecules instead of appending to existing ones.
+        let already_loaded = schema_manager
+            .get_schema_metadata(&schema_response.name)
+            .map(|opt| opt.is_some())
+            .unwrap_or(false);
+
+        if !already_loaded {
+            match schema_manager.load_schema_from_json(&json_str).await {
+                Ok(_) => {}
+                Err(error) => return Err(IngestionError::SchemaCreationError(error.to_string())),
+            };
+        }
 
         // Auto-approve the new schema (idempotent - only approves if not already approved)
         schema_manager

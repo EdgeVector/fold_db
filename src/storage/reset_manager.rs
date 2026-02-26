@@ -37,12 +37,10 @@ impl DynamoDbResetManager {
         features_to_clean.insert("rev".to_string()); // Reverse index mappings (rev:{schema}:...)
 
         for schema in &schemas {
-            for _topology in schema.field_topologies.values() {
-                // Extract classifications from topology
-                // Note: This depends on the internal structure of JsonTopology/TopologyNode
-                // For now, we'll assume we can get them or just rely on "word" if complex
-                // In a real implementation, we'd traverse the topology properly
-                // For this MVP, we'll stick to "word" and any we can easily find
+            for classifications in schema.field_classifications.values() {
+                for tag in classifications {
+                    features_to_clean.insert(tag.clone());
+                }
             }
         }
 

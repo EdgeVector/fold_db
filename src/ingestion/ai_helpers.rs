@@ -255,7 +255,7 @@ pub fn extract_json_from_response(response_text: &str) -> IngestionResult<String
     )))
 }
 
-/// Validate that a schema has classifications on all primitive fields.
+/// Validate that a schema has classifications for its fields.
 pub fn validate_schema_has_classifications(schema_val: &Value) -> IngestionResult<()> {
     let schema_obj = schema_val.as_object().ok_or_else(|| {
         IngestionError::ai_response_validation_error("Schema must be a JSON object")
@@ -266,78 +266,27 @@ pub fn validate_schema_has_classifications(schema_val: &Value) -> IngestionResul
         .and_then(|v| v.as_str())
         .unwrap_or("unknown");
 
-    let field_topologies = schema_obj
-        .get("field_topologies")
-        .and_then(|v| v.as_object())
-        .ok_or_else(|| {
-            IngestionError::ai_response_validation_error(format!(
-                "Schema '{}' missing field_topologies",
-                schema_name
-            ))
-        })?;
+    // field_classifications is optional — AI may not always provide them and defaults will be applied later
+    let field_classifications = match schema_obj.get("field_classifications").and_then(|v| v.as_object()) {
+        Some(fc) => fc,
+        None => return Ok(()),
+    };
 
-    // Check each field's topology for classifications
-    for (field_name, topology_val) in field_topologies {
-        let topology_obj = topology_val
-            .as_object()
-            .and_then(|obj| obj.get("root"))
-            .and_then(|v| v.as_object())
-            .ok_or_else(|| {
-                IngestionError::ai_response_validation_error(format!(
-                    "Schema '{}' field '{}' has invalid topology structure",
+    // Check each field's classifications are non-empty arrays
+    for (field_name, classifications_val) in field_classifications {
+        match classifications_val.as_array() {
+            Some(arr) if !arr.is_empty() => {}
+            _ => {
+                return Err(IngestionError::ai_response_validation_error(format!(
+                    "Schema '{}' field '{}' has empty or invalid classifications. \
+                        AI must provide at least one classification (e.g., [\"word\"])",
                     schema_name, field_name
-                ))
-            })?;
-
-        validate_topology_node_classifications(schema_name, field_name, topology_obj)?;
+                )));
+            }
+        }
     }
 
     Ok(())
-}
-
-/// Recursively validate that primitive nodes have classifications.
-fn validate_topology_node_classifications(
-    schema_name: &str,
-    field_name: &str,
-    node: &serde_json::Map<String, Value>,
-) -> IngestionResult<()> {
-    let node_type = node.get("type").and_then(|v| v.as_str()).unwrap_or("");
-
-    match node_type {
-        "Primitive" => {
-            let classifications = node.get("classifications").and_then(|v| v.as_array());
-
-            match classifications {
-                Some(arr) if !arr.is_empty() => Ok(()),
-                _ => Err(IngestionError::ai_response_validation_error(format!(
-                    "Schema '{}' field '{}' has a Primitive without classifications. \
-                        AI must provide at least one classification (e.g., [\"word\"])",
-                    schema_name, field_name
-                ))),
-            }
-        }
-        "Array" => {
-            if let Some(value_obj) = node.get("value").and_then(|v| v.as_object()) {
-                validate_topology_node_classifications(schema_name, field_name, value_obj)?;
-            }
-            Ok(())
-        }
-        "Object" => {
-            if let Some(value_obj) = node.get("value").and_then(|v| v.as_object()) {
-                for (_nested_field, nested_node) in value_obj {
-                    if let Some(nested_obj) = nested_node.as_object() {
-                        validate_topology_node_classifications(
-                            schema_name,
-                            field_name,
-                            nested_obj,
-                        )?;
-                    }
-                }
-            }
-            Ok(())
-        }
-        _ => Ok(()),
-    }
 }
 
 /// Validate and convert a parsed JSON value into an AISchemaResponse.

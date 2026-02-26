@@ -87,6 +87,12 @@ async fn handle_add_schema(
                 mutation_mappers,
             })
         }
+        Ok(SchemaAddOutcome::AlreadyExists(schema)) => {
+            HttpResponse::Ok().json(AddSchemaResponse {
+                schema,
+                mutation_mappers: HashMap::new(),
+            })
+        }
         Ok(SchemaAddOutcome::TooSimilar(conflict)) => {
             HttpResponse::Conflict().json(ConflictResponse {
                 error: "Schema too similar to existing schema".to_string(),
@@ -117,24 +123,20 @@ async fn spawn_local_schema_service() -> (String, actix_web::dev::ServerHandle, 
 
     let listener =
         TcpListener::bind(("127.0.0.1", 0)).expect("failed to bind schema service listener");
-    let bound_address = listener
-        .local_addr()
-        .expect("failed to read bound address");
+    let bound_address = listener.local_addr().expect("failed to read bound address");
 
     let state_clone = state_data.clone();
     let server = HttpServer::new(move || {
-        App::new()
-            .app_data(state_clone.clone())
-            .service(
-                web::scope("/api")
-                    .route("/schemas", web::get().to(handle_list_schemas))
-                    .route("/schemas", web::post().to(handle_add_schema))
-                    .route(
-                        "/schemas/available",
-                        web::get().to(handle_get_available_schemas),
-                    )
-                    .route("/schema/{name}", web::get().to(handle_get_schema)),
-            )
+        App::new().app_data(state_clone.clone()).service(
+            web::scope("/api")
+                .route("/schemas", web::get().to(handle_list_schemas))
+                .route("/schemas", web::post().to(handle_add_schema))
+                .route(
+                    "/schemas/available",
+                    web::get().to(handle_get_available_schemas),
+                )
+                .route("/schema/{name}", web::get().to(handle_get_schema)),
+        )
     })
     .listen(listener)
     .expect("failed to listen")
@@ -210,6 +212,7 @@ async fn test_ingest_tweets_js() {
         progress_id: Some("test-tweets-ingestion".to_string()),
         file_hash: None,
         source_folder: None,
+        image_descriptive_name: None,
     };
 
     // 7. Run ingestion within user context
@@ -252,10 +255,7 @@ async fn test_ingest_tweets_js() {
         response.mutations_executed > 0,
         "Should execute at least one mutation"
     );
-    assert!(
-        response.schema_used.is_some(),
-        "Should have used a schema"
-    );
+    assert!(response.schema_used.is_some(), "Should have used a schema");
 
     eprintln!(
         "Successfully ingested tweets.js: {} mutations generated, {} executed",

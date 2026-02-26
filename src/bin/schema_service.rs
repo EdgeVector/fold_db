@@ -39,7 +39,7 @@ struct Cli {
 /// * `FOLD_DYNAMODB_REGION` - AWS region (required for DynamoDB mode)
 ///
 /// If DynamoDB environment variables are set, DynamoDB storage will be used automatically.
-/// **No distributed locking needed** - topology hashes ensure idempotent writes!
+/// **No distributed locking needed** - identity hashes ensure idempotent writes!
 ///
 /// # Returns
 ///
@@ -69,7 +69,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             dynamodb_config.tables.main, dynamodb_config.tables.schemas
         );
         println!("   Region: {}", dynamodb_config.region);
-        println!("   ✨ No locking needed - topology hashes ensure idempotent writes!");
+        println!("   ✨ No locking needed - identity hashes ensure idempotent writes!");
 
         SchemaServiceServer::new_with_cloud(dynamodb_config, &bind_address).await?
     } else {
