@@ -25,10 +25,6 @@ pub enum IngestionError {
     #[error("Schema parsing error: {0}")]
     SchemaParsingError(String),
 
-    /// Mutation generation errors
-    #[error("Mutation generation error: {0}")]
-    MutationGenerationError(String),
-
     /// Schema creation errors
     #[error("Schema creation error: {0}")]
     SchemaCreationError(String),
@@ -41,10 +37,6 @@ pub enum IngestionError {
     #[error("Schema system error: {0}")]
     SchemaSystemError(#[from] crate::schema::SchemaError),
 
-    /// Database errors
-    #[error("Database error: {0}")]
-    DatabaseError(String),
-
     /// Invalid input data
     #[error("Invalid input data: {0}")]
     InvalidInput(String),
@@ -52,14 +44,6 @@ pub enum IngestionError {
     /// AI response validation errors
     #[error("AI response validation error: {0}")]
     AIResponseValidationError(String),
-
-    /// Path parsing errors for JSON field paths
-    #[error("Path parsing error: {0}")]
-    PathParsingError(String),
-
-    /// Field mapping errors
-    #[error("Field mapping error: {0}")]
-    FieldMappingError(String),
 
     /// File conversion errors (e.g., PDF to JSON conversion failed)
     #[error("File conversion failed: {0}")]
@@ -90,11 +74,6 @@ impl IngestionError {
         Self::SchemaParsingError(msg.into())
     }
 
-    /// Create a new mutation generation error
-    pub fn mutation_generation_error(msg: impl Into<String>) -> Self {
-        Self::MutationGenerationError(msg.into())
-    }
-
     /// Create a new configuration error
     pub fn configuration_error(msg: impl Into<String>) -> Self {
         Self::ConfigurationError(msg.into())
@@ -110,30 +89,6 @@ impl IngestionError {
         Self::AIResponseValidationError(msg.into())
     }
 
-    /// Create a new path parsing error
-    pub fn path_parsing_error(msg: impl Into<String>) -> Self {
-        Self::PathParsingError(msg.into())
-    }
-
-    /// Create a new field mapping error
-    pub fn field_mapping_error(msg: impl Into<String>) -> Self {
-        Self::FieldMappingError(msg.into())
-    }
-
-    /// Create a new file conversion error
-    pub fn file_conversion_failed(msg: impl Into<String>) -> Self {
-        Self::FileConversionFailed(msg.into())
-    }
-
-    /// Create a new storage error
-    pub fn storage_error(msg: impl Into<String>) -> Self {
-        Self::StorageError(msg.into())
-    }
-
-    /// Create a new security error
-    pub fn security_error(msg: impl Into<String>) -> Self {
-        Self::SecurityError(msg.into())
-    }
 }
 
 /// Result type for ingestion operations
