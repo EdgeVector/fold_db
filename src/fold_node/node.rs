@@ -232,74 +232,6 @@ impl FoldNode {
 
     /// Creates a new FoldNode with a pre-created FoldDB and explicit E2E keys.
     ///
-    /// Unlike `new_with_db`, this constructor:
-    /// - Requires identity keys in config (no file fallback)
-    /// - Accepts E2E keys as a parameter (no `~/.fold_db/e2e.key` hardcoding)
-    ///
-    /// This is the preferred constructor for environments where the caller
-    /// manages key storage (e.g. the Exemem desktop client).
-    pub async fn new_with_db_and_keys(
-        config: NodeConfig,
-        db: Arc<Mutex<FoldDB>>,
-        e2e_keys: crate::crypto::E2eKeys,
-    ) -> FoldDbResult<Self> {
-        let (private_key, public_key) =
-            if let (Some(priv_k), Some(pub_k)) = (&config.private_key, &config.public_key) {
-                (priv_k.clone(), pub_k.clone())
-            } else {
-                return Err(FoldDbError::SecurityError(
-                    "Node identity (keys) must be provided in config for new_with_db_and_keys"
-                        .to_string(),
-                ));
-            };
-
-        let (node_id, security_manager, security_config) =
-            Self::init_internals(&config, &db).await?;
-
-        let node = Self {
-            db,
-            config: NodeConfig {
-                security_config,
-                ..config.clone()
-            },
-            node_id,
-            security_manager,
-            private_key,
-            public_key,
-            e2e_keys,
-            mutation_preprocessor: MutationPreprocessor::new(),
-        };
-
-        if let Some(schema_service_url) = &config.schema_service_url {
-            if schema_service_url.starts_with("test://")
-                || schema_service_url.starts_with("mock://")
-            {
-                log_feature!(
-                    LogFeature::Database,
-                    info,
-                    "Mock schema service configured: {}. Schemas must be loaded manually.",
-                    schema_service_url
-                );
-            } else {
-                log_feature!(
-                    LogFeature::Database,
-                    info,
-                    "Schema service URL configured: {}.",
-                    schema_service_url
-                );
-            }
-        } else {
-            log::info!("No schema service URL configured - using local schema management only");
-        }
-
-        log_feature!(
-            LogFeature::Database,
-            info,
-            "FoldNode created via new_with_db_and_keys"
-        );
-        Ok(node)
-    }
-
     /// Get a reference to the underlying FoldDB instance
     pub async fn get_fold_db(&self) -> FoldDbResult<tokio::sync::OwnedMutexGuard<FoldDB>> {
         Ok(self.db.clone().lock_owned().await)
@@ -353,26 +285,6 @@ impl FoldNode {
             .add_schema(schema, std::collections::HashMap::new())
             .await
             .map(|response| response.schema)
-    }
-
-    /// Fetch a specific schema from the schema service by name/hash.
-    /// Returns an error if the schema service URL is not configured or if the fetch fails.
-    pub async fn fetch_schema_from_service(
-        &self,
-        schema_name: &str,
-    ) -> FoldDbResult<crate::schema::types::Schema> {
-        let schema_service_url = self.schema_service_url().ok_or_else(|| {
-            FoldDbError::Config("Schema service URL is not configured".to_string())
-        })?;
-
-        if schema_service_url.starts_with("test://") || schema_service_url.starts_with("mock://") {
-            return Err(FoldDbError::Config(
-                "Cannot fetch schemas from test/mock schema service".to_string(),
-            ));
-        }
-
-        let client = crate::fold_node::SchemaServiceClient::new(&schema_service_url);
-        client.get_schema(schema_name).await
     }
 
     /// Execute a batch of mutations.

@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::fs;
 use std::sync::{Arc, Mutex};
 
 use serde_json;
@@ -327,19 +326,6 @@ impl SchemaCore {
         Ok(None)
     }
 
-    pub fn add_schema_available(&self, schema: Schema) -> Result<(), SchemaError> {
-        let mut schemas = self
-            .schemas
-            .lock()
-            .map_err(|_| SchemaError::InvalidData("Failed to acquire schemas lock".to_string()))?;
-        let mut schema_states = self.schema_states.lock().map_err(|_| {
-            SchemaError::InvalidData("Failed to acquire schema_states lock".to_string())
-        })?;
-        schemas.insert(schema.name.clone(), schema.clone());
-        schema_states.insert(schema.name.clone(), SchemaState::Available);
-        Ok(())
-    }
-
     pub async fn load_schema_internal(&self, schema: Schema) -> Result<(), SchemaError> {
         let name = schema.name.clone();
 
@@ -451,50 +437,6 @@ impl SchemaCore {
             ))
         }
     }
-    /// Load all schema files from a directory (creates Available schemas)
-    /// Only processes .json files; ignores non-existent directories
-    pub async fn load_schemas_from_directory<P: AsRef<std::path::Path>>(
-        &self,
-        directory: P,
-    ) -> Result<usize, SchemaError> {
-        let dir_path = directory.as_ref();
-        if !dir_path.exists() {
-            return Ok(0);
-        }
-
-        let mut loaded_count: usize = 0;
-        let entries = fs::read_dir(dir_path).map_err(|e| {
-            SchemaError::InvalidData(format!(
-                "Failed to read directory {}: {}",
-                dir_path.display(),
-                e
-            ))
-        })?;
-
-        for entry in entries {
-            let entry = entry.map_err(|e| {
-                SchemaError::InvalidData(format!(
-                    "Failed to read entry in {}: {}",
-                    dir_path.display(),
-                    e
-                ))
-            })?;
-            let path = entry.path();
-            if path.extension().map(|ext| ext == "json").unwrap_or(false) {
-                match self.load_schema_from_file(&path).await {
-                    Ok(()) => {
-                        loaded_count += 1;
-                    }
-                    Err(e) => {
-                        log::warn!("Failed to load schema from file {}: {}", path.display(), e);
-                    }
-                }
-            }
-        }
-
-        Ok(loaded_count)
-    }
-
     /// Creates a new SchemaCore for testing purposes with a temporary database
     pub async fn new_for_testing() -> Result<Self, SchemaError> {
         let db = sled::Config::new()
