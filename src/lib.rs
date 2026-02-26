@@ -77,4 +77,4 @@ pub use storage::{DatabaseConfig, StorageError};
 pub use server::{NodeManager, NodeManagerConfig, NodeManagerError};
 
 // Re-export commonly used constants
-pub use constants::{DEFAULT_HTTP_PORT, DEFAULT_P2P_PORT};
+pub use constants::DEFAULT_HTTP_PORT;

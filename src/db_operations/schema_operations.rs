@@ -144,35 +144,4 @@ impl DbOperations {
         Ok(states)
     }
 
-    /// Delete a schema
-    pub async fn delete_schema(&self, schema_name: &str) -> Result<bool, SchemaError> {
-        use crate::storage::traits::TypedStore;
-
-        self.schemas_store()
-            .delete_item(schema_name)
-            .await
-            .map_err(|e| SchemaError::InvalidData(format!("Failed to delete schema: {}", e)))
-    }
-
-    /// Delete schema state
-    pub async fn delete_schema_state(&self, schema_name: &str) -> Result<bool, SchemaError> {
-        use crate::storage::traits::TypedStore;
-
-        self.schema_states_store()
-            .delete_item(schema_name)
-            .await
-            .map_err(|e| SchemaError::InvalidData(format!("Failed to delete schema state: {}", e)))
-    }
-
-    /// Check if a schema exists
-    pub async fn schema_exists(&self, schema_name: &str) -> Result<bool, SchemaError> {
-        use crate::storage::traits::TypedStore;
-
-        self.schemas_store()
-            .exists_item(schema_name)
-            .await
-            .map_err(|e| {
-                SchemaError::InvalidData(format!("Failed to check schema existence: {}", e))
-            })
-    }
 }

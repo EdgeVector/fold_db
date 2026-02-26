@@ -260,14 +260,6 @@ impl StructureStats {
             .collect()
     }
 
-    /// Get fields with type variations
-    pub fn get_fields_with_type_variations(&self) -> Vec<String> {
-        self.type_variations
-            .iter()
-            .filter(|(_, variations)| variations.len() > 1)
-            .map(|(field, _)| field.clone())
-            .collect()
-    }
 }
 
 #[cfg(test)]

@@ -391,32 +391,6 @@ impl ProgressStore for DynamoDbProgressStore {
 
 pub type ProgressTracker = Arc<dyn ProgressStore>;
 
-/// Configuration for creating a progress tracker
-pub enum ProgressStoreConfig {
-    /// Use Sled for local persistent storage
-    Sled(sled::Tree),
-    /// Use DynamoDB for cloud storage (table_name, region)
-    #[cfg(feature = "aws-backend")]
-    DynamoDB(String, String),
-    /// Use in-memory storage (for testing only)
-    InMemory,
-}
-
-/// Create a progress tracker from configuration
-pub async fn create_tracker_from_config(config: ProgressStoreConfig) -> ProgressTracker {
-    match config {
-        ProgressStoreConfig::Sled(tree) => {
-            Arc::new(SledProgressStore::new(tree)) as ProgressTracker
-        }
-        #[cfg(feature = "aws-backend")]
-        ProgressStoreConfig::DynamoDB(table_name, region) => {
-            let store = DynamoDbProgressStore::from_config(table_name, region).await;
-            Arc::new(store) as ProgressTracker
-        }
-        ProgressStoreConfig::InMemory => Arc::new(InMemoryProgressStore::new()) as ProgressTracker,
-    }
-}
-
 /// Create a progress tracker with Sled storage (for local persistent storage)
 pub fn create_tracker_with_sled(tree: sled::Tree) -> ProgressTracker {
     Arc::new(SledProgressStore::new(tree))

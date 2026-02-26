@@ -22,31 +22,12 @@ impl TestDatabaseFactory {
         Ok(DbOperations::from_sled(db).await?)
     }
 
-    /// Create temporary tree for testing - consolidates pattern from orchestration files  
-    pub fn create_temp_tree() -> Result<Tree, sled::Error> {
-        let db = Self::create_temp_sled_db()?;
-        db.open_tree("test_tree")
-    }
-
     /// Create complete test environment with db_ops and message bus
     pub async fn create_test_environment(
     ) -> Result<(Arc<DbOperations>, Arc<AsyncMessageBus>), Box<dyn std::error::Error>> {
         let db_ops = Arc::new(Self::create_temp_db_ops().await?);
         let message_bus = Arc::new(AsyncMessageBus::new());
         Ok((db_ops, message_bus))
-    }
-
-    /// Create test schema (consolidates duplicate create_test_schema functions)
-    pub fn create_test_schema(name: &str) -> crate::schema::types::Schema {
-        // Create a simple declarative schema for testing
-        crate::schema::types::Schema::new(
-            name.to_string(),
-            crate::schema::types::SchemaType::Single,
-            None,
-            Some(vec![]),
-            None,
-            None,
-        )
     }
 
     /// Create test node config (consolidates create_test_config functions)

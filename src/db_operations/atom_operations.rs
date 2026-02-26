@@ -1,6 +1,5 @@
 use super::core::DbOperations;
 use crate::atom::{Atom, Molecule, MoleculeHashRange, MoleculeRange, MutationEvent};
-use crate::schema::types::field::FieldVariant;
 use crate::schema::SchemaError;
 use crate::storage::traits::TypedStore;
 use serde_json::Value;
@@ -176,99 +175,6 @@ impl DbOperations {
         log::info!("✅ Atom written to DynamoDB: {}", atom_key);
 
         Ok(new_atom)
-    }
-
-    /// Persists a field's molecule to storage with deferred flush.
-    /// This is the async V2 version for use with DbOperations.
-    pub async fn persist_field_molecule_deferred(
-        &self,
-        field: &FieldVariant,
-        molecule_uuid: &str,
-    ) -> Result<(), SchemaError> {
-        let ref_key = format!("ref:{}", molecule_uuid);
-        log::info!(
-            "🔗 persist_field_molecule_deferred: molecule_uuid={}, ref_key={}",
-            molecule_uuid,
-            ref_key
-        );
-
-        match field {
-            FieldVariant::Single(f) => {
-                if let Some(mol) = &f.base.molecule {
-                    log::info!(
-                        "💾 Writing Single molecule to DynamoDB: ref_key={}, has_atom={}",
-                        ref_key,
-                        !mol.get_atom_uuid().is_empty()
-                    );
-                    self.molecules_store()
-                        .put_item(&ref_key, mol)
-                        .await
-                        .map_err(|e| {
-                            log::error!("❌ Failed to store molecule '{}': {}", ref_key, e);
-                            SchemaError::InvalidData(format!("Failed to store molecule: {}", e))
-                        })?;
-                    log::info!("✅ Single molecule written to DynamoDB: {}", ref_key);
-                } else {
-                    log::warn!("⚠️ No molecule to persist for Single field (molecule is None)");
-                }
-            }
-            FieldVariant::Range(f) => {
-                if let Some(mol) = &f.base.molecule {
-                    log::info!(
-                        "💾 Writing Range molecule to DynamoDB: ref_key={}, atom_count={}",
-                        ref_key,
-                        mol.atom_uuids.len()
-                    );
-                    self.molecules_store()
-                        .put_item(&ref_key, mol)
-                        .await
-                        .map_err(|e| {
-                            log::error!("❌ Failed to store molecule '{}': {}", ref_key, e);
-                            SchemaError::InvalidData(format!("Failed to store molecule: {}", e))
-                        })?;
-                    log::info!("✅ Range molecule written to DynamoDB: {}", ref_key);
-                } else {
-                    log::warn!("⚠️ No molecule to persist for Range field (molecule is None)");
-                }
-            }
-            FieldVariant::HashRange(f) => {
-                if let Some(mol) = &f.base.molecule {
-                    log::info!("💾 Writing HashRange molecule to DynamoDB: ref_key={}, hash_count={}, total_atoms={}", 
-                        ref_key, mol.hash_values().count(), mol.atom_count());
-                    self.molecules_store()
-                        .put_item(&ref_key, mol)
-                        .await
-                        .map_err(|e| {
-                            log::error!("❌ Failed to store molecule '{}': {}", ref_key, e);
-                            SchemaError::InvalidData(format!("Failed to store molecule: {}", e))
-                        })?;
-                    log::info!("✅ HashRange molecule written to DynamoDB: {}", ref_key);
-                } else {
-                    log::warn!("⚠️ No molecule to persist for HashRange field (molecule is None)");
-                }
-            }
-        }
-        Ok(())
-    }
-
-    /// Flush atoms store to ensure persistence.
-    /// This is a convenience method for explicit flushing when needed.
-    pub async fn flush_atoms(&self) -> Result<(), SchemaError> {
-        self.atoms_store()
-            .inner()
-            .flush()
-            .await
-            .map_err(|e| SchemaError::InvalidData(format!("Failed to flush atoms: {}", e)))
-    }
-
-    /// Flush molecules store to ensure persistence.
-    /// This is a convenience method for explicit flushing when needed.
-    pub async fn flush_molecules(&self) -> Result<(), SchemaError> {
-        self.molecules_store()
-            .inner()
-            .flush()
-            .await
-            .map_err(|e| SchemaError::InvalidData(format!("Failed to flush molecules: {}", e)))
     }
 
     /// Batch store mutation events for point-in-time query support.

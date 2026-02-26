@@ -524,10 +524,6 @@ impl DynamoDbSchemaStore {
         Ok(())
     }
 
-    /// Check if a schema exists
-    pub async fn schema_exists(&self, schema_name: &str) -> FoldDbResult<bool> {
-        Ok(self.get_schema(schema_name).await?.is_some())
-    }
 }
 
 #[cfg(test)]
