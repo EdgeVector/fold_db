@@ -463,7 +463,6 @@ function FirstFileStep({ onNext, onSkip, onFileIngested }) {
     try {
       const response = await ingestionClient.uploadFile(file, {
         autoExecute: true,
-        trustDistance: 0,
         pubKey: 'default',
       })
       if (response.success && response.data) {

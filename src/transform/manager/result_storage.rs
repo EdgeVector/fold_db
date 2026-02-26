@@ -55,7 +55,6 @@ impl ResultStorage {
             fields_and_values,
             key_value,
             TRANSFORM_SYSTEM_ID.to_string(),
-            0,
             MutationType::Update,
         );
 

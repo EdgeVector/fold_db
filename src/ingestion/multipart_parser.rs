@@ -19,7 +19,6 @@ pub struct UploadFormData {
     /// This matches the filename in data/uploads/ directory.
     pub original_filename: String,
     pub auto_execute: bool,
-    pub trust_distance: u32,
     pub pub_key: String,
     /// Whether this file already existed (true = duplicate upload)
     pub already_exists: bool,
@@ -39,7 +38,6 @@ pub async fn parse_multipart(
     let mut file_hash: Option<String> = None;
     let mut already_exists = false;
     let mut auto_execute = true;
-    let mut trust_distance = 0;
     let mut pub_key = "default".to_string();
     let mut progress_id = None;
     #[cfg(feature = "aws-backend")]
@@ -81,9 +79,6 @@ pub async fn parse_multipart(
             }
             Some("autoExecute") => {
                 auto_execute = parse_field_as_bool(&mut field).await.unwrap_or(true);
-            }
-            Some("trustDistance") => {
-                trust_distance = parse_field_as_u32(&mut field).await.unwrap_or(0);
             }
             Some("pubKey") => {
                 pub_key = parse_field_as_string(&mut field)
@@ -142,7 +137,6 @@ pub async fn parse_multipart(
         file_path,
         original_filename,
         auto_execute,
-        trust_distance,
         pub_key,
         already_exists,
         progress_id,
@@ -270,17 +264,6 @@ async fn write_unencrypted_for_processing(
 
 /// Parse multipart field as boolean
 async fn parse_field_as_bool(field: &mut actix_multipart::Field) -> Option<bool> {
-    let mut bytes = Vec::new();
-    while let Some(chunk) = field.next().await {
-        if let Ok(data) = chunk {
-            bytes.extend_from_slice(&data);
-        }
-    }
-    String::from_utf8(bytes).ok()?.parse().ok()
-}
-
-/// Parse multipart field as u32
-async fn parse_field_as_u32(field: &mut actix_multipart::Field) -> Option<u32> {
     let mut bytes = Vec::new();
     while let Some(chunk) = field.next().await {
         if let Ok(data) = chunk {

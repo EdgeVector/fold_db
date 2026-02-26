@@ -135,8 +135,6 @@ impl IngestionService {
             .await;
         let flattened_data = crate::ingestion::json_processor::flatten_root_layers(request.data.clone());
 
-        // Extract common mutation parameters
-        let trust_distance = request.trust_distance;
         let pub_key = request.pub_key.clone();
 
         // Step 2.5: Decompose nested structures and decide code path
@@ -210,7 +208,6 @@ impl IngestionService {
                         &top_level_hash,
                         &mut schema_cache,
                         node,
-                        trust_distance,
                         &pub_key,
                         request.source_file_name.clone(),
                         decomposed_metadata.clone(),
@@ -383,7 +380,6 @@ impl IngestionService {
                     &keys_and_values,
                     &fields_and_values,
                     &ai_response.mutation_mappers,
-                    trust_distance,
                     pub_key.clone(),
                     request.source_file_name.clone(),
                     metadata.clone(),
@@ -597,7 +593,6 @@ impl IngestionService {
             provider: provider_name,
             model,
             auto_execute_mutations: self.config.auto_execute_mutations,
-            default_trust_distance: self.config.default_trust_distance,
         })
     }
 

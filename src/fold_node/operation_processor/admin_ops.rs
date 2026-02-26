@@ -371,7 +371,6 @@ impl OperationProcessor {
         let request = IngestionRequest {
             data,
             auto_execute,
-            trust_distance: 0,
             pub_key,
             source_file_name: file_path
                 .file_name()

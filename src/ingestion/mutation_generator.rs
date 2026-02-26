@@ -10,13 +10,11 @@ use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 
 /// Generate mutations from JSON data and mutation mappers
-#[allow(clippy::too_many_arguments)]
 pub fn generate_mutations(
     schema_name: &str,
     keys_and_values: &HashMap<String, String>,
     fields_and_values: &HashMap<String, Value>,
     mutation_mappers: &HashMap<String, String>,
-    trust_distance: u32,
     pub_key: String,
     source_file_name: Option<String>,
     metadata: Option<HashMap<String, String>>,
@@ -109,7 +107,6 @@ pub fn generate_mutations(
             mapped_fields,
             key_value,
             pub_key,
-            trust_distance,
             MutationType::Create,
         );
 
@@ -177,7 +174,6 @@ mod tests {
             &keys_and_values,
             &fields_and_values,
             &mappers,
-            0,
             "test-key".to_string(),
             None,
             None,
@@ -233,7 +229,6 @@ mod tests {
             &keys_and_values,
             &fields_and_values,
             &mappers,
-            0,
             "test-key".to_string(),
             None,
             None,

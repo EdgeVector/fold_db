@@ -34,7 +34,6 @@ fn setup() -> (TempDir, PathBuf) {
             "type": "local",
             "path": db_path.to_str().unwrap()
         },
-        "default_trust_distance": 1,
         "network_listen_address": "/ip4/0.0.0.0/tcp/0",
         "security_config": {
             "require_tls": false,

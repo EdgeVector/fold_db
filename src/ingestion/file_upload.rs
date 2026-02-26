@@ -21,7 +21,6 @@ use serde_json::json;
 ///
 /// Additional optional fields:
 /// - autoExecute: Boolean (default: true)
-/// - trustDistance: Number (default: 0)
 /// - pubKey: String (default: "default")
 ///
 /// Note: Provide either 'file' OR 's3FilePath', not both.
@@ -136,7 +135,6 @@ pub async fn upload_file(
     let request = IngestionRequest {
         data: json_value,
         auto_execute: form_data.auto_execute,
-        trust_distance: form_data.trust_distance,
         pub_key: form_data.pub_key,
         source_file_name: Some(form_data.original_filename.clone()),
         progress_id: Some(progress_id),

@@ -138,7 +138,7 @@ mod tests {
         processor.execute_mutation_op(Mutation::new(
             "PostSchema".to_string(), child_fields,
             KeyValue::new(Some("Hello World".to_string()), Some("r1".to_string())),
-            pub_key.clone(), 0, MutationType::Create,
+            pub_key.clone(), MutationType::Create,
         )).await.unwrap();
 
         // Create a parent record with reference to the child
@@ -151,7 +151,7 @@ mod tests {
         processor.execute_mutation_op(Mutation::new(
             "UserSchema".to_string(), parent_fields,
             KeyValue::new(Some("Alice".to_string()), Some("r1".to_string())),
-            pub_key.clone(), 0, MutationType::Create,
+            pub_key.clone(), MutationType::Create,
         )).await.unwrap();
 
         // Query WITHOUT rehydration - should return raw reference objects
@@ -191,7 +191,7 @@ mod tests {
         processor.execute_mutation_op(Mutation::new(
             "PostSchema".to_string(), child_fields,
             KeyValue::new(Some("Hello World".to_string()), Some("r1".to_string())),
-            pub_key.clone(), 0, MutationType::Create,
+            pub_key.clone(), MutationType::Create,
         )).await.unwrap();
 
         // Create parent record with reference to child
@@ -204,7 +204,7 @@ mod tests {
         processor.execute_mutation_op(Mutation::new(
             "UserSchema".to_string(), parent_fields,
             KeyValue::new(Some("Alice".to_string()), Some("r1".to_string())),
-            pub_key.clone(), 0, MutationType::Create,
+            pub_key.clone(), MutationType::Create,
         )).await.unwrap();
 
         // Query WITH rehydration depth 1 - should resolve references
@@ -251,7 +251,7 @@ mod tests {
         processor.execute_mutation_op(Mutation::new(
             "ItemSchema".to_string(), child_fields,
             KeyValue::new(Some("Widget".to_string()), Some("r1".to_string())),
-            pub_key.clone(), 0, MutationType::Create,
+            pub_key.clone(), MutationType::Create,
         )).await.unwrap();
 
         // Create parent with reference
@@ -264,7 +264,7 @@ mod tests {
         processor.execute_mutation_op(Mutation::new(
             "ContainerSchema".to_string(), parent_fields,
             KeyValue::new(Some("c1".to_string()), Some("r1".to_string())),
-            pub_key.clone(), 0, MutationType::Create,
+            pub_key.clone(), MutationType::Create,
         )).await.unwrap();
 
         // Query with depth 0 - should NOT resolve references
@@ -361,7 +361,6 @@ mod tests {
             fields,
             KeyValue::new(None, None), // intentionally empty — will be re-extracted
             pub_key.clone(),
-            0,
             MutationType::Create,
         );
 
@@ -424,7 +423,6 @@ mod tests {
                 fields,
                 KeyValue::new(None, None),
                 pub_key.clone(),
-                0,
                 MutationType::Create,
             )).await.unwrap();
         }
