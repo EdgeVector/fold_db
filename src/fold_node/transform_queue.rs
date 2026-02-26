@@ -10,18 +10,6 @@ pub struct TransformQueueInfo {
 }
 
 impl FoldNode {
-    /// Add a transform to the queue
-    pub async fn add_transform_to_queue(&self, transform_id: &str) -> FoldDbResult<()> {
-        let db = self.db.lock().await;
-        let orchestrator = db.transform_orchestrator().ok_or_else(|| {
-            FoldDbError::Config(
-                "Transform orchestrator not available (requires Sled backend)".to_string(),
-            )
-        })?;
-        orchestrator.add_transform(transform_id, "manual").await?;
-        Ok(())
-    }
-
     /// Get information about the transform queue
     pub async fn get_transform_queue_info(&self) -> FoldDbResult<TransformQueueInfo> {
         let db = self.db.lock().await;

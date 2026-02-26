@@ -104,47 +104,6 @@ pub async fn list_schemas(
     }
 }
 
-/// List schemas with auto-load if empty (for ephemeral environments)
-pub async fn list_schemas_with_autoload(
-    user_hash: &str,
-    node: &FoldNode,
-) -> HandlerResult<SchemaListResponse> {
-    let processor = OperationProcessor::new(node.clone());
-
-    let mut schemas = processor
-        .list_schemas()
-        .await
-        .map_err(|e| HandlerError::Internal(format!("Failed to list schemas: {}", e)))?;
-
-    // Auto-load if empty (self-healing for ephemeral environments)
-    if schemas.is_empty() {
-        log::info!(
-            "Schema list is empty for user: {}. Attempting auto-load...",
-            user_hash
-        );
-
-        if let Ok((_avail, loaded, _failed)) = processor.load_schemas().await {
-            log::info!("Auto-loaded {} schemas.", loaded);
-            // Refresh list
-            schemas = processor.list_schemas().await.map_err(|e| {
-                HandlerError::Internal(format!("Failed to list schemas after auto-load: {}", e))
-            })?;
-        }
-    }
-
-    let count = schemas.len();
-    // Convert to JSON Value
-    let schemas_json =
-        serde_json::to_value(&schemas).unwrap_or_else(|_| serde_json::Value::Array(vec![]));
-    Ok(ApiResponse::success_with_user(
-        SchemaListResponse {
-            schemas: schemas_json,
-            count,
-        },
-        user_hash,
-    ))
-}
-
 /// Get a single schema by name
 pub async fn get_schema(
     schema_name: &str,

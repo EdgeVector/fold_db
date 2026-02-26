@@ -47,14 +47,6 @@ pub struct FoldNode {
     mutation_preprocessor: MutationPreprocessor,
 }
 
-/// Basic status information about the network layer
-#[derive(Debug, Clone, Serialize)]
-pub struct NetworkStatus {
-    pub node_id: String,
-    pub initialized: bool,
-    pub connected_nodes_count: usize,
-}
-
 impl FoldNode {
     /// Creates a new FoldNode with the specified configuration.
     ///

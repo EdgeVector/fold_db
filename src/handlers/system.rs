@@ -82,18 +82,6 @@ pub struct ResetDatabaseResponse {
     pub job_id: Option<String>,
 }
 
-/// Response for schema service reset
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-bindings", derive(TS))]
-#[cfg_attr(
-    feature = "ts-bindings",
-    ts(export, export_to = "src/fold_node/static-react/src/types/")
-)]
-pub struct ResetSchemaServiceResponse {
-    pub success: bool,
-    pub message: String,
-}
-
 /// Database config response (simplified for API)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-bindings", derive(TS))]
@@ -104,19 +92,6 @@ pub struct ResetSchemaServiceResponse {
 pub struct DatabaseConfigResponse {
     pub config_type: String,
     pub details: Value,
-}
-
-/// Security key response
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-bindings", derive(TS))]
-#[cfg_attr(
-    feature = "ts-bindings",
-    ts(export, export_to = "src/fold_node/static-react/src/types/")
-)]
-pub struct SecurityKeyResponse {
-    pub success: bool,
-    pub key: Option<Value>,
-    pub error: Option<String>,
 }
 
 // ============================================================================
@@ -196,94 +171,6 @@ pub async fn get_node_public_key(
             success: true,
             key: public_key.to_string(),
             message: "Node public key retrieved successfully".to_string(),
-        },
-        user_hash,
-    ))
-}
-
-/// Reset database (starts background job, returns immediately)
-///
-/// This is a destructive operation that clears all user data.
-/// Returns a job_id that can be used to track progress.
-pub async fn reset_database(
-    request: ResetDatabaseRequest,
-    user_hash: &str,
-    tracker: &ProgressTracker,
-    node: &FoldNode,
-) -> HandlerResult<ResetDatabaseResponse> {
-    // Require explicit confirmation
-    if !request.confirm {
-        return Err(HandlerError::BadRequest(
-            "Reset confirmation required. Set 'confirm' to true.".to_string(),
-        ));
-    }
-
-    // Generate a unique job ID
-    let job_id = format!("reset_{}", uuid::Uuid::new_v4());
-
-    // Create the job entry
-    let mut job = Job::new(job_id.clone(), JobType::Other("database_reset".to_string()));
-    job = job.with_user(user_hash.to_string());
-    job.update_progress(5, "Initializing database reset...".to_string());
-
-    // Save initial job state
-    tracker
-        .save(&job)
-        .await
-        .map_err(|e| HandlerError::Internal(format!("Failed to create reset job: {}", e)))?;
-
-    // Clone what we need for the background task
-    let node_clone = node.clone();
-    let job_id_clone = job_id.clone();
-    let user_hash_clone = user_hash.to_string();
-    let user_hash_for_reset = user_hash.to_string();
-    let user_hash_for_complete = user_hash.to_string();
-    let tracker_clone = tracker.clone();
-
-    // Spawn background reset task
-    tokio::spawn(async move {
-        crate::logging::core::run_with_user(&user_hash_clone, async move {
-            // Update progress
-            if let Ok(Some(mut job)) = tracker_clone.load(&job_id_clone).await {
-                job.update_progress(10, "Clearing user data from storage...".to_string());
-                let _ = tracker_clone.save(&job).await;
-            }
-
-            let processor = OperationProcessor::new(node_clone.clone());
-
-            // Step 2: Perform the storage reset
-            if let Err(e) = processor
-                .perform_database_reset(Some(&user_hash_for_reset))
-                .await
-            {
-                log::error!("Database reset failed: {}", e);
-                if let Ok(Some(mut job)) = tracker_clone.load(&job_id_clone).await {
-                    job.fail(format!("Database reset failed: {}", e));
-                    let _ = tracker_clone.save(&job).await;
-                }
-                return;
-            }
-
-            // Mark job as complete
-            if let Ok(Some(mut job)) = tracker_clone.load(&job_id_clone).await {
-                job.complete(Some(serde_json::json!({
-                    "user_id": user_hash_for_complete,
-                    "message": "Database reset successfully. All data has been cleared."
-                })));
-                let _ = tracker_clone.save(&job).await;
-            }
-        })
-        .await;
-    });
-
-    // Return immediately with job_id
-    Ok(ApiResponse::success_with_user(
-        ResetDatabaseResponse {
-            success: true,
-            message:
-                "Database reset started. Monitor progress via /api/ingestion/progress endpoint."
-                    .to_string(),
-            job_id: Some(job_id),
         },
         user_hash,
     ))
@@ -377,38 +264,6 @@ pub async fn reset_database_sync(
     }
 }
 
-/// Reset schema service
-pub async fn reset_schema_service(
-    request: ResetDatabaseRequest,
-    user_hash: &str,
-    node: &FoldNode,
-) -> HandlerResult<ResetSchemaServiceResponse> {
-    // Require explicit confirmation
-    if !request.confirm {
-        return Err(HandlerError::BadRequest(
-            "Reset confirmation required. Set 'confirm' to true.".to_string(),
-        ));
-    }
-
-    let schema_client = node.get_schema_client();
-
-    match schema_client.reset_schema_service().await {
-        Ok(()) => Ok(ApiResponse::success_with_user(
-            ResetSchemaServiceResponse {
-                success: true,
-                message:
-                    "Schema service database reset successfully. All schemas have been cleared."
-                        .to_string(),
-            },
-            user_hash,
-        )),
-        Err(e) => Err(HandlerError::Internal(format!(
-            "Schema service reset failed: {}",
-            e
-        ))),
-    }
-}
-
 /// Get database configuration
 pub async fn get_database_config(
     user_hash: &str,
@@ -445,23 +300,3 @@ pub async fn get_database_config(
     ))
 }
 
-/// Get system public key (security manager)
-pub async fn get_system_public_key(
-    user_hash: &str,
-    node: &FoldNode,
-) -> HandlerResult<SecurityKeyResponse> {
-    let security_manager = node.get_security_manager();
-
-    match security_manager.get_system_public_key() {
-        Ok(Some(key_info)) => Ok(ApiResponse::success_with_user(
-            SecurityKeyResponse {
-                success: true,
-                key: Some(serde_json::to_value(key_info).unwrap_or(Value::Null)),
-                error: None,
-            },
-            user_hash,
-        )),
-        Ok(None) => Err(HandlerError::NotFound("System key not found".to_string())),
-        Err(e) => Err(HandlerError::Internal(e.to_string())),
-    }
-}
