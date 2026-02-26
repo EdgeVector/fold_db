@@ -70,17 +70,6 @@ impl EventMonitor {
             }
         });
 
-        // AtomUpdated
-        let stats = statistics.clone();
-        let mut rx = message_bus.subscribe("AtomUpdated").await;
-        tokio::spawn(async move {
-            while let Some(event) = rx.recv().await {
-                if let Event::AtomUpdated(_) = event {
-                    stats.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).increment_atom_updates();
-                }
-            }
-        });
-
         // MoleculeCreated
         let stats = statistics.clone();
         let mut rx = message_bus.subscribe("MoleculeCreated").await;
@@ -88,39 +77,6 @@ impl EventMonitor {
             while let Some(event) = rx.recv().await {
                 if let Event::MoleculeCreated(_) = event {
                     stats.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).increment_molecule_creations();
-                }
-            }
-        });
-
-        // MoleculeUpdated
-        let stats = statistics.clone();
-        let mut rx = message_bus.subscribe("MoleculeUpdated").await;
-        tokio::spawn(async move {
-            while let Some(event) = rx.recv().await {
-                if let Event::MoleculeUpdated(_) = event {
-                    stats.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).increment_molecule_updates();
-                }
-            }
-        });
-
-        // SchemaLoaded
-        let stats = statistics.clone();
-        let mut rx = message_bus.subscribe("SchemaLoaded").await;
-        tokio::spawn(async move {
-            while let Some(event) = rx.recv().await {
-                if let Event::SchemaLoaded(_) = event {
-                    stats.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).increment_schema_loads();
-                }
-            }
-        });
-
-        // SchemaChanged
-        let stats = statistics.clone();
-        let mut rx = message_bus.subscribe("SchemaChanged").await;
-        tokio::spawn(async move {
-            while let Some(event) = rx.recv().await {
-                if let Event::SchemaChanged(_) = event {
-                    stats.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).increment_schema_changes();
                 }
             }
         });
@@ -162,14 +118,6 @@ impl EventMonitor {
                 if let Event::TransformRegistered(_) = event {
                     stats.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).increment_transform_registrations();
                 }
-            }
-        });
-
-        // TransformRegistrationRequest
-        let mut rx = message_bus.subscribe("TransformRegistrationRequest").await;
-        tokio::spawn(async move {
-            while (rx.recv().await).is_some() {
-                // Nothing to do but consume
             }
         });
 
@@ -263,11 +211,7 @@ impl EventMonitor {
         info!("📊 EventMonitor Summary ({}s runtime):", runtime);
         info!("  📝 Field Value Sets: {}", stats.field_value_sets);
         info!("  🆕 Atom Creations: {}", stats.atom_creations);
-        info!("  🔄 Atom Updates: {}", stats.atom_updates);
         info!("  🎯 Molecule Creations: {}", stats.molecule_creations);
-        info!("  ⚡ Molecule Updates: {}", stats.molecule_updates);
-        info!("  📋 Schema Loads: {}", stats.schema_loads);
-        info!("  🔧 Schema Changes: {}", stats.schema_changes);
         info!("  🚀 Transform Triggers: {}", stats.transform_triggers);
         info!("  ✅ Transform Executions: {}", stats.transform_executions);
         info!("  🔍 Query Executions: {}", stats.query_executions);
@@ -315,7 +259,6 @@ mod tests {
     use crate::fold_db_core::infrastructure::message_bus::atom_events::{
         AtomCreated, FieldValueSet, MoleculeCreated,
     };
-    use crate::fold_db_core::infrastructure::message_bus::schema_events::SchemaLoaded;
     use crate::fold_db_core::infrastructure::message_bus::AsyncMessageBus;
     use serde_json::json;
     use std::time::Duration;
@@ -369,13 +312,6 @@ mod tests {
             )))
             .await
             .unwrap();
-        bus_arc
-            .publish_event(Event::SchemaLoaded(SchemaLoaded::new(
-                "TestSchema",
-                "success",
-            )))
-            .await
-            .unwrap();
 
         // Allow time for event processing
         tokio::time::sleep(Duration::from_millis(200)).await;
@@ -390,7 +326,6 @@ mod tests {
         assert!(stats.field_value_sets >= 1);
         assert!(stats.atom_creations >= 1);
         assert!(stats.molecule_creations >= 1);
-        assert!(stats.schema_loads >= 1);
 
         monitor.log_summary();
     }

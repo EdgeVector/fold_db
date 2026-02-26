@@ -4,13 +4,8 @@ use crate::logging::features::LogFeature;
 use crate::server::http_server::AppState;
 use crate::server::routes::{handler_error_to_response, require_node};
 use actix_web::{web, HttpResponse, Responder};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::json;
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SimpleSuccessResponse {
-    pub success: bool,
-}
 
 #[utoipa::path(
     get,

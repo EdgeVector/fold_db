@@ -8,7 +8,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 // External crate imports
-use log::{debug, error, info};
+use log::{debug, info};
 
 // Internal crate imports
 use crate::db_operations::{DbOperations, IndexResult};
@@ -36,7 +36,8 @@ pub struct FoldDB {
     pub(crate) db_ops: Arc<DbOperations>,
     /// Query executor for handling all query operations
     pub(crate) query_executor: QueryExecutor,
-    /// Message bus for event-driven communication
+    /// Message bus for event-driven communication (held for Arc lifetime)
+    #[allow(dead_code)]
     pub(crate) message_bus: Arc<AsyncMessageBus>,
     /// Event monitor for system-wide observability
     pub(crate) event_monitor: Arc<EventMonitor>,
@@ -59,29 +60,6 @@ impl FoldDB {
             .get_node_id()
             .await
             .map_err(|e| crate::storage::StorageError::BackendError(e.to_string()))
-    }
-
-    /// Retrieves the list of permitted schemas for the given node.
-    pub async fn get_schema_permissions(&self, node_id: &str) -> Result<Vec<String>, SchemaError> {
-        self.db_ops
-            .get_schema_permissions(node_id)
-            .await
-            .map_err(|e| {
-                error!("Failed to get schema permissions for node '{}': {}", node_id, e);
-                e
-            })
-    }
-
-    /// Sets the permitted schemas for the given node.
-    pub async fn set_schema_permissions(
-        &self,
-        node_id: &str,
-        schemas: &[String],
-    ) -> sled::Result<()> {
-        self.db_ops
-            .set_schema_permissions(node_id, schemas)
-            .await
-            .map_err(|e| sled::Error::Unsupported(e.to_string()))
     }
 
     /// Properly close and flush the database to release all file locks
@@ -428,16 +406,6 @@ impl FoldDB {
         transform_id: &str,
     ) -> Option<super::infrastructure::backfill_tracker::BackfillInfo> {
         self.event_monitor.get_backfill(transform_id)
-    }
-
-    /// Get the message bus for publishing events (for testing)
-    pub fn message_bus(&self) -> Arc<AsyncMessageBus> {
-        Arc::clone(&self.message_bus)
-    }
-
-    /// Get the transform manager for testing transform functionality
-    pub fn transform_manager(&self) -> Arc<TransformManager> {
-        Arc::clone(&self.transform_manager)
     }
 
     /// Get the schema manager for testing schema functionality

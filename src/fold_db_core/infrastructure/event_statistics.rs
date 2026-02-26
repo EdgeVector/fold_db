@@ -9,11 +9,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 pub struct EventStatistics {
     pub field_value_sets: u64,
     pub atom_creations: u64,
-    pub atom_updates: u64,
     pub molecule_creations: u64,
-    pub molecule_updates: u64,
-    pub schema_loads: u64,
-    pub schema_changes: u64,
     pub transform_triggers: u64,
     pub transform_executions: u64,
     pub transform_successes: u64,
@@ -77,28 +73,8 @@ impl EventStatistics {
         self.total_events += 1;
     }
 
-    pub fn increment_atom_updates(&mut self) {
-        self.atom_updates += 1;
-        self.total_events += 1;
-    }
-
     pub fn increment_molecule_creations(&mut self) {
         self.molecule_creations += 1;
-        self.total_events += 1;
-    }
-
-    pub fn increment_molecule_updates(&mut self) {
-        self.molecule_updates += 1;
-        self.total_events += 1;
-    }
-
-    pub fn increment_schema_loads(&mut self) {
-        self.schema_loads += 1;
-        self.total_events += 1;
-    }
-
-    pub fn increment_schema_changes(&mut self) {
-        self.schema_changes += 1;
         self.total_events += 1;
     }
 

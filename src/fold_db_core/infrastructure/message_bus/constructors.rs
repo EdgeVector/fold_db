@@ -80,16 +80,6 @@ impl AtomCreated {
     }
 }
 
-impl AtomUpdated {
-    /// Create a new AtomUpdated event
-    pub fn new(atom_id: impl Into<String>, data: Value) -> Self {
-        Self {
-            atom_id: atom_id.into(),
-            data,
-        }
-    }
-}
-
 impl MoleculeCreated {
     /// Create a new MoleculeCreated event
     pub fn new(
@@ -105,46 +95,12 @@ impl MoleculeCreated {
     }
 }
 
-impl MoleculeUpdated {
-    /// Create a new MoleculeUpdated event
-    pub fn new(
-        molecule_uuid: impl Into<String>,
-        field_path: impl Into<String>,
-        operation: impl Into<String>,
-    ) -> Self {
-        Self {
-            molecule_uuid: molecule_uuid.into(),
-            field_path: field_path.into(),
-            operation: operation.into(),
-        }
-    }
-}
-
-impl SchemaLoaded {
-    /// Create a new SchemaLoaded event
-    pub fn new(schema_name: impl Into<String>, status: impl Into<String>) -> Self {
-        Self {
-            schema_name: schema_name.into(),
-            status: status.into(),
-        }
-    }
-}
-
 impl TransformExecuted {
     /// Create a new TransformExecuted event
     pub fn new(transform_id: impl Into<String>, result: impl Into<String>) -> Self {
         Self {
             transform_id: transform_id.into(),
             result: result.into(),
-        }
-    }
-}
-
-impl SchemaChanged {
-    /// Create a new SchemaChanged event
-    pub fn new(schema: impl Into<String>) -> Self {
-        Self {
-            schema: schema.into(),
         }
     }
 }
@@ -230,135 +186,3 @@ impl MutationExecuted {
     }
 }
 
-impl DataPersisted {
-    /// Create a new DataPersisted event
-    pub fn new(schema_name: impl Into<String>, correlation_id: impl Into<String>) -> Self {
-        Self {
-            schema_name: schema_name.into(),
-            correlation_id: correlation_id.into(),
-            transform_id: None,
-            context: None,
-        }
-    }
-
-    /// Create a new DataPersisted event with transform context
-    pub fn with_transform(
-        schema_name: impl Into<String>,
-        correlation_id: impl Into<String>,
-        transform_id: impl Into<String>,
-    ) -> Self {
-        Self {
-            schema_name: schema_name.into(),
-            correlation_id: correlation_id.into(),
-            transform_id: Some(transform_id.into()),
-            context: None,
-        }
-    }
-
-    /// Create a new DataPersisted event with additional context
-    pub fn with_context(
-        schema_name: impl Into<String>,
-        correlation_id: impl Into<String>,
-        context: impl Into<String>,
-    ) -> Self {
-        Self {
-            schema_name: schema_name.into(),
-            correlation_id: correlation_id.into(),
-            transform_id: None,
-            context: Some(context.into()),
-        }
-    }
-}
-
-// ========== Request/Response Event Constructors ==========
-
-impl FieldValueSetRequest {
-    /// Create a new FieldValueSetRequest
-    pub fn new(
-        correlation_id: String,
-        schema_name: String,
-        field_name: String,
-        value: Value,
-        source_pub_key: String,
-    ) -> Self {
-        Self {
-            correlation_id,
-            schema_name,
-            field_name,
-            value,
-            source_pub_key,
-            mutation_context: None,
-        }
-    }
-
-    /// Create a new FieldValueSetRequest with mutation context
-    pub fn with_context(
-        correlation_id: String,
-        schema_name: String,
-        field_name: String,
-        value: Value,
-        source_pub_key: String,
-        mutation_context: atom_events::MutationContext,
-    ) -> Self {
-        Self {
-            correlation_id,
-            schema_name,
-            field_name,
-            value,
-            source_pub_key,
-            mutation_context: Some(mutation_context),
-        }
-    }
-}
-
-impl FieldValueSetResponse {
-    /// Create a new FieldValueSetResponse
-    pub fn new(
-        correlation_id: String,
-        success: bool,
-        molecule_uuid: Option<String>,
-        error: Option<String>,
-    ) -> Self {
-        Self {
-            correlation_id,
-            success,
-            molecule_uuid,
-            error,
-            key_snapshot: None,
-        }
-    }
-
-    /// Create a new FieldValueSetResponse with key snapshot
-    pub fn with_key_snapshot(
-        correlation_id: String,
-        success: bool,
-        molecule_uuid: Option<String>,
-        error: Option<String>,
-        key_snapshot: Option<KeySnapshot>,
-    ) -> Self {
-        Self {
-            correlation_id,
-            success,
-            molecule_uuid,
-            error,
-            key_snapshot,
-        }
-    }
-}
-
-impl FieldValueQueryRequest {
-    /// Create a new FieldValueQueryRequest
-    pub fn new(
-        correlation_id: String,
-        schema_name: String,
-        field_name: String,
-        filter: Option<Value>,
-    ) -> Self {
-        Self {
-            correlation_id,
-            schema_name,
-            field_name,
-            filter,
-        }
-    }
-}

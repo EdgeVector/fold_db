@@ -39,18 +39,6 @@ pub struct TransformRegistrationResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct DataPersisted {
-    /// The schema name where data was persisted
-    pub schema_name: String,
-    /// The transform ID that generated the data (if applicable)
-    pub transform_id: Option<String>,
-    /// The correlation ID of the mutation that persisted the data
-    pub correlation_id: String,
-    /// Additional context about what was persisted
-    pub context: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct TransformRegistered {
     /// The transform ID that was registered
     pub transform_id: String,
