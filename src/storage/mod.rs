@@ -12,8 +12,6 @@ pub mod exemem_api_store;
 pub mod exemem_namespaced_store;
 pub mod inmemory_backend;
 #[cfg(feature = "aws-backend")]
-pub mod message_bus;
-#[cfg(feature = "aws-backend")]
 pub mod reset_manager;
 pub mod sled_backend;
 pub mod traits;
@@ -41,8 +39,6 @@ pub use encrypting_namespaced_store::EncryptingNamespacedStore;
 pub use encrypting_store::EncryptingKvStore;
 pub use exemem_api_store::{ExememApiStore, ExememAuth};
 pub use exemem_namespaced_store::ExememNamespacedStore;
-#[cfg(feature = "aws-backend")]
-pub use message_bus::CloudMessageBus;
 pub use sled_backend::SledNamespacedStore;
 pub use traits::{NamespacedStore, TypedKvStore};
 pub use upload_storage::UploadStorage;
