@@ -122,13 +122,6 @@ pub struct ResetDatabaseResponse {
     pub job_id: Option<String>,
 }
 
-/// Response for schema service reset
-#[derive(Serialize, utoipa::ToSchema)]
-pub struct ResetSchemaServiceResponse {
-    pub success: bool,
-    pub message: String,
-}
-
 /// Reset the database (async background job)
 ///
 /// This endpoint initiates a database reset as a background job:
@@ -281,71 +274,6 @@ pub async fn reset_database(
             .to_string(),
         job_id: Some(job_id),
     })
-}
-
-/// Reset the schema service database
-///
-/// This endpoint resets the schema service database by calling its reset endpoint.
-/// This is useful when schemas need to be recreated with updated classification inference.
-#[utoipa::path(
-    post,
-    path = "/api/system/reset-schema-service",
-    tag = "system",
-    request_body = ResetDatabaseRequest,
-    responses(
-        (status = 200, description = "Schema service reset result", body = ResetSchemaServiceResponse),
-        (status = 400, description = "Bad request", body = ResetSchemaServiceResponse),
-        (status = 500, description = "Server error", body = ResetSchemaServiceResponse)
-    )
-)]
-pub async fn reset_schema_service(
-    state: web::Data<AppState>,
-    req: web::Json<ResetDatabaseRequest>,
-) -> impl Responder {
-    // Require explicit confirmation
-    if !req.confirm {
-        return HttpResponse::BadRequest().json(ResetSchemaServiceResponse {
-            success: false,
-            message: "Reset confirmation required. Set 'confirm' to true.".to_string(),
-        });
-    }
-
-    // Get the schema service client from the node via NodeManager
-    let (_user_hash, node_arc) = match require_node(&state).await {
-        Ok(res) => res,
-        Err(response) => return response,
-    };
-    let node = node_arc.read().await;
-    let schema_client = node.get_schema_client();
-
-    // Call the schema service reset endpoint
-    match schema_client.reset_schema_service().await {
-        Ok(()) => {
-            log_feature!(
-                LogFeature::HttpServer,
-                info,
-                "Schema service database reset completed successfully"
-            );
-            HttpResponse::Ok().json(ResetSchemaServiceResponse {
-                success: true,
-                message:
-                    "Schema service database reset successfully. All schemas have been cleared."
-                        .to_string(),
-            })
-        }
-        Err(e) => {
-            log_feature!(
-                LogFeature::HttpServer,
-                error,
-                "Schema service reset failed: {}",
-                e
-            );
-            HttpResponse::InternalServerError().json(ResetSchemaServiceResponse {
-                success: false,
-                message: format!("Schema service reset failed: {}", e),
-            })
-        }
-    }
 }
 
 /// Database configuration request/response types
