@@ -62,7 +62,7 @@ pub use schema::SchemaState;
 pub use security::{
     ClientSecurity, ConditionalEncryption, Ed25519KeyPair, Ed25519PublicKey, EncryptedData,
     EncryptionManager, EncryptionUtils, KeyRegistrationRequest, KeyRegistrationResponse, KeyUtils,
-    MessageSigner, MessageVerifier, PublicKeyInfo, SecurityConfig, SecurityConfigBuilder,
+    MessageSigner, MessageVerifier, PublicKeyInfo, SecurityConfig,
     SecurityError, SecurityManager, SecurityMiddleware, SecurityResult, SignedMessage,
     SigningUtils, VerificationResult,
 };

@@ -100,11 +100,6 @@ impl Default for SecurityConfig {
 }
 
 impl SecurityConfig {
-    /// Create a new security config with default settings
-    pub fn new() -> Self {
-        Self::default()
-    }
-
     /// Load security configuration from environment variables
     pub fn from_env() -> Self {
         let mut config = Self::default();
@@ -134,29 +129,5 @@ impl SecurityConfig {
         }
 
         config
-    }
-
-    /// Enable or disable TLS requirement
-    pub fn with_tls(mut self, require_tls: bool) -> Self {
-        self.require_tls = require_tls;
-        self
-    }
-
-    /// Enable or disable signature requirement
-    pub fn with_signatures(mut self, require_signatures: bool) -> Self {
-        self.require_signatures = require_signatures;
-        self
-    }
-
-    /// Enable or disable at-rest encryption
-    pub fn with_encryption(mut self, encrypt_at_rest: bool) -> Self {
-        self.encrypt_at_rest = encrypt_at_rest;
-        self
-    }
-
-    /// Set the master key for at-rest encryption
-    pub fn with_master_key(mut self, key: [u8; 32]) -> Self {
-        self.master_key = Some(key);
-        self
     }
 }

@@ -133,9 +133,6 @@ impl From<crate::error::FoldDbError> for HandlerError {
             crate::error::FoldDbError::Serialization(_) => {
                 HandlerError::BadRequest(err.to_string())
             }
-            crate::error::FoldDbError::Network(_) => {
-                HandlerError::ServiceUnavailable(err.to_string())
-            }
             _ => HandlerError::Internal(err.to_string()),
         }
     }

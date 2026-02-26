@@ -41,7 +41,6 @@ pub struct FoldNode {
     pub(super) public_key: String,
     /// E2E encryption keys (content encryption + index blinding).
     /// Stored for future passkey integration where the key may need to be refreshed.
-    #[allow(dead_code)]
     pub(super) e2e_keys: crate::crypto::E2eKeys,
     /// Preprocessor that enriches mutations with keyword index_terms.
     mutation_preprocessor: MutationPreprocessor,

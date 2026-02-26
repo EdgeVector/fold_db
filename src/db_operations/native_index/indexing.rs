@@ -94,7 +94,7 @@ impl NativeIndexManager {
 
         for keyword in &keywords {
             let (classification, prefix) = match &schema_classification {
-                Some((cls, pfx)) => (cls.clone(), *pfx),
+                Some((cls, pfx)) => (*cls, *pfx),
                 None => {
                     // Regex fallback per keyword
                     if is_email(keyword) {

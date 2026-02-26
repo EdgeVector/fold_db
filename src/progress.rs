@@ -206,18 +206,6 @@ impl SledProgressStore {
     fn make_key(user_id: &str, job_id: &str) -> Vec<u8> {
         format!("{}:{}", user_id, job_id).into_bytes()
     }
-
-    /// Parse composite key to extract user_id
-    #[allow(dead_code)]
-    fn parse_key(key: &[u8]) -> Option<(String, String)> {
-        let key_str = std::str::from_utf8(key).ok()?;
-        let parts: Vec<&str> = key_str.splitn(2, ':').collect();
-        if parts.len() == 2 {
-            Some((parts[0].to_string(), parts[1].to_string()))
-        } else {
-            None
-        }
-    }
 }
 
 #[async_trait]

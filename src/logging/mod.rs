@@ -362,13 +362,3 @@ pub fn subscribe() -> Option<tokio::sync::broadcast::Receiver<String>> {
         .get()
         .map(|web_output| web_output.subscribe())
 }
-
-/// Initialize logging with backward compatibility
-/// This calls init_default() but blocks on async execution
-pub fn init() -> Result<(), LoggingError> {
-    // We cannot easily run async here without a runtime.
-    // Sync initialization is deprecated and not supported for full functionality.
-    Err(LoggingError::Config(
-        "Sync initialization deprecated. Use LoggingSystem::init_default().await".to_string(),
-    ))
-}

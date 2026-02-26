@@ -7,7 +7,6 @@
 //! - **services/**: Service layer components for operations
 //! - **infrastructure/**: Foundation components (message bus, initialization, etc.)
 //! - **orchestration/**: Coordination and orchestration components
-//! - **shared/**: Common utilities and shared components
 //! - **transform_manager/**: Transform system (already well-organized)
 
 // Organized module declarations
@@ -16,7 +15,6 @@ pub mod fold_db;
 pub mod infrastructure;
 pub mod orchestration;
 pub mod query;
-pub mod shared;
 
 // Core components
 
@@ -26,7 +24,6 @@ pub mod mutation_manager;
 pub use infrastructure::EventMonitor;
 pub use orchestration::TransformOrchestrator;
 pub use query::QueryExecutor;
-pub use shared::*;
 
 // Re-export core components
 

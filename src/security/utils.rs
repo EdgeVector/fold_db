@@ -3,7 +3,7 @@
 use crate::{
     constants::SINGLE_PUBLIC_KEY_ID,
     security::{
-        ConditionalEncryption, Ed25519KeyPair, Ed25519PublicKey, EncryptionManager,
+        ConditionalEncryption, Ed25519KeyPair, Ed25519PublicKey,
         KeyRegistrationRequest, KeyRegistrationResponse, MessageVerifier, PublicKeyInfo,
         SecurityError, SecurityResult, SignedMessage,
     },
@@ -329,69 +329,6 @@ impl SecurityMiddleware {
     }
 }
 
-/// Configuration helpers
-pub struct SecurityConfigBuilder {
-    config: crate::security::SecurityConfig,
-}
-
-impl SecurityConfigBuilder {
-    /// Create a new config builder
-    pub fn new() -> Self {
-        Self {
-            config: crate::security::SecurityConfig::default(),
-        }
-    }
-
-    /// Set TLS requirement
-    pub fn require_tls(mut self, require: bool) -> Self {
-        self.config.require_tls = require;
-        self
-    }
-
-    /// Set signature requirement
-    pub fn require_signatures(mut self, require: bool) -> Self {
-        self.config.require_signatures = require;
-        self
-    }
-
-    /// Enable encryption with a generated key
-    pub fn enable_encryption(mut self) -> Self {
-        self.config.encrypt_at_rest = true;
-        self.config.master_key = Some(EncryptionManager::generate_master_key());
-        self
-    }
-
-    /// Enable encryption with a specific key
-    pub fn enable_encryption_with_key(mut self, key: [u8; 32]) -> Self {
-        self.config.encrypt_at_rest = true;
-        self.config.master_key = Some(key);
-        self
-    }
-
-    /// Enable encryption with a password-derived key
-    pub fn enable_encryption_with_password(
-        mut self,
-        password: &str,
-        salt: &[u8],
-    ) -> SecurityResult<Self> {
-        let key = crate::security::EncryptionUtils::derive_key_from_password(password, salt)?;
-        self.config.encrypt_at_rest = true;
-        self.config.master_key = Some(key);
-        Ok(self)
-    }
-
-    /// Build the configuration
-    pub fn build(self) -> crate::security::SecurityConfig {
-        self.config
-    }
-}
-
-impl Default for SecurityConfigBuilder {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -474,17 +411,4 @@ mod tests {
         assert!(result.is_err());
     }
 
-    #[test]
-    fn test_config_builder() {
-        let config = SecurityConfigBuilder::new()
-            .require_tls(true)
-            .require_signatures(true)
-            .enable_encryption()
-            .build();
-
-        assert!(config.require_tls);
-        assert!(config.require_signatures);
-        assert!(config.encrypt_at_rest);
-        assert!(config.master_key.is_some());
-    }
 }

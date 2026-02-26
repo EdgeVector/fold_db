@@ -724,7 +724,7 @@ pub async fn perform_smart_folder_scan_with_progress(
         // Populate file size and cost estimate (local providers are free)
         let rel_path = Path::new(&rec.path);
         rec.file_size_bytes = file_size_bytes(rel_path, folder_path);
-        let is_local = service.map_or(false, |s| s.is_local_provider());
+        let is_local = service.is_some_and(|s| s.is_local_provider());
         rec.estimated_cost = if is_local {
             0.0
         } else {

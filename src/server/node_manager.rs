@@ -262,7 +262,6 @@ impl NodeManager {
 
     /// Invalidate (remove) a node from the cache
     /// This forces a reload/recreation on the next access
-    #[allow(dead_code)]
     pub async fn invalidate_node(&self, user_id: &str) {
         let mut nodes = self.nodes.lock().await;
         nodes.remove(user_id);
