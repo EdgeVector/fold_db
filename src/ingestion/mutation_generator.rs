@@ -6,6 +6,7 @@ use crate::logging::features::LogFeature;
 use crate::schema::types::{KeyValue, Mutation};
 use crate::MutationType;
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 
 /// Generate mutations from JSON data and mutation mappers
@@ -84,10 +85,24 @@ pub fn generate_mutations(
     // If we have fields to mutate, create a mutation
     if !mapped_fields.is_empty() {
         // Build KeyValue from keys
-        let key_value = KeyValue::new(
+        let mut key_value = KeyValue::new(
             keys_and_values.get("hash_field").cloned(),
             keys_and_values.get("range_field").cloned(),
         );
+
+        // When key fields are missing from the data (e.g., some array items lack the
+        // designated key field), generate a deterministic content-hash fallback so the
+        // mutation is still stored and retrievable.
+        if key_value.hash.is_none() && key_value.range.is_none() {
+            let fallback = content_hash_key(&mapped_fields);
+            log_feature!(
+                LogFeature::Ingestion,
+                warn,
+                "Key fields not found in data for schema '{}', using content hash '{}' as fallback",
+                schema_name, fallback
+            );
+            key_value.hash = Some(fallback);
+        }
 
         let mut mutation = Mutation::new(
             schema_name.to_string(),
@@ -124,6 +139,20 @@ pub fn generate_mutations(
     Ok(mutations)
 }
 
+/// Compute a deterministic hash from field values to use as a fallback key
+/// when the schema's designated key fields are missing from the data.
+fn content_hash_key(fields: &HashMap<String, Value>) -> String {
+    let mut hasher = Sha256::new();
+    let mut sorted: Vec<_> = fields.iter().collect();
+    sorted.sort_by(|(a, _), (b, _)| a.cmp(b));
+    for (k, v) in sorted {
+        hasher.update(k.as_bytes());
+        hasher.update(v.to_string().as_bytes());
+    }
+    let digest = hasher.finalize();
+    format!("{:x}", digest)[..16].to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -157,5 +186,64 @@ mod tests {
 
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].fields_and_values.len(), 2);
+    }
+
+    #[test]
+    fn test_content_hash_key_deterministic() {
+        let mut fields = HashMap::new();
+        fields.insert("name".to_string(), json!("Alice"));
+        fields.insert("age".to_string(), json!(30));
+
+        let hash1 = content_hash_key(&fields);
+        let hash2 = content_hash_key(&fields);
+        assert_eq!(hash1, hash2, "Same fields should produce same hash");
+        assert_eq!(hash1.len(), 16, "Hash should be 16 hex chars");
+    }
+
+    #[test]
+    fn test_content_hash_key_differs_for_different_data() {
+        let mut fields_a = HashMap::new();
+        fields_a.insert("name".to_string(), json!("Alice"));
+
+        let mut fields_b = HashMap::new();
+        fields_b.insert("name".to_string(), json!("Bob"));
+
+        assert_ne!(
+            content_hash_key(&fields_a),
+            content_hash_key(&fields_b),
+            "Different data should produce different hashes"
+        );
+    }
+
+    #[test]
+    fn test_generate_mutations_fallback_key_when_keys_missing() {
+        // Empty keys_and_values simulates missing key fields in data
+        let keys_and_values = HashMap::new();
+
+        let mut fields_and_values = HashMap::new();
+        fields_and_values.insert("name".to_string(), json!("Alice"));
+        fields_and_values.insert("phone".to_string(), json!("555-0101"));
+
+        let mut mappers = HashMap::new();
+        mappers.insert("name".to_string(), "ContactSchema.name".to_string());
+        mappers.insert("phone".to_string(), "ContactSchema.phone".to_string());
+
+        let result = generate_mutations(
+            "ContactSchema",
+            &keys_and_values,
+            &fields_and_values,
+            &mappers,
+            0,
+            "test-key".to_string(),
+            None,
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(result.len(), 1);
+        assert!(
+            result[0].key_value.hash.is_some(),
+            "Should have a fallback hash key when key fields are missing"
+        );
     }
 }

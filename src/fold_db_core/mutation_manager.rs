@@ -170,7 +170,7 @@ impl MutationManager {
                 // Prefer the pre-computed key_value from the mutation (set by the
                 // ingestion service with date normalization and proper field extraction).
                 // Fall back to KeyValue::from_mutation() only when both fields are None.
-                let key_value = if mutation.key_value.hash.is_some() || mutation.key_value.range.is_some() {
+                let mut key_value = if mutation.key_value.hash.is_some() || mutation.key_value.range.is_some() {
                     mutation.key_value.clone()
                 } else {
                     let key_config = schema.key.clone();
@@ -184,6 +184,28 @@ impl MutationManager {
                         })?,
                     )
                 };
+
+                // Safety net: if key is still empty after both extraction paths,
+                // generate a deterministic content hash so the mutation is stored
+                // and retrievable rather than silently lost.
+                if key_value.hash.is_none() && key_value.range.is_none() {
+                    use sha2::{Digest, Sha256};
+                    let mut hasher = Sha256::new();
+                    let mut sorted: Vec<_> = mutation.fields_and_values.iter().collect();
+                    sorted.sort_by(|(a, _), (b, _)| a.cmp(b));
+                    for (k, v) in sorted {
+                        hasher.update(k.as_bytes());
+                        hasher.update(v.to_string().as_bytes());
+                    }
+                    let fallback = format!("{:x}", hasher.finalize());
+                    let short = &fallback[..16];
+                    warn!(
+                        "Key resolution produced empty key for schema '{}', mutation {}; using content hash '{}'",
+                        schema_name, mutation.uuid, short
+                    );
+                    key_value.hash = Some(short.to_string());
+                }
+
                 mutation_key_values.push(key_value);
 
                 // Validate all field values against their topologies before processing
