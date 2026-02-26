@@ -15,10 +15,20 @@ use crate::fold_node::FoldNode;
 use crate::fold_db_core::factory;
 use crate::security::Ed25519KeyPair;
 use crate::storage::config::DatabaseConfig;
+use base64::Engine as _;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::{Mutex, RwLock};
+
+/// Persisted node identity keypair
+#[derive(Serialize, Deserialize)]
+struct NodeIdentity {
+    private_key: String,
+    public_key: String,
+}
 
 /// Error type for node manager operations
 #[derive(Debug, thiserror::Error)]
@@ -145,14 +155,8 @@ impl NodeManager {
             }
         }
 
-        // Deterministically generate identity keys from user_id
-        let mut hasher = Sha256::new();
-        hasher.update(user_id.as_bytes());
-        let result = hasher.finalize();
-        let secret_seed = result.as_slice();
-
-        let keypair = Ed25519KeyPair::from_secret_key(secret_seed)
-            .map_err(|e| NodeManagerError::SecurityError(e.to_string()))?;
+        // Load or generate a random identity keypair (persisted to disk)
+        let keypair = Self::load_or_generate_identity(user_id).await?;
 
         // Set identity on config
         node_config =
@@ -182,6 +186,78 @@ impl NodeManager {
         .map_err(|e| NodeManagerError::NodeCreationError(e.to_string()))?;
 
         Ok(Arc::new(RwLock::new(node)))
+    }
+
+    /// Load an existing identity keypair from disk, or generate a new random one.
+    ///
+    /// Key file path: `~/.fold_db/identity/{sha256(user_id)}.json`
+    /// The SHA-256 hash is used as the filename to avoid path injection from arbitrary user_ids.
+    async fn load_or_generate_identity(
+        user_id: &str,
+    ) -> Result<Ed25519KeyPair, NodeManagerError> {
+        // Build the key file path: ~/.fold_db/identity/{hash}.json
+        let home = std::env::var("HOME")
+            .map(PathBuf::from)
+            .map_err(|_| NodeManagerError::ConfigurationError("HOME environment variable not set".to_string()))?;
+
+        let mut hasher = Sha256::new();
+        hasher.update(user_id.as_bytes());
+        let hash_hex = format!("{:x}", hasher.finalize());
+
+        let identity_dir = home.join(".fold_db/identity");
+        let identity_path = identity_dir.join(format!("{hash_hex}.json"));
+
+        if identity_path.exists() {
+            // Load existing keypair
+            let content = tokio::fs::read_to_string(&identity_path)
+                .await
+                .map_err(|e| NodeManagerError::SecurityError(format!("Failed to read identity file: {e}")))?;
+
+            let identity: NodeIdentity = serde_json::from_str(&content)
+                .map_err(|e| NodeManagerError::SecurityError(format!("Invalid identity file: {e}")))?;
+
+            let secret_bytes = base64::engine::general_purpose::STANDARD
+                .decode(&identity.private_key)
+                .map_err(|e| NodeManagerError::SecurityError(format!("Invalid private key encoding: {e}")))?;
+
+            Ed25519KeyPair::from_secret_key(&secret_bytes)
+                .map_err(|e| NodeManagerError::SecurityError(e.to_string()))
+        } else {
+            // Generate a new random keypair
+            let keypair = Ed25519KeyPair::generate()
+                .map_err(|e| NodeManagerError::SecurityError(e.to_string()))?;
+
+            let identity = NodeIdentity {
+                private_key: keypair.secret_key_base64(),
+                public_key: keypair.public_key_base64(),
+            };
+
+            // Ensure directory exists
+            tokio::fs::create_dir_all(&identity_dir)
+                .await
+                .map_err(|e| NodeManagerError::SecurityError(format!("Failed to create identity directory: {e}")))?;
+
+            // Write the identity file
+            let content = serde_json::to_string_pretty(&identity)
+                .map_err(|e| NodeManagerError::SecurityError(format!("Failed to serialize identity: {e}")))?;
+            tokio::fs::write(&identity_path, &content)
+                .await
+                .map_err(|e| NodeManagerError::SecurityError(format!("Failed to write identity file: {e}")))?;
+
+            // Restrict permissions to owner-only (Unix)
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let perms = std::fs::Permissions::from_mode(0o600);
+                std::fs::set_permissions(&identity_path, perms).map_err(|e| {
+                    NodeManagerError::SecurityError(format!("Failed to set identity file permissions: {e}"))
+                })?;
+            }
+
+            log::info!("Generated new node identity at {}", identity_path.display());
+
+            Ok(keypair)
+        }
     }
 
     /// Invalidate (remove) a node from the cache
