@@ -323,19 +323,20 @@ struct AverageReducer;
 
 impl ReducerFunction for AverageReducer {
     fn execute(&self, items: &[IterationItem]) -> ReducerResult {
-        let count = items.len();
-        if count == 0 {
-            return "0".to_string();
-        }
-
-        let sum: f64 = items
+        let numeric_values: Vec<f64> = items
             .iter()
             .filter_map(|item| match &item.value.value {
                 serde_json::Value::Number(n) => n.as_f64(),
                 _ => None,
             })
-            .sum();
+            .collect();
 
+        let count = numeric_values.len();
+        if count == 0 {
+            return "0".to_string();
+        }
+
+        let sum: f64 = numeric_values.into_iter().sum();
         let avg = sum / count as f64;
 
         if avg.abs() < f64::EPSILON {

@@ -342,8 +342,18 @@ async fn handle_s3_file_path(
     let bucket = parts[0];
     let key = parts[1];
 
-    // Extract filename from key (last part of the path)
-    let filename = key.rsplit('/').next().unwrap_or(key).to_string();
+    // Extract filename from key (last path segment) and sanitize against path traversal
+    let raw_filename = key.rsplit('/').next().unwrap_or(key).to_string();
+    // Strip any path separators or parent-directory traversal sequences
+    let filename: String = raw_filename
+        .replace(['/', '\\'], "_")
+        .replace("..", "_");
+    if filename.is_empty() {
+        return Err(HttpResponse::BadRequest().json(json!({
+            "success": false,
+            "error": "S3 key produced an empty filename"
+        })));
+    }
 
     log_feature!(
         LogFeature::Ingestion,
@@ -372,7 +382,8 @@ async fn handle_s3_file_path(
     };
 
     // Save to /tmp for processing (file_to_json needs local file)
-    let temp_path = std::env::temp_dir().join(&filename);
+    // Use folddb_ prefix for easy identification and cleanup
+    let temp_path = std::env::temp_dir().join(format!("folddb_s3_{}", filename));
     if let Err(e) = fs::write(&temp_path, &file_data).await {
         log_feature!(
             LogFeature::Ingestion,

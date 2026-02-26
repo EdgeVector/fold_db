@@ -8,7 +8,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 // External crate imports
-use log::{debug, info};
+use log::{debug, error, info};
 
 // Internal crate imports
 use crate::db_operations::{DbOperations, IndexResult};
@@ -62,11 +62,14 @@ impl FoldDB {
     }
 
     /// Retrieves the list of permitted schemas for the given node.
-    pub async fn get_schema_permissions(&self, node_id: &str) -> Vec<String> {
+    pub async fn get_schema_permissions(&self, node_id: &str) -> Result<Vec<String>, SchemaError> {
         self.db_ops
             .get_schema_permissions(node_id)
             .await
-            .unwrap_or_default()
+            .map_err(|e| {
+                error!("Failed to get schema permissions for node '{}': {}", node_id, e);
+                e
+            })
     }
 
     /// Sets the permitted schemas for the given node.
@@ -288,7 +291,18 @@ impl FoldDB {
         info!("Created MutationManager for mutation operations");
 
         // Start the MutationManager event listener
-        let _ = mutation_manager.start_event_listener().await;
+        if let Err(e) = mutation_manager.start_event_listener().await {
+            log_feature!(
+                LogFeature::Database,
+                error,
+                "Failed to start MutationManager event listener: {}. Mutations via event bus will not be processed.",
+                e
+            );
+            return Err(StorageError::BackendError(format!(
+                "Failed to start MutationManager event listener: {}",
+                e
+            )));
+        }
 
         info!("Started MutationManager event listener");
 

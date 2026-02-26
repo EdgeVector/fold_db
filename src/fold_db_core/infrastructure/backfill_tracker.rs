@@ -285,16 +285,16 @@ impl BackfillTracker {
             BackfillInfo::new_with_hash(backfill_hash.clone(), transform_id.clone(), schema_name);
 
         {
-            // Store by hash
+            // Store by hash — always acquire backfills before transform_to_hash
             self.backfills
                 .lock()
-                .unwrap()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
                 .insert(backfill_hash.clone(), info.clone());
 
             // Update transform_id -> hash mapping
             self.transform_to_hash
                 .lock()
-                .unwrap()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
                 .insert(transform_id, backfill_hash);
         }
 
@@ -437,8 +437,12 @@ impl BackfillTracker {
     /// Mark backfill as failed by transform_id (uses latest backfill for that transform)
     pub async fn fail_backfill(&self, transform_id: &str, error_msg: String) {
         let mut info_clone = None;
-        if let Some(hash) = self.transform_to_hash.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).get(transform_id) {
-            if let Some(info) = self.backfills.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).get_mut(hash) {
+        // Look up the hash first, then release the lock before acquiring backfills lock.
+        // This maintains consistent lock ordering: backfills before transform_to_hash
+        // (we only read transform_to_hash here, so we grab it briefly, copy the hash, drop it).
+        let hash = self.transform_to_hash.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).get(transform_id).cloned();
+        if let Some(hash) = hash {
+            if let Some(info) = self.backfills.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).get_mut(&hash) {
                 info.mark_failed(error_msg);
                 info_clone = Some(info.clone());
             }
@@ -456,11 +460,14 @@ impl BackfillTracker {
 
     /// Get info for a specific backfill by transform_id (returns latest backfill)
     pub fn get_backfill(&self, transform_id: &str) -> Option<BackfillInfo> {
-        self.transform_to_hash
+        // Copy hash first, then release transform_to_hash lock before acquiring backfills lock.
+        // This avoids holding both locks simultaneously and prevents lock ordering issues.
+        let hash = self.transform_to_hash
             .lock()
-            .unwrap()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .get(transform_id)
-            .and_then(|hash| self.backfills.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).get(hash).cloned())
+            .cloned();
+        hash.and_then(|h| self.backfills.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).get(&h).cloned())
     }
 
     /// Get info for a specific backfill by backfill_hash
@@ -500,7 +507,7 @@ impl BackfillTracker {
     pub fn get_active_backfills(&self) -> Vec<BackfillInfo> {
         self.backfills
             .lock()
-            .unwrap()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .values()
             .filter(|info| info.status == BackfillStatus::InProgress)
             .cloned()

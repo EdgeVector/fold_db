@@ -79,9 +79,15 @@ pub fn decompose(data: &Value) -> DecompositionResult {
         .collect();
 
     for field_name in fields_to_extract {
-        let value = parent_map.remove(&field_name).unwrap();
-        let arr = value.as_array().unwrap();
-        let representative = &arr[0];
+        let Some(value) = parent_map.remove(&field_name) else {
+            continue;
+        };
+        let Some(arr) = value.as_array() else {
+            continue;
+        };
+        let Some(representative) = arr.first() else {
+            continue;
+        };
 
         let structure_hash = compute_structure_hash(representative);
 

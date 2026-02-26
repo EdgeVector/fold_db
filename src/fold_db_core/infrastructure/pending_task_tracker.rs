@@ -33,12 +33,27 @@ impl PendingTaskTracker {
     /// Decrement the pending task count
     /// Call this AFTER an async background operation completes
     pub fn decrement(&self) {
-        let prev = self.count.fetch_sub(1, Ordering::SeqCst);
-        let new_val = prev - 1;
-        debug!("Pending tasks decremented: {} -> {}", prev, new_val);
-
-        if new_val == 0 {
-            self.notify.notify_waiters();
+        // Use compare-and-swap loop to prevent underflow (wrapping to usize::MAX)
+        // which would cause wait_for_completion() to hang forever.
+        loop {
+            let current = self.count.load(Ordering::SeqCst);
+            if current == 0 {
+                warn!("Attempted to decrement pending task count below zero — ignoring");
+                return;
+            }
+            if self
+                .count
+                .compare_exchange(current, current - 1, Ordering::SeqCst, Ordering::SeqCst)
+                .is_ok()
+            {
+                let new_val = current - 1;
+                debug!("Pending tasks decremented: {} -> {}", current, new_val);
+                if new_val == 0 {
+                    self.notify.notify_waiters();
+                }
+                return;
+            }
+            // CAS failed — another thread modified count, retry
         }
     }
 

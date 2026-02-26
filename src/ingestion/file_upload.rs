@@ -110,6 +110,18 @@ pub async fn upload_file(
         None
     };
 
+    // Clean up the unencrypted temp file now that conversion is complete.
+    // The encrypted copy is already stored; leaving plaintext on disk is a data leak.
+    if let Err(e) = tokio::fs::remove_file(&form_data.file_path).await {
+        log_feature!(
+            LogFeature::Ingestion,
+            warn,
+            "Failed to clean up temp processing file {:?}: {}",
+            form_data.file_path,
+            e
+        );
+    }
+
     log_feature!(
         LogFeature::Ingestion,
         info,
