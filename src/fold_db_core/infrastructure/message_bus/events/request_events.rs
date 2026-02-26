@@ -465,7 +465,6 @@ pub struct IndexRequest {
     pub field_name: String,
     pub key_value: KeyValue,
     pub value: Value,
-    pub classifications: Option<Vec<String>>,
 }
 
 impl EventType for IndexRequest {

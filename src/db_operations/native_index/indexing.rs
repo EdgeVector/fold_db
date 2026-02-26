@@ -46,6 +46,10 @@ impl NativeIndexManager {
     ///
     /// Takes a flat list of keywords (already normalized) and writes
     /// index entries + reverse mappings for each keyword.
+    ///
+    /// When `field_classifications` is provided (from the schema's AI-assigned
+    /// classifications), classification is determined once for the whole field.
+    /// Otherwise falls back to per-keyword regex detection.
     pub async fn batch_index_from_keywords(
         &self,
         schema_name: &str,
@@ -53,6 +57,7 @@ impl NativeIndexManager {
         field_name: &str,
         keywords: Vec<String>,
         molecule_versions: Option<&std::collections::HashSet<u64>>,
+        field_classifications: Option<&[String]>,
     ) -> Result<(), SchemaError> {
         log::info!(
             "[NativeIndex] batch_index_from_keywords: {} keywords for field '{}' in schema '{}'",
@@ -63,13 +68,43 @@ impl NativeIndexManager {
 
         let mut index_entries: Vec<(Vec<u8>, Vec<u8>)> = Vec::new();
 
-        for keyword in &keywords {
-            let (classification, prefix) = if is_email(keyword) {
+        // Determine classification strategy: schema-driven (once per field) or regex fallback (per keyword)
+        let schema_classification = field_classifications.map(|cls| {
+            let (classification, prefix) = if cls.iter().any(|c| c == "email") {
                 (IndexClassification::Email, "email")
-            } else if is_date(keyword) {
+            } else if cls.iter().any(|c| c == "date") {
                 (IndexClassification::Date, "date")
             } else {
                 (IndexClassification::Word, "word")
+            };
+            log::debug!(
+                "[NativeIndex] field '{}': schema classification → {}",
+                field_name,
+                prefix
+            );
+            (classification, prefix)
+        });
+
+        if schema_classification.is_none() {
+            log::debug!(
+                "[NativeIndex] field '{}': no schema classifications, regex fallback",
+                field_name
+            );
+        }
+
+        for keyword in &keywords {
+            let (classification, prefix) = match &schema_classification {
+                Some((cls, pfx)) => (cls.clone(), *pfx),
+                None => {
+                    // Regex fallback per keyword
+                    if is_email(keyword) {
+                        (IndexClassification::Email, "email")
+                    } else if is_date(keyword) {
+                        (IndexClassification::Date, "date")
+                    } else {
+                        (IndexClassification::Word, "word")
+                    }
+                }
             };
             let mut entry = IndexEntry::new(
                 schema_name.to_string(),

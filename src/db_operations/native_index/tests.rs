@@ -56,7 +56,7 @@ async fn test_batch_index_from_keywords() {
     ];
 
     manager
-        .batch_index_from_keywords("AiSchema", &key, "content", keywords, None)
+        .batch_index_from_keywords("AiSchema", &key, "content", keywords, None, None)
         .await
         .expect("batch_index_from_keywords failed");
 
@@ -89,6 +89,7 @@ async fn test_multi_word_search_intersection() {
             "name",
             vec!["alice".to_string(), "johnson".to_string()],
             None,
+            None,
         )
         .await
         .expect("indexing p1 failed");
@@ -100,6 +101,7 @@ async fn test_multi_word_search_intersection() {
             &key_p2,
             "name",
             vec!["alice".to_string(), "smith".to_string()],
+            None,
             None,
         )
         .await
@@ -214,7 +216,7 @@ async fn test_search_all_combines_words_and_fields() {
 
     // Index "email" as both a keyword (on "bio" field) and a field name
     manager
-        .batch_index_from_keywords("Schema1", &key, "bio", vec!["email".to_string()], None)
+        .batch_index_from_keywords("Schema1", &key, "bio", vec!["email".to_string()], None, None)
         .await
         .expect("keyword indexing failed");
 
@@ -243,7 +245,7 @@ async fn test_matched_term_populated_in_search() {
 
     let key = KeyValue::new(Some("rec1".to_string()), None);
     manager
-        .batch_index_from_keywords("Tweet", &key, "content", vec!["hello".to_string()], None)
+        .batch_index_from_keywords("Tweet", &key, "content", vec!["hello".to_string()], None, None)
         .await
         .expect("indexing failed");
 
@@ -284,7 +286,7 @@ async fn test_molecule_versions_preserved_through_index_roundtrip() {
 
     // Index with molecule versions
     manager
-        .batch_index_from_keywords("Tweet", &key, "content", vec!["rust".to_string()], Some(&mol_versions))
+        .batch_index_from_keywords("Tweet", &key, "content", vec!["rust".to_string()], Some(&mol_versions), None)
         .await
         .expect("indexing failed");
 
@@ -310,7 +312,7 @@ async fn test_molecule_versions_none_by_default() {
 
     // Index without molecule versions
     manager
-        .batch_index_from_keywords("Tweet", &key, "content", vec!["hello".to_string()], None)
+        .batch_index_from_keywords("Tweet", &key, "content", vec!["hello".to_string()], None, None)
         .await
         .expect("indexing failed");
 
@@ -334,7 +336,7 @@ async fn test_email_indexed_with_email_classification() {
     ];
 
     manager
-        .batch_index_from_keywords("ContactSchema", &key, "email_field", keywords, None)
+        .batch_index_from_keywords("ContactSchema", &key, "email_field", keywords, None, None)
         .await
         .expect("batch_index_from_keywords failed");
 
@@ -369,6 +371,7 @@ async fn test_search_all_finds_emails() {
         .batch_index_from_keywords(
             "Schema1", &key, "contact",
             vec!["bob@test.org".to_string(), "engineer".to_string()],
+            None,
             None,
         )
         .await
@@ -411,7 +414,7 @@ async fn test_date_indexed_with_date_classification() {
     ];
 
     manager
-        .batch_index_from_keywords("EventSchema", &key, "description", keywords, None)
+        .batch_index_from_keywords("EventSchema", &key, "description", keywords, None, None)
         .await
         .expect("batch_index_from_keywords failed");
 
@@ -448,6 +451,7 @@ async fn test_search_all_finds_dates_emails_and_words() {
                 "2024-06-15".to_string(),
                 "conference".to_string(),
             ],
+            None,
             None,
         )
         .await

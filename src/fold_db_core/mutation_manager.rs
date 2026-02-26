@@ -156,7 +156,6 @@ impl MutationManager {
                 .or_insert(std::time::Duration::ZERO) += load_start.elapsed();
 
             let mut mutation_contexts = Vec::new();
-            let mut validation_time = std::time::Duration::ZERO;
             // Process all mutations for this schema with 3-phase optimization
             // Phase 1: Create atoms in memory, then batch store
             let phase1_start = std::time::Instant::now();
@@ -208,19 +207,6 @@ impl MutationManager {
 
                 mutation_key_values.push(key_value);
 
-                // Validate all field values against their topologies before processing
-                let val_start = std::time::Instant::now();
-                for (field_name, value) in &mutation.fields_and_values {
-                    schema.validate_field_value(field_name, value)
-                        .map_err(|e| {
-                            SchemaError::InvalidData(format!(
-                                "Topology validation failed for field '{}' in schema '{}': {}. Value received: {:?}",
-                                field_name, mutation.schema_name, e, value
-                            ))
-                        })?;
-                }
-                validation_time += val_start.elapsed();
-
                 // Create atoms in memory (no storage yet)
                 for (field_name, value) in &mutation.fields_and_values {
                     let atom = DbOperations::create_atom(
@@ -244,6 +230,33 @@ impl MutationManager {
             *timing_breakdown
                 .entry("  - create_atoms_batch")
                 .or_insert(std::time::Duration::ZERO) += phase1_start.elapsed();
+
+            // Phase 1.5: Ensure molecules are loaded from DB for fields that have
+            // molecule_uuid but no molecule in memory (e.g. after server restart or
+            // schema reload). Without this, write_mutation would create a new molecule
+            // instead of appending to the existing one.
+            {
+                let fields_needing_refresh: Vec<String> = schema
+                    .runtime_fields
+                    .iter()
+                    .filter(|(_, field)| {
+                        let has_uuid = field.common().molecule_uuid().is_some();
+                        let has_molecule = match field {
+                            FieldVariant::Single(f) => f.base.molecule.is_some(),
+                            FieldVariant::Range(f) => f.base.molecule.is_some(),
+                            FieldVariant::HashRange(f) => f.base.molecule.is_some(),
+                        };
+                        has_uuid && !has_molecule
+                    })
+                    .map(|(name, _)| name.clone())
+                    .collect();
+
+                for field_name in fields_needing_refresh {
+                    if let Some(field) = schema.runtime_fields.get_mut(&field_name) {
+                        field.refresh_from_db(&self.db_ops).await;
+                    }
+                }
+            }
 
             // Phase 2: Serial Memory Update and Index Collection
             // Also collect molecule persistence tasks
@@ -396,6 +409,8 @@ impl MutationManager {
                     // Index keywords per field when present (best-effort)
                     if let Some(ref index_terms) = mutation.index_terms {
                         for (field_name, keywords) in index_terms {
+                            let classifications = schema.get_field_classifications(field_name)
+                                .map(|v| v.as_slice());
                             if let Err(e) = native_index_mgr
                                 .batch_index_from_keywords(
                                     &schema_name,
@@ -403,6 +418,7 @@ impl MutationManager {
                                     field_name,
                                     keywords.clone(),
                                     mol_versions_ref,
+                                    classifications,
                                 )
                                 .await
                             {
@@ -435,10 +451,6 @@ impl MutationManager {
                 let metadata = mutation.metadata.clone();
                 mutation_contexts.push((mutation_id, backfill_hash, key_value, data, mol_versions.clone(), metadata));
             }
-
-            *timing_breakdown
-                .entry("validation")
-                .or_insert(std::time::Duration::ZERO) += validation_time;
 
             // Sync molecule UUIDs to the persisted field before storing
             let sync_start = std::time::Instant::now();
