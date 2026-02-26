@@ -4,7 +4,7 @@
 //! for async communication between components.
 
 use super::error_handling::{AsyncRecvError, AsyncTryRecvError, MessageBusError, MessageBusResult};
-use super::events::{Event, EventEnvelope, EventType};
+use super::events::{Event, EventEnvelope};
 use super::{
     atom_events::{AtomCreated, FieldValueSet},
     query_events::{MutationExecuted, QueryExecuted},
@@ -17,11 +17,6 @@ use tokio::time::{timeout, Duration as AsyncDuration};
 
 /// Default channel capacity for subscribers
 const DEFAULT_CHANNEL_CAPACITY: usize = 1000;
-
-/// Trait for async event handlers
-pub trait AsyncEventHandler<T: EventType>: Send + Sync {
-    fn handle(&self, event: T) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>;
-}
 
 /// Async consumer for event handling in async contexts
 pub struct AsyncConsumer<T> {
@@ -59,23 +54,6 @@ impl AsyncConsumer<Event> {
         }
     }
 
-    /// Filter events to specific type
-    pub async fn recv_filtered<T: EventType>(&mut self) -> Option<T> {
-        while let Some(event) = self.recv().await {
-            if let Some(typed_event) = self.extract_typed_event::<T>(event) {
-                return Some(typed_event);
-            }
-        }
-        None
-    }
-
-    /// Extract typed event from unified Event enum
-    fn extract_typed_event<T: EventType>(&self, _event: Event) -> Option<T> {
-        // This is a helper method to extract specific event types from the unified Event
-        // Implementation depends on how we want to handle this conversion
-        // For now, return None as this is a complex type conversion
-        None
-    }
 }
 
 /// Async subscriber registry for managing async event subscribers

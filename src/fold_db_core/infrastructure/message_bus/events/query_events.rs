@@ -1,20 +1,12 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use super::EventType;
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct QueryExecuted {
     pub query_type: String,
     pub schema: String,
     pub execution_time_ms: u64,
     pub result_count: usize,
-}
-
-impl EventType for QueryExecuted {
-    fn type_id() -> &'static str {
-        "QueryExecuted"
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -37,10 +29,3 @@ pub struct MutationExecuted {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub metadata: Option<HashMap<String, String>>,
 }
-
-impl EventType for MutationExecuted {
-    fn type_id() -> &'static str {
-        "MutationExecuted"
-    }
-}
-

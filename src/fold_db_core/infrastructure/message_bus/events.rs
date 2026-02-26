@@ -103,12 +103,6 @@ impl EventEnvelope {
     }
 }
 
-/// Trait for types that can be used as events in the message bus
-pub trait EventType: Clone + Send + 'static {
-    /// Get the unique type identifier for this event type
-    fn type_id() -> &'static str;
-}
-
 /// Unified event enumeration that encompasses all event types
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum Event {
@@ -211,8 +205,3 @@ impl Event {
     }
 }
 
-impl EventType for Event {
-    fn type_id() -> &'static str {
-        "Event"
-    }
-}

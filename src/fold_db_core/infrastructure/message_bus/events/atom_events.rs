@@ -2,7 +2,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::super::request_events::KeySnapshot;
-use super::EventType;
 use crate::schema::types::key_value::KeyValue;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -29,34 +28,16 @@ pub struct MutationContext {
     pub backfill_hash: Option<String>,
 }
 
-impl EventType for FieldValueSet {
-    fn type_id() -> &'static str {
-        "FieldValueSet"
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct AtomCreated {
     pub atom_id: String,
     pub data: Value,
 }
 
-impl EventType for AtomCreated {
-    fn type_id() -> &'static str {
-        "AtomCreated"
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct AtomUpdated {
     pub atom_id: String,
     pub data: Value,
-}
-
-impl EventType for AtomUpdated {
-    fn type_id() -> &'static str {
-        "AtomUpdated"
-    }
 }
 
 // Molecule events
@@ -67,21 +48,9 @@ pub struct MoleculeCreated {
     pub field_path: String,
 }
 
-impl EventType for MoleculeCreated {
-    fn type_id() -> &'static str {
-        "MoleculeCreated"
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct MoleculeUpdated {
     pub molecule_uuid: String,
     pub field_path: String,
     pub operation: String,
-}
-
-impl EventType for MoleculeUpdated {
-    fn type_id() -> &'static str {
-        "MoleculeUpdated"
-    }
 }

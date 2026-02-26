@@ -1,17 +1,9 @@
 use serde::{Deserialize, Serialize};
 
-use super::EventType;
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SchemaLoaded {
     pub schema_name: String,
     pub status: String,
-}
-
-impl EventType for SchemaLoaded {
-    fn type_id() -> &'static str {
-        "SchemaLoaded"
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -20,21 +12,9 @@ pub struct TransformExecuted {
     pub result: String,
 }
 
-impl EventType for TransformExecuted {
-    fn type_id() -> &'static str {
-        "TransformExecuted"
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SchemaChanged {
     pub schema: String,
-}
-
-impl EventType for SchemaChanged {
-    fn type_id() -> &'static str {
-        "SchemaChanged"
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -45,22 +25,10 @@ pub struct TransformTriggered {
         Option<crate::fold_db_core::infrastructure::message_bus::atom_events::MutationContext>,
 }
 
-impl EventType for TransformTriggered {
-    fn type_id() -> &'static str {
-        "TransformTriggered"
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct TransformRegistrationRequest {
     pub registration: crate::schema::types::TransformRegistration,
     pub correlation_id: String,
-}
-
-impl EventType for TransformRegistrationRequest {
-    fn type_id() -> &'static str {
-        "TransformRegistrationRequest"
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -68,12 +36,6 @@ pub struct TransformRegistrationResponse {
     pub correlation_id: String,
     pub success: bool,
     pub error: Option<String>,
-}
-
-impl EventType for TransformRegistrationResponse {
-    fn type_id() -> &'static str {
-        "TransformRegistrationResponse"
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -88,12 +50,6 @@ pub struct DataPersisted {
     pub context: Option<String>,
 }
 
-impl EventType for DataPersisted {
-    fn type_id() -> &'static str {
-        "DataPersisted"
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct TransformRegistered {
     /// The transform ID that was registered
@@ -104,22 +60,10 @@ pub struct TransformRegistered {
     pub correlation_id: String,
 }
 
-impl EventType for TransformRegistered {
-    fn type_id() -> &'static str {
-        "TransformRegistered"
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SchemaApproved {
     /// The schema name that was approved
     pub schema_name: String,
     /// Optional unique hash for tracking the backfill operation (only for transform schemas)
     pub backfill_hash: Option<String>,
-}
-
-impl EventType for SchemaApproved {
-    fn type_id() -> &'static str {
-        "SchemaApproved"
-    }
 }
