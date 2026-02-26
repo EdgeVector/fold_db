@@ -20,5 +20,5 @@ pub use event_monitor::EventMonitor;
 pub use process_results_subscriber::ProcessResultsSubscriber;
 pub use message_bus::{
     schema_events::{SchemaChanged, TransformExecuted, TransformTriggered},
-    AsyncMessageBus, Event, EventEnvelope,
+    AsyncMessageBus, Event,
 };

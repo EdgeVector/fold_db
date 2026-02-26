@@ -5,4 +5,4 @@ pub mod events;
 
 pub use async_bus::AsyncMessageBus;
 pub use error_handling::{MessageBusError, MessageBusResult};
-pub use events::{atom_events, query_events, request_events, schema_events, Event, EventEnvelope};
+pub use events::{atom_events, query_events, request_events, schema_events, Event};
