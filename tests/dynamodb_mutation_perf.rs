@@ -90,7 +90,6 @@ async fn test_dynamodb_mutation_performance() {
             user_id: None,
             file_storage_bucket: None,
         })),
-        default_trust_distance: 1,
         network_listen_address: "/ip4/127.0.0.1/tcp/0".to_string(),
         security_config: Default::default(),
         schema_service_url: Some("test://mock".to_string()), // Use test schema service to avoid needing running service

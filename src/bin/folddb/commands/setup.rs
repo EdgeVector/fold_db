@@ -103,7 +103,6 @@ pub fn run_setup_wizard() -> Result<NodeConfig, CliError> {
     // --- Build NodeConfig ---
     let config = NodeConfig {
         database,
-        default_trust_distance: 1,
         network_listen_address: "/ip4/0.0.0.0/tcp/0".to_string(),
         security_config: SecurityConfig::from_env(),
         schema_service_url: Some(schema_url),

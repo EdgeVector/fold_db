@@ -279,7 +279,6 @@ mod tests {
             std::collections::HashMap::new(),
             crate::schema::types::KeyValue::new(None, None),
             "pk_123".to_string(),
-            0,
             crate::schema::types::operations::MutationType::Update,
         );
         let request = MutationRequest {

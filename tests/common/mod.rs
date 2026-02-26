@@ -42,7 +42,6 @@ pub fn create_test_mutation(
         fields_and_values,
         key_value,
         pub_key,
-        0, // trust_distance
         mutation_type,
     );
 

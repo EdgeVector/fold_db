@@ -14,10 +14,6 @@ pub struct NodeConfig {
     #[serde(default)]
     pub database: DatabaseConfig,
 
-    // storage_path and its attributes have been removed
-    /// Default trust distance for queries when not explicitly specified
-    /// Must be greater than 0
-    pub default_trust_distance: u32,
     /// Network listening address
     #[serde(default = "default_network_listen_address")]
     pub network_listen_address: String,
@@ -43,7 +39,6 @@ impl Default for NodeConfig {
     fn default() -> Self {
         Self {
             database: DatabaseConfig::default(),
-            default_trust_distance: 1,
             network_listen_address: default_network_listen_address(),
             security_config: SecurityConfig::from_env(),
             schema_service_url: None,
@@ -58,7 +53,6 @@ impl NodeConfig {
     pub fn new(storage_path: PathBuf) -> Self {
         Self {
             database: DatabaseConfig::Local { path: storage_path },
-            default_trust_distance: 1,
             network_listen_address: default_network_listen_address(),
             security_config: SecurityConfig::from_env(),
             schema_service_url: None,
@@ -135,10 +129,4 @@ pub fn load_node_config(
         }
         Ok(config)
     }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NodeInfo {
-    pub id: String,
-    pub trust_distance: u32,
 }

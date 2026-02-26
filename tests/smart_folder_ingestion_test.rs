@@ -286,7 +286,6 @@ async fn test_smart_folder_ingest_and_query() {
         let request = IngestionRequest {
             data: json_data,
             auto_execute: true,
-            trust_distance: 0,
             pub_key: user_id.clone(),
             source_file_name: Some(file_name.clone()),
             progress_id: Some(progress_id.clone()),

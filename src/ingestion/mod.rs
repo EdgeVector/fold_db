@@ -105,9 +105,6 @@ pub struct IngestionRequest {
     /// Whether to auto-execute mutations after generation
     #[serde(default = "default_true")]
     pub auto_execute: bool,
-    /// Trust distance for mutations
-    #[serde(default)]
-    pub trust_distance: u32,
     /// Public key for the operation
     #[serde(default = "default_pub_key")]
     pub pub_key: String,
@@ -200,7 +197,5 @@ pub struct IngestionStatus {
     pub model: String,
     /// Whether mutations are auto-executed by default
     pub auto_execute_mutations: bool,
-    /// Default trust distance for mutations
-    pub default_trust_distance: u32,
 }
 

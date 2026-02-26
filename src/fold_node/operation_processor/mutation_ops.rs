@@ -60,7 +60,6 @@ impl OperationProcessor {
             fields_and_values,
             key_value,
             String::new(),
-            0,
             mutation_type,
         );
 
@@ -132,7 +131,6 @@ impl OperationProcessor {
                 fields_and_values,
                 key_value,
                 String::new(),
-                0,
                 mutation_type,
             );
 

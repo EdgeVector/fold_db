@@ -15,7 +15,7 @@ function IngestionTab({ onResult }) {
     onResult(null)
     try {
       const parsedData = JSON.parse(jsonData)
-      const response = await ingestionClient.processIngestion(parsedData, { autoExecute, trustDistance: 0, pubKey: 'default' })
+      const response = await ingestionClient.processIngestion(parsedData, { autoExecute, pubKey: 'default' })
       if (response.success) {
         onResult({ success: true, data: response.data })
         setJsonData('')

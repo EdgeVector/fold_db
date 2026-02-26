@@ -6,7 +6,6 @@ function FileUploadTab({ onResult }) {
   const [isDragging, setIsDragging] = useState(false)
   const [selectedFile, setSelectedFile] = useState(null)
   const [autoExecute, setAutoExecute] = useState(true)
-  const [trustDistance] = useState(0)
   const [pubKey] = useState('default')
   const [isUploading, setIsUploading] = useState(false)
 
@@ -60,7 +59,6 @@ function FileUploadTab({ onResult }) {
     try {
       const response = await ingestionClient.uploadFile(selectedFile, {
         autoExecute,
-        trustDistance,
         pubKey,
       })
 

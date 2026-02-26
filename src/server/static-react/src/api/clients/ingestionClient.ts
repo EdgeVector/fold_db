@@ -16,7 +16,6 @@ export interface IngestionStatus {
   provider: "OpenRouter" | "Ollama";
   model: string;
   auto_execute_mutations: boolean;
-  default_trust_distance: number;
 }
 
 export interface OpenRouterConfig {
@@ -51,7 +50,6 @@ export interface ValidationResponse {
 export interface ProcessIngestionRequest {
   data: Record<string, unknown>;
   auto_execute: boolean;
-  trust_distance: number;
   pub_key: string;
   progress_id: string;
 }
@@ -317,7 +315,6 @@ export class UnifiedIngestionClient {
     data: Record<string, unknown>,
     options: {
       autoExecute?: boolean;
-      trustDistance?: number;
       pubKey?: string;
     } = {},
   ): Promise<EnhancedApiResponse<ProcessIngestionResponse>> {
@@ -327,7 +324,6 @@ export class UnifiedIngestionClient {
     const request: ProcessIngestionRequest = {
       data,
       auto_execute: options.autoExecute ?? true,
-      trust_distance: options.trustDistance ?? 0,
       pub_key: options.pubKey ?? "default",
       progress_id: progressId,
     };
@@ -373,16 +369,6 @@ export class UnifiedIngestionClient {
       errors.push("Data cannot be empty");
     }
 
-    // Validate trust distance
-    if (
-      typeof request.trust_distance !== "number" ||
-      request.trust_distance < 0
-    ) {
-      errors.push("Trust distance must be a non-negative number");
-    } else if (request.trust_distance > 10) {
-      warnings.push("Trust distance is unusually high");
-    }
-
     // Validate public key
     if (!request.pub_key || request.pub_key.trim().length === 0) {
       errors.push("Public key is required");
@@ -412,7 +398,6 @@ export class UnifiedIngestionClient {
     data: Record<string, unknown>,
     options: {
       autoExecute?: boolean;
-      trustDistance?: number;
       pubKey?: string;
       progressId?: string;
     } = {},
@@ -420,7 +405,6 @@ export class UnifiedIngestionClient {
     return {
       data: { ...data }, // Create a copy
       auto_execute: options.autoExecute ?? true,
-      trust_distance: options.trustDistance ?? 0,
       pub_key: options.pubKey ?? "default",
       progress_id: options.progressId ?? crypto.randomUUID(),
     };
@@ -575,7 +559,6 @@ export class UnifiedIngestionClient {
     options: {
       progressId?: string;
       autoExecute?: boolean;
-      trustDistance?: number;
       pubKey?: string;
     } = {},
   ): Promise<EnhancedApiResponse<FileUploadResponse>> {
@@ -583,7 +566,6 @@ export class UnifiedIngestionClient {
     formData.append('progress_id', options.progressId ?? crypto.randomUUID());
     formData.append('file', file);
     formData.append('autoExecute', String(options.autoExecute ?? true));
-    formData.append('trustDistance', String(options.trustDistance ?? 0));
     formData.append('pubKey', options.pubKey ?? 'default');
 
     return this.client.post<FileUploadResponse>(

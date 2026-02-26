@@ -206,7 +206,6 @@ async fn test_ingest_tweets_js() {
     let request = IngestionRequest {
         data: tweet_data,
         auto_execute: true,
-        trust_distance: 0,
         pub_key: user_id.clone(),
         source_file_name: Some("tweets.js".to_string()),
         progress_id: Some("test-tweets-ingestion".to_string()),

@@ -99,8 +99,6 @@ pub struct IngestionConfig {
     pub timeout_seconds: u64,
     /// Whether to auto-execute mutations after generation.
     pub auto_execute_mutations: bool,
-    /// Default trust distance for mutations.
-    pub default_trust_distance: u32,
 }
 
 impl Default for IngestionConfig {
@@ -113,7 +111,6 @@ impl Default for IngestionConfig {
             max_retries: 3,
             timeout_seconds: 300,
             auto_execute_mutations: true,
-            default_trust_distance: 0,
         }
     }
 }
@@ -232,11 +229,6 @@ impl IngestionConfig {
             .unwrap_or_else(|_| "true".to_string())
             .parse()
             .unwrap_or(true);
-
-        config.default_trust_distance = env::var("INGESTION_DEFAULT_TRUST_DISTANCE")
-            .unwrap_or_else(|_| "0".to_string())
-            .parse()
-            .unwrap_or(0);
 
         config
     }
@@ -381,7 +373,6 @@ mod tests {
         assert_eq!(config.max_retries, 3);
         assert_eq!(config.timeout_seconds, 300);
         assert!(config.auto_execute_mutations);
-        assert_eq!(config.default_trust_distance, 0);
     }
 
     #[test]

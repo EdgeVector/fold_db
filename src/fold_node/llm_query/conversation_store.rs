@@ -114,7 +114,6 @@ pub async fn save_conversation_turn(
         fields,
         key_value,
         pub_key,
-        0,
         MutationType::Create,
     );
 

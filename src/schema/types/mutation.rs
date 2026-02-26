@@ -12,7 +12,6 @@ pub struct Mutation {
     pub fields_and_values: HashMap<String, Value>,
     pub key_value: KeyValue,
     pub pub_key: String,
-    pub trust_distance: u32,
     pub mutation_type: MutationType,
     pub synchronous: Option<bool>,
     /// Optional backfill hash for tracking backfill completion
@@ -36,7 +35,6 @@ impl Mutation {
         fields_and_values: HashMap<String, Value>,
         key_value: KeyValue,
         pub_key: String,
-        trust_distance: u32,
         mutation_type: MutationType,
     ) -> Self {
         Self {
@@ -45,7 +43,6 @@ impl Mutation {
             fields_and_values,
             key_value,
             pub_key,
-            trust_distance,
             mutation_type,
             synchronous: None,
             backfill_hash: None,
@@ -98,7 +95,6 @@ impl Mutation {
                 .expect("serde_json::Value is always serializable").as_bytes());
         }
         hasher.update(self.pub_key.as_bytes());
-        hasher.update(self.trust_distance.to_le_bytes());
         let result = hasher.finalize();
         format!("{:x}", result)
     }
@@ -115,7 +111,6 @@ mod tests {
             HashMap::new(),
             KeyValue::new(None, None),
             "test_key".to_string(),
-            0,
             MutationType::Update,
         );
 
@@ -134,7 +129,6 @@ mod tests {
             HashMap::new(),
             KeyValue::new(None, None),
             "test_key".to_string(),
-            0,
             MutationType::Update,
         )
         .with_backfill_hash("test_hash_456".to_string());
@@ -154,7 +148,6 @@ mod tests {
             fields.clone(),
             KeyValue::new(None, None),
             "pub_key_abc".to_string(),
-            1,
             MutationType::Update,
         );
 
@@ -163,7 +156,6 @@ mod tests {
             fields,
             KeyValue::new(None, None),
             "pub_key_abc".to_string(),
-            1,
             MutationType::Update,
         );
 
@@ -187,7 +179,6 @@ mod tests {
             fields_a,
             KeyValue::new(None, None),
             "key".to_string(),
-            0,
             MutationType::Update,
         );
 
@@ -196,7 +187,6 @@ mod tests {
             fields_b,
             KeyValue::new(None, None),
             "key".to_string(),
-            0,
             MutationType::Update,
         );
 
@@ -216,7 +206,6 @@ mod tests {
             fields_a,
             KeyValue::new(None, None),
             "key".to_string(),
-            0,
             MutationType::Update,
         );
 
@@ -225,7 +214,6 @@ mod tests {
             fields_b,
             KeyValue::new(None, None),
             "key".to_string(),
-            0,
             MutationType::Update,
         );
 
@@ -241,7 +229,6 @@ mod tests {
             fields.clone(),
             KeyValue::new(None, None),
             "user_a_key".to_string(),
-            0,
             MutationType::Update,
         );
 
@@ -250,7 +237,6 @@ mod tests {
             fields,
             KeyValue::new(None, None),
             "user_b_key".to_string(),
-            0,
             MutationType::Update,
         );
 
@@ -266,7 +252,6 @@ mod tests {
             fields.clone(),
             KeyValue::new(None, None),
             "key".to_string(),
-            0,
             MutationType::Update,
         );
 
@@ -275,7 +260,6 @@ mod tests {
             fields,
             KeyValue::new(None, None),
             "key".to_string(),
-            0,
             MutationType::Update,
         )
         .with_backfill_hash("some_hash".to_string())
@@ -294,7 +278,6 @@ mod tests {
             fields.clone(),
             KeyValue::new(None, None),
             "key".to_string(),
-            0,
             MutationType::Update,
         );
 
@@ -303,7 +286,6 @@ mod tests {
             fields,
             KeyValue::new(None, None),
             "key".to_string(),
-            0,
             MutationType::Update,
         )
         .with_metadata(HashMap::from([
@@ -322,7 +304,6 @@ mod tests {
             fields.clone(),
             KeyValue::new(None, None),
             "key".to_string(),
-            0,
             MutationType::Update,
         );
 
@@ -331,7 +312,6 @@ mod tests {
             fields,
             KeyValue::new(None, None),
             "key".to_string(),
-            0,
             MutationType::Update,
         )
         .with_index_terms(HashMap::from([
