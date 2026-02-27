@@ -80,7 +80,6 @@ async fn _test_mutation_generation_performance() {
                 &keys_values,
                 fields,
                 &mappers,
-                0,
                 "test_pub_key".to_string(),
                 None,
                 None,

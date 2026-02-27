@@ -95,7 +95,6 @@ fn build_mutation_with_progress(
         fields_and_values,
         key_value,
         pub_key.to_string(),
-        0,
         MutationType::Create,
     )
     .with_metadata(metadata)
@@ -237,7 +236,6 @@ async fn test_process_results_no_metadata_no_entry() {
         fields,
         KeyValue::new(Some("eve@example.com".to_string()), None),
         user_id.clone(),
-        0,
         MutationType::Create,
     );
 
