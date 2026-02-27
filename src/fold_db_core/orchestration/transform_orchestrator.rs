@@ -681,6 +681,10 @@ impl TransformOrchestrator {
         self.queue_manager.is_empty()
     }
 
+    /// Get access to the queue manager (used by integration tests)
+    pub fn get_queue_manager(&self) -> &QueueManager {
+        &self.queue_manager
+    }
 }
 
 #[async_trait]

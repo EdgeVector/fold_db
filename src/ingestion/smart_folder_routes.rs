@@ -509,7 +509,7 @@ fn spawn_batch_coordinator(
         let user_id_inner = user_id.clone();
         crate::logging::core::run_with_user(&user_id, async move {
             let batch_user_id = crate::logging::core::get_current_user_id()
-                .unwrap_or_else(|| user_id_inner);
+                .unwrap_or(user_id_inner);
             let mut join_set = tokio::task::JoinSet::new();
             let mut all_popped = false;
 
