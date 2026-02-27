@@ -135,352 +135,388 @@ impl IngestionService {
             .await;
         let flattened_data = crate::ingestion::json_processor::flatten_root_layers(request.data.clone());
 
-        let pub_key = request.pub_key.clone();
-
         // Step 2.5: Decompose nested structures and decide code path
-        //
-        // For top-level arrays, we decompose the first element to check for
-        // nested arrays-of-objects. For single objects, we decompose directly.
-        let representative_for_decompose = if let Some(arr) = flattened_data.as_array() {
-            arr.first().cloned()
-        } else {
-            Some(flattened_data.clone())
-        };
+        let has_nested_children = self.check_has_nested_children(&flattened_data);
 
-        let has_nested_children = representative_for_decompose
-            .as_ref()
-            .map(|rep| !decomposer::decompose(rep).children.is_empty())
-            .unwrap_or(false);
-
-        if has_nested_children {
-            // ── Recursive decomposition path ──
-            progress_service
-                .update_progress(
-                    &progress_id,
-                    IngestionStep::GettingAIRecommendation,
-                    "Decomposing nested data structures...".to_string(),
-                )
-                .await;
-
-            let mut schema_cache: HashMap<String, CachedSchema> = HashMap::new();
-            let mut total_mutations_generated: usize = 0;
-            let mut total_mutations_executed: usize = 0;
-            let mut schemas_written_map: HashMap<String, Vec<KeyValue>> = HashMap::new();
-
-            // Collect items: either array elements or the single object
-            let items: Vec<Value> = if let Some(arr) = flattened_data.as_array() {
-                arr.clone()
-            } else {
-                vec![flattened_data.clone()]
-            };
-
-            // Resolve schemas for the representative's structure tree.
-            // The top-level item's own structure hash is used to cache its
-            // flat-parent schema (after array-of-object fields are removed).
-            let rep = representative_for_decompose.as_ref()
-                .expect("representative_for_decompose is Some when has_nested_children is true");
-            let top_level_hash = crate::ingestion::decomposer::compute_structure_hash(rep);
-            self.resolve_schema_for_structure(
-                &top_level_hash,
-                rep,
-                &mut schema_cache,
-                node,
-                0,
-            )
-            .await?;
-
-            // Build metadata from file_hash and progress_id
-            let decomposed_metadata = {
-                let mut meta = HashMap::new();
-                if let Some(ref hash) = request.file_hash {
-                    meta.insert("file_hash".to_string(), hash.clone());
-                }
-                meta.insert("progress_id".to_string(), progress_id.clone());
-                Some(meta)
-            };
-
-            // Process each item: recursively handle children, then generate parent mutation.
-            // Pass the top-level structure hash so the cache lookup matches.
-            for item in &items {
-                let (gen, exec, _key_value) = self
-                    .ingest_decomposed_item(
-                        item,
-                        &top_level_hash,
-                        &mut schema_cache,
-                        node,
-                        &pub_key,
-                        request.source_file_name.clone(),
-                        decomposed_metadata.clone(),
-                        request.auto_execute,
-                        0,
-                        &mut schemas_written_map,
+        let (schema_name, new_schema_created, mutations_generated, mutations_executed, schemas_written) =
+            if has_nested_children {
+                progress_service
+                    .update_progress(
+                        &progress_id,
+                        IngestionStep::GettingAIRecommendation,
+                        "Decomposing nested data structures...".to_string(),
                     )
-                    .await?;
-                total_mutations_generated += gen;
-                total_mutations_executed += exec;
-            }
-
-            // Determine the top-level schema name for the response
-            let top_schema_name = schema_cache
-                .get(&top_level_hash)
-                .map(|c| c.schema_name.clone())
-                .unwrap_or_else(|| {
-                    log::warn!("Schema cache miss for top-level hash '{}' — returning empty schema name", top_level_hash);
-                    String::new()
-                });
-
-            // Build schemas_written from accumulator
-            let schemas_written: Vec<SchemaWriteRecord> = schemas_written_map
-                .into_iter()
-                .map(|(name, keys)| SchemaWriteRecord {
-                    schema_name: name,
-                    keys_written: keys,
-                })
-                .collect();
-
-            // Record file as ingested for this user (per-user file-level dedup)
-            if let Some(ref fh) = request.file_hash {
-                let record = FileIngestionRecord {
-                    ingested_at: chrono::Utc::now().to_rfc3339(),
-                    source_folder: request.source_folder.clone(),
-                    source_file_name: request.source_file_name.clone(),
-                    progress_id: request.progress_id.clone(),
-                };
-                if let Err(e) = node.mark_file_ingested(&request.pub_key, fh, record).await {
-                    log::warn!("Failed to record file dedup entry: {}", e);
-                }
-            }
-
-            // Mark as completed
-            let results = IngestionResults {
-                schema_name: top_schema_name.clone(),
-                new_schema_created: true,
-                mutations_generated: total_mutations_generated,
-                mutations_executed: total_mutations_executed,
-                schemas_written: schemas_written.clone(),
-            };
-            progress_service
-                .complete_progress(&progress_id, results)
-                .await;
-
-            Ok(IngestionResponse::success_with_progress(
-                progress_id,
-                top_schema_name,
-                true,
-                total_mutations_generated,
-                total_mutations_executed,
-                schemas_written,
-            ))
-        } else {
-            // ── Original flat path (no nested arrays of objects) ──
-
-            // Step 3: Get AI recommendation
-            let is_image = request
-                .source_file_name
-                .as_ref()
-                .map(|name| crate::ingestion::is_image_file(name))
-                .unwrap_or(false);
-            progress_service
-                .update_progress(
-                    &progress_id,
-                    IngestionStep::GettingAIRecommendation,
-                    "Analyzing data with AI to determine schema...".to_string(),
-                )
-                .await;
-            let mut ai_response = self.get_ai_recommendation(&flattened_data).await?;
-
-            // CRITICAL: Images MUST use HashRange(image_type, created_at).
-            // Without this, the AI would pick a Single or Range schema, and
-            // multiple images would overwrite each other in the same schema.
-            // HashRange lets images coexist: partitioned by type, ordered by date.
-            if is_image {
-                if let Some(ref mut schema_def) = ai_response.new_schemas {
-                    schema_def["schema_type"] = serde_json::json!("HashRange");
-                    schema_def["key"] = serde_json::json!({
-                        "hash_field": "image_type",
-                        "range_field": "created_at"
-                    });
-                    // Use the vision model's descriptive_name for a better schema display name
-                    if let Some(ref desc) = request.image_descriptive_name {
-                        schema_def["descriptive_name"] = serde_json::json!(desc);
-                    }
-                }
-            }
-
-            // Step 4: Determine schema to use
-            progress_service
-                .update_progress(
-                    &progress_id,
-                    IngestionStep::SettingUpSchema,
-                    "Setting up schema and preparing for data storage...".to_string(),
-                )
-                .await;
-            let schema_name = self
-                .determine_schema_to_use(&ai_response, &request.data, node)
-                .await?;
-            let new_schema_created = ai_response.new_schemas.is_some();
-
-            // Step 5: Generate mutations
-            progress_service
-                .update_progress(
-                    &progress_id,
-                    IngestionStep::GeneratingMutations,
-                    "Generating database mutations...".to_string(),
-                )
-                .await;
-
-            // Get schema manager for key extraction
-            let schema_manager = {
-                let db_guard = node
-                    .get_fold_db()
-                    .await
-                    .map_err(|error| IngestionError::SchemaCreationError(error.to_string()))?;
-                let manager = db_guard.schema_manager.clone();
-                drop(db_guard);
-                manager
-            };
-
-            // Build metadata from file_hash and progress_id
-            let metadata = {
-                let mut meta = HashMap::new();
-                if let Some(ref hash) = request.file_hash {
-                    meta.insert("file_hash".to_string(), hash.clone());
-                }
-                meta.insert("progress_id".to_string(), progress_id.clone());
-                Some(meta)
-            };
-
-            // Collect items to process — normalize single object to a one-element slice
-            let items: Vec<&serde_json::Map<String, Value>> = if let Some(array) = flattened_data.as_array() {
-                array
-                    .iter()
-                    .filter_map(|item| item.as_object())
-                    .collect()
-            } else if let Some(obj) = flattened_data.as_object() {
-                vec![obj]
+                    .await;
+                self.process_decomposed_path(&flattened_data, &request, node, &progress_id).await?
             } else {
-                vec![]
-            };
-
-            let total_items = items.len();
-            let mut mutations = Vec::new();
-            for (idx, obj) in items.into_iter().enumerate() {
-                let fields_and_values: HashMap<String, Value> =
-                    obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
-
-                let keys_and_values = extract_key_values_from_data(
-                    &fields_and_values,
-                    &schema_name,
-                    &schema_manager,
-                )
-                .await?;
-
-                let item_mutations = mutation_generator::generate_mutations(
-                    &schema_name,
-                    &keys_and_values,
-                    &fields_and_values,
-                    &ai_response.mutation_mappers,
-                    pub_key.clone(),
-                    request.source_file_name.clone(),
-                    metadata.clone(),
-                )?;
-
-                mutations.extend(item_mutations);
-
-                // Update progress every 10 items (only meaningful for arrays)
-                if total_items > 1 && ((idx + 1) % 10 == 0 || idx + 1 == total_items) {
-                    let percent_of_step = ((idx + 1) as f32 / total_items as f32 * 15.0) as u8;
-                    let progress_percent = 75 + percent_of_step;
-                    progress_service
-                        .update_progress_with_percentage(
-                            &progress_id,
-                            IngestionStep::GeneratingMutations,
-                            format!("Generating mutations... ({}/{})", idx + 1, total_items),
-                            progress_percent,
-                        )
-                        .await;
-                }
-            }
-
-            log_feature!(
-                LogFeature::Ingestion,
-                info,
-                "Generated {} mutations",
-                mutations.len()
-            );
-
-            // Collect schemas_written from generated mutations
-            let schemas_written = {
-                let mut map: HashMap<String, Vec<KeyValue>> = HashMap::new();
-                for m in &mutations {
-                    map.entry(m.schema_name.clone())
-                        .or_default()
-                        .push(m.key_value.clone());
-                }
-                map.into_iter()
-                    .map(|(name, keys)| SchemaWriteRecord {
-                        schema_name: name,
-                        keys_written: keys,
-                    })
-                    .collect::<Vec<_>>()
-            };
-
-            // Step 6: Execute mutations if requested
-            progress_service
-                .update_progress(
-                    &progress_id,
-                    IngestionStep::ExecutingMutations,
-                    "Executing mutations to store data...".to_string(),
-                )
-                .await;
-
-            let mutations_len = mutations.len();
-
-            let mutations_executed = if request.auto_execute {
-                self.execute_mutations_with_node_and_progress(
-                    mutations,
+                self.process_flat_path(
+                    &flattened_data,
+                    &request,
                     node,
                     progress_service,
                     &progress_id,
                 )
                 .await?
-            } else {
-                0
             };
 
-            // Record file as ingested for this user (per-user file-level dedup)
-            if let Some(ref fh) = request.file_hash {
-                let record = FileIngestionRecord {
-                    ingested_at: chrono::Utc::now().to_rfc3339(),
-                    source_folder: request.source_folder.clone(),
-                    source_file_name: request.source_file_name.clone(),
-                    progress_id: request.progress_id.clone(),
-                };
-                if let Err(e) = node.mark_file_ingested(&request.pub_key, fh, record).await {
-                    log::warn!("Failed to record file dedup entry: {}", e);
+        // Shared finalization: record file dedup + complete progress
+        self.record_file_ingested(&request, node).await;
+
+        let results = IngestionResults {
+            schema_name: schema_name.clone(),
+            new_schema_created,
+            mutations_generated,
+            mutations_executed,
+            schemas_written: schemas_written.clone(),
+        };
+        progress_service
+            .complete_progress(&progress_id, results)
+            .await;
+
+        Ok(IngestionResponse::success_with_progress(
+            progress_id,
+            schema_name,
+            new_schema_created,
+            mutations_generated,
+            mutations_executed,
+            schemas_written,
+        ))
+    }
+
+    // --- Helpers for process_json_with_node_and_progress ---
+
+    /// Checks whether the flattened data contains nested arrays-of-objects
+    /// that require recursive decomposition.
+    fn check_has_nested_children(&self, flattened_data: &Value) -> bool {
+        let representative = if let Some(arr) = flattened_data.as_array() {
+            arr.first().cloned()
+        } else {
+            Some(flattened_data.clone())
+        };
+
+        representative
+            .as_ref()
+            .map(|rep| !decomposer::decompose(rep).children.is_empty())
+            .unwrap_or(false)
+    }
+
+    /// Handles the recursive decomposition path for data with nested arrays-of-objects.
+    /// Returns (schema_name, new_schema_created, mutations_generated, mutations_executed, schemas_written).
+    async fn process_decomposed_path(
+        &self,
+        flattened_data: &Value,
+        request: &IngestionRequest,
+        node: &FoldNode,
+        progress_id: &str,
+    ) -> IngestionResult<(String, bool, usize, usize, Vec<SchemaWriteRecord>)> {
+        let pub_key = request.pub_key.clone();
+        let mut schema_cache: HashMap<String, CachedSchema> = HashMap::new();
+        let mut total_mutations_generated: usize = 0;
+        let mut total_mutations_executed: usize = 0;
+        let mut schemas_written_map: HashMap<String, Vec<KeyValue>> = HashMap::new();
+
+        // Collect items: either array elements or the single object
+        let items: Vec<Value> = if let Some(arr) = flattened_data.as_array() {
+            arr.clone()
+        } else {
+            vec![flattened_data.clone()]
+        };
+
+        // Resolve schemas for the representative's structure tree.
+        let representative = if let Some(arr) = flattened_data.as_array() {
+            arr.first().cloned()
+        } else {
+            Some(flattened_data.clone())
+        };
+        let rep = representative.as_ref()
+            .expect("representative is Some when has_nested_children is true");
+        let top_level_hash = crate::ingestion::decomposer::compute_structure_hash(rep);
+        self.resolve_schema_for_structure(
+            &top_level_hash,
+            rep,
+            &mut schema_cache,
+            node,
+            0,
+        )
+        .await?;
+
+        let metadata = Self::build_ingestion_metadata(&request.file_hash, progress_id);
+
+        // Process each item: recursively handle children, then generate parent mutation.
+        for item in &items {
+            let (gen, exec, _key_value) = self
+                .ingest_decomposed_item(
+                    item,
+                    &top_level_hash,
+                    &mut schema_cache,
+                    node,
+                    &pub_key,
+                    request.source_file_name.clone(),
+                    metadata.clone(),
+                    request.auto_execute,
+                    0,
+                    &mut schemas_written_map,
+                )
+                .await?;
+            total_mutations_generated += gen;
+            total_mutations_executed += exec;
+        }
+
+        // Determine the top-level schema name for the response
+        let top_schema_name = schema_cache
+            .get(&top_level_hash)
+            .map(|c| c.schema_name.clone())
+            .unwrap_or_else(|| {
+                log::warn!("Schema cache miss for top-level hash '{}' — returning empty schema name", top_level_hash);
+                String::new()
+            });
+
+        let schemas_written: Vec<SchemaWriteRecord> = schemas_written_map
+            .into_iter()
+            .map(|(name, keys)| SchemaWriteRecord {
+                schema_name: name,
+                keys_written: keys,
+            })
+            .collect();
+
+        Ok((top_schema_name, true, total_mutations_generated, total_mutations_executed, schemas_written))
+    }
+
+    /// Handles the flat (non-nested) ingestion path: AI recommendation, mutation generation, execution.
+    /// Returns (schema_name, new_schema_created, mutations_generated, mutations_executed, schemas_written).
+    async fn process_flat_path(
+        &self,
+        flattened_data: &Value,
+        request: &IngestionRequest,
+        node: &FoldNode,
+        progress_service: &ProgressService,
+        progress_id: &str,
+    ) -> IngestionResult<(String, bool, usize, usize, Vec<SchemaWriteRecord>)> {
+        let pub_key = request.pub_key.clone();
+
+        // Step 3: Get AI recommendation (with image override)
+        let is_image = request
+            .source_file_name
+            .as_ref()
+            .map(|name| crate::ingestion::is_image_file(name))
+            .unwrap_or(false);
+        progress_service
+            .update_progress(
+                progress_id,
+                IngestionStep::GettingAIRecommendation,
+                "Analyzing data with AI to determine schema...".to_string(),
+            )
+            .await;
+        let mut ai_response = self.get_ai_recommendation(flattened_data).await?;
+
+        // CRITICAL: Images MUST use HashRange(image_type, created_at).
+        if is_image {
+            if let Some(ref mut schema_def) = ai_response.new_schemas {
+                schema_def["schema_type"] = serde_json::json!("HashRange");
+                schema_def["key"] = serde_json::json!({
+                    "hash_field": "image_type",
+                    "range_field": "created_at"
+                });
+                if let Some(ref desc) = request.image_descriptive_name {
+                    schema_def["descriptive_name"] = serde_json::json!(desc);
                 }
             }
+        }
 
-            // Mark as completed
-            let results = IngestionResults {
-                schema_name: schema_name.clone(),
-                new_schema_created,
-                mutations_generated: mutations_len,
-                mutations_executed,
-                schemas_written: schemas_written.clone(),
-            };
-            progress_service
-                .complete_progress(&progress_id, results)
-                .await;
-
-            Ok(IngestionResponse::success_with_progress(
+        // Step 4: Determine schema to use
+        progress_service
+            .update_progress(
                 progress_id,
+                IngestionStep::SettingUpSchema,
+                "Setting up schema and preparing for data storage...".to_string(),
+            )
+            .await;
+        let schema_name = self
+            .determine_schema_to_use(&ai_response, &request.data, node)
+            .await?;
+        let new_schema_created = ai_response.new_schemas.is_some();
+
+        // Step 5: Generate mutations
+        progress_service
+            .update_progress(
+                progress_id,
+                IngestionStep::GeneratingMutations,
+                "Generating database mutations...".to_string(),
+            )
+            .await;
+        let (mutations, schemas_written) = self
+            .generate_flat_mutations(
+                flattened_data,
+                &schema_name,
+                &ai_response,
+                request,
+                &pub_key,
+                node,
+                progress_service,
+                progress_id,
+            )
+            .await?;
+
+        log_feature!(
+            LogFeature::Ingestion,
+            info,
+            "Generated {} mutations",
+            mutations.len()
+        );
+
+        // Step 6: Execute mutations if requested
+        progress_service
+            .update_progress(
+                progress_id,
+                IngestionStep::ExecutingMutations,
+                "Executing mutations to store data...".to_string(),
+            )
+            .await;
+
+        let mutations_len = mutations.len();
+
+        let mutations_executed = if request.auto_execute {
+            self.execute_mutations_with_node_and_progress(
+                mutations,
+                node,
+                progress_service,
+                progress_id,
+            )
+            .await?
+        } else {
+            0
+        };
+
+        Ok((schema_name, new_schema_created, mutations_len, mutations_executed, schemas_written))
+    }
+
+    /// Generates mutations for flat (non-nested) data items.
+    /// Returns (mutations, schemas_written).
+    #[allow(clippy::too_many_arguments)]
+    async fn generate_flat_mutations(
+        &self,
+        flattened_data: &Value,
+        schema_name: &str,
+        ai_response: &AISchemaResponse,
+        request: &IngestionRequest,
+        pub_key: &str,
+        node: &FoldNode,
+        progress_service: &ProgressService,
+        progress_id: &str,
+    ) -> IngestionResult<(Vec<Mutation>, Vec<SchemaWriteRecord>)> {
+        // Get schema manager for key extraction
+        let schema_manager = {
+            let db_guard = node
+                .get_fold_db()
+                .await
+                .map_err(|error| IngestionError::SchemaCreationError(error.to_string()))?;
+            let manager = db_guard.schema_manager.clone();
+            drop(db_guard);
+            manager
+        };
+
+        let metadata = Self::build_ingestion_metadata(&request.file_hash, progress_id);
+
+        // Collect items to process — normalize single object to a one-element slice
+        let items: Vec<&serde_json::Map<String, Value>> = if let Some(array) = flattened_data.as_array() {
+            array
+                .iter()
+                .filter_map(|item| item.as_object())
+                .collect()
+        } else if let Some(obj) = flattened_data.as_object() {
+            vec![obj]
+        } else {
+            vec![]
+        };
+
+        let total_items = items.len();
+        let mut mutations = Vec::new();
+        for (idx, obj) in items.into_iter().enumerate() {
+            let fields_and_values: HashMap<String, Value> =
+                obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+
+            let keys_and_values = extract_key_values_from_data(
+                &fields_and_values,
                 schema_name,
-                new_schema_created,
-                mutations_len,
-                mutations_executed,
-                schemas_written,
-            ))
+                &schema_manager,
+            )
+            .await?;
+
+            let item_mutations = mutation_generator::generate_mutations(
+                schema_name,
+                &keys_and_values,
+                &fields_and_values,
+                &ai_response.mutation_mappers,
+                pub_key.to_string(),
+                request.source_file_name.clone(),
+                metadata.clone(),
+            )?;
+
+            mutations.extend(item_mutations);
+
+            // Update progress every 10 items (only meaningful for arrays)
+            if total_items > 1 && ((idx + 1) % 10 == 0 || idx + 1 == total_items) {
+                let percent_of_step = ((idx + 1) as f32 / total_items as f32 * 15.0) as u8;
+                let progress_percent = 75 + percent_of_step;
+                progress_service
+                    .update_progress_with_percentage(
+                        progress_id,
+                        IngestionStep::GeneratingMutations,
+                        format!("Generating mutations... ({}/{})", idx + 1, total_items),
+                        progress_percent,
+                    )
+                    .await;
+            }
+        }
+
+        // Collect schemas_written from generated mutations
+        let schemas_written = {
+            let mut map: HashMap<String, Vec<KeyValue>> = HashMap::new();
+            for m in &mutations {
+                map.entry(m.schema_name.clone())
+                    .or_default()
+                    .push(m.key_value.clone());
+            }
+            map.into_iter()
+                .map(|(name, keys)| SchemaWriteRecord {
+                    schema_name: name,
+                    keys_written: keys,
+                })
+                .collect::<Vec<_>>()
+        };
+
+        Ok((mutations, schemas_written))
+    }
+
+    /// Builds metadata HashMap from file_hash and progress_id for mutations.
+    fn build_ingestion_metadata(
+        file_hash: &Option<String>,
+        progress_id: &str,
+    ) -> Option<HashMap<String, String>> {
+        let mut meta = HashMap::new();
+        if let Some(ref hash) = file_hash {
+            meta.insert("file_hash".to_string(), hash.clone());
+        }
+        meta.insert("progress_id".to_string(), progress_id.to_string());
+        Some(meta)
+    }
+
+    /// Records a file as ingested for per-user file-level dedup.
+    async fn record_file_ingested(
+        &self,
+        request: &IngestionRequest,
+        node: &FoldNode,
+    ) {
+        if let Some(ref fh) = request.file_hash {
+            let record = FileIngestionRecord {
+                ingested_at: chrono::Utc::now().to_rfc3339(),
+                source_folder: request.source_folder.clone(),
+                source_file_name: request.source_file_name.clone(),
+                progress_id: request.progress_id.clone(),
+            };
+            if let Err(e) = node.mark_file_ingested(&request.pub_key, fh, record).await {
+                log::warn!("Failed to record file dedup entry: {}", e);
+            }
         }
     }
 
@@ -807,4 +843,3 @@ impl IngestionService {
         result
     }
 }
-

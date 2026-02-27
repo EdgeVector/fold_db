@@ -10,6 +10,14 @@ use std::collections::{HashMap, HashSet};
 
 use super::OperationProcessor;
 
+/// Tracks the location of a reference in the result set for batch rehydration.
+struct RefLocation {
+    result_idx: usize,
+    field_name: String,
+    ref_idx: usize,
+    key_value: KeyValue,
+}
+
 impl OperationProcessor {
     /// Executes a query and returns raw structured results, not JSON.
     pub async fn execute_query_map(&self, query: Query) -> FoldDbResult<QueryResultMap> {
@@ -74,10 +82,9 @@ impl OperationProcessor {
         schema_name: &'a str,
         remaining_depth: u32,
         visited: HashSet<String>,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = FoldDbResult<()>> + 'a>> {
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = FoldDbResult<()>> + Send + 'a>> {
         Box::pin(async move {
-            // Circular reference guard: if we've already visited this schema in the
-            // current ancestor chain, stop recursion to avoid infinite loops.
+            // Circular reference guard
             if visited.contains(schema_name) {
                 log::debug!(
                     "Circular reference detected for schema '{}', stopping rehydration",
@@ -89,113 +96,18 @@ impl OperationProcessor {
             let mut visited = visited;
             visited.insert(schema_name.to_string());
 
-            // Collect all schema metadata we need upfront, then drop the db guard
-            // before making recursive queries (which also need the guard).
-            let (ref_fields, child_field_map, child_key_config_map) = {
-                let db = self
-                    .node
-                    .get_fold_db()
-                    .await
-                    .map_err(|e| FoldDbError::Database(e.to_string()))?;
-
-                let schema = match db
-                    .schema_manager
-                    .get_schema_metadata(schema_name)
-                    .map_err(|e| FoldDbError::Database(e.to_string()))?
-                {
-                    Some(s) => s,
-                    None => return Ok(()),
-                };
-
-                // Find reference fields
-                let ref_fields: Vec<(String, String)> = schema
-                    .ref_fields
-                    .iter()
-                    .map(|(field_name, child_schema)| (field_name.clone(), child_schema.clone()))
-                    .collect();
-
-                if ref_fields.is_empty() {
-                    return Ok(());
-                }
-
-                // Pre-fetch queryable fields and key configs for each referenced child schema
-                let mut child_field_map: HashMap<String, Vec<String>> = HashMap::new();
-                let mut child_key_config_map: HashMap<String, (Option<String>, Option<String>)> = HashMap::new();
-                for (_, child_schema_name) in &ref_fields {
-                    if child_field_map.contains_key(child_schema_name) {
-                        continue;
-                    }
-                    if let Ok(Some(child_schema)) = db.schema_manager.get_schema_metadata(child_schema_name) {
-                        let fields = Self::get_queryable_fields(&child_schema);
-                        if !fields.is_empty() {
-                            child_field_map.insert(child_schema_name.clone(), fields);
-                        }
-                        // Store key config so we can extract KeyValue from field values
-                        if let Some(key_cfg) = &child_schema.key {
-                            child_key_config_map.insert(
-                                child_schema_name.clone(),
-                                (key_cfg.hash_field.clone(), key_cfg.range_field.clone()),
-                            );
-                        }
-                    }
-                }
-
-                (ref_fields, child_field_map, child_key_config_map)
-            }; // db guard dropped here
-
-            // --- Batch rehydration: collect -> batch query -> distribute ---
-
-            // 1. Collect: Walk all results and ref fields, recording each reference's position.
-            struct RefLocation {
-                result_idx: usize,
-                field_name: String,
-                ref_idx: usize,
-                key_value: KeyValue,
+            // Phase 1: Collect reference metadata from schemas
+            let (ref_fields, child_field_map, child_key_config_map) =
+                self.collect_reference_metadata(schema_name).await?;
+            if ref_fields.is_empty() {
+                return Ok(());
             }
 
-            let mut ref_locations: Vec<RefLocation> = Vec::new();
-            // Track unique keys needed per child schema
-            let mut keys_by_schema: HashMap<String, HashSet<KeyValue>> = HashMap::new();
+            // Phase 2: Collect reference locations from results
+            let (ref_locations, keys_by_schema) =
+                Self::collect_reference_locations(results, &ref_fields, &child_field_map);
 
-            for (result_idx, result) in results.iter().enumerate() {
-                let fields_obj = match result.get("fields").and_then(|v| v.as_object()) {
-                    Some(obj) => obj,
-                    None => continue,
-                };
-
-                for (field_name, child_schema_name) in &ref_fields {
-                    if !child_field_map.contains_key(child_schema_name) {
-                        continue;
-                    }
-
-                    let refs_array = match fields_obj
-                        .get(field_name)
-                        .and_then(|v| v.as_array())
-                    {
-                        Some(arr) => arr,
-                        None => continue,
-                    };
-
-                    for (ref_idx, ref_obj) in refs_array.iter().enumerate() {
-                        if let Some(kv) = Self::parse_ref_key(ref_obj) {
-                            keys_by_schema
-                                .entry(child_schema_name.clone())
-                                .or_default()
-                                .insert(kv.clone());
-                            ref_locations.push(RefLocation {
-                                result_idx,
-                                field_name: field_name.clone(),
-                                ref_idx,
-                                key_value: kv,
-                            });
-                        }
-                    }
-                }
-            }
-
-            // 2. Batch query: For each child schema, execute ONE unfiltered query.
-            //    Then recursively rehydrate child results if depth > 1.
-            //    Build a HashMap<KeyValue, Value> index for fast lookup.
+            // Phase 3: Batch query child schemas and build hydrated index
             let mut hydrated_index: HashMap<String, HashMap<KeyValue, Value>> = HashMap::new();
 
             for child_schema_name in keys_by_schema.keys() {
@@ -241,74 +153,196 @@ impl OperationProcessor {
                     }
                 }
 
-                // Build index: map KeyValue -> hydrated record.
-                // Extract key from field values using the child schema's key config,
-                // because the JSON "key" object may have nulls even when the record
-                // has the actual values in its fields.
-                let key_config = child_key_config_map.get(child_schema_name);
-                let mut index: HashMap<KeyValue, Value> = HashMap::new();
-                for record in child_results {
-                    let fields_obj = record.get("fields");
-                    let hash = key_config
-                        .and_then(|(h, _)| h.as_ref())
-                        .and_then(|hash_field| {
-                            fields_obj
-                                .and_then(|f| f.get(hash_field))
-                                .and_then(Self::value_to_key_string)
-                        });
-                    let range = key_config
-                        .and_then(|(_, r)| r.as_ref())
-                        .and_then(|range_field| {
-                            fields_obj
-                                .and_then(|f| f.get(range_field))
-                                .and_then(Self::value_to_key_string)
-                        });
-                    let kv = KeyValue::new(hash, range);
-                    index.insert(kv, record);
-                }
-
+                let index = Self::build_child_index(
+                    child_results,
+                    child_key_config_map.get(child_schema_name),
+                );
                 hydrated_index.insert(child_schema_name.clone(), index);
             }
 
-            // 3. Distribute: Walk results again, replacing raw references with hydrated records.
-            //    Build a map of (result_idx, field_name) -> Vec<(ref_idx, hydrated_value)>
-            //    so we can batch-replace per field.
-            let mut replacements: HashMap<(usize, String), Vec<(usize, Value)>> = HashMap::new();
-
-            for loc in &ref_locations {
-                let child_schema_name = ref_fields
-                    .iter()
-                    .find(|(f, _)| f == &loc.field_name)
-                    .map(|(_, s)| s);
-
-                if let Some(child_schema_name) = child_schema_name {
-                    if let Some(index) = hydrated_index.get(child_schema_name) {
-                        if let Some(hydrated) = index.get(&loc.key_value) {
-                            replacements
-                                .entry((loc.result_idx, loc.field_name.clone()))
-                                .or_default()
-                                .push((loc.ref_idx, hydrated.clone()));
-                        }
-                    }
-                }
-            }
-
-            // Apply replacements
-            for ((result_idx, field_name), ref_replacements) in &replacements {
-                if let Some(Value::Object(fields_obj)) = results[*result_idx].get_mut("fields") {
-                    if let Some(Value::Array(arr)) = fields_obj.get_mut(field_name) {
-                        for (ref_idx, hydrated_value) in ref_replacements {
-                            if *ref_idx < arr.len() {
-                                arr[*ref_idx] = hydrated_value.clone();
-                            }
-                        }
-                    }
-                }
-            }
+            // Phase 4: Apply hydrated references back to results
+            Self::apply_hydrated_references(results, &ref_locations, &ref_fields, &hydrated_index);
 
             Ok(())
         })
     }
+
+    // --- Rehydration helpers ---
+
+    /// Collects reference fields and child schema metadata needed for rehydration.
+    /// Acquires and drops the DB guard before returning.
+    async fn collect_reference_metadata(
+        &self,
+        schema_name: &str,
+    ) -> FoldDbResult<(
+        Vec<(String, String)>,
+        HashMap<String, Vec<String>>,
+        HashMap<String, (Option<String>, Option<String>)>,
+    )> {
+        let db = self
+            .node
+            .get_fold_db()
+            .await
+            .map_err(|e| FoldDbError::Database(e.to_string()))?;
+
+        let schema = match db
+            .schema_manager
+            .get_schema_metadata(schema_name)
+            .map_err(|e| FoldDbError::Database(e.to_string()))?
+        {
+            Some(s) => s,
+            None => return Ok((vec![], HashMap::new(), HashMap::new())),
+        };
+
+        // Find reference fields
+        let ref_fields: Vec<(String, String)> = schema
+            .ref_fields
+            .iter()
+            .map(|(field_name, child_schema)| (field_name.clone(), child_schema.clone()))
+            .collect();
+
+        // Pre-fetch queryable fields and key configs for each referenced child schema
+        let mut child_field_map: HashMap<String, Vec<String>> = HashMap::new();
+        let mut child_key_config_map: HashMap<String, (Option<String>, Option<String>)> = HashMap::new();
+        for (_, child_schema_name) in &ref_fields {
+            if child_field_map.contains_key(child_schema_name) {
+                continue;
+            }
+            if let Ok(Some(child_schema)) = db.schema_manager.get_schema_metadata(child_schema_name) {
+                let fields = Self::get_queryable_fields(&child_schema);
+                if !fields.is_empty() {
+                    child_field_map.insert(child_schema_name.clone(), fields);
+                }
+                // Store key config so we can extract KeyValue from field values
+                if let Some(key_cfg) = &child_schema.key {
+                    child_key_config_map.insert(
+                        child_schema_name.clone(),
+                        (key_cfg.hash_field.clone(), key_cfg.range_field.clone()),
+                    );
+                }
+            }
+        }
+
+        Ok((ref_fields, child_field_map, child_key_config_map))
+    }
+
+    /// Walks results to collect all reference locations and unique keys needed per child schema.
+    fn collect_reference_locations(
+        results: &[Value],
+        ref_fields: &[(String, String)],
+        child_field_map: &HashMap<String, Vec<String>>,
+    ) -> (Vec<RefLocation>, HashMap<String, HashSet<KeyValue>>) {
+        let mut ref_locations: Vec<RefLocation> = Vec::new();
+        let mut keys_by_schema: HashMap<String, HashSet<KeyValue>> = HashMap::new();
+
+        for (result_idx, result) in results.iter().enumerate() {
+            let fields_obj = match result.get("fields").and_then(|v| v.as_object()) {
+                Some(obj) => obj,
+                None => continue,
+            };
+
+            for (field_name, child_schema_name) in ref_fields {
+                if !child_field_map.contains_key(child_schema_name) {
+                    continue;
+                }
+
+                let refs_array = match fields_obj
+                    .get(field_name)
+                    .and_then(|v| v.as_array())
+                {
+                    Some(arr) => arr,
+                    None => continue,
+                };
+
+                for (ref_idx, ref_obj) in refs_array.iter().enumerate() {
+                    if let Some(kv) = Self::parse_ref_key(ref_obj) {
+                        keys_by_schema
+                            .entry(child_schema_name.clone())
+                            .or_default()
+                            .insert(kv.clone());
+                        ref_locations.push(RefLocation {
+                            result_idx,
+                            field_name: field_name.clone(),
+                            ref_idx,
+                            key_value: kv,
+                        });
+                    }
+                }
+            }
+        }
+
+        (ref_locations, keys_by_schema)
+    }
+
+    /// Builds a KeyValue -> Value index from child query results using the schema's key config.
+    fn build_child_index(
+        child_results: Vec<Value>,
+        key_config: Option<&(Option<String>, Option<String>)>,
+    ) -> HashMap<KeyValue, Value> {
+        let mut index: HashMap<KeyValue, Value> = HashMap::new();
+        for record in child_results {
+            let fields_obj = record.get("fields");
+            let hash = key_config
+                .and_then(|(h, _)| h.as_ref())
+                .and_then(|hash_field| {
+                    fields_obj
+                        .and_then(|f| f.get(hash_field))
+                        .and_then(Self::value_to_key_string)
+                });
+            let range = key_config
+                .and_then(|(_, r)| r.as_ref())
+                .and_then(|range_field| {
+                    fields_obj
+                        .and_then(|f| f.get(range_field))
+                        .and_then(Self::value_to_key_string)
+                });
+            let kv = KeyValue::new(hash, range);
+            index.insert(kv, record);
+        }
+        index
+    }
+
+    /// Applies hydrated records back into the original results at the tracked locations.
+    fn apply_hydrated_references(
+        results: &mut [Value],
+        ref_locations: &[RefLocation],
+        ref_fields: &[(String, String)],
+        hydrated_index: &HashMap<String, HashMap<KeyValue, Value>>,
+    ) {
+        let mut replacements: HashMap<(usize, String), Vec<(usize, Value)>> = HashMap::new();
+
+        for loc in ref_locations {
+            let child_schema_name = ref_fields
+                .iter()
+                .find(|(f, _)| f == &loc.field_name)
+                .map(|(_, s)| s);
+
+            if let Some(child_schema_name) = child_schema_name {
+                if let Some(index) = hydrated_index.get(child_schema_name) {
+                    if let Some(hydrated) = index.get(&loc.key_value) {
+                        replacements
+                            .entry((loc.result_idx, loc.field_name.clone()))
+                            .or_default()
+                            .push((loc.ref_idx, hydrated.clone()));
+                    }
+                }
+            }
+        }
+
+        for ((result_idx, field_name), ref_replacements) in &replacements {
+            if let Some(Value::Object(fields_obj)) = results[*result_idx].get_mut("fields") {
+                if let Some(Value::Array(arr)) = fields_obj.get_mut(field_name) {
+                    for (ref_idx, hydrated_value) in ref_replacements {
+                        if *ref_idx < arr.len() {
+                            arr[*ref_idx] = hydrated_value.clone();
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // --- Other query helpers ---
 
     /// Build a HashRangeFilter from a KeyValue.
     #[cfg(test)]
