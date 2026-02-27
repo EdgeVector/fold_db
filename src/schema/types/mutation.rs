@@ -159,8 +159,8 @@ mod tests {
             MutationType::Update,
         );
 
-        assert_ne!(m1.content_hash(), m2.content_hash()); // INTENTIONALLY BROKEN FOR CI TEST
         // UUIDs are different but hash should be same
+        assert_eq!(m1.content_hash(), m2.content_hash());
         assert_ne!(m1.uuid, m2.uuid);
     }
 
