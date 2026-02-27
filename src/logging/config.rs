@@ -239,7 +239,7 @@ impl LogConfig {
     }
 
     /// Apply environment variable overrides to the configuration
-    pub fn apply_env_overrides(&mut self) -> Result<(), ConfigError> {
+    fn apply_env_overrides(&mut self) -> Result<(), ConfigError> {
         // General settings
         if let Ok(level) = std::env::var("FOLD_LOG_LEVEL") {
             self.general.default_level = level;
@@ -303,20 +303,6 @@ impl LogConfig {
         Ok(())
     }
 
-    /// Save configuration to a TOML file
-    pub fn save_to_file<P: AsRef<Path>>(&self, path: P) -> Result<(), ConfigError> {
-        let content =
-            toml::to_string_pretty(self).map_err(|e| ConfigError::Serialize(e.to_string()))?;
-
-        // Create parent directories if they don't exist
-        if let Some(parent) = path.as_ref().parent() {
-            std::fs::create_dir_all(parent).map_err(ConfigError::Io)?;
-        }
-
-        std::fs::write(path, content).map_err(ConfigError::Io)?;
-        Ok(())
-    }
-
     /// Get default feature-specific log levels
     fn default_features() -> HashMap<String, String> {
         let mut features = HashMap::new();
@@ -333,92 +319,6 @@ impl LogConfig {
         features
     }
 
-    /// Validate the configuration
-    pub fn validate(&self) -> Result<(), ConfigError> {
-        // Validate log levels
-        let valid_levels = ["TRACE", "DEBUG", "INFO", "WARN", "ERROR"];
-
-        if !valid_levels.contains(&self.general.default_level.as_str()) {
-            return Err(ConfigError::InvalidLevel(
-                self.general.default_level.clone(),
-            ));
-        }
-
-        if !valid_levels.contains(&self.outputs.console.level.as_str()) {
-            return Err(ConfigError::InvalidLevel(
-                self.outputs.console.level.clone(),
-            ));
-        }
-
-        if !valid_levels.contains(&self.outputs.file.level.as_str()) {
-            return Err(ConfigError::InvalidLevel(self.outputs.file.level.clone()));
-        }
-
-        if !valid_levels.contains(&self.outputs.web.level.as_str()) {
-            return Err(ConfigError::InvalidLevel(self.outputs.web.level.clone()));
-        }
-
-        if !valid_levels.contains(&self.outputs.structured.level.as_str()) {
-            return Err(ConfigError::InvalidLevel(
-                self.outputs.structured.level.clone(),
-            ));
-        }
-
-        #[cfg(feature = "aws-backend")]
-        if !valid_levels.contains(&self.outputs.dynamodb.level.as_str()) {
-            return Err(ConfigError::InvalidLevel(
-                self.outputs.dynamodb.level.clone(),
-            ));
-        }
-
-        // Validate feature levels
-        for (feature, level) in &self.features {
-            if !valid_levels.contains(&level.as_str()) {
-                return Err(ConfigError::InvalidFeatureLevel(
-                    feature.clone(),
-                    level.clone(),
-                ));
-            }
-        }
-
-        // Validate file size format
-        if self.outputs.file.enabled {
-            self.parse_file_size(&self.outputs.file.max_size)?;
-        }
-
-        Ok(())
-    }
-
-    /// Parse file size string (e.g., "10MB", "1GB") to bytes
-    fn parse_file_size(&self, size_str: &str) -> Result<u64, ConfigError> {
-        let size_str = size_str.to_uppercase();
-
-        if let Some(num_str) = size_str.strip_suffix("GB") {
-            let num: u64 = num_str
-                .parse()
-                .map_err(|_| ConfigError::InvalidFileSize(size_str.clone()))?;
-            Ok(num * 1024 * 1024 * 1024)
-        } else if let Some(num_str) = size_str.strip_suffix("MB") {
-            let num: u64 = num_str
-                .parse()
-                .map_err(|_| ConfigError::InvalidFileSize(size_str.clone()))?;
-            Ok(num * 1024 * 1024)
-        } else if let Some(num_str) = size_str.strip_suffix("KB") {
-            let num: u64 = num_str
-                .parse()
-                .map_err(|_| ConfigError::InvalidFileSize(size_str.clone()))?;
-            Ok(num * 1024)
-        } else if let Some(num_str) = size_str.strip_suffix("B") {
-            num_str
-                .parse()
-                .map_err(|_| ConfigError::InvalidFileSize(size_str.clone()))
-        } else {
-            // Default to bytes if no suffix
-            size_str
-                .parse()
-                .map_err(|_| ConfigError::InvalidFileSize(size_str.clone()))
-        }
-    }
 }
 
 /// Configuration errors
@@ -428,12 +328,4 @@ pub enum ConfigError {
     Io(#[from] std::io::Error),
     #[error("Failed to parse configuration: {0}")]
     Parse(String),
-    #[error("Failed to serialize configuration: {0}")]
-    Serialize(String),
-    #[error("Invalid log level: {0}")]
-    InvalidLevel(String),
-    #[error("Invalid log level for feature '{0}': {1}")]
-    InvalidFeatureLevel(String, String),
-    #[error("Invalid file size format: {0}")]
-    InvalidFileSize(String),
 }
