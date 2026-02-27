@@ -5,7 +5,7 @@
 
 use crate::fold_node::node::FoldNode;
 use crate::handlers::response::{ApiResponse, HandlerError, HandlerResult};
-use crate::ingestion::config::{IngestionConfig, SavedConfig};
+use crate::ingestion::config::IngestionConfig;
 use crate::ingestion::progress::{IngestionProgress, ProgressService, ProgressTracker};
 use crate::ingestion::ingestion_service::IngestionService;
 use crate::ingestion::IngestionRequest;
@@ -57,18 +57,6 @@ pub struct IngestionStatusResponse {
     pub configured: bool,
     pub provider: String,
     pub model: String,
-}
-
-/// Response for config operations
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-bindings", derive(TS))]
-#[cfg_attr(
-    feature = "ts-bindings",
-    ts(export, export_to = "src/fold_node/static-react/src/types/")
-)]
-pub struct ConfigSaveResponse {
-    pub success: bool,
-    pub message: String,
 }
 
 // ============================================================================
@@ -211,33 +199,6 @@ pub async fn get_config(user_hash: &str) -> HandlerResult<IngestionConfig> {
     let config = IngestionConfig::from_env_allow_empty();
 
     Ok(ApiResponse::success_with_user(config.redacted(), user_hash))
-}
-
-/// Save ingestion configuration
-///
-/// # Arguments
-/// * `config` - The configuration to save
-/// * `user_hash` - The user's hash for context
-///
-/// # Returns
-/// * `HandlerResult<ConfigSaveResponse>` - Result wrapped in standard envelope
-pub async fn save_config(
-    config: SavedConfig,
-    user_hash: &str,
-) -> HandlerResult<ConfigSaveResponse> {
-    match IngestionConfig::save_to_file(&config) {
-        Ok(()) => Ok(ApiResponse::success_with_user(
-            ConfigSaveResponse {
-                success: true,
-                message: "Configuration saved successfully".to_string(),
-            },
-            user_hash,
-        )),
-        Err(e) => Err(HandlerError::Internal(format!(
-            "Failed to save configuration: {}",
-            e
-        ))),
-    }
 }
 
 /// Process JSON ingestion (starts background task and returns immediately)
