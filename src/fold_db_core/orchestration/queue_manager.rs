@@ -206,26 +206,4 @@ impl QueueManager {
         Ok(())
     }
 
-    /// Remove items from queue that match the criteria
-    pub fn remove_items<F>(&self, predicate: F) -> Result<usize, SchemaError>
-    where
-        F: Fn(&QueueItem) -> bool,
-    {
-        let mut state = self.state.lock().map_err(|e| {
-            error!("❌ Failed to acquire queue lock for item removal: {}", e);
-            SchemaError::InvalidData("Failed to acquire queue lock".to_string())
-        })?;
-
-        let items_before = state.queue.len();
-        state.queue.retain(|item| !predicate(item));
-        let items_after = state.queue.len();
-        let removed_count = items_before - items_after;
-
-        info!(
-            "📋 Removed {} items from queue ({} -> {})",
-            removed_count, items_before, items_after
-        );
-
-        Ok(removed_count)
-    }
 }

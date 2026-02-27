@@ -25,7 +25,6 @@
 //! permissions and payment requirements.
 
 pub mod atom;
-pub mod config_utils;
 pub mod constants;
 pub mod crypto;
 pub mod fold_node;

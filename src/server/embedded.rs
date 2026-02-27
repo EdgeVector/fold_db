@@ -8,7 +8,6 @@ use super::http_server::FoldHttpServer;
 use super::node_manager::{NodeManager, NodeManagerConfig};
 use crate::fold_node::FoldNode;
 use crate::error::FoldDbResult;
-use std::sync::Arc;
 use tokio::task::JoinHandle;
 
 /// Handle to a running embedded server.
@@ -108,32 +107,6 @@ pub async fn start_embedded_server(
         task_handle,
         bind_address: address,
     })
-}
-
-/// Start an embedded FoldDB HTTP server with a shared node reference.
-///
-/// This variant is useful when you need to keep a reference to the node
-/// for other purposes while also running the server.
-///
-/// # Arguments
-///
-/// * `node` - Arc-wrapped RwLock-wrapped FoldNode
-/// * `port` - The port to bind to
-///
-/// # Returns
-///
-/// Returns an `EmbeddedServerHandle` that can be used to manage the server.
-pub async fn start_embedded_server_shared(
-    node: Arc<tokio::sync::RwLock<FoldNode>>,
-    port: u16,
-) -> FoldDbResult<EmbeddedServerHandle> {
-    let node_instance = {
-        let guard = node.read().await;
-        // Clone the node since FoldNode implements Clone
-        guard.clone()
-    };
-
-    start_embedded_server(node_instance, port).await
 }
 
 #[cfg(test)]
