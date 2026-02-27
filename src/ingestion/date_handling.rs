@@ -182,7 +182,7 @@ mod tests {
     fn test_normalize_chronological_ordering() {
         // These Twitter-format dates sort incorrectly by day name:
         // "Fri..." < "Mon..." < "Wed..." alphabetically
-        let dates = vec![
+        let dates = [
             "Wed Jan 01 00:00:00 +0000 2025",
             "Fri Jan 03 00:00:00 +0000 2025",
             "Mon Jan 06 00:00:00 +0000 2025",

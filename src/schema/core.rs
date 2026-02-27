@@ -623,14 +623,14 @@ mod tests {
             // Persist to DB so load_schema_internal sees it exists
         }
         // Also store to DB
-        {
+        let schema = {
             let schemas = core.schemas.lock().unwrap();
-            let schema = schemas.get("BlogPost").unwrap();
-            core.db_ops
-                .store_schema("BlogPost", schema)
-                .await
-                .expect("store schema");
-        }
+            schemas.get("BlogPost").unwrap().clone()
+        };
+        core.db_ops
+            .store_schema("BlogPost", &schema)
+            .await
+            .expect("store schema");
 
         // Now reload from JSON (simulates what ingestion does for each file)
         // The JSON from the schema service does NOT have field_molecule_uuids

@@ -1,10 +1,12 @@
 use crate::fold_node::config::NodeConfig;
+use crate::handlers::system::NodeKeyResponse;
+use crate::handlers::{ApiResponse, HandlerError};
 use crate::log_feature;
 use crate::logging::features::LogFeature;
 use crate::security::Ed25519KeyPair;
 use crate::server::http_server::AppState;
 use crate::server::node_manager::NodeManagerConfig;
-use crate::server::routes::{handler_error_to_response, require_node, require_user_context};
+use crate::server::routes::{handler_error_to_response, require_node_read, require_user_context};
 use crate::storage::config::DatabaseConfig;
 use actix_web::{web, HttpResponse, Responder};
 use serde::{Deserialize, Serialize};
@@ -22,14 +24,32 @@ use std::path::{Path, PathBuf};
     )
 )]
 pub async fn get_system_status(state: web::Data<AppState>) -> impl Responder {
-    let (user_hash, node_arc) = match require_node(&state).await {
+    let (user_hash, node) = match require_node_read(&state).await {
         Ok(res) => res,
         Err(response) => return response,
     };
-    let node = node_arc.read().await;
 
     match crate::handlers::system::get_system_status(&user_hash, &node).await {
         Ok(response) => HttpResponse::Ok().json(response),
+        Err(e) => handler_error_to_response(e),
+    }
+}
+
+/// Shared helper for key retrieval endpoints.
+fn key_response(
+    result: Result<ApiResponse<NodeKeyResponse>, HandlerError>,
+    key_name: &str,
+    log_msg: &str,
+) -> HttpResponse {
+    match result {
+        Ok(response) => {
+            log_feature!(LogFeature::HttpServer, info, "{}", log_msg);
+            HttpResponse::Ok().json(json!({
+                "success": response.data.as_ref().map(|d| d.success).unwrap_or(false),
+                key_name: response.data.as_ref().map(|d| &d.key),
+                "message": response.data.as_ref().map(|d| &d.message)
+            }))
+        }
         Err(e) => handler_error_to_response(e),
     }
 }
@@ -47,27 +67,12 @@ pub async fn get_system_status(state: web::Data<AppState>) -> impl Responder {
     )
 )]
 pub async fn get_node_private_key(state: web::Data<AppState>) -> impl Responder {
-    let (user_hash, node_arc) = match require_node(&state).await {
+    let (user_hash, node) = match require_node_read(&state).await {
         Ok(res) => res,
         Err(response) => return response,
     };
-    let node = node_arc.read().await;
-
-    match crate::handlers::system::get_node_private_key(&user_hash, &node).await {
-        Ok(response) => {
-            log_feature!(
-                LogFeature::HttpServer,
-                info,
-                "Node private key retrieved successfully"
-            );
-            HttpResponse::Ok().json(json!({
-                "success": response.data.as_ref().map(|d| d.success).unwrap_or(false),
-                "private_key": response.data.as_ref().map(|d| &d.key),
-                "message": response.data.as_ref().map(|d| &d.message)
-            }))
-        }
-        Err(e) => handler_error_to_response(e),
-    }
+    let result = crate::handlers::system::get_node_private_key(&user_hash, &node).await;
+    key_response(result, "private_key", "Node private key retrieved successfully")
 }
 
 /// Get the node's public key
@@ -83,27 +88,12 @@ pub async fn get_node_private_key(state: web::Data<AppState>) -> impl Responder 
     )
 )]
 pub async fn get_node_public_key(state: web::Data<AppState>) -> impl Responder {
-    let (user_hash, node_arc) = match require_node(&state).await {
+    let (user_hash, node) = match require_node_read(&state).await {
         Ok(res) => res,
         Err(response) => return response,
     };
-    let node = node_arc.read().await;
-
-    match crate::handlers::system::get_node_public_key(&user_hash, &node).await {
-        Ok(response) => {
-            log_feature!(
-                LogFeature::HttpServer,
-                info,
-                "Node public key retrieved successfully"
-            );
-            HttpResponse::Ok().json(json!({
-                "success": response.data.as_ref().map(|d| d.success).unwrap_or(false),
-                "public_key": response.data.as_ref().map(|d| &d.key),
-                "message": response.data.as_ref().map(|d| &d.message)
-            }))
-        }
-        Err(e) => handler_error_to_response(e),
-    }
+    let result = crate::handlers::system::get_node_public_key(&user_hash, &node).await;
+    key_response(result, "public_key", "Node public key retrieved successfully")
 }
 
 /// Request body for database reset

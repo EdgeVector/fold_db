@@ -254,7 +254,7 @@ mod tests {
             "items": [{"a": 1, "b": "x"}]
         });
         let data2 = json!({
-            "items": [{"c": true, "d": 3.14}]
+            "items": [{"c": true, "d": 3.15}]
         });
 
         let r1 = decompose(&data1);
