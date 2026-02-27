@@ -320,10 +320,6 @@ impl PersistenceManager {
         }
     }
 
-    /// Get the underlying tree for advanced operations (use carefully) - only for Sled
-    pub fn get_tree(&self) -> Option<&Tree> {
-        self.tree.as_ref()
-    }
 }
 
 #[cfg(test)]

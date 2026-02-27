@@ -29,13 +29,4 @@ impl KeyConfig {
         }
     }
 
-    /// Creates a KeyConfig from a HashMap of string key-value pairs
-    pub fn from_map(
-        map: std::collections::HashMap<String, String>,
-    ) -> Result<Self, Box<dyn std::error::Error>> {
-        Ok(Self {
-            hash_field: map.get("hash_field").cloned(),
-            range_field: map.get("range_field").cloned(),
-        })
-    }
 }

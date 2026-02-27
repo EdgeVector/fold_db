@@ -26,21 +26,6 @@ pub struct IndexEntry {
     pub expression: String,
 }
 
-/// Statistics about execution performance
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct ExecutionStatistics {
-    /// Total number of index entries generated
-    pub total_entries: usize,
-    /// Number of items per depth level
-    pub items_per_depth: HashMap<usize, usize>,
-    /// Estimated memory usage in bytes
-    pub memory_usage_bytes: usize,
-    /// Number of cache hits
-    pub cache_hits: usize,
-    /// Number of cache misses
-    pub cache_misses: usize,
-}
-
 /// Warning generated during execution
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ExecutionWarning {

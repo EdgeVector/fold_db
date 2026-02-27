@@ -91,16 +91,8 @@ impl FieldCommon {
         self.transform.as_ref()
     }
 
-    pub fn set_transform(&mut self, transform: Transform) {
-        self.transform = Some(transform);
-    }
-
     pub fn writable(&self) -> bool {
         self.writable
-    }
-
-    pub fn set_writable(&mut self, writable: bool) {
-        self.writable = writable;
     }
 }
 

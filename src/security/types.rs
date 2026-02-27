@@ -22,20 +22,6 @@ impl SignedMessage {
     }
 }
 
-/// Public key registration request from client
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-pub struct PublicKeyRegistration {
-    /// Base64-encoded Ed25519 public key
-    pub public_key: String,
-    /// User or client ID
-    pub owner_id: String,
-    /// Requested permissions
-    pub permissions: Vec<String>,
-    /// Optional metadata
-    pub metadata: HashMap<String, String>,
-    /// Optional expiration timestamp
-    pub expires_at: Option<u64>,
-}
 
 /// Public key information stored on the backend
 #[derive(Debug, Clone, Serialize, Deserialize)]

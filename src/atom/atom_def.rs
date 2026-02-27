@@ -107,26 +107,6 @@ impl Atom {
     /// Currently supports:
     /// - "lowercase": Converts string content to lowercase
     ///
-    /// If the transformation is not recognized or cannot be applied,
-    /// returns a clone of the original content.
-    ///
-    /// # Arguments
-    ///
-    /// * `transform` - The name of the transformation to apply
-    #[must_use]
-    pub fn get_transformed_content(&self, transform: &str) -> Value {
-        match transform {
-            "lowercase" => {
-                if let Value::String(s) = &self.content {
-                    Value::String(s.to_lowercase())
-                } else {
-                    self.content.clone()
-                }
-            }
-            _ => self.content.clone(),
-        }
-    }
-
     /// Returns the unique identifier of this Atom.
     ///
     /// This UUID uniquely identifies this specific version of the data

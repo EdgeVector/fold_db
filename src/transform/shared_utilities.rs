@@ -85,48 +85,6 @@ pub fn resolve_dotted_path(
 /// # Arguments
 ///
 /// * `parsed_chain` - The parsed chain to resolve
-/// * `input_values` - The input values for fallback
-/// * `field_name` - The field name for context (used in error messages)
-///
-/// # Returns
-///
-/// Resolved field value or error
-pub fn resolve_field_value_from_chain(
-    parsed_chain: &ParsedChain,
-    input_values: &HashMap<String, JsonValue>,
-    field_name: &str,
-) -> Result<JsonValue, SchemaError> {
-    // Extract simple path from operations for basic field access
-    let mut path_parts = Vec::new();
-
-    for operation in &parsed_chain.operations {
-        match operation {
-            crate::transform::chain_parser::ChainOperation::FieldAccess(field_name) => {
-                path_parts.push(field_name.clone());
-            }
-            _ => {
-                // For complex operations, we can't extract a simple path
-                return Err(SchemaError::InvalidField(format!(
-                    "No simple path found in parsed chain for field '{}'",
-                    field_name
-                )));
-            }
-        }
-    }
-
-    let simple_path = path_parts.join(".");
-
-    if simple_path.is_empty() {
-        return Err(SchemaError::InvalidField(format!(
-            "No simple path found in parsed chain for field '{}'",
-            field_name
-        )));
-    }
-
-    // Try to resolve the simple path
-    resolve_dotted_path(&simple_path, input_values)
-}
-
 /// Enhanced parsing with retry mechanism for better error recovery.
 /// Parses multiple expressions in batch with unified error handling.
 ///

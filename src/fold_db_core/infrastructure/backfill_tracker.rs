@@ -168,12 +168,6 @@ impl BackfillInfo {
         self.end_time = Some(current_timestamp_secs());
     }
 
-    /// Calculate duration in seconds
-    pub fn duration_seconds(&self) -> u64 {
-        let end = self.end_time.unwrap_or_else(current_timestamp_secs);
-        end.saturating_sub(self.start_time)
-    }
-
     /// Convert BackfillInfo to generic Job
     pub fn to_job(&self, user_id: Option<String>) -> Job {
         let mut job = Job::new(self.backfill_hash.clone(), JobType::Backfill);

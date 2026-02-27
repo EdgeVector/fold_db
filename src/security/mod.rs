@@ -29,7 +29,7 @@ pub use keys::*;
 pub use signing::*;
 pub use types::{
     EncryptedData, KeyRegistrationRequest, KeyRegistrationResponse, PublicKeyInfo,
-    PublicKeyRegistration, SignedMessage, VerificationResult,
+    SignedMessage, VerificationResult,
 };
 pub use utils::*;
 
