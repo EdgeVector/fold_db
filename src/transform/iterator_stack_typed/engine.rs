@@ -144,10 +144,10 @@ impl TypedEngine {
                 // Get the iterator function from registry and execute it
                 if let Some(func) = reg.get_iterator(name) {
                     for (i, item) in items.iter().enumerate() {
-                        match func.execute(item) {
+                        let new_items = match func.execute(item) {
                             IteratorExecutionResult::TextTokens(tokens) => {
-                                // Convert text tokens to IterationItems for further processing
-                                let new_items: Vec<IterationItem> = tokens
+                                // Convert text tokens to IterationItems
+                                tokens
                                     .iter()
                                     .enumerate()
                                     .map(|(j, token)| IterationItem {
@@ -162,114 +162,14 @@ impl TypedEngine {
                                         },
                                         is_text_token: true,
                                     })
-                                    .collect();
+                                    .collect()
+                            }
+                            IteratorExecutionResult::Items(items) => items,
+                        };
 
-                                // Check if the next spec is a reducer
-                                if let Some(next_spec) = tail.first() {
-                                    if matches!(next_spec, IteratorSpec::ReducerFunction { .. }) {
-                                        // For reducers, process all tokens as a group
-                                        depth_path.push(i);
-                                        let mut new_items_mut = new_items.clone();
-                                        self.recurse_specs(
-                                            tail,
-                                            _input,
-                                            _field_key,
-                                            &mut new_items_mut,
-                                            depth_path,
-                                            emitted,
-                                        );
-                                        depth_path.pop();
-                                    } else {
-                                        // For other specs, process each token individually
-                                        for (j, new_item) in new_items.iter().enumerate() {
-                                            depth_path.push(i);
-                                            depth_path.push(j);
-                                            self.recurse_specs(
-                                                tail,
-                                                _input,
-                                                _field_key,
-                                                &mut [new_item.clone()],
-                                                depth_path,
-                                                emitted,
-                                            );
-                                            depth_path.pop();
-                                            depth_path.pop();
-                                        }
-                                    }
-                                } else {
-                                    // No more specs, emit each token individually
-                                    for (j, new_item) in new_items.iter().enumerate() {
-                                        let mut path = depth_path.clone();
-                                        path.push(i);
-                                        path.push(j);
-                                        let value_text = match &new_item.value.value {
-                                            serde_json::Value::String(s) => s.clone(),
-                                            other => other.to_string(),
-                                        };
-                                        emitted.push(EmittedEntry {
-                                            row_id: path
-                                                .iter()
-                                                .map(|x| x.to_string())
-                                                .collect::<Vec<_>>()
-                                                .join("/"),
-                                            atom_uuid: new_item.value.atom_uuid.clone(),
-                                            value_text: Some(value_text),
-                                        });
-                                    }
-                                }
-                            }
-                            IteratorExecutionResult::Items(new_items) => {
-                                // Check if the next spec is a reducer
-                                if let Some(next_spec) = tail.first() {
-                                    if matches!(next_spec, IteratorSpec::ReducerFunction { .. }) {
-                                        // For reducers, process all items as a group
-                                        depth_path.push(i);
-                                        let mut new_items_mut = new_items.clone();
-                                        self.recurse_specs(
-                                            tail,
-                                            _input,
-                                            _field_key,
-                                            &mut new_items_mut,
-                                            depth_path,
-                                            emitted,
-                                        );
-                                        depth_path.pop();
-                                    } else {
-                                        // Handle item-producing functions (like split_array)
-                                        for (j, new_item) in new_items.iter().enumerate() {
-                                            depth_path.push(i);
-                                            depth_path.push(j);
-                                            self.recurse_specs(
-                                                tail,
-                                                _input,
-                                                _field_key,
-                                                &mut [new_item.clone()],
-                                                depth_path,
-                                                emitted,
-                                            );
-                                            depth_path.pop();
-                                            depth_path.pop();
-                                        }
-                                    }
-                                } else {
-                                    // No more specs - emit items
-                                    for (j, new_item) in new_items.iter().enumerate() {
-                                        depth_path.push(i);
-                                        depth_path.push(j);
-                                        self.recurse_specs(
-                                            tail,
-                                            _input,
-                                            _field_key,
-                                            &mut [new_item.clone()],
-                                            depth_path,
-                                            emitted,
-                                        );
-                                        depth_path.pop();
-                                        depth_path.pop();
-                                    }
-                                }
-                            }
-                        }
+                        self.process_produced_items(
+                            new_items, i, tail, _input, _field_key, depth_path, emitted,
+                        );
                     }
                 } else {
                     // Function not found - pass through as identity
@@ -349,6 +249,48 @@ impl TypedEngine {
                     );
                     depth_path.pop();
                 }
+            }
+        }
+    }
+
+    /// Processes items produced by an iterator function (TextTokens or Items).
+    /// Handles reducer grouping vs individual recursion uniformly.
+    #[allow(clippy::only_used_in_recursion, clippy::too_many_arguments)]
+    fn process_produced_items(
+        &self,
+        new_items: Vec<IterationItem>,
+        parent_idx: usize,
+        tail: &[IteratorSpec],
+        input: &TypedInput,
+        field_key: &str,
+        depth_path: &mut Vec<usize>,
+        emitted: &mut Vec<EmittedEntry>,
+    ) {
+        let is_reducer_next = tail
+            .first()
+            .is_some_and(|s| matches!(s, IteratorSpec::ReducerFunction { .. }));
+
+        if is_reducer_next {
+            // For reducers, process all items as a group
+            depth_path.push(parent_idx);
+            let mut items = new_items;
+            self.recurse_specs(tail, input, field_key, &mut items, depth_path, emitted);
+            depth_path.pop();
+        } else {
+            // Process each item individually (or emit via base case if tail is empty)
+            for (j, new_item) in new_items.iter().enumerate() {
+                depth_path.push(parent_idx);
+                depth_path.push(j);
+                self.recurse_specs(
+                    tail,
+                    input,
+                    field_key,
+                    &mut [new_item.clone()],
+                    depth_path,
+                    emitted,
+                );
+                depth_path.pop();
+                depth_path.pop();
             }
         }
     }
