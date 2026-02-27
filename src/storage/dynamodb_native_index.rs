@@ -27,22 +27,8 @@ impl DynamoDbNativeIndexStore {
         Self { client, table_name }
     }
 
-    /// Get the current user_id from request context.
-    /// Returns an error if no user context is available — all DynamoDB operations
-    /// MUST run within a `run_with_user` scope to ensure proper tenant isolation.
     fn get_current_user_id(&self) -> StorageResult<String> {
-        let context_user = crate::logging::core::get_current_user_id();
-        log::debug!(
-            "[DynamoDbNativeIndexStore] get_current_user_id: context={:?}",
-            context_user
-        );
-        context_user.ok_or_else(|| {
-            StorageError::ConfigurationError(
-                "Missing user context for DynamoDB native index operation. \
-                 Ensure this code runs within a run_with_user scope."
-                    .to_string(),
-            )
-        })
+        super::dynamodb_utils::require_user_context()
     }
 
     /// Parse key to extract feature and term

@@ -24,8 +24,7 @@ impl OperationProcessor {
         let db = self
             .node
             .get_fold_db()
-            .await
-            .map_err(|e| FoldDbError::Database(e.to_string()))?;
+            .await?;
         let results = db.query_executor.query(query).await;
         Ok(results?)
     }
@@ -182,13 +181,11 @@ impl OperationProcessor {
         let db = self
             .node
             .get_fold_db()
-            .await
-            .map_err(|e| FoldDbError::Database(e.to_string()))?;
+            .await?;
 
         let schema = match db
             .schema_manager
-            .get_schema_metadata(schema_name)
-            .map_err(|e| FoldDbError::Database(e.to_string()))?
+            .get_schema_metadata(schema_name)?
         {
             Some(s) => s,
             None => return Ok((vec![], HashMap::new(), HashMap::new())),
@@ -393,14 +390,12 @@ impl OperationProcessor {
         let db = self
             .node
             .get_fold_db()
-            .await
-            .map_err(|e| FoldDbError::Database(e.to_string()))?;
+            .await?;
 
         let mut schema = db
             .schema_manager
             .get_schema(schema_name)
-            .await
-            .map_err(|e| FoldDbError::Database(e.to_string()))?
+            .await?
             .ok_or_else(|| {
                 FoldDbError::Database(format!("Schema '{}' not found", schema_name))
             })?;
@@ -439,11 +434,9 @@ impl OperationProcessor {
         let db = self
             .node
             .get_fold_db()
-            .await
-            .map_err(|e| FoldDbError::Database(e.to_string()))?;
+            .await?;
 
-        db.native_search_all_classifications(term)
-            .await
-            .map_err(|e| FoldDbError::Database(e.to_string()))
+        Ok(db.native_search_all_classifications(term)
+            .await?)
     }
 }

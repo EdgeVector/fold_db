@@ -1,4 +1,4 @@
-use crate::error::{FoldDbError, FoldDbResult};
+use crate::error::FoldDbResult;
 use crate::schema::{SchemaState, SchemaWithState};
 
 use super::OperationProcessor;
@@ -10,11 +10,10 @@ impl OperationProcessor {
             .node
             .get_fold_db()
             .await
-            .map_err(|e| FoldDbError::Database(e.to_string()))?;
+            ?;
 
-        db.schema_manager
-            .get_schemas_with_states()
-            .map_err(|e| FoldDbError::Database(e.to_string()))
+        Ok(db.schema_manager
+            .get_schemas_with_states()?)
     }
 
     /// Get a specific schema by name with its state.
@@ -23,17 +22,17 @@ impl OperationProcessor {
             .node
             .get_fold_db()
             .await
-            .map_err(|e| FoldDbError::Database(e.to_string()))?;
+            ?;
 
         let mgr = &db.schema_manager;
         match mgr
             .get_schema_metadata(name)
-            .map_err(|e| FoldDbError::Database(e.to_string()))?
+            ?
         {
             Some(schema) => {
                 let states = mgr
                     .get_schema_states()
-                    .map_err(|e| FoldDbError::Database(e.to_string()))?;
+                    ?;
                 let state = states.get(name).copied().unwrap_or_default();
                 Ok(Some(SchemaWithState::new(schema, state)))
             }
@@ -47,7 +46,7 @@ impl OperationProcessor {
             .node
             .get_fold_db()
             .await
-            .map_err(|e| FoldDbError::Database(e.to_string()))?;
+            ?;
 
         let schema_mgr = &db.schema_manager;
         let transform_mgr = &db.transform_manager;
@@ -55,7 +54,7 @@ impl OperationProcessor {
         // Check if schema is already approved
         let states = schema_mgr
             .get_schema_states()
-            .map_err(|e| FoldDbError::Database(e.to_string()))?;
+            ?;
         let current_state = states.get(schema_name).copied().unwrap_or_default();
 
         if current_state == SchemaState::Approved {
@@ -77,7 +76,7 @@ impl OperationProcessor {
                 backfill_hash.clone(),
             )
             .await
-            .map_err(|e| FoldDbError::Database(e.to_string()))?;
+            ?;
 
         Ok(backfill_hash)
     }
@@ -88,12 +87,11 @@ impl OperationProcessor {
             .node
             .get_fold_db()
             .await
-            .map_err(|e| FoldDbError::Database(e.to_string()))?;
+            ?;
 
-        db.schema_manager
+        Ok(db.schema_manager
             .block_schema(schema_name)
-            .await
-            .map_err(|e| FoldDbError::Database(e.to_string()))
+            .await?)
     }
 
     /// Load schemas from the schema service (Standard fetch & load logic).
@@ -103,7 +101,7 @@ impl OperationProcessor {
             self.node
                 .fetch_available_schemas()
                 .await
-                .map_err(|e| FoldDbError::Database(e.to_string()))?
+                ?
         };
 
         let schema_count = schemas.len();
@@ -117,12 +115,11 @@ impl OperationProcessor {
                     .node
                     .get_fold_db()
                     .await
-                    .map_err(|e| FoldDbError::Database(e.to_string()))?;
+                    ?;
 
                 db.schema_manager
                     .load_schema_internal(schema)
                     .await
-                    .map_err(|e| FoldDbError::Database(e.to_string()))
             };
 
             match result {

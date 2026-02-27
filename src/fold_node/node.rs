@@ -298,10 +298,9 @@ impl FoldNode {
         self.mutation_preprocessor.preprocess(&mut mutations);
 
         let mut db = self.db.lock().await;
-        db.mutation_manager
+        Ok(db.mutation_manager
             .write_mutations_batch_async(mutations)
-            .await
-            .map_err(|e| FoldDbError::Database(e.to_string()))
+            .await?)
     }
 
     async fn init_internals(
