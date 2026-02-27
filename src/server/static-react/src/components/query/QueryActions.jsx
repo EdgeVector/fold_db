@@ -51,7 +51,7 @@ function QueryActions({
 }) {
   const [loadingAction, setLoadingAction] = useState(null);
   const [_confirmAction, setConfirmAction] = useState(null);
-  const { clearQuery } = useQueryState();
+  const { clearState } = useQueryState();
 
   /**
    * Handle action execution with loading state
@@ -102,8 +102,8 @@ function QueryActions({
     if (clearHandler) {
       clearHandler();
     }
-    if (clearQuery) {
-      clearQuery();
+    if (clearState) {
+      clearState();
     }
   };
 

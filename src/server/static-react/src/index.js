@@ -69,5 +69,3 @@ export {
 // Constants
 export { DEFAULT_TAB } from "./constants";
 
-// API Client utilities (for store injection)
-export { injectStore } from "./api/core/client";

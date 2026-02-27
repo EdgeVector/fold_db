@@ -54,7 +54,7 @@ function QueryForm({
   className = ''
 }) {
   const [validationErrors, setValidationErrors] = useState({});
-  const { clearQuery } = useQueryState();
+  const { clearState } = useQueryState();
 
   /**
    * No validation - backend handles all checks
@@ -70,15 +70,15 @@ function QueryForm({
   const handleSchemaChange = useCallback((value) => {
     onSchemaChange(value);
     // Clear query state when schema changes
-    if (clearQuery) {
-      clearQuery();
+    if (clearState) {
+      clearState();
     }
     // Clear schema validation error
     setValidationErrors(prev => {
       const { schema: _schema, ...rest } = prev;
       return rest;
     });
-  }, [onSchemaChange, clearQuery]);
+  }, [onSchemaChange, clearState]);
 
   /**
    * Handle field toggle with validation

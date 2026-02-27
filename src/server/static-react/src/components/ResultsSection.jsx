@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import StructuredResults from './StructuredResults'
 import { isHashRangeFieldsShape } from '../utils/hashRangeResults'
 
@@ -8,6 +8,7 @@ function ResultsSection({ results }) {
   const hasData = hasResults && results.data !== undefined
   const defaultStructured = useMemo(() => hasResults && !isError && isHashRangeFieldsShape(hasData ? results.data : results), [hasResults, results, isError, hasData])
   const [structured, setStructured] = useState(defaultStructured)
+  useEffect(() => { setStructured(defaultStructured) }, [defaultStructured])
 
   if (!hasResults) return null
 
