@@ -205,65 +205,6 @@ impl SchemaServiceClient {
         Ok(schema)
     }
 
-    /// Load all schemas from the schema service into the node
-    pub async fn load_all_schemas(
-        &self,
-        schema_manager: &crate::schema::SchemaCore,
-    ) -> FoldDbResult<usize> {
-        let schema_names = self.list_schemas().await?;
-        let mut loaded_count = 0;
-
-        for name in schema_names {
-            let schema = self.get_schema(&name).await?;
-
-            let json_str = serde_json::to_string(&schema).map_err(|e| {
-                FoldDbError::Config(format!("Failed to serialize schema '{}': {}", name, e))
-            })?;
-
-            schema_manager
-                .load_schema_from_json(&json_str)
-                .await
-                .map_err(|e| {
-                    FoldDbError::Config(format!("Failed to load schema '{}': {}", name, e))
-                })?;
-
-            loaded_count += 1;
-        }
-
-        Ok(loaded_count)
-    }
-
-    /// Reset the schema service database
-    pub async fn reset_schema_service(&self) -> FoldDbResult<()> {
-        let url = format!("{}/api/system/reset", self.base_url);
-
-        #[derive(Serialize)]
-        struct ResetRequest {
-            confirm: bool,
-        }
-
-        let response = self
-            .client
-            .post(&url)
-            .json(&ResetRequest { confirm: true })
-            .send()
-            .await
-            .map_err(|e| FoldDbError::Config(format!("Failed to reset schema service: {}", e)))?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response
-                .text()
-                .await
-                .unwrap_or_else(|_| "<empty>".to_string());
-            return Err(FoldDbError::Config(format!(
-                "Schema service reset failed with status {}: {}",
-                status, body
-            )));
-        }
-
-        Ok(())
-    }
 }
 
 #[cfg(test)]
