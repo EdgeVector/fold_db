@@ -522,7 +522,7 @@ impl TransformOrchestrator {
     }
 
     /// Process a single task from the queue
-    pub async fn process_one(&self) -> Option<Result<TransformResult, SchemaError>> {
+    async fn process_one(&self) -> Option<Result<TransformResult, SchemaError>> {
         info!("🔄 PROCESS_ONE - Checking queue for items");
 
         // Pop item from queue
@@ -584,7 +584,7 @@ impl TransformOrchestrator {
     }
 
     /// Process all queued tasks sequentially
-    pub async fn process_queue(&self) {
+    async fn process_queue(&self) {
         info!("🔄 PROCESS_QUEUE - Starting to process all queued transforms");
 
         let initial_length = match self.len() {
@@ -655,7 +655,7 @@ impl TransformOrchestrator {
     }
 
     /// Persist current state (async version for DynamoDB)
-    pub async fn persist_current_state_async(&self) -> Result<(), SchemaError> {
+    async fn persist_current_state_async(&self) -> Result<(), SchemaError> {
         let current_state = self.queue_manager.get_state()?;
         if self.persistence_manager.is_async() {
             self.persistence_manager
@@ -681,18 +681,6 @@ impl TransformOrchestrator {
         self.queue_manager.is_empty()
     }
 
-    /// Get access to individual components for advanced operations
-    pub fn get_queue_manager(&self) -> &QueueManager {
-        &self.queue_manager
-    }
-
-    pub fn get_persistence_manager(&self) -> &PersistenceManager {
-        &self.persistence_manager
-    }
-
-    pub fn get_execution_coordinator(&self) -> &ExecutionCoordinator {
-        &self.execution_coordinator
-    }
 }
 
 #[async_trait]

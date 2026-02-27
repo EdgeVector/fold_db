@@ -275,11 +275,6 @@ pub struct DeclarativeSchemaDefinition {
     #[cfg_attr(feature = "ts-bindings", ts(skip))]
     source_schemas: Vec<String>,
 
-    /// Key to hash code mapping for transforms
-    #[serde(skip)]
-    #[cfg_attr(feature = "ts-bindings", ts(skip))]
-    key_to_hash_code: HashMap<String, String>,
-
     /// Field to hash code mapping for transforms
     #[serde(skip)]
     #[cfg_attr(feature = "ts-bindings", ts(skip))]
@@ -432,7 +427,6 @@ impl DeclarativeSchemaDefinition {
             runtime_fields: HashMap::new(),
             inputs_schema_fields: Vec::new(),
             source_schemas: Vec::new(),
-            key_to_hash_code: HashMap::new(),
             field_to_hash_code: HashMap::new(),
             hash_to_code: HashMap::new(),
         };
@@ -522,16 +516,12 @@ impl DeclarativeSchemaDefinition {
         self.field_to_hash_code.clone()
     }
 
-    pub fn get_key_to_hash_code(&self) -> HashMap<String, String> {
-        self.key_to_hash_code.clone()
-    }
-
     /// Generates hash-to-code mappings for all keys and fields in the declarative schema.
     ///
     /// This function hashes every line from the keys (hash_field and range_field) and every
     /// field expression (atom_uuid expressions) and stores them in the hash_to_code HashMap.
     ///
-    /// # Adds mappings to key_to_hash_code, field_to_hash_code, and hash_to_code.
+    /// # Adds mappings to field_to_hash_code and hash_to_code.
     fn generate_hash_to_code_mappings(&mut self) {
         let mut hash_to_code = HashMap::new();
 
@@ -564,16 +554,6 @@ impl DeclarativeSchemaDefinition {
         hasher.update(expression.as_bytes());
         let hash_bytes = hasher.finalize();
         format!("{:x}", hash_bytes)
-    }
-
-    /// Gets a reference to the key-to-hash-code mapping.
-    pub fn key_to_hash_code(&self) -> &HashMap<String, String> {
-        &self.key_to_hash_code
-    }
-
-    /// Gets a reference to the field-to-hash-code mapping.
-    pub fn field_to_hash_code(&self) -> &HashMap<String, String> {
-        &self.field_to_hash_code
     }
 
     /// Gets a reference to the hash-to-code mapping.
