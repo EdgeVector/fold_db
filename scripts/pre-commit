@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -e
+echo "Running pre-commit checks..."
+
+# Build frontend dist if missing (needed for RustEmbed)
+if [ ! -d "src/server/static-react/dist" ]; then
+    mkdir -p src/server/static-react/dist
+    touch src/server/static-react/dist/index.html
+fi
+
+cargo clippy --all-targets -- -D warnings
+echo "Pre-commit checks passed."

@@ -65,12 +65,12 @@ jobs:
       - name: Run clippy
         id: clippy
         continue-on-error: true
-        run: cargo clippy --workspace
+        run: cargo clippy --all-targets --workspace -- -D warnings
 
       - name: Run cargo test
         id: cargo-test
         continue-on-error: true
-        run: cargo test --workspace
+        run: cargo test --workspace --all-targets
 
       - name: Run tweets ingestion integration test
         id: ingestion-test
