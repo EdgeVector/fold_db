@@ -23,9 +23,5 @@ pub enum DeclarativeSchemaType {
     HashRange,
 }
 
-pub fn default_schema_type() -> DeclarativeSchemaType {
-    DeclarativeSchemaType::Single
-}
-
 // Schema is now DeclarativeSchemaDefinition - the unified declarative schema type
 pub use crate::schema::types::declarative_schemas::DeclarativeSchemaDefinition as Schema;

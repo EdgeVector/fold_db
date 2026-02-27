@@ -443,16 +443,6 @@ fn split_words(text: &str) -> Vec<String> {
     text.split_whitespace().map(|s| s.to_string()).collect()
 }
 
-/// Public helper to split words - used by engine
-pub fn split_text_into_words(text: &str) -> Vec<String> {
-    split_words(text)
-}
-
-/// Public helper to extract text - used by engine
-pub fn extract_field_text(field_value: &FieldValue) -> String {
-    extract_text_value(field_value)
-}
-
 fn sorted_items(items: &[IterationItem]) -> Vec<&IterationItem> {
     let mut sorted: Vec<&IterationItem> = items.iter().collect();
     sorted.sort_by(|a, b| {

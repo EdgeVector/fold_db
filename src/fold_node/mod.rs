@@ -10,7 +10,6 @@
 //! relationships defining how they share and access data.
 
 pub mod config;
-pub mod error;
 pub mod llm_query;
 pub mod mutation_preprocessor;
 pub mod node;

@@ -6,7 +6,6 @@
 pub mod errors;
 pub mod parser;
 pub mod types;
-pub mod validation;
 
 #[cfg(test)]
 mod tests;

@@ -27,11 +27,6 @@ impl ChainParser {
         }
     }
 
-    /// Creates a new chain parser with custom max depth
-    pub fn with_max_depth(max_depth: usize) -> Self {
-        Self { max_depth }
-    }
-
     /// Parses a chain expression into a structured representation
     pub fn parse(&self, expression: &str) -> IteratorStackResult<ParsedChain> {
         if expression.len() > constants::MAX_CHAIN_EXPRESSION_LENGTH {

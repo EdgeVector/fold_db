@@ -29,8 +29,6 @@ pub enum IteratorStackError {
     },
     /// Invalid iterator chain structure
     InvalidIteratorChain { chain: String, reason: String },
-    /// Ambiguous fan-out on different branches
-    AmbiguousFanoutDifferentBranches { branches: Vec<String> },
     /// Iterator depth exceeds maximum allowed
     MaxDepthExceeded {
         current_depth: usize,
@@ -90,13 +88,6 @@ impl fmt::Display for IteratorStackError {
             IteratorStackError::InvalidIteratorChain { chain, reason } => {
                 write!(f, "Invalid iterator chain '{}': {}", chain, reason)
             }
-            IteratorStackError::AmbiguousFanoutDifferentBranches { branches } => {
-                write!(
-                    f,
-                    "Ambiguous fan-out on different branches: {}",
-                    branches.join(", ")
-                )
-            }
             IteratorStackError::MaxDepthExceeded {
                 current_depth,
                 max_depth,
@@ -126,9 +117,6 @@ pub type IteratorStackResult<T> = Result<T, IteratorStackError>;
 pub mod constants {
     /// Maximum iterator depth allowed
     pub const MAX_ITERATOR_DEPTH: usize = 10;
-
-    /// Maximum number of fields in a single schema
-    pub const MAX_FIELDS_PER_SCHEMA: usize = 100;
 
     /// Maximum chain expression length
     pub const MAX_CHAIN_EXPRESSION_LENGTH: usize = 1000;

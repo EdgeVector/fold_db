@@ -4,7 +4,6 @@
 //! and compatibility analysis.
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 /// Represents a single operation in a chain expression
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -43,13 +42,3 @@ pub struct IteratorScope {
     pub branch_path: String,
 }
 
-/// Result of analyzing multiple chains for compatibility
-#[derive(Debug, Clone)]
-pub struct CompatibilityAnalysis {
-    /// Maximum depth among all chains
-    pub max_depth: usize,
-    /// Whether the chains are compatible
-    pub compatible: bool,
-    /// Chains grouped by branch
-    pub branches: HashMap<String, Vec<ParsedChain>>,
-}
