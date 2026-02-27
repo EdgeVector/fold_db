@@ -5,7 +5,6 @@
 
 use crate::fold_node::node::FoldNode;
 use crate::handlers::response::{ApiResponse, HandlerError, HandlerResult};
-use crate::ingestion::config::IngestionConfig;
 use crate::ingestion::progress::{IngestionProgress, ProgressService, ProgressTracker};
 use crate::ingestion::ingestion_service::IngestionService;
 use crate::ingestion::IngestionRequest;
@@ -188,19 +187,6 @@ pub async fn get_status(
     }
 }
 
-/// Get ingestion configuration
-///
-/// # Arguments
-/// * `user_hash` - The user's hash for context
-///
-/// # Returns
-/// * `HandlerResult<IngestionConfig>` - Config wrapped in standard envelope
-pub async fn get_config(user_hash: &str) -> HandlerResult<IngestionConfig> {
-    let config = IngestionConfig::from_env_allow_empty();
-
-    Ok(ApiResponse::success_with_user(config.redacted(), user_hash))
-}
-
 /// Process JSON ingestion (starts background task and returns immediately)
 ///
 /// This is the shared handler for JSON ingestion. It:
@@ -302,111 +288,6 @@ pub async fn process_json(
         },
         user_hash,
     ))
-}
-
-/// Process JSON ingestion synchronously (awaits completion before returning)
-///
-/// Same as `process_json()` but runs ingestion inline instead of spawning a
-/// background task. Use this in Lambda where `tokio::spawn` tasks get frozen
-/// after the handler responds.
-///
-/// # Arguments
-/// * `request` - The ingestion request with data and options
-/// * `user_hash` - The user's hash for isolation
-/// * `tracker` - Progress tracker
-/// * `node` - The FoldDB node
-/// * `service` - The ingestion service
-///
-/// # Returns
-/// * `HandlerResult<ProcessJsonResponse>` - Response with progress_id and final status
-pub async fn process_json_sync(
-    request: IngestionRequest,
-    user_hash: &str,
-    tracker: &ProgressTracker,
-    node: &FoldNode,
-    service: Arc<IngestionService>,
-) -> HandlerResult<ProcessJsonResponse> {
-    // Validate data is not empty
-    if request.data.is_null() {
-        return Err(HandlerError::BadRequest("Data cannot be null".to_string()));
-    }
-
-    if let Value::Object(ref obj) = request.data {
-        if obj.is_empty() {
-            return Err(HandlerError::BadRequest("Data cannot be empty".to_string()));
-        }
-    }
-
-    // Generate or use provided progress_id
-    let progress_id = request
-        .progress_id
-        .clone()
-        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-
-    // Start progress tracking
-    let progress_service = ProgressService::new(tracker.clone());
-    progress_service
-        .start_progress(progress_id.clone(), user_hash.to_string())
-        .await;
-
-    // Run ingestion inline (no tokio::spawn)
-    let result = crate::logging::core::run_with_user(user_hash, {
-        let progress_id = progress_id.clone();
-        let tracker = tracker.clone();
-        async move {
-            let progress_service = ProgressService::new(tracker);
-
-            match service
-                .process_json_with_node_and_progress(
-                    request,
-                    node,
-                    &progress_service,
-                    progress_id.clone(),
-                )
-                .await
-            {
-                Ok(response) => {
-                    if !response.success {
-                        crate::log_feature!(
-                            crate::logging::features::LogFeature::Ingestion,
-                            error,
-                            "Sync ingestion failed: {:?}",
-                            response.errors
-                        );
-                    }
-                    Ok(())
-                }
-                Err(e) => {
-                    crate::log_feature!(
-                        crate::logging::features::LogFeature::Ingestion,
-                        error,
-                        "Sync ingestion processing failed: {}",
-                        e
-                    );
-                    progress_service
-                        .fail_progress(&progress_id, format!("Processing failed: {}", e))
-                        .await;
-                    Err(e)
-                }
-            }
-        }
-    })
-    .await;
-
-    match result {
-        Ok(()) => Ok(ApiResponse::success_with_user(
-            ProcessJsonResponse {
-                success: true,
-                progress_id,
-                message: "Ingestion completed successfully.".to_string(),
-            },
-            user_hash,
-        )),
-        Err(e) => Err(HandlerError::Internal(format!(
-            "Ingestion failed: {}",
-            e
-        ))),
-    }
 }
 
 #[cfg(test)]

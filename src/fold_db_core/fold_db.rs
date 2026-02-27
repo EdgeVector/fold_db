@@ -37,7 +37,6 @@ pub struct FoldDB {
     /// Query executor for handling all query operations
     pub(crate) query_executor: QueryExecutor,
     /// Message bus for event-driven communication (held for Arc lifetime)
-    #[allow(dead_code)]
     pub(crate) message_bus: Arc<AsyncMessageBus>,
     /// Event monitor for system-wide observability
     pub(crate) event_monitor: Arc<EventMonitor>,
