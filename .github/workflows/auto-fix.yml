@@ -1,0 +1,99 @@
+name: Auto-Fix Failing Tests
+
+on:
+  workflow_run:
+    workflows: ["Test Suite"]
+    types: [completed]
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: read
+
+jobs:
+  auto-fix:
+    name: Claude Auto-Fix
+    if: >-
+      github.event.workflow_run.conclusion == 'failure' &&
+      github.event.workflow_run.head_commit.author.name != 'Claude Code'
+    runs-on: ubuntu-latest
+
+    env:
+      AI_PROVIDER: ${{ secrets.AI_PROVIDER }}
+      FOLD_OPENROUTER_API_KEY: ${{ secrets.FOLD_OPENROUTER_API_KEY }}
+
+    steps:
+      - name: Checkout branch that failed
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_branch }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure Git
+        run: |
+          git config user.name "Claude Code"
+          git config user.email "claude@anthropic.com"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install clippy
+        run: rustup component add clippy
+
+      - name: Cache cargo registry
+        uses: actions/cache@v3
+        with:
+          path: ~/.cargo/registry
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Cache cargo build
+        uses: actions/cache@v3
+        with:
+          path: target
+          key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Build frontend (required for rust_embed)
+        run: |
+          cd src/server/static-react
+          npm ci
+          npm run build
+
+      - name: Claude Auto-Fix
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            The CI test suite just failed on this branch. Your job:
+
+            1. Run `cargo clippy --workspace` to check for clippy failures
+            2. Run `cargo test --workspace` to find test failures
+            3. Run `cd src/server/static-react && npm ci && npm test` for frontend failures
+            4. Read the error output carefully and fix the source code
+            5. Re-run the failing command to verify your fix works
+            6. Commit your changes with a clear message describing what broke and how you fixed it
+
+            Rules:
+            - Fix the source code, not the tests (unless the test itself is wrong)
+            - Do NOT add fallbacks or silent error handling
+            - Keep fixes minimal and focused
+            - If you cannot fix it after a few attempts, stop and leave a comment explaining what you found
+          claude_args: |
+            --max-turns 15
+            --allowedTools "Bash,Read,Edit,Glob,Grep"
+
+      - name: Push fix if changes were made
+        run: |
+          if git diff --quiet && git diff --cached --quiet; then
+            echo "No changes to push"
+          else
+            git add -A
+            git diff --cached --quiet || git commit -m "fix: auto-fix CI test failures
+
+            Co-Authored-By: Claude Code <claude@anthropic.com>"
+            git push origin ${{ github.event.workflow_run.head_branch }}
+          fi
