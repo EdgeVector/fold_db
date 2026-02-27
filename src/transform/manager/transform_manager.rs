@@ -1,8 +1,26 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use crate::fold_db_core::infrastructure::message_bus::AsyncMessageBus;
 use crate::schema::types::{SchemaError, Transform};
+
+/// Extension trait for RwLock that converts poisoned lock errors to SchemaError
+pub(crate) trait RwLockExt<T> {
+    fn read_or_err(&self) -> Result<RwLockReadGuard<'_, T>, SchemaError>;
+    fn write_or_err(&self) -> Result<RwLockWriteGuard<'_, T>, SchemaError>;
+}
+
+impl<T> RwLockExt<T> for RwLock<T> {
+    fn read_or_err(&self) -> Result<RwLockReadGuard<'_, T>, SchemaError> {
+        self.read()
+            .map_err(|e| SchemaError::InvalidData(format!("Failed to acquire read lock: {}", e)))
+    }
+
+    fn write_or_err(&self) -> Result<RwLockWriteGuard<'_, T>, SchemaError> {
+        self.write()
+            .map_err(|e| SchemaError::InvalidData(format!("Failed to acquire write lock: {}", e)))
+    }
+}
 
 /// TransformManager: Handles transform registration, execution, and field-to-transform mapping
 ///
@@ -55,8 +73,7 @@ impl TransformManager {
     pub fn list_transforms(&self) -> Result<HashMap<String, Transform>, SchemaError> {
         let transforms = self
             .registered_transforms
-            .read()
-            .map_err(|e| SchemaError::InvalidData(format!("Failed to acquire read lock: {}", e)))?;
+            .read_or_err()?;
         Ok(transforms.clone())
     }
 
@@ -64,8 +81,7 @@ impl TransformManager {
     pub fn transform_exists(&self, transform_id: &str) -> Result<bool, SchemaError> {
         let transforms = self
             .registered_transforms
-            .read()
-            .map_err(|e| SchemaError::InvalidData(format!("Failed to acquire read lock: {}", e)))?;
+            .read_or_err()?;
         Ok(transforms.contains_key(transform_id))
     }
 
@@ -86,8 +102,7 @@ impl TransformManager {
         let key = format!("{}.{}", schema_name, field_name);
         let mappings = self
             .schema_field_to_transforms
-            .read()
-            .map_err(|e| SchemaError::InvalidData(format!("Failed to acquire read lock: {}", e)))?;
+            .read_or_err()?;
         let field_to_transforms = mappings.get(&key).cloned().unwrap_or_default();
 
         Ok(field_to_transforms)
@@ -108,17 +123,11 @@ impl TransformManager {
         let (transforms, mappings) = {
             let t = self
                 .registered_transforms
-                .read()
-                .map_err(|e| {
-                    SchemaError::InvalidData(format!("Failed to acquire read lock: {}", e))
-                })?
+                .read_or_err()?
                 .clone();
             let m = self
                 .schema_field_to_transforms
-                .read()
-                .map_err(|e| {
-                    SchemaError::InvalidData(format!("Failed to acquire read lock: {}", e))
-                })?
+                .read_or_err()?
                 .clone();
             (t, m)
         };
@@ -139,17 +148,13 @@ impl TransformManager {
     ) -> Result<(), SchemaError> {
         // Update registered transforms
         {
-            let mut registered_transforms = self.registered_transforms.write().map_err(|e| {
-                SchemaError::InvalidData(format!("Failed to acquire write lock: {}", e))
-            })?;
+            let mut registered_transforms = self.registered_transforms.write_or_err()?;
             registered_transforms.insert(transform_id.to_string(), transform.clone());
         }
 
         // Update field-to-transform mappings
         {
-            let mut field_to_transforms = self.schema_field_to_transforms.write().map_err(|e| {
-                SchemaError::InvalidData(format!("Failed to acquire write lock: {}", e))
-            })?;
+            let mut field_to_transforms = self.schema_field_to_transforms.write_or_err()?;
 
             for field in trigger_fields {
                 field_to_transforms

@@ -32,15 +32,8 @@ pub struct AnalyzeFollowupHandlerResponse {
     pub reasoning: String,
 }
 
-/// Response for backfill status
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BackfillStatusHandlerResponse {
-    pub status: String,
-    pub progress: f64,
-    pub total_records: u64,
-    pub processed_records: u64,
-    pub estimated_completion: Option<String>,
-}
+/// Response for backfill status (re-exported from canonical definition)
+pub type BackfillStatusHandlerResponse = crate::fold_node::llm_query::types::BackfillStatusResponse;
 
 /// Response for AI native index query
 #[derive(Debug, Clone, Serialize, Deserialize)]

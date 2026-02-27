@@ -12,6 +12,7 @@ use crate::transform::shared_utilities::parse_expressions_batch;
 
 use super::input_fetcher::InputFetcher;
 use super::result_storage::ResultStorage;
+use super::transform_manager::RwLockExt;
 use super::types::{TransformResult, TransformRunner};
 
 use async_trait::async_trait;
@@ -29,9 +30,7 @@ impl TransformRunner for super::TransformManager {
     ) -> Result<TransformResult, SchemaError> {
         // Load the transform from in-memory registered transforms
         let transform = {
-            let transforms = self.registered_transforms.read().map_err(|e| {
-                SchemaError::InvalidData(format!("Failed to acquire read lock: {}", e))
-            })?;
+            let transforms = self.registered_transforms.read_or_err()?;
             transforms.get(transform_id).cloned().ok_or_else(|| {
                 SchemaError::InvalidData(format!("Transform '{}' not found", transform_id))
             })?
@@ -143,8 +142,7 @@ impl TransformRunner for super::TransformManager {
     fn transform_exists(&self, transform_id: &str) -> Result<bool, SchemaError> {
         let transforms = self
             .registered_transforms
-            .read()
-            .map_err(|e| SchemaError::InvalidData(format!("Failed to acquire read lock: {}", e)))?;
+            .read_or_err()?;
         Ok(transforms.contains_key(transform_id))
     }
 
@@ -156,8 +154,7 @@ impl TransformRunner for super::TransformManager {
         let key = format!("{}.{}", schema_name, field_name);
         let mappings = self
             .schema_field_to_transforms
-            .read()
-            .map_err(|e| SchemaError::InvalidData(format!("Failed to acquire read lock: {}", e)))?;
+            .read_or_err()?;
         Ok(mappings.get(&key).cloned().unwrap_or_default())
     }
 }

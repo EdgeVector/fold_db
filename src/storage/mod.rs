@@ -2,6 +2,10 @@ pub mod config;
 #[cfg(feature = "aws-backend")]
 pub mod dynamodb_backend;
 #[cfg(feature = "aws-backend")]
+pub mod dynamodb_namespaced;
+#[cfg(feature = "aws-backend")]
+pub mod dynamodb_native_index;
+#[cfg(feature = "aws-backend")]
 pub mod dynamodb_store;
 #[cfg(feature = "aws-backend")]
 pub mod dynamodb_utils;

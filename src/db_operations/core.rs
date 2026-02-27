@@ -137,10 +137,7 @@ impl DbOperations {
         key: &str,
         item: &T,
     ) -> Result<(), SchemaError> {
-        self.main_store
-            .put_item(key, item)
-            .await
-            .map_err(|e| SchemaError::InvalidData(e.to_string()))
+        Ok(self.main_store.put_item(key, item).await?)
     }
 
     /// Get an item from the main namespace
@@ -148,26 +145,17 @@ impl DbOperations {
         &self,
         key: &str,
     ) -> Result<Option<T>, SchemaError> {
-        self.main_store
-            .get_item(key)
-            .await
-            .map_err(|e| SchemaError::InvalidData(e.to_string()))
+        Ok(self.main_store.get_item(key).await?)
     }
 
     /// Delete an item from the main namespace
     pub async fn delete_item(&self, key: &str) -> Result<bool, SchemaError> {
-        self.main_store
-            .delete_item(key)
-            .await
-            .map_err(|e| SchemaError::InvalidData(e.to_string()))
+        Ok(self.main_store.delete_item(key).await?)
     }
 
     /// List keys with prefix
     pub async fn list_items_with_prefix(&self, prefix: &str) -> Result<Vec<String>, SchemaError> {
-        self.main_store
-            .list_keys_with_prefix(prefix)
-            .await
-            .map_err(|e| SchemaError::InvalidData(e.to_string()))
+        Ok(self.main_store.list_keys_with_prefix(prefix).await?)
     }
 
     /// Store an item in a specific namespace
@@ -178,10 +166,7 @@ impl DbOperations {
         item: &T,
     ) -> Result<(), SchemaError> {
         let store = self.get_namespace_store(namespace)?;
-        store
-            .put_item(key, item)
-            .await
-            .map_err(|e| SchemaError::InvalidData(e.to_string()))
+        Ok(store.put_item(key, item).await?)
     }
 
     /// Get an item from a specific namespace
@@ -191,10 +176,7 @@ impl DbOperations {
         key: &str,
     ) -> Result<Option<T>, SchemaError> {
         let store = self.get_namespace_store(namespace)?;
-        store
-            .get_item(key)
-            .await
-            .map_err(|e| SchemaError::InvalidData(e.to_string()))
+        Ok(store.get_item(key).await?)
     }
 
     /// List all keys in a namespace
@@ -203,10 +185,7 @@ impl DbOperations {
         namespace: &str,
     ) -> Result<Vec<String>, SchemaError> {
         let store = self.get_namespace_store(namespace)?;
-        store
-            .list_keys_with_prefix("")
-            .await
-            .map_err(|e| SchemaError::InvalidData(e.to_string()))
+        Ok(store.list_keys_with_prefix("").await?)
     }
 
     /// Delete an item from a specific namespace
@@ -216,10 +195,7 @@ impl DbOperations {
         key: &str,
     ) -> Result<bool, SchemaError> {
         let store = self.get_namespace_store(namespace)?;
-        store
-            .delete_item(key)
-            .await
-            .map_err(|e| SchemaError::InvalidData(e.to_string()))
+        Ok(store.delete_item(key).await?)
     }
 
     /// Check if a key exists in a specific namespace
@@ -229,10 +205,7 @@ impl DbOperations {
         key: &str,
     ) -> Result<bool, SchemaError> {
         let store = self.get_namespace_store(namespace)?;
-        store
-            .exists_item(key)
-            .await
-            .map_err(|e| SchemaError::InvalidData(e.to_string()))
+        Ok(store.exists_item(key).await?)
     }
 
     // ===== Namespace-specific store getters =====
@@ -295,13 +268,7 @@ impl DbOperations {
     /// For Sled backends, this ensures data is written to disk
     /// For cloud backends like DynamoDB, this is typically a no-op (auto-flushed)
     pub async fn flush(&self) -> Result<(), SchemaError> {
-        // Storage abstraction handles flushing internally
-        // For Sled, this is done via the KvStore trait's flush method
-        self.main_store
-            .inner()
-            .flush()
-            .await
-            .map_err(|e| SchemaError::InvalidData(format!("Flush failed: {}", e)))
+        Ok(self.main_store.inner().flush().await?)
     }
 
     // ===== Batch operations =====
@@ -313,11 +280,7 @@ impl DbOperations {
     ) -> Result<(), SchemaError> {
         let items_vec: Vec<(String, T)> =
             items.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
-
-        self.main_store
-            .batch_put_items(items_vec)
-            .await
-            .map_err(|e| SchemaError::InvalidData(e.to_string()))
+        Ok(self.main_store.batch_put_items(items_vec).await?)
     }
 
     /// Batch store items in a specific namespace
@@ -329,52 +292,26 @@ impl DbOperations {
         let store = self.get_namespace_store(namespace)?;
         let items_vec: Vec<(String, T)> =
             items.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
-
-        store
-            .batch_put_items(items_vec)
-            .await
-            .map_err(|e| SchemaError::InvalidData(e.to_string()))
+        Ok(store.batch_put_items(items_vec).await?)
     }
 
     /// Get database statistics (approximate for non-Sled backends)
     pub async fn get_stats(&self) -> Result<HashMap<String, u64>, SchemaError> {
         let mut stats = HashMap::new();
 
-        // Count items with prefixes in main store
-        let atoms = self
-            .main_store
-            .list_keys_with_prefix("atom:")
-            .await
-            .map_err(|e| SchemaError::InvalidData(e.to_string()))?;
+        let atoms = self.main_store.list_keys_with_prefix("atom:").await?;
         stats.insert("atoms".to_string(), atoms.len() as u64);
 
-        let refs = self
-            .main_store
-            .list_keys_with_prefix("ref:")
-            .await
-            .map_err(|e| SchemaError::InvalidData(e.to_string()))?;
+        let refs = self.main_store.list_keys_with_prefix("ref:").await?;
         stats.insert("refs".to_string(), refs.len() as u64);
 
-        // For other namespaces, count all keys
-        let metadata_keys = self
-            .metadata_store
-            .list_keys_with_prefix("")
-            .await
-            .map_err(|e| SchemaError::InvalidData(e.to_string()))?;
+        let metadata_keys = self.metadata_store.list_keys_with_prefix("").await?;
         stats.insert("metadata".to_string(), metadata_keys.len() as u64);
 
-        let permissions_keys = self
-            .permissions_store
-            .list_keys_with_prefix("")
-            .await
-            .map_err(|e| SchemaError::InvalidData(e.to_string()))?;
+        let permissions_keys = self.permissions_store.list_keys_with_prefix("").await?;
         stats.insert("permissions".to_string(), permissions_keys.len() as u64);
 
-        let transforms_keys = self
-            .transforms_store
-            .list_keys_with_prefix("")
-            .await
-            .map_err(|e| SchemaError::InvalidData(e.to_string()))?;
+        let transforms_keys = self.transforms_store.list_keys_with_prefix("").await?;
         stats.insert("transforms".to_string(), transforms_keys.len() as u64);
 
         Ok(stats)

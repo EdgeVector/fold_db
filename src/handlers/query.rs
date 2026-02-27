@@ -5,7 +5,7 @@
 
 use crate::fold_node::node::FoldNode;
 use crate::fold_node::OperationProcessor;
-use crate::handlers::response::{ApiResponse, HandlerError, HandlerResult};
+use crate::handlers::response::{get_db_guard, ApiResponse, HandlerError, HandlerResult};
 use crate::schema::types::operations::Query;
 use serde::{Deserialize, Serialize};
 
@@ -121,10 +121,7 @@ pub async fn get_molecule_history(
     user_hash: &str,
     node: &FoldNode,
 ) -> HandlerResult<MoleculeHistoryResponse> {
-    let db_guard = node
-        .get_fold_db()
-        .await
-        .map_err(|e| HandlerError::Internal(format!("Failed to access database: {}", e)))?;
+    let db_guard = get_db_guard(node).await?;
 
     let db_ops = db_guard.get_db_ops();
 
@@ -159,10 +156,7 @@ pub async fn get_atom_content(
     user_hash: &str,
     node: &FoldNode,
 ) -> HandlerResult<AtomContentResponse> {
-    let db_guard = node
-        .get_fold_db()
-        .await
-        .map_err(|e| HandlerError::Internal(format!("Failed to access database: {}", e)))?;
+    let db_guard = get_db_guard(node).await?;
 
     let db_ops = db_guard.get_db_ops();
 

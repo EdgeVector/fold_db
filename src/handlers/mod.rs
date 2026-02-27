@@ -41,4 +41,4 @@ pub mod system;
 pub mod transform;
 
 // Re-export commonly used types
-pub use response::{ApiResponse, HandlerError, HandlerResult};
+pub use response::{get_db_guard, ApiResponse, HandlerError, HandlerResult};

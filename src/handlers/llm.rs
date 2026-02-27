@@ -7,7 +7,7 @@ use crate::fold_node::llm_query::{conversation_store, types::*, LlmQueryService,
 use crate::fold_node::node::FoldNode;
 use crate::fold_node::OperationProcessor;
 use crate::fold_db_core::query::records_from_field_map;
-use crate::handlers::response::{ApiResponse, HandlerError, HandlerResult};
+use crate::handlers::response::{get_db_guard, ApiResponse, HandlerError, HandlerResult};
 use crate::schema::SchemaWithState;
 use serde_json::{json, Value};
 
@@ -43,10 +43,7 @@ pub async fn analyze_query(
 
     // Get available schemas
     let schemas: Vec<SchemaWithState> = {
-        let db_guard = node
-            .get_fold_db()
-            .await
-            .map_err(|e| HandlerError::Internal(format!("Failed to access database: {}", e)))?;
+        let db_guard = get_db_guard(node).await?;
         db_guard
             .schema_manager()
             .get_schemas_with_states()
@@ -115,10 +112,7 @@ pub async fn execute_query_plan(
         let schema_name = index_schema.name.clone();
 
         {
-            let db_guard = node
-                .get_fold_db()
-                .await
-                .map_err(|e| HandlerError::Internal(format!("Failed to access database: {}", e)))?;
+            let db_guard = get_db_guard(node).await?;
 
             // Interpret and load the schema from the definition
             let schema = db_guard
@@ -171,9 +165,7 @@ pub async fn execute_query_plan(
         // If we have a backfill, check its status
         if let Some(ref hash) = backfill_hash {
             let backfill_info = {
-                let db_guard = node.get_fold_db().await.map_err(|e| {
-                    HandlerError::Internal(format!("Failed to access database: {}", e))
-                })?;
+                let db_guard = get_db_guard(node).await?;
                 db_guard.get_backfill_tracker().get_backfill_by_hash(hash)
             };
 
@@ -323,10 +315,7 @@ pub async fn chat(
 
     // Get schemas for analysis
     let schemas: Vec<SchemaWithState> = {
-        let db_guard = node
-            .get_fold_db()
-            .await
-            .map_err(|e| HandlerError::Internal(format!("Failed to access database: {}", e)))?;
+        let db_guard = get_db_guard(node).await?;
         db_guard
             .schema_manager()
             .get_schemas_with_states()
@@ -426,10 +415,7 @@ pub async fn analyze_followup(
 
     // Get schemas
     let schemas: Vec<SchemaWithState> = {
-        let db_guard = node
-            .get_fold_db()
-            .await
-            .map_err(|e| HandlerError::Internal(format!("Failed to access database: {}", e)))?;
+        let db_guard = get_db_guard(node).await?;
         db_guard
             .schema_manager()
             .get_schemas_with_states()
@@ -472,10 +458,7 @@ pub async fn get_backfill_status(
         user_hash
     );
 
-    let db_guard = node
-        .get_fold_db()
-        .await
-        .map_err(|e| HandlerError::Internal(format!("Failed to access database: {}", e)))?;
+    let db_guard = get_db_guard(node).await?;
 
     let backfill_info = db_guard.get_backfill_tracker().get_backfill_by_hash(hash);
 
@@ -537,10 +520,7 @@ pub async fn ai_native_index_query(
         .map_err(|e| HandlerError::Internal(format!("Failed to create session: {}", e)))?;
 
     // Get FoldDb for both schema access and hydration queries
-    let db_guard = node
-        .get_fold_db()
-        .await
-        .map_err(|e| HandlerError::Internal(format!("Failed to access database: {}", e)))?;
+    let db_guard = get_db_guard(node).await?;
 
     // Get available schemas
     let schemas: Vec<SchemaWithState> = db_guard
@@ -651,10 +631,7 @@ pub async fn agent_query(
 
     // Get available schemas
     let schemas: Vec<SchemaWithState> = {
-        let db_guard = node
-            .get_fold_db()
-            .await
-            .map_err(|e| HandlerError::Internal(format!("Failed to access database: {}", e)))?;
+        let db_guard = get_db_guard(node).await?;
         db_guard
             .schema_manager()
             .get_schemas_with_states()

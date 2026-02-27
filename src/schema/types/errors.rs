@@ -35,3 +35,9 @@ impl From<crate::fold_db_core::infrastructure::message_bus::MessageBusError> for
         SchemaError::InvalidData(format!("Message bus error: {}", error))
     }
 }
+
+impl From<crate::storage::StorageError> for SchemaError {
+    fn from(error: crate::storage::StorageError) -> Self {
+        SchemaError::InvalidData(error.to_string())
+    }
+}

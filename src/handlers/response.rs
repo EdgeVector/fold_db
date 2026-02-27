@@ -150,3 +150,18 @@ impl HandlerError {
 
 /// Result type for handlers
 pub type HandlerResult<T> = Result<ApiResponse<T>, HandlerError>;
+
+/// Acquire the FoldDB guard from a node, mapping errors to HandlerError::Internal.
+///
+/// Replaces the repeated pattern:
+/// ```ignore
+/// node.get_fold_db().await
+///     .map_err(|e| HandlerError::Internal(format!("Failed to access database: {}", e)))?
+/// ```
+pub async fn get_db_guard(
+    node: &crate::fold_node::node::FoldNode,
+) -> Result<tokio::sync::OwnedMutexGuard<crate::fold_db_core::FoldDB>, HandlerError> {
+    node.get_fold_db()
+        .await
+        .map_err(|e| HandlerError::Internal(format!("Failed to access database: {}", e)))
+}
