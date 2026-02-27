@@ -4,12 +4,9 @@ use crate::fold_db_core::infrastructure::backfill_tracker::{
 };
 use crate::fold_db_core::orchestration::IndexingStatus;
 use crate::fold_node::config::DatabaseConfig;
-use crate::fold_node::NodeConfig;
 use crate::ingestion::ingestion_service::IngestionService;
 use crate::schema::types::Transform;
 use std::collections::HashMap;
-use std::fs;
-use std::io::Write;
 
 use super::OperationProcessor;
 
@@ -215,17 +212,6 @@ impl OperationProcessor {
             .map_err(|e| FoldDbError::Other(e.to_string()))
     }
 
-    // --- Config / Reset Operations ---
-
-    /// Reset schema service
-    pub async fn reset_schema_service(&self) -> FoldDbResult<()> {
-        let schema_client = self.node.get_schema_client();
-        schema_client
-            .reset_schema_service()
-            .await
-            .map_err(|e| FoldDbError::Other(format!("Schema service reset failed: {}", e)))
-    }
-
     /// Get database configuration
     pub fn get_database_config(&self) -> DatabaseConfig {
         self.node.config.database.clone()
@@ -233,7 +219,7 @@ impl OperationProcessor {
 
     /// Reset the database (destructive operation).
     /// Handles closing DB and clearing storage (Local or DynamoDB).
-    /// Note: Schema service reset is NOT included - use reset_schema_service() separately if needed.
+    /// Note: Schema service reset is NOT included.
     pub async fn perform_database_reset(
         &self,
         #[allow(unused_variables)] user_id_override: Option<&str>,
@@ -437,47 +423,4 @@ impl OperationProcessor {
             .map_err(FoldDbError::Other)
     }
 
-    // --- Configuration Operations ---
-
-    /// Update database configuration and write to disk.
-    /// Returns the new NodeConfig so the caller can recreate the node.
-    pub async fn update_database_configuration(
-        &self,
-        new_db_config: DatabaseConfig,
-    ) -> FoldDbResult<NodeConfig> {
-        let mut config = self.node.config.clone();
-        config.database = new_db_config;
-
-        let config_path =
-            std::env::var("NODE_CONFIG").unwrap_or_else(|_| "config/node_config.json".to_string());
-
-        // Ensure config directory exists
-        if let Some(parent) = std::path::Path::new(&config_path).parent() {
-            if let Err(e) = fs::create_dir_all(parent) {
-                return Err(FoldDbError::Other(format!(
-                    "Failed to create config directory: {}",
-                    e
-                )));
-            }
-        }
-
-        // Serialize and write config
-        let config_json = serde_json::to_string_pretty(&config)
-            .map_err(|e| FoldDbError::Config(format!("Failed to serialize config: {}", e)))?;
-
-        let mut file = fs::File::create(&config_path)
-            .map_err(|e| FoldDbError::Other(format!("Failed to create config file: {}", e)))?;
-
-        file.write_all(config_json.as_bytes())
-            .map_err(|e| FoldDbError::Other(format!("Failed to write config file: {}", e)))?;
-
-        // Close current DB (best effort)
-        if let Ok(db) = self.node.get_fold_db().await {
-            if let Err(e) = db.close() {
-                log::warn!("Failed to close database during config update: {}", e);
-            }
-        }
-
-        Ok(config)
-    }
 }
