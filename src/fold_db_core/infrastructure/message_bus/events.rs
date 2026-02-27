@@ -72,30 +72,5 @@ impl Event {
         }
     }
 
-    /// Get a list of all possible event types
-    pub fn all_event_types() -> Vec<&'static str> {
-        vec![
-            "FieldValueSet",
-            "AtomCreated",
-            "AtomUpdated",
-            "MoleculeCreated",
-            "MoleculeUpdated",
-            "SchemaLoaded",
-            "TransformExecuted",
-            "SchemaChanged",
-            "TransformTriggered",
-            "TransformRegistered",
-            "QueryExecuted",
-            "MutationExecuted",
-            "MutationRequest",
-            "BackfillExpectedMutations",
-            "BackfillMutationFailed",
-            "TransformRegistrationRequest",
-            "TransformRegistrationResponse",
-            "SchemaApproved",
-            "IndexRequest",
-            "BatchIndexRequest",
-        ]
-    }
 }
 

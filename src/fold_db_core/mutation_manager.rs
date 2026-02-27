@@ -680,14 +680,4 @@ impl MutationManager {
         Ok(())
     }
 
-    /// Stop the event listener
-    pub fn stop_event_listener(&self) {
-        self.is_listening
-            .store(false, std::sync::atomic::Ordering::Release);
-    }
-
-    /// Check if the event listener is currently running
-    pub fn is_listening(&self) -> bool {
-        self.is_listening.load(std::sync::atomic::Ordering::Acquire)
-    }
 }

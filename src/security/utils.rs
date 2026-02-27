@@ -3,13 +3,12 @@
 use crate::{
     constants::SINGLE_PUBLIC_KEY_ID,
     security::{
-        ConditionalEncryption, Ed25519KeyPair, Ed25519PublicKey,
+        ConditionalEncryption, Ed25519PublicKey,
         KeyRegistrationRequest, KeyRegistrationResponse, MessageVerifier, PublicKeyInfo,
         SecurityError, SecurityResult, SignedMessage,
     },
 };
 use serde_json::Value;
-use std::collections::HashMap;
 use std::sync::Arc;
 
 /// Security manager that combines all security functionality
@@ -184,151 +183,6 @@ impl SecurityManager {
     }
 }
 
-/// Client-side security utilities
-pub struct ClientSecurity;
-
-impl ClientSecurity {
-    /// Generate a new key pair for a client
-    pub fn generate_client_keypair() -> SecurityResult<Ed25519KeyPair> {
-        Ed25519KeyPair::generate()
-    }
-
-    /// Create a signer from a key pair
-    pub fn create_signer(keypair: Ed25519KeyPair) -> crate::security::MessageSigner {
-        crate::security::MessageSigner::new(keypair)
-    }
-
-    /// Create a key registration request
-    pub fn create_registration_request(
-        keypair: &Ed25519KeyPair,
-        owner_id: String,
-        permissions: Vec<String>,
-    ) -> KeyRegistrationRequest {
-        KeyRegistrationRequest {
-            public_key: keypair.public_key_base64(),
-            owner_id,
-            permissions,
-            metadata: HashMap::new(),
-            expires_at: None,
-        }
-    }
-
-    /// Create a signed message from a payload
-    pub fn sign_message(
-        signer: &crate::security::MessageSigner,
-        payload: Value,
-    ) -> SecurityResult<SignedMessage> {
-        signer.sign_message(payload)
-    }
-
-    /// Generate example client code
-    pub fn generate_client_example() -> String {
-        r#"
-// Example client-side usage
-use fold_db::security::*;
-
-// 1. Generate a key pair
-let keypair = ClientSecurity::generate_client_keypair()?;
-
-// 2. Create a registration request
-let registration_request = ClientSecurity::create_registration_request(
-    &keypair,
-    "system_owner".to_string(),
-    vec!["read".to_string(), "write".to_string()],
-);
-
-// 3. Send registration request to server.
-// The public key will be registered as the single system-wide key.
-// let response = send_registration_request(registration_request).await?;
-
-// 4. Create a message signer
-let signer = ClientSecurity::create_signer(keypair);
-
-// 5. Sign messages before sending to server
-let payload = serde_json::json!({
-    "action": "create_user",
-    "data": {
-        "username": "alice",
-        "email": "alice@example.com"
-    }
-});
-
-let signed_message = ClientSecurity::sign_message(&signer, payload)?;
-
-// 6. Send signed message to server
-// let response = send_signed_message(signed_message).await?;
-"#
-        .to_string()
-    }
-}
-
-/// Server-side security middleware
-pub struct SecurityMiddleware {
-    manager: Arc<SecurityManager>,
-}
-
-impl SecurityMiddleware {
-    /// Create new security middleware
-    pub fn new(manager: Arc<SecurityManager>) -> Self {
-        Self { manager }
-    }
-
-    /// Validate an incoming request
-    pub fn validate_request(
-        &self,
-        signed_message: &SignedMessage,
-        required_permissions: Option<&[String]>,
-    ) -> SecurityResult<String> {
-        let result = if let Some(perms) = required_permissions {
-            self.manager
-                .verify_message_with_permissions(signed_message, perms)?
-        } else {
-            self.manager.verify_message(signed_message)?
-        };
-
-        if !result.is_valid {
-            return Err(SecurityError::SignatureVerificationFailed(
-                result.error.unwrap_or("Invalid signature".to_string()),
-            ));
-        }
-
-        if !result.timestamp_valid {
-            return Err(SecurityError::SignatureVerificationFailed(
-                "Invalid timestamp".to_string(),
-            ));
-        }
-
-        // Return the owner ID from the public key info
-        // Fail if no owner ID available - anonymous operations not allowed
-        result
-            .public_key_info
-            .map(|info| info.owner_id)
-            .ok_or_else(|| {
-                SecurityError::SignatureVerificationFailed(
-                    "No owner ID associated with this public key".to_string(),
-                )
-            })
-    }
-
-    /// Extract and validate a signed message from JSON
-    pub fn extract_signed_message(&self, json_data: &Value) -> SecurityResult<SignedMessage> {
-        serde_json::from_value(json_data.clone())
-            .map_err(|e| SecurityError::DeserializationError(e.to_string()))
-    }
-
-    /// Wrap a response with optional encryption
-    pub fn prepare_response(&self, response_data: &Value) -> SecurityResult<Value> {
-        if let Some(encrypted) = self.manager.encrypt_json(response_data)? {
-            // If encryption is enabled, return encrypted response
-            Ok(serde_json::to_value(encrypted)
-                .map_err(|e| SecurityError::SerializationError(e.to_string()))?)
-        } else {
-            // If encryption is disabled, return raw response
-            Ok(response_data.clone())
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -364,51 +218,4 @@ mod tests {
         assert!(response.success);
         assert!(response.public_key_id.is_some());
     }
-
-    #[tokio::test]
-    async fn test_security_middleware() {
-        // Test with default config
-        let config = crate::security::SecurityConfig {
-            require_tls: true,
-            require_signatures: true,
-            encrypt_at_rest: true,
-            master_key: Some([0; 32]),
-        };
-        let manager = Arc::new(SecurityManager::new(config).unwrap());
-        let middleware = SecurityMiddleware::new(manager.clone());
-
-        // Generate a client keypair
-        let keypair = Ed25519KeyPair::generate().unwrap();
-
-        // Register the public key
-        let registration_request = crate::security::KeyRegistrationRequest {
-            public_key: keypair.public_key_base64(),
-            owner_id: "test_user".to_string(),
-            permissions: vec!["read".to_string()],
-            metadata: std::collections::HashMap::new(),
-            expires_at: None,
-        };
-
-        let response = manager
-            .register_system_public_key(registration_request)
-            .await
-            .unwrap();
-        let _public_key_id = response.public_key_id.unwrap();
-
-        // Create a signed message
-        let signer = ClientSecurity::create_signer(keypair);
-        let payload = serde_json::json!({"action": "test"});
-        let signed_message = ClientSecurity::sign_message(&signer, payload).unwrap();
-
-        // Validate the request
-        let owner_id = middleware
-            .validate_request(&signed_message, Some(&["read".to_string()]))
-            .unwrap();
-        assert_eq!(owner_id, "test_user");
-
-        // Test with missing permissions
-        let result = middleware.validate_request(&signed_message, Some(&["write".to_string()]));
-        assert!(result.is_err());
-    }
-
 }

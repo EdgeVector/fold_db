@@ -222,20 +222,6 @@ impl MessageVerifier {
             .clone())
     }
 
-    /// List the system public key if it exists.
-    pub fn list_public_keys(&self) -> SecurityResult<Vec<PublicKeyInfo>> {
-        let key = self
-            .public_key
-            .read()
-            .map_err(|_| SecurityError::KeyNotFound("Failed to acquire read lock".to_string()))?;
-
-        if let Some(k) = &*key {
-            Ok(vec![k.clone()])
-        } else {
-            Ok(vec![])
-        }
-    }
-
     /// Verify a signed message
     pub fn verify_message(
         &self,
@@ -345,33 +331,6 @@ impl MessageVerifier {
         }
 
         Ok(verification_result)
-    }
-}
-
-/// Utility functions for signing
-pub struct SigningUtils;
-
-impl SigningUtils {
-    /// Create a signer from a base64 encoded secret key
-    pub fn create_signer_from_secret(secret_key_base64: &str) -> SecurityResult<MessageSigner> {
-        let secret_key_bytes = general_purpose::STANDARD
-            .decode(secret_key_base64)
-            .map_err(|e| SecurityError::InvalidKeyFormat(e.to_string()))?;
-        let keypair = crate::security::Ed25519KeyPair::from_secret_key(&secret_key_bytes)?;
-        Ok(MessageSigner::new(keypair))
-    }
-
-    /// Get the owner ID from a verification result
-    pub fn get_message_owner(verification_result: &VerificationResult) -> Option<String> {
-        verification_result
-            .public_key_info
-            .as_ref()
-            .map(|info| info.owner_id.clone())
-    }
-
-    /// Check if verification was successful
-    pub fn is_verification_successful(result: &VerificationResult) -> bool {
-        result.is_valid
     }
 }
 

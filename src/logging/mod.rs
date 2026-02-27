@@ -316,16 +316,6 @@ impl LoggingSystem {
         Ok(Vec::new())
     }
 
-    /// Query recent logs from the active backend (legacy support)
-    pub async fn query_recent_logs(limit: usize) -> Vec<String> {
-        let entries = Self::query_logs(Some(limit), None)
-            .await
-            .unwrap_or_default();
-        entries
-            .into_iter()
-            .map(|entry| format!("{} - {}", entry.level.as_str(), entry.message))
-            .collect()
-    }
 }
 
 /// Logging system errors
@@ -341,19 +331,6 @@ pub enum LoggingError {
     TomlError(#[from] toml::de::Error),
     #[error("Config error: {0}")]
     ConfigError(#[from] crate::logging::config::ConfigError),
-}
-
-/// Convenience function to get web logs (backward compatibility)
-pub fn get_logs() -> Vec<String> {
-    if let Some(web_output) = GLOBAL_WEB_OUTPUT.get() {
-        web_output
-            .get_logs()
-            .into_iter()
-            .map(|e| e.message)
-            .collect()
-    } else {
-        Vec::new()
-    }
 }
 
 /// Convenience function to subscribe to web logs (backward compatibility)

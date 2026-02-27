@@ -1,33 +1,7 @@
 use super::FoldNode;
-use crate::error::{FoldDbError, FoldDbResult};
-use serde::Serialize;
-
-#[derive(Debug, Clone, Serialize)]
-pub struct TransformQueueInfo {
-    pub queue: Vec<String>,
-    pub length: usize,
-    pub is_empty: bool,
-}
+use crate::error::FoldDbResult;
 
 impl FoldNode {
-    /// Get information about the transform queue
-    pub async fn get_transform_queue_info(&self) -> FoldDbResult<TransformQueueInfo> {
-        let db = self.db.lock().await;
-        let orchestrator = db.transform_orchestrator().ok_or_else(|| {
-            FoldDbError::Config(
-                "Transform orchestrator not available (requires Sled backend)".to_string(),
-            )
-        })?;
-        let queue = orchestrator.list_queued_transforms()?;
-        let queue_length = queue.len();
-        let is_empty = orchestrator.is_empty()?;
-        Ok(TransformQueueInfo {
-            queue,
-            length: queue_length,
-            is_empty,
-        })
-    }
-
     /// Get all backfill information
     pub async fn get_all_backfills(
         &self,
@@ -75,37 +49,3 @@ impl FoldNode {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::fold_node::config::NodeConfig;
-
-    use tempfile::tempdir;
-
-    #[tokio::test]
-    async fn queue_info_works() {
-        let dir = tempdir().unwrap();
-        let config = NodeConfig {
-            database: crate::fold_node::config::DatabaseConfig::Local {
-                path: dir.path().to_path_buf(),
-            },
-            network_listen_address: "/ip4/127.0.0.1/tcp/0".to_string(),
-            security_config: Default::default(),
-            schema_service_url: None,
-            public_key: Some(
-                crate::security::Ed25519KeyPair::generate()
-                    .unwrap()
-                    .public_key_base64(),
-            ),
-            private_key: Some(
-                crate::security::Ed25519KeyPair::generate()
-                    .unwrap()
-                    .secret_key_base64(),
-            ),
-        };
-        let node = FoldNode::new(config).await.unwrap();
-        let info = node.get_transform_queue_info().await.unwrap();
-        assert!(info.is_empty);
-        assert_eq!(info.length, 0);
-    }
-}

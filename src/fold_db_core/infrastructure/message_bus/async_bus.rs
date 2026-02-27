@@ -6,8 +6,8 @@
 use super::error_handling::{AsyncRecvError, AsyncTryRecvError, MessageBusError, MessageBusResult};
 use super::events::Event;
 use super::{
-    atom_events::{AtomCreated, FieldValueSet},
-    query_events::{MutationExecuted, QueryExecuted},
+    atom_events::FieldValueSet,
+    query_events::MutationExecuted,
 };
 
 use std::collections::HashMap;
@@ -107,32 +107,9 @@ impl AsyncMessageBus {
         AsyncConsumer::new(receiver)
     }
 
-    /// Subscribe to all events
-    pub async fn subscribe_all(&self) -> AsyncConsumer<Event> {
-        let (sender, receiver) = async_mpsc::channel(DEFAULT_CHANNEL_CAPACITY);
-
-        let mut registry = self.registry.lock().await;
-        // Subscribe to all event types using the unified list
-        let event_types = Event::all_event_types();
-
-        for event_type in &event_types {
-            registry.add_subscriber(event_type.to_string(), sender.clone());
-        }
-
-        AsyncConsumer::new(receiver)
-    }
-
     /// Publish an event (convenience method for individual event types)
     pub async fn publish_field_value_set(&self, event: FieldValueSet) -> MessageBusResult<()> {
         self.publish_event(Event::FieldValueSet(event)).await
-    }
-
-    pub async fn publish_atom_created(&self, event: AtomCreated) -> MessageBusResult<()> {
-        self.publish_event(Event::AtomCreated(event)).await
-    }
-
-    pub async fn publish_query_executed(&self, event: QueryExecuted) -> MessageBusResult<()> {
-        self.publish_event(Event::QueryExecuted(event)).await
     }
 
     pub async fn publish_mutation_executed(&self, event: MutationExecuted) -> MessageBusResult<()> {
@@ -205,9 +182,6 @@ impl Default for AsyncMessageBus {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fold_db_core::infrastructure::message_bus::request_events::MutationRequest;
-    use crate::schema::types::Mutation;
-    use tokio;
 
     #[tokio::test]
     async fn test_async_message_bus_creation() {
@@ -239,50 +213,9 @@ mod tests {
     async fn test_async_no_subscribers() {
         let bus = AsyncMessageBus::new();
 
-        let event = AtomCreated::new("atom-123", serde_json::json!({}));
-        let result = bus.publish_atom_created(event).await;
+        let event = FieldValueSet::new("test.field", serde_json::json!("value"), "source");
+        let result = bus.publish_field_value_set(event).await;
         assert!(result.is_ok());
-    }
-
-    #[tokio::test]
-    async fn test_async_subscribe_all() {
-        let bus = AsyncMessageBus::new();
-        let _consumer = bus.subscribe_all().await;
-
-        // Should be subscribed to multiple event types
-        assert!(bus.subscriber_count("FieldValueSet").await > 0);
-        assert!(bus.subscriber_count("AtomCreated").await > 0);
-        assert!(bus.subscriber_count("QueryExecuted").await > 0);
-        // Verify new event types are engaged
-        assert!(bus.subscriber_count("MutationRequest").await > 0);
-    }
-
-    #[tokio::test]
-    async fn test_subscribe_all_receives_mutation_request() {
-        let bus = AsyncMessageBus::new();
-        let mut consumer = bus.subscribe_all().await;
-
-        let mutation = Mutation::new(
-            "test_schema".to_string(),
-            std::collections::HashMap::new(),
-            crate::schema::types::KeyValue::new(None, None),
-            "pk_123".to_string(),
-            crate::schema::types::operations::MutationType::Update,
-        );
-        let request = MutationRequest {
-            correlation_id: "test_correlation".to_string(),
-            mutation,
-        };
-
-        bus.publish_event(Event::MutationRequest(request))
-            .await
-            .unwrap();
-
-        let received = consumer.recv().await;
-        match received {
-            Some(Event::MutationRequest(_)) => assert!(true),
-            _ => panic!("Expected MutationRequest event"),
-        }
     }
 
     #[tokio::test]

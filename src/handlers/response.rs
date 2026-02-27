@@ -67,15 +67,6 @@ impl ApiResponse<()> {
         }
     }
 
-    /// Create an error response with user context
-    pub fn error_with_user(message: impl Into<String>, user_hash: impl Into<String>) -> Self {
-        Self {
-            ok: false,
-            data: None,
-            error: Some(message.into()),
-            user_hash: Some(user_hash.into()),
-        }
-    }
 }
 
 /// Handler-level error types
@@ -155,10 +146,6 @@ impl HandlerError {
         ApiResponse::error(self.to_string())
     }
 
-    /// Convert to ApiResponse with user context
-    pub fn to_response_with_user(&self, user_hash: impl Into<String>) -> ApiResponse<()> {
-        ApiResponse::error_with_user(self.to_string(), user_hash)
-    }
 }
 
 /// Result type for handlers

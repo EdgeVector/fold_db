@@ -126,23 +126,6 @@ impl TransformTriggered {
     }
 }
 
-impl QueryExecuted {
-    /// Create a new QueryExecuted event
-    pub fn new(
-        query_type: impl Into<String>,
-        schema: impl Into<String>,
-        execution_time_ms: u64,
-        result_count: usize,
-    ) -> Self {
-        Self {
-            query_type: query_type.into(),
-            schema: schema.into(),
-            execution_time_ms,
-            result_count,
-        }
-    }
-}
-
 impl MutationExecuted {
     /// Create a new MutationExecuted event
     pub fn new(
