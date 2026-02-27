@@ -65,10 +65,12 @@ jobs:
           npm run build
 
       - name: Claude Auto-Fix
+        id: claude-fix
+        continue-on-error: true
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          prompt: |
+          direct_prompt: |
             The CI test suite just failed on this branch. Your job:
 
             1. Run `cargo clippy --workspace` to check for clippy failures
@@ -76,18 +78,16 @@ jobs:
             3. Run `cd src/server/static-react && npm ci && npm test` for frontend failures
             4. Read the error output carefully and fix the source code
             5. Re-run the failing command to verify your fix works
-            6. Commit your changes with a clear message describing what broke and how you fixed it
 
             Rules:
             - Fix the source code, not the tests (unless the test itself is wrong)
             - Do NOT add fallbacks or silent error handling
             - Keep fixes minimal and focused
-            - If you cannot fix it after a few attempts, stop and leave a comment explaining what you found
-          claude_args: |
-            --max-turns 15
-            --allowedTools "Bash,Read,Edit,Glob,Grep"
+          max_turns: "20"
+          allowed_tools: "Bash,Read,Edit,Glob,Grep"
 
       - name: Push fix if changes were made
+        if: always()
         run: |
           if git diff --quiet && git diff --cached --quiet; then
             echo "No changes to push"
