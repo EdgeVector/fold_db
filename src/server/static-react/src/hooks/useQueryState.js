@@ -247,6 +247,7 @@ function useQueryState() {
     setRangeKeyValue,
     setHashKeyValue,
     clearState,
+    clearQuery: clearState,
     handleSchemaChange,
     handleRangeFilterChange,
     refetchSchemas,
