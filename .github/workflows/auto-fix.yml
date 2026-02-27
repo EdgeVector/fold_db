@@ -7,9 +7,6 @@ on:
 
 permissions:
   contents: write
-  pull-requests: write
-  actions: read
-  id-token: write
 
 jobs:
   auto-fix:
@@ -22,6 +19,7 @@ jobs:
     env:
       AI_PROVIDER: ${{ secrets.AI_PROVIDER }}
       FOLD_OPENROUTER_API_KEY: ${{ secrets.FOLD_OPENROUTER_API_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 
     steps:
       - name: Checkout branch that failed
@@ -64,27 +62,26 @@ jobs:
           npm ci
           npm run build
 
-      - name: Claude Auto-Fix
-        id: claude-fix
+      - name: Install Claude Code
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Run Claude to fix tests
         continue-on-error: true
-        uses: anthropics/claude-code-action@v1
-        with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          direct_prompt: |
-            The CI test suite just failed on this branch. Your job:
+        run: |
+          claude -p "The CI test suite just failed on this branch. Your job:
 
-            1. Run `cargo clippy --workspace` to check for clippy failures
-            2. Run `cargo test --workspace` to find test failures
-            3. Run `cd src/server/static-react && npm ci && npm test` for frontend failures
-            4. Read the error output carefully and fix the source code
-            5. Re-run the failing command to verify your fix works
+          1. Run cargo clippy --workspace to check for clippy failures
+          2. Run cargo test --workspace to find test failures
+          3. Run 'cd src/server/static-react && npm ci && npm test' for frontend failures
+          4. Read the error output carefully and fix the source code
+          5. Re-run the failing command to verify your fix works
 
-            Rules:
-            - Fix the source code, not the tests (unless the test itself is wrong)
-            - Do NOT add fallbacks or silent error handling
-            - Keep fixes minimal and focused
-          max_turns: "20"
-          allowed_tools: "Bash,Read,Edit,Glob,Grep"
+          Rules:
+          - Fix the source code, not the tests (unless the test itself is wrong)
+          - Do NOT add fallbacks or silent error handling
+          - Keep fixes minimal and focused" \
+            --max-turns 20 \
+            --allowedTools "Bash,Read,Edit,Glob,Grep"
 
       - name: Push fix if changes were made
         if: always()
