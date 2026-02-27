@@ -276,6 +276,168 @@ pub async fn reset_database(
     })
 }
 
+/// Request body for migrating to cloud
+#[derive(Deserialize, Serialize, utoipa::ToSchema, Debug, Clone)]
+pub struct MigrateToCloudRequest {
+    pub api_url: String,
+    pub api_key: String,
+}
+
+/// Response for migrating to cloud (async job)
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct MigrateToCloudResponse {
+    pub success: bool,
+    pub message: String,
+    /// Job ID for tracking progress
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub job_id: Option<String>,
+}
+
+/// Migrate data to Cloud (async background job)
+///
+/// This endpoint initiates a migration of all schemas and data to a remote XMEM cloud instance:
+/// 1. Returns immediately with a job ID for progress tracking
+/// 2. The background job reads local data and pushes it to the remote API
+/// 3. Progress can be monitored via /api/ingestion/progress/{job_id}
+#[utoipa::path(
+    post,
+    path = "/api/system/migrate-to-cloud",
+    tag = "system",
+    request_body = MigrateToCloudRequest,
+    responses(
+        (status = 202, description = "Migration job started", body = MigrateToCloudResponse),
+        (status = 400, description = "Bad request", body = MigrateToCloudResponse),
+        (status = 500, description = "Server error", body = MigrateToCloudResponse)
+    )
+)]
+pub async fn migrate_to_cloud(
+    state: web::Data<AppState>,
+    progress_tracker: web::Data<crate::progress::ProgressTracker>,
+    req: web::Json<MigrateToCloudRequest>,
+) -> impl Responder {
+    use crate::progress::{Job, JobType};
+
+    // Get user ID from context
+    let user_id = match require_user_context() {
+        Ok(hash) => hash,
+        Err(response) => return response,
+    };
+
+    let api_url = req.api_url.clone();
+    let api_key = req.api_key.clone();
+
+    if api_url.is_empty() || api_key.is_empty() {
+        return HttpResponse::BadRequest().json(MigrateToCloudResponse {
+            success: false,
+            message: "api_url and api_key are required.".to_string(),
+            job_id: None,
+        });
+    }
+
+    // Generate a unique job ID
+    let job_id = format!("migrate_{}", uuid::Uuid::new_v4());
+
+    // Create the job entry
+    let mut job = Job::new(
+        job_id.clone(),
+        JobType::Other("cloud_migration".to_string()),
+    );
+    job = job.with_user(user_id.clone());
+    job.update_progress(5, format!("Initializing migration to {}...", api_url));
+
+    // Save initial job state
+    if let Err(e) = progress_tracker.save(&job).await {
+        log_feature!(
+            LogFeature::HttpServer,
+            error,
+            "Failed to create migration job: {}",
+            e
+        );
+        return HttpResponse::InternalServerError().json(MigrateToCloudResponse {
+            success: false,
+            message: format!("Failed to create migration job: {}", e),
+            job_id: None,
+        });
+    }
+
+    let node_manager_clone = state.node_manager.clone();
+    let tracker_clone = progress_tracker.clone();
+    let job_id_clone = job_id.clone();
+    let user_id_clone = user_id.clone();
+
+    tokio::spawn(async move {
+        // Set user context
+        crate::logging::core::run_with_user(&user_id_clone.clone(), async move {
+            if let Ok(Some(mut job)) = tracker_clone.load(&job_id_clone).await {
+                job.update_progress(10, "Fetching local node data...".to_string());
+                let _ = tracker_clone.save(&job).await;
+            }
+
+            let node_arc = match node_manager_clone.get_node(&user_id_clone).await {
+                Ok(n) => n,
+                Err(e) => {
+                    log_feature!(
+                        LogFeature::HttpServer,
+                        error,
+                        "Failed to get node for migration: {}",
+                        e
+                    );
+                    if let Ok(Some(mut job)) = tracker_clone.load(&job_id_clone).await {
+                        job.fail(format!("Failed to get node: {}", e));
+                        let _ = tracker_clone.save(&job).await;
+                    }
+                    return;
+                }
+            };
+
+            let processor =
+                crate::fold_node::OperationProcessor::new(node_arc.read().await.clone());
+
+            if let Ok(Some(mut job)) = tracker_clone.load(&job_id_clone).await {
+                job.update_progress(20, "Syncing schemas and documents...".to_string());
+                let _ = tracker_clone.save(&job).await;
+            }
+
+            if let Err(e) = processor.migrate_to_cloud(&api_url, &api_key).await {
+                log_feature!(
+                    LogFeature::HttpServer,
+                    error,
+                    "Cloud migration failed: {}",
+                    e
+                );
+                if let Ok(Some(mut job)) = tracker_clone.load(&job_id_clone).await {
+                    job.fail(format!("Cloud migration failed: {}", e));
+                    let _ = tracker_clone.save(&job).await;
+                }
+                return;
+            }
+
+            log_feature!(
+                LogFeature::HttpServer,
+                info,
+                "Cloud migration completed for user: {}",
+                user_id_clone
+            );
+
+            if let Ok(Some(mut job)) = tracker_clone.load(&job_id_clone).await {
+                job.complete(Some(serde_json::json!({
+                    "user_id": user_id_clone,
+                    "message": "Migration completed successfully"
+                })));
+                let _ = tracker_clone.save(&job).await;
+            }
+        })
+        .await;
+    });
+
+    HttpResponse::Accepted().json(MigrateToCloudResponse {
+        success: true,
+        message: "Cloud migration started. Monitor progress via /api/ingestion/progress endpoint."
+            .to_string(),
+        job_id: Some(job_id),
+    })
+}
+
 /// Database configuration request/response types
 #[derive(Deserialize, Serialize, utoipa::ToSchema, Debug, Clone)]
 pub struct DatabaseConfigRequest {
@@ -408,7 +570,11 @@ pub async fn auto_identity() -> impl Responder {
 
     // Derive user_hash = SHA256(public_key)[0:32] (same algorithm as frontend)
     let hash = Sha256::digest(public_key.as_bytes());
-    let user_hash: String = hash.iter().map(|b| format!("{:02x}", b)).collect::<String>()[..32].to_string();
+    let user_hash: String = hash
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect::<String>()[..32]
+        .to_string();
 
     HttpResponse::Ok().json(json!({
         "user_id": public_key,

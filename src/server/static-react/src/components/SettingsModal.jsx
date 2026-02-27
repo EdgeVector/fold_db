@@ -4,6 +4,7 @@ import KeyManagementTab from './tabs/KeyManagementTab'
 import AiConfigSettings from './settings/AiConfigSettings'
 import SchemaServiceSettings from './settings/SchemaServiceSettings'
 import DatabaseSettings from './settings/DatabaseSettings'
+import CloudMigrationSettings from './tabs/CloudMigrationSettings'
 
 const NOOP = () => {}
 
@@ -63,6 +64,7 @@ function SettingsModal({ isOpen, onClose, onConfigSaved, initialTab }) {
     { id: 'keys', label: 'Key Management' },
     { id: 'schema-service', label: 'Schema Service' },
     { id: 'database', label: 'Database' },
+    { id: 'upgrade-cloud', label: 'Cloud DB' },
   ]
 
   const handleSave = () => {
@@ -100,6 +102,7 @@ function SettingsModal({ isOpen, onClose, onConfigSaved, initialTab }) {
           {activeTab === 'keys' && <KeyManagementTab onResult={NOOP} />}
           {activeTab === 'schema-service' && <SchemaServiceSettings />}
           {activeTab === 'database' && dbConfig.content}
+          {activeTab === 'upgrade-cloud' && <CloudMigrationSettings onClose={onClose} />}
         </div>
 
         <div className="modal-footer">

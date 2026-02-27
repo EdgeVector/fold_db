@@ -221,6 +221,7 @@ export function AppContent() {
       <Header
         onSettingsClick={() => { setSettingsInitialTab(null); setIsSettingsOpen(true) }}
         onAiSettingsClick={() => { setSettingsInitialTab('ai'); setIsSettingsOpen(true) }}
+        onCloudSettingsClick={() => { setSettingsInitialTab('upgrade-cloud'); setIsSettingsOpen(true) }}
         ingestionStatus={ingestionStatus}
       />
       <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} onConfigSaved={refetchIngestionStatus} initialTab={settingsInitialTab} />

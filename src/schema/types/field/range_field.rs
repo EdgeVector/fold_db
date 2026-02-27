@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -34,48 +33,12 @@ impl RangeField {
         }
     }
 
-    /// Creates a new RangeField with a MoleculeRange
-    #[must_use]
-    pub fn new_with_range(
-        field_mappers: HashMap<String, FieldMapper>,
-        source_pub_key: String,
-    ) -> Self {
-        Self {
-            base: FieldBase::new(field_mappers, Some(MoleculeRange::new(source_pub_key))),
-        }
-    }
-
-    /// Returns a reference to the MoleculeRange if it exists
-    pub fn molecule(&self) -> Option<&MoleculeRange> {
-        self.base.molecule.as_ref()
-    }
-
-    /// Returns a mutable reference to the MoleculeRange if it exists
-    pub fn molecule_mut(&mut self) -> Option<&mut MoleculeRange> {
-        self.base.molecule.as_mut()
-    }
-
-    /// Sets the MoleculeRange for this field
-    pub fn set_molecule(&mut self, molecule: MoleculeRange) {
-        self.base.molecule = Some(molecule);
-    }
-
     /// Initializes the MoleculeRange if it doesn't exist
     pub fn ensure_molecule(&mut self, source_pub_key: String) -> &mut MoleculeRange {
         if self.base.molecule.is_none() {
             self.base.molecule = Some(MoleculeRange::new(source_pub_key));
         }
         self.base.molecule.as_mut().unwrap()
-    }
-
-    /// Applies a filter from a JSON Value (delegates to trait default)
-    pub fn apply_json_filter(
-        &self,
-        filter_value: &JsonValue,
-    ) -> Result<HashRangeFilterResult, String> {
-        serde_json::from_value::<HashRangeFilter>(filter_value.clone())
-            .map(|f| self.apply_filter(Some(f)))
-            .or_else(|_| Ok(self.apply_filter(None)))
     }
 
     /// Gets all keys in the range (useful for pagination or listing)
@@ -87,30 +50,6 @@ impl RangeField {
             .unwrap_or_default()
     }
 
-    /// Gets a subset of keys within a range (useful for pagination)
-    pub fn get_keys_in_range(&self, start: &str, end: &str) -> Vec<String> {
-        self.base
-            .molecule
-            .as_ref()
-            .map(|range| {
-                // Leverage BTree's efficient range operations
-                range
-                    .atom_uuids
-                    .range(start.to_string()..end.to_string())
-                    .map(|(key, _)| key.clone())
-                    .collect()
-            })
-            .unwrap_or_default()
-    }
-
-    /// Gets the total count of items in the range
-    pub fn count(&self) -> usize {
-        self.base
-            .molecule
-            .as_ref()
-            .map(|range| range.atom_uuids.len())
-            .unwrap_or(0)
-    }
 }
 
 impl FilterApplicator for RangeField {

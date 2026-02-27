@@ -5,7 +5,8 @@ pub fn render(output: &CommandOutput) {
     let val = to_json(output);
     println!(
         "{}",
-        serde_json::to_string(&val).unwrap_or_else(|e| format!("{{\"ok\":false,\"error\":\"{}\"}}", e))
+        serde_json::to_string(&val)
+            .unwrap_or_else(|e| format!("{{\"ok\":false,\"error\":\"{}\"}}", e))
     );
 }
 
@@ -78,10 +79,7 @@ fn to_json(output: &CommandOutput) -> Value {
                 "results": results,
             })
         }
-        CommandOutput::AskAnswer {
-            answer,
-            tool_calls,
-        } => {
+        CommandOutput::AskAnswer { answer, tool_calls } => {
             let tool_calls_json: Vec<Value> = tool_calls
                 .iter()
                 .map(|tc| {
@@ -121,6 +119,9 @@ fn to_json(output: &CommandOutput) -> Value {
         }
         CommandOutput::ResetComplete => {
             json!({ "ok": true, "message": "Database reset complete" })
+        }
+        CommandOutput::MigrateComplete => {
+            json!({ "ok": true, "message": "Database migration to cloud complete" })
         }
         CommandOutput::TransformList(transforms) => {
             let val = serde_json::to_value(transforms).unwrap_or(Value::Null);
@@ -198,9 +199,7 @@ mod tests {
 
     #[test]
     fn json_mutation_success() {
-        assert_ok(&CommandOutput::MutationSuccess {
-            id: "abc".into(),
-        });
+        assert_ok(&CommandOutput::MutationSuccess { id: "abc".into() });
     }
 
     #[test]
@@ -221,6 +220,11 @@ mod tests {
     #[test]
     fn json_reset_complete() {
         assert_ok(&CommandOutput::ResetComplete);
+    }
+
+    #[test]
+    fn json_migrate_complete() {
+        assert_ok(&CommandOutput::MigrateComplete);
     }
 
     #[test]

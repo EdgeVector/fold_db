@@ -6,9 +6,9 @@ use super::routes::{
     system as system_routes,
 };
 use super::static_assets::Asset;
+use crate::error::{FoldDbError, FoldDbResult};
 use crate::fold_node::llm_query;
 use crate::fold_node::FoldNode;
-use crate::error::{FoldDbError, FoldDbResult};
 use crate::ingestion::routes as ingestion_routes;
 use crate::utils::http_errors;
 
@@ -116,9 +116,14 @@ impl FoldHttpServer {
         self.load_schemas_if_configured().await?;
 
         // Initialize upload storage from environment config
-        let upload_storage_config =
-            crate::storage::config::UploadStorageConfig::from_env().unwrap_or_else(|e| {
-                log_feature!(LogFeature::HttpServer, warn, "Failed to load upload storage config from env: {}. Using default.", e);
+        let upload_storage_config = crate::storage::config::UploadStorageConfig::from_env()
+            .unwrap_or_else(|e| {
+                log_feature!(
+                    LogFeature::HttpServer,
+                    warn,
+                    "Failed to load upload storage config from env: {}. Using default.",
+                    e
+                );
                 crate::storage::config::UploadStorageConfig::default()
             });
 
@@ -155,14 +160,11 @@ impl FoldHttpServer {
             crate::ingestion::ingestion_service::IngestionService::from_env()
                 .ok()
                 .map(Arc::new);
-        let ingestion_service_data = web::Data::new(
-            tokio::sync::RwLock::new(ingestion_service),
-        );
+        let ingestion_service_data = web::Data::new(tokio::sync::RwLock::new(ingestion_service));
 
         // Create BatchControllerMap for spend-limit batch tracking
         let batch_controller_map_data =
             web::Data::new(crate::ingestion::batch_controller::create_batch_controller_map());
-
 
         // Create progress tracker based on database config
         let progress_tracker = {
@@ -468,9 +470,10 @@ impl FoldHttpServer {
             "/system/database-config",
             web::post().to(system_routes::update_database_config),
         )
+        .route("/system/setup", web::post().to(system_routes::apply_setup))
         .route(
-            "/system/setup",
-            web::post().to(system_routes::apply_setup),
+            "/system/migrate-to-cloud",
+            web::post().to(system_routes::migrate_to_cloud),
         )
         .route(
             "/system/complete-path",
@@ -500,10 +503,7 @@ impl FoldHttpServer {
             "/llm-query/backfill/{hash}",
             web::get().to(llm_query::get_backfill_status),
         )
-        .route(
-            "/llm-query/agent",
-            web::post().to(llm_query::agent_query),
-        );
+        .route("/llm-query/agent", web::post().to(llm_query::agent_query));
     }
 
     fn configure_security_routes(cfg: &mut web::ServiceConfig) {

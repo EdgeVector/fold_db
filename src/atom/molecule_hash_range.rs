@@ -171,12 +171,6 @@ impl MoleculeHashRange {
             .sum()
     }
 
-    /// Returns the number of hash groups in this molecule.
-    #[must_use]
-    pub fn hash_count(&self) -> usize {
-        self.atom_uuids.len()
-    }
-
     /// Checks if this molecule is empty (no atoms).
     #[must_use]
     pub fn is_empty(&self) -> bool {
@@ -193,11 +187,6 @@ impl MoleculeHashRange {
         self.atom_uuids
             .get(hash_value)
             .map(|range_map| range_map.keys())
-    }
-
-    /// Returns an iterator over all hash groups and their range maps
-    pub fn iter_hash_groups(&self) -> impl Iterator<Item = (&String, &BTreeMap<String, String>)> {
-        self.atom_uuids.iter()
     }
 
     /// Returns an iterator over all atoms across all hash groups

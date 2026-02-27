@@ -61,17 +61,6 @@ impl SessionManager {
         Ok(sessions.get(session_id).cloned())
     }
 
-    /// Update a session context
-    pub fn update_session(&self, context: SessionContext) -> Result<(), String> {
-        let mut sessions = self
-            .sessions
-            .write()
-            .map_err(|e| format!("Failed to acquire write lock: {}", e))?;
-
-        sessions.insert(context.session_id.clone(), context);
-        Ok(())
-    }
-
     /// Add results to a session
     pub fn add_results(
         &self,
@@ -129,29 +118,6 @@ impl SessionManager {
         }
     }
 
-    /// Delete a session
-    pub fn delete_session(&self, session_id: &str) -> Result<(), String> {
-        let mut sessions = self
-            .sessions
-            .write()
-            .map_err(|e| format!("Failed to acquire write lock: {}", e))?;
-
-        sessions.remove(session_id);
-        Ok(())
-    }
-
-    /// Clean up all expired sessions
-    pub fn cleanup_expired(&self) -> Result<usize, String> {
-        let mut sessions = self
-            .sessions
-            .write()
-            .map_err(|e| format!("Failed to acquire write lock: {}", e))?;
-
-        let before = sessions.len();
-        sessions.retain(|_, ctx| !ctx.is_expired());
-        let after = sessions.len();
-        Ok(before - after)
-    }
 }
 
 impl Default for SessionManager {

@@ -325,7 +325,8 @@ impl OperationProcessor {
         file_path: &std::path::Path,
         auto_execute: bool,
     ) -> FoldDbResult<crate::ingestion::IngestionResponse> {
-        self.ingest_single_file_with_tracker(file_path, auto_execute, None).await
+        self.ingest_single_file_with_tracker(file_path, auto_execute, None)
+            .await
     }
 
     /// Like `ingest_single_file` but accepts an optional external `ProgressTracker`
@@ -337,10 +338,10 @@ impl OperationProcessor {
         auto_execute: bool,
         external_tracker: Option<crate::ingestion::ProgressTracker>,
     ) -> FoldDbResult<crate::ingestion::IngestionResponse> {
-        use crate::ingestion::IngestionRequest;
         use crate::ingestion::json_processor::convert_file_to_json;
         use crate::ingestion::progress::ProgressService;
         use crate::ingestion::smart_folder;
+        use crate::ingestion::IngestionRequest;
 
         // Try native parser first (handles json, js/Twitter, csv, txt, md without LLM),
         // fall back to file_to_json for unsupported types (images, PDFs, etc.)
@@ -364,13 +365,12 @@ impl OperationProcessor {
                 .map(|s| s.to_string()),
             progress_id: Some(progress_id.clone()),
             file_hash: None,
-            source_folder: file_path
-                .parent()
-                .map(|p| p.to_string_lossy().to_string()),
+            source_folder: file_path.parent().map(|p| p.to_string_lossy().to_string()),
             image_descriptive_name: None,
         };
 
-        let service = IngestionService::from_env().map_err(|e| FoldDbError::Other(e.to_string()))?;
+        let service =
+            IngestionService::from_env().map_err(|e| FoldDbError::Other(e.to_string()))?;
 
         let progress_tracker = match external_tracker {
             Some(t) => t,
@@ -423,4 +423,132 @@ impl OperationProcessor {
             .map_err(FoldDbError::Other)
     }
 
+    // --- Cloud Migration Operations ---
+
+    /// Migrate local database to cloud (Encryption at Rest version).
+    /// Fetches all schemas and data from the local database and uploads them to the specified cloud API.
+    pub async fn migrate_to_cloud(&self, api_url: &str, api_key: &str) -> FoldDbResult<()> {
+        log::info!("🚀 Starting migration to cloud: {}", api_url);
+
+        // Use a high timeout as migration might be slow
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(60))
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new());
+
+        let schemas_with_state = self.list_schemas().await?;
+        log::info!("📦 Found {} schemas to migrate", schemas_with_state.len());
+
+        let mut all_mutations: Vec<serde_json::Value> = Vec::new();
+
+        // 1. Sync Schemas and collect data
+        for schema_state in schemas_with_state {
+            let schema = schema_state.schema;
+            let schema_name = schema.name.clone();
+
+            log::info!("⬆️ Syncing schema: {}", schema_name);
+
+            // Upload schema definition (ignore 409 Conflict)
+            let schema_url = format!("{}/api/schemas", api_url.trim_end_matches('/'));
+            let request = serde_json::json!({
+                "schema": schema,
+                "mutation_mappers": {}
+            });
+
+            let res = client
+                .post(&schema_url)
+                .header("X-API-Key", api_key)
+                .json(&request)
+                .send()
+                .await
+                .map_err(|e| {
+                    FoldDbError::Other(format!("Failed to upload schema '{}': {}", schema_name, e))
+                })?;
+
+            if !res.status().is_success() && res.status() != reqwest::StatusCode::CONFLICT {
+                return Err(FoldDbError::Other(format!(
+                    "Schema '{}' upload failed: {}",
+                    schema_name,
+                    res.status()
+                )));
+            }
+
+            // Read all data for this schema
+            let queryable_fields = schema.fields.unwrap_or_default();
+            let query = crate::schema::types::Query::new(schema_name.clone(), queryable_fields);
+
+            let records = self.execute_query_json(query).await?;
+            log::info!(
+                "📄 Found {} records for schema: {}",
+                records.len(),
+                schema_name
+            );
+
+            let pub_key = self.get_node_public_key();
+
+            for record in records {
+                let fields = record
+                    .get("fields")
+                    .and_then(|f| f.as_object())
+                    .cloned()
+                    .unwrap_or_default();
+
+                let fields_map: std::collections::HashMap<String, serde_json::Value> =
+                    fields.into_iter().collect();
+
+                let key_value = crate::fold_node::OperationProcessor::parse_ref_key(&record)
+                    .unwrap_or_else(|| crate::schema::types::KeyValue::new(None, None));
+
+                // Construct an Operation::Mutation JSON representation
+                let mutation = serde_json::json!({
+                    "type": "Mutation",
+                    "schema": schema_name,
+                    "fields_and_values": fields_map,
+                    "key_value": key_value,
+                    "mutation_type": "Create",
+                    "server_hash": "",
+                    "source_file_name": null,
+                    "client_pub_key": pub_key,
+                });
+                all_mutations.push(mutation);
+            }
+        }
+
+        // 2. Batch upload mutations (chunks of 100)
+        let total_mutations = all_mutations.len();
+        log::info!(
+            "🚀 Starting data upload of {} total mutations",
+            total_mutations
+        );
+        let mutation_url = format!("{}/api/mutations/batch", api_url.trim_end_matches('/'));
+
+        for (i, chunk) in all_mutations.chunks(100).enumerate() {
+            let chunk_vec: Vec<serde_json::Value> = chunk.to_vec();
+            log::info!(
+                "🔄 Uploading data batch {}/{}",
+                i + 1,
+                total_mutations.div_ceil(100)
+            );
+
+            let res = client
+                .post(&mutation_url)
+                .header("X-API-Key", api_key)
+                .json(&chunk_vec)
+                .send()
+                .await
+                .map_err(|e| FoldDbError::Other(format!("Batch upload failed: {}", e)))?;
+
+            if !res.status().is_success() {
+                let status = res.status();
+                let err_text = res.text().await.unwrap_or_default();
+                return Err(FoldDbError::Other(format!(
+                    "Batch upload returned {}: {}",
+                    status, err_text
+                )));
+            }
+        }
+
+        log::info!("✅ Cloud migration completed successfully");
+        Ok(())
+    }
 }

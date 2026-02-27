@@ -26,8 +26,7 @@ pub fn render(output: &CommandOutput) {
         CommandOutput::SchemaGet(schema) => {
             println!(
                 "{}",
-                serde_json::to_string_pretty(&schema)
-                    .unwrap_or_else(|_| format!("{:?}", schema))
+                serde_json::to_string_pretty(&schema).unwrap_or_else(|_| format!("{:?}", schema))
             );
         }
 
@@ -76,8 +75,7 @@ pub fn render(output: &CommandOutput) {
             }
             println!(
                 "{}",
-                serde_json::to_string_pretty(&results)
-                    .unwrap_or_else(|_| format!("{:?}", results))
+                serde_json::to_string_pretty(&results).unwrap_or_else(|_| format!("{:?}", results))
             );
         }
 
@@ -94,11 +92,7 @@ pub fn render(output: &CommandOutput) {
                     serde_json::Value::String(s) => truncate(s, 60),
                     other => truncate(&other.to_string(), 60),
                 };
-                table.add_row(vec![
-                    r.schema_name.clone(),
-                    r.field.clone(),
-                    value_str,
-                ]);
+                table.add_row(vec![r.schema_name.clone(), r.field.clone(), value_str]);
             }
             println!("{table}");
         }
@@ -182,7 +176,11 @@ pub fn render(output: &CommandOutput) {
                 println!("  {} failed", failed);
             }
             for r in results {
-                let status = if r["success"] == true { "\u{2713}" } else { "\u{2717}" };
+                let status = if r["success"] == true {
+                    "\u{2713}"
+                } else {
+                    "\u{2717}"
+                };
                 let file = r["file"].as_str().unwrap_or("?");
                 println!("  {} {}", status, file);
                 if let Some(err) = r["error"].as_str() {
@@ -191,10 +189,7 @@ pub fn render(output: &CommandOutput) {
             }
         }
 
-        CommandOutput::AskAnswer {
-            answer,
-            tool_calls,
-        } => {
+        CommandOutput::AskAnswer { answer, tool_calls } => {
             if !tool_calls.is_empty() {
                 println!(
                     "{} Done ({} tool call{})\n",
@@ -212,16 +207,8 @@ pub fn render(output: &CommandOutput) {
             db_config,
             indexing_status,
         } => {
-            println!(
-                "{}  {}",
-                style("Node Public Key:").bold(),
-                pub_key
-            );
-            println!(
-                "{}        {}",
-                style("User Hash:").bold(),
-                user_hash
-            );
+            println!("{}  {}", style("Node Public Key:").bold(), pub_key);
+            println!("{}        {}", style("User Hash:").bold(), user_hash);
             let db_str = match db_config {
                 fold_db::DatabaseConfig::Local { path } => {
                     format!("Local ({})", path.display())
@@ -232,27 +219,18 @@ pub fn render(output: &CommandOutput) {
                     format!("Exemem ({})", api_url)
                 }
             };
-            println!(
-                "{}         {}",
-                style("Database:").bold(),
-                db_str
-            );
+            println!("{}         {}", style("Database:").bold(), db_str);
             let idx_str = format!(
                 "{:?} ({} documents indexed)",
                 indexing_status.state, indexing_status.total_operations_processed
             );
-            println!(
-                "{}         {}",
-                style("Indexing:").bold(),
-                idx_str
-            );
+            println!("{}         {}", style("Indexing:").bold(), idx_str);
         }
 
         CommandOutput::Config(config) => {
             println!(
                 "{}",
-                serde_json::to_string_pretty(&config)
-                    .unwrap_or_else(|_| format!("{:?}", config))
+                serde_json::to_string_pretty(&config).unwrap_or_else(|_| format!("{:?}", config))
             );
         }
 
@@ -263,6 +241,13 @@ pub fn render(output: &CommandOutput) {
         CommandOutput::ResetComplete => {
             println!(
                 "{} Database reset complete",
+                style("\u{2713}").green().bold()
+            );
+        }
+
+        CommandOutput::MigrateComplete => {
+            println!(
+                "{} Database migration to cloud complete",
                 style("\u{2713}").green().bold()
             );
         }
@@ -293,16 +278,12 @@ pub fn render(output: &CommandOutput) {
         CommandOutput::TransformStats(stats) => {
             println!(
                 "{}",
-                serde_json::to_string_pretty(&stats)
-                    .unwrap_or_else(|_| format!("{:?}", stats))
+                serde_json::to_string_pretty(&stats).unwrap_or_else(|_| format!("{:?}", stats))
             );
         }
 
         CommandOutput::BackfillStats(stats) => {
-            println!(
-                "{}",
-                style("Backfill Statistics").bold().underlined()
-            );
+            println!("{}", style("Backfill Statistics").bold().underlined());
             println!("  Total:     {}", stats.total_backfills);
             println!("  Active:    {}", stats.active_backfills);
             println!("  Completed: {}", stats.completed_backfills);
@@ -359,6 +340,11 @@ mod tests {
     }
 
     #[test]
+    fn human_migrate_complete() {
+        render(&CommandOutput::MigrateComplete);
+    }
+
+    #[test]
     fn human_config_path() {
         render(&CommandOutput::ConfigPath("/tmp/config.toml".into()));
     }
@@ -410,7 +396,9 @@ mod tests {
 
     #[test]
     fn human_transform_list_empty() {
-        render(&CommandOutput::TransformList(std::collections::HashMap::new()));
+        render(&CommandOutput::TransformList(
+            std::collections::HashMap::new(),
+        ));
     }
 
     #[test]

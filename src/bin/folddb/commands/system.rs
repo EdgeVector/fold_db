@@ -61,3 +61,12 @@ pub async fn reset(
     processor.perform_database_reset(Some(user_hash)).await?;
     Ok(CommandOutput::ResetComplete)
 }
+
+pub async fn migrate_to_cloud(
+    api_url: &str,
+    api_key: &str,
+    processor: &OperationProcessor,
+) -> Result<CommandOutput, CliError> {
+    processor.migrate_to_cloud(api_url, api_key).await?;
+    Ok(CommandOutput::MigrateComplete)
+}

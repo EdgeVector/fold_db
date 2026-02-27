@@ -195,15 +195,4 @@ impl QueueManager {
         Ok(state.clone())
     }
 
-    /// Update the queue state (used when loading from persistence)
-    pub fn set_state(&self, new_state: QueueState) -> Result<(), SchemaError> {
-        let mut state = self.state.lock().map_err(|e| {
-            error!("❌ Failed to acquire queue lock for state update: {}", e);
-            SchemaError::InvalidData("Failed to acquire queue lock".to_string())
-        })?;
-        *state = new_state;
-        info!("✅ Queue state updated successfully");
-        Ok(())
-    }
-
 }

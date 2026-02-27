@@ -22,7 +22,7 @@ function formatStorageSize(bytes) {
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`
 }
 
-function Header({ onSettingsClick, onAiSettingsClick, ingestionStatus }) {
+function Header({ onSettingsClick, onAiSettingsClick, onCloudSettingsClick, ingestionStatus }) {
   const dispatch = useAppDispatch()
   const { isAuthenticated, user } = useAppSelector(state => state.auth)
   const [storageMode, setStorageMode] = useState(null)
@@ -76,14 +76,12 @@ function Header({ onSettingsClick, onAiSettingsClick, ingestionStatus }) {
               </button></>
             )}
             {isLocal && (
-              <><span className="text-tertiary">/</span><a
-                href="https://exemem.com"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-gruvbox-blue no-underline hover:text-primary text-sm font-mono cursor-pointer"
+              <><span className="text-tertiary">/</span><button
+                onClick={onCloudSettingsClick}
+                className="bg-transparent border-none text-gruvbox-blue no-underline hover:text-primary text-sm font-mono cursor-pointer"
               >
                 Upgrade to Cloud
-              </a></>
+              </button></>
             )}
           </div>
           {isAuthenticated && (

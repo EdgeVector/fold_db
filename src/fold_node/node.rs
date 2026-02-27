@@ -365,16 +365,6 @@ impl FoldNode {
         &self.security_manager
     }
 
-    /// Get a schema service client for communicating with the schema service
-    pub fn get_schema_client(&self) -> crate::fold_node::schema_client::SchemaServiceClient {
-        let url = self
-            .config
-            .schema_service_url
-            .as_deref()
-            .unwrap_or("http://localhost:9002");
-        crate::fold_node::schema_client::SchemaServiceClient::new(url)
-    }
-
     /// Get the unified progress tracker
     /// This is the single source of truth for all job progress (ingestion, indexing, reset, etc.)
     /// Local deployments use Sled storage, cloud deployments use DynamoDB

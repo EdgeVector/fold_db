@@ -105,6 +105,17 @@ pub enum Command {
         confirm: bool,
     },
 
+    /// Migrate the local database to the cloud
+    MigrateToCloud {
+        /// Target cloud API URL
+        #[arg(long)]
+        api_url: String,
+
+        /// Target cloud API Key
+        #[arg(long)]
+        api_key: String,
+    },
+
     /// Manage transforms
     Transform {
         #[command(subcommand)]
@@ -303,7 +314,13 @@ mod tests {
     #[test]
     fn parse_query() {
         let cli = Cli::parse_from([
-            "folddb", "query", "tweets", "--fields", "text,author", "--hash", "abc",
+            "folddb",
+            "query",
+            "tweets",
+            "--fields",
+            "text,author",
+            "--hash",
+            "abc",
         ]);
         match cli.command {
             Command::Query {
@@ -707,7 +724,12 @@ mod tests {
 
         for args in &commands {
             let result = Cli::try_parse_from(args.iter());
-            assert!(result.is_ok(), "Failed to parse: {:?}: {}", args, result.unwrap_err());
+            assert!(
+                result.is_ok(),
+                "Failed to parse: {:?}: {}",
+                args,
+                result.unwrap_err()
+            );
         }
     }
 }

@@ -37,22 +37,6 @@ impl FieldValueSet {
         }
     }
 
-    /// Create a new FieldValueSet event with a key snapshot
-    pub fn with_keys(
-        field: impl Into<String>,
-        value: Value,
-        source: impl Into<String>,
-        key_snapshot: KeySnapshot,
-    ) -> Self {
-        Self {
-            field: field.into(),
-            value,
-            source: source.into(),
-            mutation_context: None,
-            key_snapshot: Some(key_snapshot),
-        }
-    }
-
     /// Create a new FieldValueSet event with mutation context and key snapshot
     pub fn with_context_and_keys(
         field: impl Into<String>,

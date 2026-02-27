@@ -119,59 +119,6 @@ impl HashRangeField {
             .unwrap_or_default()
     }
 
-    /// Gets a subset of keys within a range for a specific hash group (useful for pagination)
-    /// Returns composite keys in the format "hash_value:range_value"
-    pub fn get_keys_in_range(&self, hash_value: &str, start: &str, end: &str) -> Vec<KeyValue> {
-        self.base
-            .molecule
-            .as_ref()
-            .and_then(|molecule| molecule.get_atoms_for_hash(hash_value))
-            .map(|range_map| {
-                // Leverage BTree's efficient range operations
-                range_map
-                    .range(start.to_string()..end.to_string())
-                    .map(|(range_key, _)| {
-                        KeyValue::new(Some(hash_value.to_string()), Some(range_key.clone()))
-                    })
-                    .collect()
-            })
-            .unwrap_or_default()
-    }
-
-    /// Gets all range keys for a specific hash group
-    pub fn get_range_keys_for_hash(&self, hash_value: &str) -> Vec<KeyValue> {
-        self.base
-            .molecule
-            .as_ref()
-            .and_then(|molecule| molecule.range_values_for_hash(hash_value))
-            .map(|iter| {
-                iter.map(|range_key| {
-                    KeyValue::new(Some(hash_value.to_string()), Some(range_key.clone()))
-                })
-                .collect()
-            })
-            .unwrap_or_default()
-    }
-
-    /// Gets the total count of items in the hash range
-    pub fn count(&self) -> usize {
-        self.base
-            .molecule
-            .as_ref()
-            .map(|molecule| molecule.atom_count())
-            .unwrap_or(0)
-    }
-
-    /// Gets the count of items for a specific hash group
-    pub fn count_for_hash(&self, hash_value: &str) -> usize {
-        self.base
-            .molecule
-            .as_ref()
-            .and_then(|molecule| molecule.get_atoms_for_hash(hash_value))
-            .map(|range_map| range_map.len())
-            .unwrap_or(0)
-    }
-
     /// Gets all hash values in the molecule
     pub fn get_hash_values(&self) -> Vec<String> {
         self.base
