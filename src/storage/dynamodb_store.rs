@@ -153,10 +153,20 @@ impl DynamoDbSchemaStore {
         Ok(Self { client, table_name })
     }
 
-    /// Get the current user_id from request context
-    /// Falls back to "__system__" for system-level operations when no user context is available
+    /// Get the current user_id from request context.
+    /// Falls back to "__system__" with a warning — this store is also used by the
+    /// standalone schema_service binary which may not have per-user context.
     fn get_current_user_id(&self) -> FoldDbResult<String> {
-        Ok(crate::logging::core::get_current_user_id().unwrap_or_else(|| "__system__".to_string()))
+        match crate::logging::core::get_current_user_id() {
+            Some(id) => Ok(id),
+            None => {
+                log::warn!(
+                    "DynamoDbSchemaStore: No user context available, falling back to __system__. \
+                     This is expected for schema_service but indicates a bug in multi-tenant FoldDB."
+                );
+                Ok("__system__".to_string())
+            }
+        }
     }
 
     /// Get the partition key (hash key) for schemas

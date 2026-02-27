@@ -695,15 +695,18 @@ pub async fn agent_query(
     let save_query = request.query.clone();
     let save_answer = answer.clone();
     let save_tools = tool_calls.clone();
+    let save_user_hash = user_hash.to_string();
     tokio::spawn(async move {
-        conversation_store::save_conversation_turn(
-            &save_node,
-            save_session,
-            save_query,
-            save_answer,
-            save_tools,
-        )
-        .await;
+        crate::logging::core::run_with_user(&save_user_hash, async move {
+            conversation_store::save_conversation_turn(
+                &save_node,
+                save_session,
+                save_query,
+                save_answer,
+                save_tools,
+            )
+            .await;
+        }).await
     });
 
     Ok(ApiResponse::success_with_user(

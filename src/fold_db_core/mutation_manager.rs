@@ -604,7 +604,7 @@ impl MutationManager {
     }
 
     /// Start listening for MutationRequest events in a background thread
-    pub async fn start_event_listener(&self) -> Result<(), SchemaError> {
+    pub async fn start_event_listener(&self, user_id: String) -> Result<(), SchemaError> {
         if self.is_listening.load(std::sync::atomic::Ordering::Acquire) {
             warn!("MutationManager event listener is already running");
             return Ok(());
@@ -619,6 +619,7 @@ impl MutationManager {
 
         // Use tokio::spawn for async background task
         tokio::spawn(async move {
+            crate::logging::core::run_with_user(&user_id, async move {
             // Subscribe to MutationRequest events
             let mut consumer = message_bus.subscribe("MutationRequest").await;
 
@@ -674,6 +675,7 @@ impl MutationManager {
                     break;
                 }
             }
+            }).await
         });
         Ok(())
     }

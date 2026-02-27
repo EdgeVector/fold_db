@@ -145,76 +145,91 @@ impl TransformOrchestrator {
     }
 
     /// Start listening for events to drive transform execution
-    pub async fn start_event_listener(&self, message_bus: Arc<AsyncMessageBus>) {
+    pub async fn start_event_listener(&self, message_bus: Arc<AsyncMessageBus>, user_id: String) {
         info!("👂 TransformOrchestrator: Starting event listener tasks");
 
         // 1. Handle MutationExecuted: Check for affected transforms and trigger them
         let orchestrator = self.clone();
         let mb = Arc::clone(&message_bus);
         let mut consumer = message_bus.subscribe("MutationExecuted").await;
+        let uid = user_id.clone();
 
         tokio::spawn(async move {
-            loop {
-                match consumer.recv().await {
-                    Some(Event::MutationExecuted(event)) => {
-                        if let Err(e) = orchestrator
-                            .handle_mutation_executed_event(&event, &mb)
-                            .await
-                        {
-                            error!("Error handling MutationExecuted in Orchestrator: {}", e);
+            let uid_default = uid.clone();
+            crate::logging::core::run_with_user(&uid, async move {
+                loop {
+                    match consumer.recv().await {
+                        Some(Event::MutationExecuted(event)) => {
+                            // Prefer the event's user_id when available (it reflects
+                            // the user who triggered the mutation).
+                            let effective_uid = event.user_id.as_deref().unwrap_or(&uid_default);
+                            crate::logging::core::run_with_user(effective_uid, async {
+                                if let Err(e) = orchestrator
+                                    .handle_mutation_executed_event(&event, &mb)
+                                    .await
+                                {
+                                    error!("Error handling MutationExecuted in Orchestrator: {}", e);
+                                }
+                            }).await;
                         }
+                        Some(_) => {}  // Ignore other types if mismatched
+                        None => break, // Channel closed
                     }
-                    Some(_) => {}  // Ignore other types if mismatched
-                    None => break, // Channel closed
                 }
-            }
+            }).await
         });
 
         // 2. Handle TransformTriggered: Execute the transform (Active active logic)
         let orchestrator = self.clone();
         let mb = Arc::clone(&message_bus);
         let mut consumer = message_bus.subscribe("TransformTriggered").await;
+        let uid = user_id.clone();
 
         tokio::spawn(async move {
-            loop {
-                match consumer.recv().await {
-                    Some(Event::TransformTriggered(event)) => {
-                        if let Err(e) = orchestrator
-                            .handle_transform_triggered_event(&event, &mb)
-                            .await
-                        {
-                            error!("Error handling TransformTriggered in Orchestrator: {}", e);
+            crate::logging::core::run_with_user(&uid, async move {
+                loop {
+                    match consumer.recv().await {
+                        Some(Event::TransformTriggered(event)) => {
+                            if let Err(e) = orchestrator
+                                .handle_transform_triggered_event(&event, &mb)
+                                .await
+                            {
+                                error!("Error handling TransformTriggered in Orchestrator: {}", e);
+                            }
                         }
+                        Some(_) => {}
+                        None => break,
                     }
-                    Some(_) => {}
-                    None => break,
                 }
-            }
+            }).await
         });
 
         // 3. Handle TransformRegistrationRequest: Robust registration logic
         let orchestrator = self.clone();
         let mb = Arc::clone(&message_bus);
         let mut consumer = message_bus.subscribe("TransformRegistrationRequest").await;
+        let uid = user_id.clone();
 
         tokio::spawn(async move {
-            loop {
-                match consumer.recv().await {
-                    Some(Event::TransformRegistrationRequest(event)) => {
-                        if let Err(e) = orchestrator
-                            .handle_transform_registration_request(&event, &mb)
-                            .await
-                        {
-                            error!(
-                                "Error handling TransformRegistrationRequest in Orchestrator: {}",
-                                e
-                            );
+            crate::logging::core::run_with_user(&uid, async move {
+                loop {
+                    match consumer.recv().await {
+                        Some(Event::TransformRegistrationRequest(event)) => {
+                            if let Err(e) = orchestrator
+                                .handle_transform_registration_request(&event, &mb)
+                                .await
+                            {
+                                error!(
+                                    "Error handling TransformRegistrationRequest in Orchestrator: {}",
+                                    e
+                                );
+                            }
                         }
+                        Some(_) => {}
+                        None => break,
                     }
-                    Some(_) => {}
-                    None => break,
                 }
-            }
+            }).await
         });
     }
 

@@ -34,11 +34,17 @@ impl DynamoDbKvStore {
         Self { client, table_name }
     }
 
-    /// Get the current user_id from request context
-    /// Falls back to "__system__" for system-level operations (e.g., node_id, metadata)
-    /// when no user context is available (server startup, background tasks)
+    /// Get the current user_id from request context.
+    /// Returns an error if no user context is available — all DynamoDB operations
+    /// MUST run within a `run_with_user` scope to ensure proper tenant isolation.
     fn get_current_user_id(&self) -> StorageResult<String> {
-        Ok(crate::logging::core::get_current_user_id().unwrap_or_else(|| "__system__".to_string()))
+        crate::logging::core::get_current_user_id().ok_or_else(|| {
+            StorageError::ConfigurationError(
+                "Missing user context for DynamoDB operation. \
+                 Ensure this code runs within a run_with_user scope."
+                    .to_string(),
+            )
+        })
     }
 
     /// Get the partition key to use for this store
@@ -388,15 +394,22 @@ impl DynamoDbNativeIndexStore {
         Self { client, table_name }
     }
 
-    /// Get the current user_id from request context
-    /// Falls back to "__system__" for system-level operations when no user context is available
+    /// Get the current user_id from request context.
+    /// Returns an error if no user context is available — all DynamoDB operations
+    /// MUST run within a `run_with_user` scope to ensure proper tenant isolation.
     fn get_current_user_id(&self) -> StorageResult<String> {
         let context_user = crate::logging::core::get_current_user_id();
         log::debug!(
             "[DynamoDbNativeIndexStore] get_current_user_id: context={:?}",
             context_user
         );
-        Ok(context_user.unwrap_or_else(|| "__system__".to_string()))
+        context_user.ok_or_else(|| {
+            StorageError::ConfigurationError(
+                "Missing user context for DynamoDB native index operation. \
+                 Ensure this code runs within a run_with_user scope."
+                    .to_string(),
+            )
+        })
     }
 
     /// Parse key to extract feature and term

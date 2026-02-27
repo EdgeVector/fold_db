@@ -201,7 +201,7 @@ impl FoldDB {
         let backfill_tracker = event_monitor.get_backfill_tracker();
         let backfill_manager = BackfillManager::new(backfill_tracker);
         backfill_manager
-            .start_event_listener(Arc::clone(&message_bus))
+            .start_event_listener(Arc::clone(&message_bus), user_id.clone())
             .await;
         info!("Started BackfillManager for event-driven backfill tracking");
 
@@ -219,7 +219,7 @@ impl FoldDB {
 
             // Start the event listener to drive transforms
             orchestrator
-                .start_event_listener(Arc::clone(&message_bus))
+                .start_event_listener(Arc::clone(&message_bus), user_id.clone())
                 .await;
 
             info!("Created and started TransformOrchestrator (Sled backend)");
@@ -237,7 +237,7 @@ impl FoldDB {
                 Ok(orchestrator) => {
                     // Start the event listener to drive transforms
                     orchestrator
-                        .start_event_listener(Arc::clone(&message_bus))
+                        .start_event_listener(Arc::clone(&message_bus), user_id.clone())
                         .await;
 
                     info!("Created and started TransformOrchestrator (KvStore backend)");
@@ -269,7 +269,7 @@ impl FoldDB {
         info!("Created MutationManager for mutation operations");
 
         // Start the MutationManager event listener
-        if let Err(e) = mutation_manager.start_event_listener().await {
+        if let Err(e) = mutation_manager.start_event_listener(user_id.clone()).await {
             log_feature!(
                 LogFeature::Database,
                 error,
@@ -288,7 +288,7 @@ impl FoldDB {
         let process_results_subscriber =
             super::infrastructure::ProcessResultsSubscriber::new(Arc::clone(&db_ops));
         process_results_subscriber
-            .start_event_listener(Arc::clone(&message_bus))
+            .start_event_listener(Arc::clone(&message_bus), user_id.clone())
             .await;
         info!("Started ProcessResultsSubscriber for ingestion result tracking");
 

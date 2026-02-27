@@ -17,63 +17,72 @@ impl BackfillManager {
     }
 
     /// Start listening for backfill-related events
-    pub async fn start_event_listener(&self, message_bus: Arc<AsyncMessageBus>) {
+    pub async fn start_event_listener(&self, message_bus: Arc<AsyncMessageBus>, user_id: String) {
         info!("⏳ BackfillManager: Starting event listener tasks");
 
         // 1. BackfillExpectedMutations
         let tracker = Arc::clone(&self.backfill_tracker);
         let mut consumer = message_bus.subscribe("BackfillExpectedMutations").await;
+        let uid = user_id.clone();
 
         tokio::spawn(async move {
-            loop {
-                match consumer.recv().await {
-                    Some(Event::BackfillExpectedMutations(event)) => {
-                        tracker.set_mutations_expected(&event.backfill_hash, event.count).await;
+            crate::logging::core::run_with_user(&uid, async move {
+                loop {
+                    match consumer.recv().await {
+                        Some(Event::BackfillExpectedMutations(event)) => {
+                            tracker.set_mutations_expected(&event.backfill_hash, event.count).await;
+                        }
+                        Some(_) => {}
+                        None => break,
                     }
-                    Some(_) => {}
-                    None => break,
                 }
-            }
+            }).await
         });
 
         // 2. BackfillMutationFailed
         let tracker = Arc::clone(&self.backfill_tracker);
         let mut consumer = message_bus.subscribe("BackfillMutationFailed").await;
+        let uid = user_id.clone();
 
         tokio::spawn(async move {
-            loop {
-                match consumer.recv().await {
-                    Some(Event::BackfillMutationFailed(event)) => {
-                        tracker.increment_mutation_failed(&event.backfill_hash, event.error).await;
+            crate::logging::core::run_with_user(&uid, async move {
+                loop {
+                    match consumer.recv().await {
+                        Some(Event::BackfillMutationFailed(event)) => {
+                            tracker.increment_mutation_failed(&event.backfill_hash, event.error).await;
+                        }
+                        Some(_) => {}
+                        None => break,
                     }
-                    Some(_) => {}
-                    None => break,
                 }
-            }
+            }).await
         });
 
         // 3. MutationExecuted (for progress tracking)
         let tracker = Arc::clone(&self.backfill_tracker);
         let mut consumer = message_bus.subscribe("MutationExecuted").await;
+        let uid = user_id.clone();
 
         tokio::spawn(async move {
-            loop {
-                match consumer.recv().await {
-                    Some(Event::MutationExecuted(event)) => {
-                        if let Some(context) = &event.mutation_context {
-                            if let Some(backfill_hash) = &context.backfill_hash {
-                                let _is_complete =
-                                    tracker.increment_mutation_completed(backfill_hash).await;
+            crate::logging::core::run_with_user(&uid, async move {
+                loop {
+                    match consumer.recv().await {
+                        Some(Event::MutationExecuted(event)) => {
+                            if let Some(context) = &event.mutation_context {
+                                if let Some(backfill_hash) = &context.backfill_hash {
+                                    let _is_complete =
+                                        tracker.increment_mutation_completed(backfill_hash).await;
+                                }
                             }
                         }
+                        Some(_) => {}
+                        None => break,
                     }
-                    Some(_) => {}
-                    None => break,
                 }
-            }
+            }).await
         });
 
-        // 4. Periodic Cleanup (self-managed)
+        // 4. Periodic Cleanup (self-managed) — no storage ops, just in-memory data
         let tracker = Arc::clone(&self.backfill_tracker);
         tokio::spawn(async move {
             loop {

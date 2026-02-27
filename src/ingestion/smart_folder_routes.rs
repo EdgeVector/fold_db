@@ -124,19 +124,25 @@ pub async fn smart_folder_scan(
     // Spawn the scan in the background
     let pid = progress_id.clone();
     tokio::spawn(async move {
+        let user_id_inner = user_id.clone();
         crate::logging::core::run_with_user(&user_id, async move {
             // Build a progress callback that writes to the tracker
             let tracker_cb = tracker.clone();
             let pid_cb = pid.clone();
+            let progress_user_id = crate::logging::core::get_current_user_id()
+                .unwrap_or_else(|| user_id_inner.clone());
             let on_progress: smart_folder::ScanProgressFn = Box::new(move |pct, msg| {
                 let tracker_inner = tracker_cb.clone();
                 let pid_inner = pid_cb.clone();
+                let uid = progress_user_id.clone();
                 // Fire-and-forget async update via a spawned task
                 tokio::spawn(async move {
-                    if let Ok(Some(mut job)) = tracker_inner.load(&pid_inner).await {
-                        job.update_progress(pct, msg);
-                        let _ = tracker_inner.save(&job).await;
-                    }
+                    crate::logging::core::run_with_user(&uid, async move {
+                        if let Ok(Some(mut job)) = tracker_inner.load(&pid_inner).await {
+                            job.update_progress(pct, msg);
+                            let _ = tracker_inner.save(&job).await;
+                        }
+                    }).await
                 });
             });
 
@@ -500,7 +506,10 @@ fn spawn_batch_coordinator(
     let map = batch_controller_map.get_ref().clone();
 
     tokio::spawn(async move {
+        let user_id_inner = user_id.clone();
         crate::logging::core::run_with_user(&user_id, async move {
+            let batch_user_id = crate::logging::core::get_current_user_id()
+                .unwrap_or_else(|| user_id_inner);
             let mut join_set = tokio::task::JoinSet::new();
             let mut all_popped = false;
 
@@ -514,7 +523,9 @@ fn spawn_batch_coordinator(
                             let storage = upload_storage.clone();
                             let tracker = progress_tracker.clone();
                             let enc_key = encryption_key;
+                            let task_uid = batch_user_id.clone();
                             join_set.spawn(async move {
+                                crate::logging::core::run_with_user(&task_uid, async move {
                                 let progress_service = ProgressService::new(tracker);
                                 let result = process_single_file_via_smart_folder(
                                     &file.path,
@@ -529,6 +540,7 @@ fn spawn_batch_coordinator(
                                 )
                                 .await;
                                 (file, result)
+                                }).await
                             });
                         }
                         PopResult::SpendLimitHit(notifier) => {

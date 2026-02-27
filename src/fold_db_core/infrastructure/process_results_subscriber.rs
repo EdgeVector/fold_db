@@ -32,17 +32,19 @@ impl ProcessResultsSubscriber {
     }
 
     /// Start listening for MutationExecuted events in a background task.
-    pub async fn start_event_listener(&self, message_bus: Arc<AsyncMessageBus>) {
+    pub async fn start_event_listener(&self, message_bus: Arc<AsyncMessageBus>, user_id: String) {
         let db_ops = Arc::clone(&self.db_ops);
         let mut consumer = message_bus.subscribe("MutationExecuted").await;
 
         tokio::spawn(async move {
-            while let Some(event) = consumer.recv().await {
-                if let Event::MutationExecuted(e) = event {
-                    Self::handle_event(&e, &db_ops).await;
+            crate::logging::core::run_with_user(&user_id, async move {
+                while let Some(event) = consumer.recv().await {
+                    if let Event::MutationExecuted(e) = event {
+                        Self::handle_event(&e, &db_ops).await;
+                    }
                 }
-            }
-            log::warn!("ProcessResultsSubscriber: consumer disconnected");
+                log::warn!("ProcessResultsSubscriber: consumer disconnected");
+            }).await
         });
     }
 
