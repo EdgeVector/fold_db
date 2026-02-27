@@ -8,7 +8,6 @@ pub mod config;
 pub mod core;
 pub mod features;
 pub mod outputs;
-pub mod util;
 
 use crate::logging::core::{LogBridge, Logger, MultiAsyncLogger};
 #[cfg(feature = "aws-backend")]

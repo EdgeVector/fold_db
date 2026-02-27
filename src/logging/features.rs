@@ -45,31 +45,3 @@ macro_rules! log_feature {
 }
 
 pub use crate::log_feature;
-
-// Performance monitoring helper
-pub struct PerformanceTimer {
-    start: std::time::Instant,
-    feature: LogFeature,
-    operation: String,
-}
-
-impl PerformanceTimer {
-    pub fn new(feature: LogFeature, operation: String) -> Self {
-        log::debug!(target: feature.target(), "Starting timed operation: {}", operation);
-        Self {
-            start: std::time::Instant::now(),
-            feature,
-            operation,
-        }
-    }
-
-    pub fn finish(self) {
-        let duration = self.start.elapsed();
-        log::info!(
-            target: self.feature.target(),
-            "Operation '{}' completed in {:?}",
-            self.operation,
-            duration
-        );
-    }
-}
