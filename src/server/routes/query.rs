@@ -1,7 +1,7 @@
 use crate::handlers::query as query_handlers;
 use crate::schema::types::operations::{Operation, Query};
 use crate::server::http_server::AppState;
-use crate::server::routes::{handler_error_to_response, require_node};
+use crate::server::routes::{handler_error_to_response, require_node_read};
 use actix_web::{web, HttpResponse, Responder};
 use log::{debug, error, info, warn};
 use serde::{Deserialize, Serialize};
@@ -39,11 +39,10 @@ pub async fn execute_query(query: web::Json<Query>, state: web::Data<AppState>) 
         query_inner.filter
     );
 
-    let (user_hash, node_arc) = match require_node(&state).await {
+    let (user_hash, node) = match require_node_read(&state).await {
         Ok(res) => res,
         Err(response) => return response,
     };
-    let node = node_arc.read().await;
 
     // Use shared handler
     match query_handlers::execute_query(query_inner, &user_hash, &node).await {
@@ -104,11 +103,10 @@ pub async fn execute_mutation(
             }
         };
 
-    let (user_hash, node_arc) = match require_node(&state).await {
+    let (user_hash, node) = match require_node_read(&state).await {
         Ok(res) => res,
         Err(response) => return response,
     };
-    let node = node_arc.read().await;
 
     log::info!("🚀 Executing mutation via shared handler");
     match crate::handlers::mutation::execute_mutation_from_components(
@@ -148,11 +146,10 @@ pub async fn execute_mutations_batch(
     mutations_data: web::Json<Vec<Value>>,
     state: web::Data<AppState>,
 ) -> impl Responder {
-    let (user_hash, node_arc) = match require_node(&state).await {
+    let (user_hash, node) = match require_node_read(&state).await {
         Ok(res) => res,
         Err(response) => return response,
     };
-    let node = node_arc.read().await;
 
     match crate::handlers::mutation::execute_mutations_batch_from_json(
         mutations_data.into_inner(),
@@ -176,11 +173,10 @@ pub async fn execute_mutations_batch(
     )
 )]
 pub async fn list_transforms(state: web::Data<AppState>) -> impl Responder {
-    let (user_hash, node_arc) = match require_node(&state).await {
+    let (user_hash, node) = match require_node_read(&state).await {
         Ok(res) => res,
         Err(response) => return response,
     };
-    let node = node_arc.read().await;
 
     match crate::handlers::transform::list_transforms(&user_hash, &node).await {
         Ok(response) => {
@@ -207,11 +203,10 @@ pub async fn add_to_transform_queue(
     state: web::Data<AppState>,
 ) -> impl Responder {
     let transform_id = path.into_inner();
-    let (user_hash, node_arc) = match require_node(&state).await {
+    let (user_hash, node) = match require_node_read(&state).await {
         Ok(res) => res,
         Err(response) => return response,
     };
-    let node = node_arc.read().await;
 
     match crate::handlers::transform::add_to_transform_queue(&transform_id, &user_hash, &node).await
     {
@@ -237,11 +232,10 @@ pub async fn add_to_transform_queue(
     )
 )]
 pub async fn get_transform_queue(state: web::Data<AppState>) -> impl Responder {
-    let (user_hash, node_arc) = match require_node(&state).await {
+    let (user_hash, node) = match require_node_read(&state).await {
         Ok(res) => res,
         Err(response) => return response,
     };
-    let node = node_arc.read().await;
 
     match crate::handlers::transform::get_transform_queue(&user_hash, &node).await {
         Ok(response) => HttpResponse::Ok().json(json!({
@@ -262,11 +256,10 @@ pub async fn get_transform_queue(state: web::Data<AppState>) -> impl Responder {
     )
 )]
 pub async fn get_all_backfills(state: web::Data<AppState>) -> impl Responder {
-    let (user_hash, node_arc) = match require_node(&state).await {
+    let (user_hash, node) = match require_node_read(&state).await {
         Ok(res) => res,
         Err(response) => return response,
     };
-    let node = node_arc.read().await;
 
     match crate::handlers::transform::get_all_backfills(&user_hash, &node).await {
         Ok(response) => {
@@ -286,11 +279,10 @@ pub async fn get_all_backfills(state: web::Data<AppState>) -> impl Responder {
     )
 )]
 pub async fn get_active_backfills(state: web::Data<AppState>) -> impl Responder {
-    let (user_hash, node_arc) = match require_node(&state).await {
+    let (user_hash, node) = match require_node_read(&state).await {
         Ok(res) => res,
         Err(response) => return response,
     };
-    let node = node_arc.read().await;
 
     match crate::handlers::transform::get_active_backfills(&user_hash, &node).await {
         Ok(response) => {
@@ -315,11 +307,10 @@ pub async fn get_active_backfills(state: web::Data<AppState>) -> impl Responder 
 )]
 pub async fn get_backfill(path: web::Path<String>, state: web::Data<AppState>) -> impl Responder {
     let transform_id = path.into_inner();
-    let (user_hash, node_arc) = match require_node(&state).await {
+    let (user_hash, node) = match require_node_read(&state).await {
         Ok(res) => res,
         Err(response) => return response,
     };
-    let node = node_arc.read().await;
 
     match crate::handlers::transform::get_backfill(&transform_id, &user_hash, &node).await {
         Ok(response) => {
@@ -339,11 +330,10 @@ pub async fn get_backfill(path: web::Path<String>, state: web::Data<AppState>) -
     )
 )]
 pub async fn get_transform_statistics(state: web::Data<AppState>) -> impl Responder {
-    let (user_hash, node_arc) = match require_node(&state).await {
+    let (user_hash, node) = match require_node_read(&state).await {
         Ok(res) => res,
         Err(response) => return response,
     };
-    let node = node_arc.read().await;
 
     match crate::handlers::transform::get_transform_statistics(&user_hash, &node).await {
         Ok(response) => {
@@ -382,7 +372,7 @@ pub async fn native_index_search(
         }
     };
 
-    let (user_hash, node_arc) = match require_node(&state).await {
+    let (user_hash, node) = match require_node_read(&state).await {
         Ok(res) => res,
         Err(response) => return response,
     };
@@ -391,8 +381,6 @@ pub async fn native_index_search(
         "API: Searching native index for term: '{}', user_hash: '{}'",
         term, user_hash
     );
-
-    let node = node_arc.read().await;
 
     // Use shared handler
     debug!("API: Acquired database, calling native_index_search via shared handler");
@@ -421,11 +409,10 @@ pub async fn native_index_search(
     )
 )]
 pub async fn get_backfill_statistics(state: web::Data<AppState>) -> impl Responder {
-    let (user_hash, node_arc) = match require_node(&state).await {
+    let (user_hash, node) = match require_node_read(&state).await {
         Ok(res) => res,
         Err(response) => return response,
     };
-    let node = node_arc.read().await;
 
     match crate::handlers::transform::get_backfill_statistics(&user_hash, &node).await {
         Ok(response) => {
@@ -446,11 +433,10 @@ pub async fn get_backfill_statistics(state: web::Data<AppState>) -> impl Respond
     )
 )]
 pub async fn get_indexing_status(state: web::Data<AppState>) -> impl Responder {
-    let (user_hash, node_arc) = match require_node(&state).await {
+    let (user_hash, node) = match require_node_read(&state).await {
         Ok(res) => res,
         Err(response) => return response,
     };
-    let node = node_arc.read().await;
 
     match crate::handlers::system::get_indexing_status(&user_hash, &node).await {
         Ok(response) => {
@@ -478,11 +464,10 @@ pub async fn get_molecule_history(
     state: web::Data<AppState>,
 ) -> impl Responder {
     let molecule_uuid = path.into_inner();
-    let (user_hash, node_arc) = match require_node(&state).await {
+    let (user_hash, node) = match require_node_read(&state).await {
         Ok(res) => res,
         Err(response) => return response,
     };
-    let node = node_arc.read().await;
 
     match query_handlers::get_molecule_history(&molecule_uuid, &user_hash, &node).await {
         Ok(response) => HttpResponse::Ok().json(response),
@@ -509,11 +494,10 @@ pub async fn get_atom_content(
     state: web::Data<AppState>,
 ) -> impl Responder {
     let atom_uuid = path.into_inner();
-    let (user_hash, node_arc) = match require_node(&state).await {
+    let (user_hash, node) = match require_node_read(&state).await {
         Ok(res) => res,
         Err(response) => return response,
     };
-    let node = node_arc.read().await;
 
     match query_handlers::get_atom_content(&atom_uuid, &user_hash, &node).await {
         Ok(response) => HttpResponse::Ok().json(response),
@@ -527,11 +511,10 @@ pub async fn get_process_results(
     state: web::Data<AppState>,
 ) -> impl Responder {
     let progress_id = path.into_inner();
-    let (user_hash, node_arc) = match require_node(&state).await {
+    let (user_hash, node) = match require_node_read(&state).await {
         Ok(res) => res,
         Err(response) => return response,
     };
-    let node = node_arc.read().await;
 
     match query_handlers::get_process_results(&progress_id, &user_hash, &node).await {
         Ok(response) => HttpResponse::Ok().json(response),

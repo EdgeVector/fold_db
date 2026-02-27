@@ -72,6 +72,22 @@ fn value_to_string(value: &Value) -> Option<String> {
     }
 }
 
+impl std::fmt::Display for KeyValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(hash) = &self.hash {
+            if let Some(range) = &self.range {
+                write!(f, "{}:{}", hash, range)
+            } else {
+                write!(f, "{}", hash)
+            }
+        } else if let Some(range) = &self.range {
+            write!(f, "{}", range)
+        } else {
+            write!(f, "")
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -144,21 +160,5 @@ mod tests {
         // Requesting the object itself (not a leaf) should return None
         let kv = KeyValue::from_mutation(&fields, &make_key_config(Some("departure"), None));
         assert_eq!(kv.hash, None);
-    }
-}
-
-impl std::fmt::Display for KeyValue {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if let Some(hash) = &self.hash {
-            if let Some(range) = &self.range {
-                write!(f, "{}:{}", hash, range)
-            } else {
-                write!(f, "{}", hash)
-            }
-        } else if let Some(range) = &self.range {
-            write!(f, "{}", range)
-        } else {
-            write!(f, "")
-        }
     }
 }

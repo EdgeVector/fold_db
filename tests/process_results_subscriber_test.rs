@@ -159,7 +159,7 @@ async fn test_process_results_batch_mutations() {
 
     let progress_id = "test-progress-batch";
 
-    let contacts = vec![
+    let contacts = [
         ("bob@example.com", "Bob", "555-0200"),
         ("carol@example.com", "Carol", "555-0300"),
         ("dave@example.com", "Dave", "555-0400"),

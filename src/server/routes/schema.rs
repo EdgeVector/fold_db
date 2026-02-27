@@ -2,7 +2,7 @@ use crate::handlers::schema as schema_handlers;
 use crate::log_feature;
 use crate::logging::features::LogFeature;
 use crate::server::http_server::AppState;
-use crate::server::routes::{handler_error_to_response, require_node};
+use crate::server::routes::{handler_error_to_response, require_node_read};
 use actix_web::{web, HttpResponse, Responder};
 use serde::Deserialize;
 use serde_json::json;
@@ -17,12 +17,10 @@ use serde_json::json;
     )
 )]
 pub async fn list_schemas(state: web::Data<AppState>) -> impl Responder {
-    let (user_hash, node_arc) = match require_node(&state).await {
+    let (user_hash, node) = match require_node_read(&state).await {
         Ok(res) => res,
         Err(response) => return response,
     };
-
-    let node = node_arc.read().await;
 
     // Use shared handler
     match schema_handlers::list_schemas(&user_hash, &node).await {
@@ -47,12 +45,10 @@ pub async fn list_schemas(state: web::Data<AppState>) -> impl Responder {
 )]
 pub async fn get_schema(path: web::Path<String>, state: web::Data<AppState>) -> impl Responder {
     let name = path.into_inner();
-    let (user_hash, node_arc) = match require_node(&state).await {
+    let (user_hash, node) = match require_node_read(&state).await {
         Ok(res) => res,
         Err(response) => return response,
     };
-
-    let node = node_arc.read().await;
 
     // Use shared handler
     match schema_handlers::get_schema(&name, &user_hash, &node).await {
@@ -76,12 +72,10 @@ pub async fn get_schema(path: web::Path<String>, state: web::Data<AppState>) -> 
 )]
 pub async fn approve_schema(path: web::Path<String>, state: web::Data<AppState>) -> impl Responder {
     let schema_name = path.into_inner();
-    let (user_hash, node_arc) = match require_node(&state).await {
+    let (user_hash, node) = match require_node_read(&state).await {
         Ok(res) => res,
         Err(response) => return response,
     };
-
-    let node = node_arc.read().await;
 
     // Use shared handler
     match schema_handlers::approve_schema(&schema_name, &user_hash, &node).await {
@@ -105,12 +99,10 @@ pub async fn approve_schema(path: web::Path<String>, state: web::Data<AppState>)
 )]
 pub async fn block_schema(path: web::Path<String>, state: web::Data<AppState>) -> impl Responder {
     let schema_name = path.into_inner();
-    let (user_hash, node_arc) = match require_node(&state).await {
+    let (user_hash, node) = match require_node_read(&state).await {
         Ok(res) => res,
         Err(response) => return response,
     };
-
-    let node = node_arc.read().await;
 
     // Use shared handler
     match schema_handlers::block_schema(&schema_name, &user_hash, &node).await {
@@ -152,12 +144,10 @@ pub async fn list_schema_keys(
     let offset = query.offset.unwrap_or(0);
     let limit = query.limit.unwrap_or(50);
 
-    let (user_hash, node_arc) = match require_node(&state).await {
+    let (user_hash, node) = match require_node_read(&state).await {
         Ok(res) => res,
         Err(response) => return response,
     };
-
-    let node = node_arc.read().await;
 
     match schema_handlers::list_schema_keys(&name, offset, limit, &user_hash, &node).await {
         Ok(response) => HttpResponse::Ok().json(response),
@@ -184,12 +174,10 @@ pub async fn get_backfill_status(
     state: web::Data<AppState>,
 ) -> impl Responder {
     let backfill_hash = path.into_inner();
-    let (user_hash, node_arc) = match require_node(&state).await {
+    let (_user_hash, node) = match require_node_read(&state).await {
         Ok(res) => res,
         Err(response) => return response,
     };
-    let _user_hash = user_hash; // For logging/context if needed
-    let node = node_arc.read().await;
     let processor = crate::fold_node::OperationProcessor::new((*node).clone());
 
     match processor.get_backfill(&backfill_hash).await {
@@ -211,12 +199,10 @@ pub async fn get_backfill_status(
     )
 )]
 pub async fn load_schemas(state: web::Data<AppState>) -> impl Responder {
-    let (user_hash, node_arc) = match require_node(&state).await {
+    let (user_hash, node) = match require_node_read(&state).await {
         Ok(res) => res,
         Err(response) => return response,
     };
-
-    let node = node_arc.read().await;
 
     // Use shared handler
     match schema_handlers::load_schemas(&user_hash, &node).await {

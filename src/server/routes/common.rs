@@ -63,3 +63,14 @@ pub async fn require_node(
     let node = get_node_for_user(state, &user_hash).await?;
     Ok((user_hash, node))
 }
+
+/// Combined helper: require_node + acquire read lock.
+///
+/// Returns an owned read guard so the caller doesn't need `node_arc`.
+pub async fn require_node_read(
+    state: &web::Data<AppState>,
+) -> Result<(String, tokio::sync::OwnedRwLockReadGuard<FoldNode>), HttpResponse> {
+    let (user_hash, node_arc) = require_node(state).await?;
+    let node = node_arc.read_owned().await;
+    Ok((user_hash, node))
+}

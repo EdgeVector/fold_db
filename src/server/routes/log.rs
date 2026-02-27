@@ -1,5 +1,5 @@
 use crate::server::http_server::AppState;
-use crate::server::routes::{handler_error_to_response, require_node};
+use crate::server::routes::{handler_error_to_response, require_node_read};
 use actix_web::{web, HttpResponse, Responder, Result};
 use futures_util::stream::StreamExt;
 use serde::{Deserialize, Serialize};
@@ -37,11 +37,10 @@ pub async fn list_logs(
     query: web::Query<ListLogsQuery>,
     state: web::Data<AppState>,
 ) -> impl Responder {
-    let (user_hash, node_arc) = match require_node(&state).await {
+    let (user_hash, node) = match require_node_read(&state).await {
         Ok(res) => res,
         Err(response) => return response,
     };
-    let node = node_arc.read().await;
 
     match crate::handlers::logs::list_logs(query.since, &user_hash, &node).await {
         Ok(response) => HttpResponse::Ok().json(json!({
@@ -91,11 +90,10 @@ pub async fn stream_logs() -> impl Responder {
     responses((status = 200, description = "Logging configuration", body = LogConfigResponse))
 )]
 pub async fn get_config(state: web::Data<AppState>) -> Result<impl Responder> {
-    let (user_hash, node_arc) = match require_node(&state).await {
+    let (user_hash, node) = match require_node_read(&state).await {
         Ok(res) => res,
         Err(response) => return Ok(response),
     };
-    let node = node_arc.read().await;
 
     match crate::handlers::logs::get_log_config(&user_hash, &node).await {
         Ok(response) => Ok(HttpResponse::Ok().json(json!({
@@ -128,11 +126,10 @@ pub async fn update_feature_level(
         })));
     }
 
-    let (user_hash, node_arc) = match require_node(&state).await {
+    let (user_hash, node) = match require_node_read(&state).await {
         Ok(res) => res,
         Err(response) => return Ok(response),
     };
-    let node = node_arc.read().await;
 
     match crate::handlers::logs::update_log_feature_level(
         &level_update.feature,
@@ -158,11 +155,10 @@ pub async fn update_feature_level(
     responses((status = 200, description = "Reloaded"), (status = 400, description = "Bad request"))
 )]
 pub async fn reload_config(state: web::Data<AppState>) -> Result<impl Responder> {
-    let (user_hash, node_arc) = match require_node(&state).await {
+    let (user_hash, node) = match require_node_read(&state).await {
         Ok(res) => res,
         Err(response) => return Ok(response),
     };
-    let node = node_arc.read().await;
 
     match crate::handlers::logs::reload_log_config("config/logging.toml", &user_hash, &node).await {
         Ok(response) => Ok(HttpResponse::Ok().json(json!({
@@ -181,11 +177,10 @@ pub async fn reload_config(state: web::Data<AppState>) -> Result<impl Responder>
     responses((status = 200, description = "Features", body = serde_json::Value))
 )]
 pub async fn get_features(state: web::Data<AppState>) -> Result<impl Responder> {
-    let (user_hash, node_arc) = match require_node(&state).await {
+    let (user_hash, node) = match require_node_read(&state).await {
         Ok(res) => res,
         Err(response) => return Ok(response),
     };
-    let node = node_arc.read().await;
 
     match crate::handlers::logs::get_log_features(&user_hash, &node).await {
         Ok(response) => Ok(HttpResponse::Ok().json(json!({
