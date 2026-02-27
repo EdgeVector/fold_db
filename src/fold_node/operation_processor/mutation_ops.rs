@@ -15,8 +15,7 @@ impl OperationProcessor {
         let mut db = self
             .node
             .get_fold_db()
-            .await
-            .map_err(|e| FoldDbError::Database(e.to_string()))?;
+            .await?;
 
         let mut ids = db
             .mutation_manager
@@ -74,8 +73,7 @@ impl OperationProcessor {
         let mut db = self
             .node
             .get_fold_db()
-            .await
-            .map_err(|e| FoldDbError::Database(e.to_string()))?;
+            .await?;
         let mutation_ids = db
             .mutation_manager
             .write_mutations_batch_async(mutations)

@@ -55,12 +55,10 @@ impl OperationProcessor {
         let db = self
             .node
             .get_fold_db()
-            .await
-            .map_err(|e| FoldDbError::Database(e.to_string()))?;
+            .await?;
 
-        db.transform_manager
-            .list_transforms()
-            .map_err(|e| FoldDbError::Database(e.to_string()))
+        Ok(db.transform_manager
+            .list_transforms()?)
     }
 
     /// Add transform to queue.
@@ -72,8 +70,7 @@ impl OperationProcessor {
         let db = self
             .node
             .get_fold_db()
-            .await
-            .map_err(|e| FoldDbError::Database(e.to_string()))?;
+            .await?;
 
         if let Some(orchestrator) = db.transform_orchestrator() {
             orchestrator
@@ -93,8 +90,7 @@ impl OperationProcessor {
         let db = self
             .node
             .get_fold_db()
-            .await
-            .map_err(|e| FoldDbError::Database(e.to_string()))?;
+            .await?;
 
         if let Some(orchestrator) = db.transform_orchestrator() {
             let queued = orchestrator
@@ -116,8 +112,7 @@ impl OperationProcessor {
         let db = self
             .node
             .get_fold_db()
-            .await
-            .map_err(|e| FoldDbError::Database(e.to_string()))?;
+            .await?;
         Ok(db.get_all_backfills())
     }
 
@@ -126,8 +121,7 @@ impl OperationProcessor {
         let db = self
             .node
             .get_fold_db()
-            .await
-            .map_err(|e| FoldDbError::Database(e.to_string()))?;
+            .await?;
         Ok(db.get_active_backfills())
     }
 
@@ -136,8 +130,7 @@ impl OperationProcessor {
         let db = self
             .node
             .get_fold_db()
-            .await
-            .map_err(|e| FoldDbError::Database(e.to_string()))?;
+            .await?;
         Ok(db.get_backfill(id))
     }
 
@@ -177,8 +170,7 @@ impl OperationProcessor {
         let db = self
             .node
             .get_fold_db()
-            .await
-            .map_err(|e| FoldDbError::Database(e.to_string()))?;
+            .await?;
         Ok(db.get_event_statistics())
     }
 
@@ -187,8 +179,7 @@ impl OperationProcessor {
         let db = self
             .node
             .get_fold_db()
-            .await
-            .map_err(|e| FoldDbError::Database(e.to_string()))?;
+            .await?;
         Ok(db.get_indexing_status().await)
     }
 

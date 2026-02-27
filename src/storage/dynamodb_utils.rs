@@ -1,6 +1,7 @@
 //! Utility functions for DynamoDB operations
 //! Provides retry logic, error detection, and helper functions
 
+use super::error::{StorageError, StorageResult};
 use std::time::Duration;
 
 /// Maximum number of retries for transient failures
@@ -12,6 +13,19 @@ pub const MAX_BATCH_RETRIES: u32 = 10;
 /// Base delay for exponential backoff (in milliseconds)
 /// Higher for throttling scenarios
 const BASE_DELAY_MS: u64 = 500;
+
+/// Get the current user_id from request context.
+/// Returns an error if no user context is available — all DynamoDB operations
+/// MUST run within a `run_with_user` scope to ensure proper tenant isolation.
+pub fn require_user_context() -> StorageResult<String> {
+    crate::logging::core::get_current_user_id().ok_or_else(|| {
+        StorageError::ConfigurationError(
+            "Missing user context for DynamoDB operation. \
+             Ensure this code runs within a run_with_user scope."
+                .to_string(),
+        )
+    })
+}
 
 /// Check if an error is retryable (throttling, service errors, etc.)
 pub fn is_retryable_error(error_msg: &str) -> bool {

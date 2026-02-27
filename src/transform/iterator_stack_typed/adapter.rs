@@ -14,8 +14,6 @@ pub fn execute_fields_typed(
 ) -> ExecutionResult {
     let engine = TypedEngine::new();
     let mut index_entries: HashMap<String, Vec<IndexEntry>> = HashMap::new();
-    let mut warnings: HashMap<String, Vec<crate::transform::result_types::ExecutionWarning>> =
-        HashMap::new();
 
     for (field_name, chain) in chains.iter() {
         let specs = map_chain_to_specs(chain);
@@ -52,12 +50,10 @@ pub fn execute_fields_typed(
             });
         }
         index_entries.insert(field_name.clone(), entries);
-        warnings.insert(field_name.clone(), Vec::new());
     }
 
     ExecutionResult {
         index_entries,
-        warnings,
     }
 }
 

@@ -5,7 +5,6 @@ use crate::storage::traits::*;
 use crate::storage::DynamoDbNamespacedStore;
 use crate::storage::{SledNamespacedStore, TypedKvStore};
 use serde::{de::DeserializeOwned, Serialize};
-use std::collections::HashMap;
 use std::sync::Arc;
 
 /// Enhanced database operations with pluggable storage backend
@@ -131,15 +130,6 @@ impl DbOperations {
 
     // ===== Generic storage operations (async API) =====
 
-    /// Store an item in the main namespace
-    pub async fn store_item<T: Serialize + Send + Sync>(
-        &self,
-        key: &str,
-        item: &T,
-    ) -> Result<(), SchemaError> {
-        Ok(self.main_store.put_item(key, item).await?)
-    }
-
     /// Get an item from the main namespace
     pub async fn get_item<T: DeserializeOwned + Send + Sync>(
         &self,
@@ -151,61 +141,6 @@ impl DbOperations {
     /// Delete an item from the main namespace
     pub async fn delete_item(&self, key: &str) -> Result<bool, SchemaError> {
         Ok(self.main_store.delete_item(key).await?)
-    }
-
-    /// List keys with prefix
-    pub async fn list_items_with_prefix(&self, prefix: &str) -> Result<Vec<String>, SchemaError> {
-        Ok(self.main_store.list_keys_with_prefix(prefix).await?)
-    }
-
-    /// Store an item in a specific namespace
-    pub async fn store_in_namespace<T: Serialize + Send + Sync>(
-        &self,
-        namespace: &str,
-        key: &str,
-        item: &T,
-    ) -> Result<(), SchemaError> {
-        let store = self.get_namespace_store(namespace)?;
-        Ok(store.put_item(key, item).await?)
-    }
-
-    /// Get an item from a specific namespace
-    pub async fn get_from_namespace<T: DeserializeOwned + Send + Sync>(
-        &self,
-        namespace: &str,
-        key: &str,
-    ) -> Result<Option<T>, SchemaError> {
-        let store = self.get_namespace_store(namespace)?;
-        Ok(store.get_item(key).await?)
-    }
-
-    /// List all keys in a namespace
-    pub async fn list_keys_in_namespace(
-        &self,
-        namespace: &str,
-    ) -> Result<Vec<String>, SchemaError> {
-        let store = self.get_namespace_store(namespace)?;
-        Ok(store.list_keys_with_prefix("").await?)
-    }
-
-    /// Delete an item from a specific namespace
-    pub async fn delete_from_namespace(
-        &self,
-        namespace: &str,
-        key: &str,
-    ) -> Result<bool, SchemaError> {
-        let store = self.get_namespace_store(namespace)?;
-        Ok(store.delete_item(key).await?)
-    }
-
-    /// Check if a key exists in a specific namespace
-    pub async fn exists_in_namespace(
-        &self,
-        namespace: &str,
-        key: &str,
-    ) -> Result<bool, SchemaError> {
-        let store = self.get_namespace_store(namespace)?;
-        Ok(store.exists_item(key).await?)
     }
 
     // ===== Namespace-specific store getters =====
@@ -273,16 +208,6 @@ impl DbOperations {
 
     // ===== Batch operations =====
 
-    /// Batch store multiple items
-    pub async fn batch_store_items<T: Serialize + Send + Sync + Clone>(
-        &self,
-        items: &[(String, T)],
-    ) -> Result<(), SchemaError> {
-        let items_vec: Vec<(String, T)> =
-            items.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
-        Ok(self.main_store.batch_put_items(items_vec).await?)
-    }
-
     /// Batch store items in a specific namespace
     pub async fn batch_store_in_namespace<T: Serialize + Send + Sync + Clone>(
         &self,
@@ -293,28 +218,6 @@ impl DbOperations {
         let items_vec: Vec<(String, T)> =
             items.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
         Ok(store.batch_put_items(items_vec).await?)
-    }
-
-    /// Get database statistics (approximate for non-Sled backends)
-    pub async fn get_stats(&self) -> Result<HashMap<String, u64>, SchemaError> {
-        let mut stats = HashMap::new();
-
-        let atoms = self.main_store.list_keys_with_prefix("atom:").await?;
-        stats.insert("atoms".to_string(), atoms.len() as u64);
-
-        let refs = self.main_store.list_keys_with_prefix("ref:").await?;
-        stats.insert("refs".to_string(), refs.len() as u64);
-
-        let metadata_keys = self.metadata_store.list_keys_with_prefix("").await?;
-        stats.insert("metadata".to_string(), metadata_keys.len() as u64);
-
-        let permissions_keys = self.permissions_store.list_keys_with_prefix("").await?;
-        stats.insert("permissions".to_string(), permissions_keys.len() as u64);
-
-        let transforms_keys = self.transforms_store.list_keys_with_prefix("").await?;
-        stats.insert("transforms".to_string(), transforms_keys.len() as u64);
-
-        Ok(stats)
     }
 
     // ===== Helper methods =====
