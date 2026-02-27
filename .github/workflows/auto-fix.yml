@@ -86,10 +86,12 @@ jobs:
       - name: Push fix if changes were made
         if: always()
         run: |
+          git checkout -- .github/workflows/ 2>/dev/null || true
           if git diff --quiet && git diff --cached --quiet; then
             echo "No changes to push"
           else
             git add -A
+            git reset HEAD .github/workflows/ 2>/dev/null || true
             git diff --cached --quiet || git commit -m "fix: auto-fix CI test failures
 
             Co-Authored-By: Claude Code <claude@anthropic.com>"
