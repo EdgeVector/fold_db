@@ -19,6 +19,7 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
   const dispatch = useAppDispatch()
   const schemas = useAppSelector(selectAllSchemas)
   const [expandedSchemas, setExpandedSchemas] = useState({})
+  const [highlightedSchema, setHighlightedSchema] = useState(null)
 
   // Fetch schemas when component mounts; clean up highlight timer on unmount
   useEffect(() => {
@@ -141,22 +142,22 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
 
 
   const scrollToSchema = (schemaName) => {
-    // Expand the target schema
+    // Expand the target schema and highlight it
     setExpandedSchemas(prev => ({ ...prev, [schemaName]: true }))
+    setHighlightedSchema(schemaName)
     // Scroll to it after React re-renders
-    requestAnimationFrame(() => {
+    window.requestAnimationFrame(() => {
       const el = document.getElementById(`schema-${schemaName}`)
       if (el) {
         el.scrollIntoView({ behavior: 'smooth', block: 'start' })
-        // Brief highlight with tracked timer for cleanup
-        el.classList.add('ring-2', 'ring-gruvbox-purple')
-        if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current)
-        highlightTimerRef.current = setTimeout(() => {
-          el.classList.remove('ring-2', 'ring-gruvbox-purple')
-          highlightTimerRef.current = null
-        }, 2000)
       }
     })
+    // Clear highlight after 2 seconds
+    if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current)
+    highlightTimerRef.current = setTimeout(() => {
+      setHighlightedSchema(null)
+      highlightTimerRef.current = null
+    }, 2000)
   }
 
   const renderSchema = (schema) => {
@@ -166,7 +167,7 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
     const hashRangeSchemaInfo = getHashRangeSchemaInfo(schema)
 
     return (
-      <div key={schema.name} id={`schema-${schema.name}`} className="card overflow-hidden transition-shadow duration-500">
+      <div key={schema.name} id={`schema-${schema.name}`} className={`card overflow-hidden transition-shadow duration-500${highlightedSchema === schema.name ? ' ring-2 ring-gruvbox-purple' : ''}`}>
         <button
           type="button"
           className="w-full px-4 py-3 bg-surface-secondary cursor-pointer select-none text-left"

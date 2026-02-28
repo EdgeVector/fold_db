@@ -3,7 +3,7 @@ import { getDatabaseConfig, updateDatabaseConfig, resetDatabase } from '../../ap
 import { ingestionClient } from '../../api/clients'
 import { TrashIcon } from '@heroicons/react/24/solid'
 
-function DatabaseSettings({ configSaveStatus, setConfigSaveStatus, onClose }) {
+function useDatabaseConfig({ configSaveStatus, setConfigSaveStatus, onClose }) {
   const [dbType, setDbType] = useState('local')
   const [dbPath, setDbPath] = useState('data')
   const [dynamoTableName, setDynamoTableName] = useState('DataFoldStorage')
@@ -155,4 +155,4 @@ function DatabaseSettings({ configSaveStatus, setConfigSaveStatus, onClose }) {
   }
 }
 
-export default DatabaseSettings
+export default useDatabaseConfig

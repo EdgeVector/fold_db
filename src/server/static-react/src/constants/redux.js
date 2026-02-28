@@ -38,7 +38,7 @@ export const REDUX_BATCH_SIZE = 50;
  * Storage key for schema state persistence
  * Used with Redux Persist for maintaining schema state across sessions
  */
-export const SCHEMA_STATE_PERSIST_KEY = "datafold_schemas";
+export const SCHEMA_STATE_PERSIST_KEY = "folddb_schemas";
 
 // ============================================================================
 // REDUX ACTION TYPE CONSTANTS

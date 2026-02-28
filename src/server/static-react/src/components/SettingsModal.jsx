@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import TransformsTab from './tabs/TransformsTab'
 import KeyManagementTab from './tabs/KeyManagementTab'
-import AiConfigSettings from './settings/AiConfigSettings'
+import useAiConfig from './settings/AiConfigSettings'
 import SchemaServiceSettings from './settings/SchemaServiceSettings'
-import DatabaseSettings from './settings/DatabaseSettings'
+import useDatabaseConfig from './settings/DatabaseSettings'
 import CloudMigrationSettings from './tabs/CloudMigrationSettings'
 
 const NOOP = () => {}
@@ -51,10 +51,10 @@ function SettingsModal({ isOpen, onClose, onConfigSaved, initialTab }) {
     }
   }, [onClose])
 
-  // Custom hook pattern: these use React hooks internally and MUST be
+  // These custom hooks use React hooks internally and MUST be
   // called unconditionally before the early return below.
-  const aiConfig = AiConfigSettings({ configSaveStatus, setConfigSaveStatus, onClose, onConfigSaved })
-  const dbConfig = DatabaseSettings({ configSaveStatus, setConfigSaveStatus, onClose })
+  const aiConfig = useAiConfig({ configSaveStatus, setConfigSaveStatus, onClose, onConfigSaved })
+  const dbConfig = useDatabaseConfig({ configSaveStatus, setConfigSaveStatus, onClose })
 
   if (!isOpen) return null
 

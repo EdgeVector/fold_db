@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { ingestionClient } from '../../api/clients'
 
-function AiConfigSettings({ configSaveStatus, setConfigSaveStatus, onClose, onConfigSaved }) {
+function useAiConfig({ configSaveStatus, setConfigSaveStatus, onClose, onConfigSaved }) {
   const [aiProvider, setAiProvider] = useState('OpenRouter')
   const [openrouterApiKey, setOpenrouterApiKey] = useState('')
   const [hasEnvKey, setHasEnvKey] = useState(false)
@@ -221,4 +221,4 @@ function AiConfigSettings({ configSaveStatus, setConfigSaveStatus, onClose, onCo
   }
 }
 
-export default AiConfigSettings
+export default useAiConfig
