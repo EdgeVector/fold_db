@@ -27,19 +27,6 @@ export type {
   BackendSingleMutationResponse,
 };
 
-// Local types for client-specific functionality (not generated from backend)
-export interface ValidationResult {
-  isValid: boolean;
-  errors?: string[];
-  warnings?: string[];
-  schemaCompliance?: {
-    schemaName: string;
-    isApproved: boolean;
-    missingFields?: string[];
-    invalidFields?: string[];
-  };
-}
-
 // Backward-compatible local types for client methods
 // These will be migrated to use BackendMutationResponse/BackendQueryResponse
 // once the client layer is refactored to handle the new response structures
@@ -98,25 +85,6 @@ export class UnifiedMutationClient implements MutationApiClient {
   }
 
   /**
-   * Execute multiple mutations in a batch for improved performance
-   * PROTECTED - Requires authentication and SCHEMA-002 compliance
-   *
-   * @param mutations Array of mutation objects to execute
-   * @returns Promise resolving to array of mutation IDs
-   */
-  async executeMutationsBatch(
-    _mutations: Record<string, unknown>[],
-  ): Promise<EnhancedApiResponse<string[]>> {
-    // Server has no batch mutation endpoint
-    return {
-      success: false,
-      error: "Batch mutations not supported",
-      status: 501,
-      data: [],
-    };
-  }
-
-  /**
    * Execute a query against an approved schema
    * UNPROTECTED - No authentication required
    *
@@ -136,43 +104,6 @@ export class UnifiedMutationClient implements MutationApiClient {
       cacheable: true, // Query results can be cached
       cacheTtl: 60000, // Cache for 1 minute
     });
-  }
-
-  /**
-   * Validate a mutation before execution
-   * This checks schema compliance, field validation, and business rules
-   *
-   * @param mutation The mutation object to validate
-   * @returns Promise resolving to validation result
-   */
-  async validateMutation(
-    _mutation: Record<string, unknown>,
-  ): Promise<EnhancedApiResponse<ValidationResult>> {
-    // Removed: server has no /mutation/validate. Perform client-side no-op validation.
-    return Promise.resolve({
-      success: true,
-      data: { isValid: true },
-      status: 200,
-    });
-  }
-
-  /**
-   * Execute a batch of mutations as a single transaction
-   * All mutations must target approved schemas
-   *
-   * @param mutations Array of mutation objects
-   * @returns Promise resolving to batch execution results
-   */
-  async executeBatchMutations(
-    _mutations: Record<string, unknown>[],
-  ): Promise<EnhancedApiResponse<MutationResponse[]>> {
-    // Removed: server has no /mutation/batch
-    return {
-      success: false,
-      error: "Batch mutations not supported",
-      status: 501,
-      data: [],
-    };
   }
 
   /**
@@ -206,25 +137,6 @@ export class UnifiedMutationClient implements MutationApiClient {
         cacheKey: `parameterized-query:${JSON.stringify(queryParams)}`,
       },
     );
-  }
-
-  /**
-   * Get mutation history for a specific record or schema
-   * Useful for auditing and tracking changes
-   *
-   * @param params History query parameters
-   * @returns Promise resolving to mutation history
-   */
-  async getMutationHistory(
-    _params: Record<string, unknown>,
-  ): Promise<EnhancedApiResponse<MutationResponse[]>> {
-    // Removed: server has no /mutation/history
-    return {
-      success: false,
-      error: "Mutation history not supported",
-      status: 501,
-      data: [],
-    };
   }
 
   /**
@@ -365,8 +277,6 @@ export const MutationClient = UnifiedMutationClient;
 export const executeMutation = (mutation: Record<string, unknown>) =>
   mutationClient.executeMutation(mutation);
 export const executeQuery = (query: Record<string, unknown>) => mutationClient.executeQuery(query);
-export const validateMutation = (mutation: Record<string, unknown>) =>
-  mutationClient.validateMutation(mutation);
 export const validateSchemaForMutation = (schemaName: string) =>
   mutationClient.validateSchemaForMutation(schemaName);
 export const getMoleculeHistory = (moleculeUuid: string) =>

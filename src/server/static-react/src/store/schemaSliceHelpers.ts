@@ -19,8 +19,7 @@ import {
 import { EnhancedApiResponse } from '../api/core/types';
 import {
   SCHEMA_OPERATION_REQUIREMENTS,
-  SCHEMA_ERROR_MESSAGES,
-  SCHEMA_STATES
+  SCHEMA_ERROR_MESSAGES
 } from '../constants/redux';
 
 // ============================================================================
@@ -99,19 +98,6 @@ export const createSuccessPayload = (
 });
 
 /**
- * Validate schema exists and operation is allowed
- */
-export const validateSchemaOperation = (
-  schemaName: string,
-  operation: keyof typeof SCHEMA_OPERATION_REQUIREMENTS,
-  schema: Schema | undefined,
-  _options: { skipValidation?: boolean } = {}
-): { isValid: boolean; error?: SchemaOperationErrorPayload } => {
-  // Skip frontend validation - let the backend handle it
-  return { isValid: true };
-};
-
-/**
  * Generic schema operation thunk factory
  */
 export const createSchemaOperationThunk = <T extends keyof typeof SCHEMA_OPERATION_REQUIREMENTS>(
@@ -126,16 +112,7 @@ export const createSchemaOperationThunk = <T extends keyof typeof SCHEMA_OPERATI
     { state: RootState; rejectValue: SchemaOperationErrorPayload }
   >(
     actionType,
-    async ({ schemaName, options = {} }, { getState, rejectWithValue }) => {
-      const state = getState() as RootState;
-      const schema = state.schemas.schemas[schemaName];
-      
-      // Validate operation
-      const validation = validateSchemaOperation(schemaName, actionType as keyof typeof SCHEMA_OPERATION_REQUIREMENTS, schema, options);
-      if (!validation.isValid) {
-        return rejectWithValue(validation.error!);
-      }
-      
+    async ({ schemaName }, { rejectWithValue }) => {
       try {
         const response = await clientMethod(schemaName);
         

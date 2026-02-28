@@ -5,7 +5,6 @@ import ResultViewer from './mutation/ResultViewer'
 import TextField from '../form/TextField'
 import { mutationClient } from '../../api'
 import { MUTATION_TYPE_API_MAP, BUTTON_TEXT, FORM_LABELS, RANGE_SCHEMA_CONFIG } from '../../constants/ui.js'
-const VALIDATION_MESSAGES = { RANGE_KEY_REQUIRED: 'Range key is required for range schema mutations', RANGE_KEY_EMPTY: 'Range key cannot be empty' };
 import {
   isRangeSchema,
   formatRangeMutation,
@@ -13,7 +12,6 @@ import {
 } from '../../utils/rangeSchemaHelpers'
 import { useAppSelector } from '../../store/hooks'
 import { selectApprovedSchemas } from '../../store/schemaSlice'
-import { Buffer } from 'buffer'
 
 function MutationTab({ onResult }) {
   // Redux state

@@ -69,7 +69,6 @@ export {
   MutationClient,
   executeMutation,
   executeQuery,
-  validateMutation,
   validateSchemaForMutation
 } from './clients/mutationClient';
 
