@@ -1,6 +1,6 @@
 use crate::db_operations::IndexResult;
 use crate::fold_db_core::FoldDB;
-use crate::schema::field::HashRangeFilter;
+use crate::schema::types::field::HashRangeFilter;
 use crate::schema::types::Query;
 use std::collections::HashMap;
 

@@ -667,8 +667,10 @@ impl MutationManager {
             .map(|(hash, uuid)| (format!("idem:{}", hash), uuid.clone()))
             .collect();
         if !idem_entries.is_empty() {
+            use crate::storage::traits::TypedStore;
             self.db_ops
-                .batch_store_in_namespace("idempotency", &idem_entries)
+                .idempotency_store()
+                .batch_put_items(idem_entries)
                 .await
                 .map_err(|e| {
                     log::error!("Failed to store idempotency entries: {}", e);

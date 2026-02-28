@@ -7,6 +7,7 @@ use crate::fold_node::node::FoldNode;
 use crate::fold_node::OperationProcessor;
 use crate::handlers::response::{get_db_guard, ApiResponse, HandlerError, HandlerResult};
 use crate::schema::types::operations::Query;
+use crate::storage::traits::TypedStore;
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "ts-bindings")]
@@ -161,6 +162,7 @@ pub async fn get_atom_content(
     let db_ops = db_guard.get_db_ops();
 
     let atom: crate::atom::Atom = db_ops
+        .atoms_store()
         .get_item(&format!("atom:{}", atom_uuid))
         .await
         .map_err(|e| HandlerError::Internal(format!("Failed to fetch atom: {}", e)))?

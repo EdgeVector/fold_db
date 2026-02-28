@@ -5,7 +5,7 @@
 
 use crate::fold_node::node::FoldNode;
 use crate::fold_node::OperationProcessor;
-use crate::handlers::response::{ApiResponse, HandlerError, HandlerResult};
+use crate::handlers::response::{ApiResponse, HandlerError, HandlerResult, SuccessResponse};
 use serde::{Deserialize, Serialize};
 
 // ============================================================================
@@ -31,13 +31,6 @@ pub struct LogConfigResponse {
 pub struct LogFeaturesResponse {
     pub features: serde_json::Value,
     pub available_levels: Vec<String>,
-}
-
-/// Simple success response
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SuccessResponse {
-    pub success: bool,
-    pub message: String,
 }
 
 // ============================================================================
@@ -158,7 +151,7 @@ pub async fn update_log_feature_level(
         Ok(_) => Ok(ApiResponse::success_with_user(
             SuccessResponse {
                 success: true,
-                message: format!("Updated {} log level to {}", feature, level),
+                message: Some(format!("Updated {} log level to {}", feature, level)),
             },
             user_hash,
         )),
@@ -181,7 +174,7 @@ pub async fn reload_log_config(
         Ok(_) => Ok(ApiResponse::success_with_user(
             SuccessResponse {
                 success: true,
-                message: "Configuration reloaded successfully".to_string(),
+                message: Some("Configuration reloaded successfully".to_string()),
             },
             user_hash,
         )),

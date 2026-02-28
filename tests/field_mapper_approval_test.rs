@@ -1,4 +1,5 @@
-use fold_db::schema::{Field, SchemaCore, SchemaState};
+use fold_db::schema::types::field::Field;
+use fold_db::schema::{SchemaCore, SchemaState};
 
 fn user_schema_json() -> String {
     r#"{

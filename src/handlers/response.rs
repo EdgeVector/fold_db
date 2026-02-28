@@ -151,6 +151,21 @@ impl HandlerError {
 /// Result type for handlers
 pub type HandlerResult<T> = Result<ApiResponse<T>, HandlerError>;
 
+/// Simple success/failure response used across handlers.
+///
+/// Defined once here to avoid duplicate definitions in schema, transform, and logs handlers.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-bindings", derive(TS))]
+#[cfg_attr(
+    feature = "ts-bindings",
+    ts(export, export_to = "src/fold_node/static-react/src/types/")
+)]
+pub struct SuccessResponse {
+    pub success: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+}
+
 /// Acquire the FoldDB guard from a node, mapping errors to HandlerError::Internal.
 ///
 /// Replaces the repeated pattern:
