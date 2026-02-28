@@ -4,11 +4,11 @@ import { getRangeSchemaInfo, getHashRangeSchemaInfo } from '../../utils/rangeSch
 import { useAppSelector, useAppDispatch } from '../../store/hooks'
 import {
   selectAllSchemas,
+  selectApprovedSchemas,
   approveSchema as approveSchemaAction,
   blockSchema as blockSchemaAction,
   fetchSchemas
 } from '../../store/schemaSlice'
-import schemaClient from '../../api/clients/schemaClient'
 import SchemaName from '../shared/SchemaName'
 import { SCHEMA_BADGE_COLORS } from '../../constants/ui'
 import { toErrorMessage } from '../../utils/schemaUtils'
@@ -33,7 +33,7 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
 
   const toggleSchema = async (schemaName) => {
     const isCurrentlyExpanded = expandedSchemas[schemaName]
-    
+
     setExpandedSchemas(prev => ({
       ...prev,
       [schemaName]: !prev[schemaName]
@@ -43,17 +43,9 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
     if (!isCurrentlyExpanded) {
       const schema = schemas.find(s => s.name === schemaName)
       if (schema && (!schema.fields || Object.keys(schema.fields).length === 0)) {
-        try {
-          const response = await schemaClient.getSchema(schemaName)
-          if (response.success) {
-            // Refresh the schema list to get updated details
-            dispatch(fetchSchemas({ forceRefresh: true }))
-            if (onSchemaUpdated) {
-              onSchemaUpdated()
-            }
-          }
-        } catch (err) {
-          console.error(`Failed to fetch schema details for ${schemaName}:`, err)
+        dispatch(fetchSchemas({ forceRefresh: true }))
+        if (onSchemaUpdated) {
+          onSchemaUpdated()
         }
       }
     }
@@ -311,20 +303,7 @@ function SchemaTab({ onResult, onSchemaUpdated }) {
     )
   }
 
-  // Filter schemas by state - safely handle non-string states
-  const getStateString = (state) => {
-    if (typeof state === 'string') return state.toLowerCase()
-    if (typeof state === 'object' && state !== null) return String(state).toLowerCase()
-    return String(state || '').toLowerCase()
-  }
-  
-
-
-  // Derive approved schemas from the full schema list so newly fetched field
-  // details are reflected when a schema is expanded.
-  const approvedSchemas = schemas.filter(
-    (schema) => getStateString(schema.state) === 'approved'
-  )
+  const approvedSchemas = useAppSelector(selectApprovedSchemas)
 
 
 

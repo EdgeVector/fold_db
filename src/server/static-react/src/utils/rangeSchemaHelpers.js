@@ -14,10 +14,8 @@
  * - Supports efficient range-based queries and mutations
  */
 
-import {
-  RANGE_SCHEMA_CONFIG,
-  VALIDATION_MESSAGES
-} from '../constants/schemas.js';
+import { RANGE_SCHEMA_CONFIG } from '../constants/schemas.js';
+import { VALIDATION_MESSAGES } from '../constants/validation.js';
 import { MUTATION_TYPE_API_MAP } from '../constants/ui.js';
 
 /**

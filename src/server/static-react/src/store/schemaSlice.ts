@@ -37,9 +37,7 @@ import {
   SCHEMA_OPERATION_REQUIREMENTS,
   READABLE_SCHEMA_STATES,
 } from "../constants/redux";
-import { createApiClient } from "../api/core/client";
-import { UnifiedSchemaClient } from "../api/clients/schemaClient";
-import { API_CONFIG } from "../constants/api";
+import { schemaClient as sharedSchemaClient } from "../api/clients/schemaClient";
 import {
   SCHEMA_OPERATION_TYPES,
   isCacheValid,
@@ -98,20 +96,9 @@ export const fetchSchemas = createAsyncThunk<
       };
     }
 
-    // Create schema client with main API base URL (not schema service)
-    // The schema endpoints are on the main API server, not a separate service
-    const schemaClient = new UnifiedSchemaClient(
-      createApiClient({
-        baseUrl: API_CONFIG.BASE_URL, // Use main API base URL (/api)
-        enableCache: true,
-        enableLogging: true,
-        enableMetrics: true,
-      }),
-    );
-
     // Clear API client cache when force refresh is requested
     if (params.forceRefresh) {
-      schemaClient.clearCache();
+      sharedSchemaClient.clearCache();
     }
 
     // Fetch with retry logic
@@ -120,7 +107,7 @@ export const fetchSchemas = createAsyncThunk<
     for (let attempt = 1; attempt <= SCHEMA_FETCH_RETRY_ATTEMPTS; attempt++) {
       try {
         // Fetch schemas with their states from the backend
-        const availableResponse = await schemaClient.getSchemas();
+        const availableResponse = await sharedSchemaClient.getSchemas();
 
         if (!availableResponse.success) {
           const error = new Error(
@@ -212,45 +199,33 @@ export const fetchSchemas = createAsyncThunk<
   },
 );
 
-// Create a shared schema client instance for operations
-const getMainApiSchemaClient = () => {
-  return new UnifiedSchemaClient(
-    createApiClient({
-      baseUrl: API_CONFIG.BASE_URL, // Use main API base URL (/api)
-      enableCache: true,
-      enableLogging: true,
-      enableMetrics: true,
-    }),
-  );
-};
-
 /**
  * Schema operation thunks using the factory function
  */
 export const approveSchema = createSchemaOperationThunk(
   SCHEMA_ACTION_TYPES.APPROVE_SCHEMA,
-  (name: string) => getMainApiSchemaClient().approveSchema(name),
+  (name: string) => sharedSchemaClient.approveSchema(name),
   SCHEMA_STATES.APPROVED as SchemaStateType,
   SCHEMA_ERROR_MESSAGES.APPROVE_FAILED,
 );
 
 export const blockSchema = createSchemaOperationThunk(
   SCHEMA_ACTION_TYPES.BLOCK_SCHEMA,
-  (name: string) => getMainApiSchemaClient().blockSchema(name),
+  (name: string) => sharedSchemaClient.blockSchema(name),
   SCHEMA_STATES.BLOCKED as SchemaStateType,
   SCHEMA_ERROR_MESSAGES.BLOCK_FAILED,
 );
 
 export const unloadSchema = createSchemaOperationThunk(
   SCHEMA_ACTION_TYPES.UNLOAD_SCHEMA,
-  (name: string) => getMainApiSchemaClient().unloadSchema(name),
+  (name: string) => sharedSchemaClient.unloadSchema(name),
   SCHEMA_STATES.AVAILABLE as SchemaStateType,
   SCHEMA_ERROR_MESSAGES.UNLOAD_FAILED,
 );
 
 export const loadSchema = createSchemaOperationThunk(
   SCHEMA_ACTION_TYPES.LOAD_SCHEMA,
-  (name: string) => getMainApiSchemaClient().loadSchema(name),
+  (name: string) => sharedSchemaClient.loadSchema(name),
   SCHEMA_STATES.APPROVED as SchemaStateType,
   SCHEMA_ERROR_MESSAGES.LOAD_FAILED,
 );

@@ -171,31 +171,6 @@ export const refreshSystemKey = createAsyncThunk(
   },
 );
 
-// Async thunk for fetching node private key from backend
-export const fetchNodePrivateKey = createAsyncThunk(
-  "auth/fetchNodePrivateKey",
-  async (_, { rejectWithValue }) => {
-    try {
-      const response = await getNodePrivateKey();
-
-      if (response.success && response.data && response.data.private_key) {
-        return {
-          privateKey: response.data.private_key, // Store as base64 string (serializable)
-          publicKeyId: "node-private-key", // Use a consistent identifier
-          isSystemReady: true,
-        };
-      } else {
-        return rejectWithValue("Failed to fetch private key from backend");
-      }
-    } catch (err) {
-      console.error("Failed to fetch node private key:", err);
-      return rejectWithValue(
-        err instanceof Error ? err.message : "Failed to fetch node private key",
-      );
-    }
-  },
-);
-
 // Async thunk for user login and hash generation
 export const loginUser = createAsyncThunk(
   "auth/loginUser",
@@ -319,22 +294,6 @@ const authSlice = createSlice({
         state.isLoading = false;
         state.systemPublicKey = null;
         state.systemKeyId = null;
-        state.error = action.payload as string;
-      })
-      // fetchNodePrivateKey cases
-      .addCase(fetchNodePrivateKey.pending, (state) => {
-        state.isLoading = true;
-        state.error = null;
-      })
-      .addCase(fetchNodePrivateKey.fulfilled, (state, action) => {
-        state.isLoading = false;
-        state.privateKey = action.payload.privateKey;
-        state.publicKeyId = action.payload.publicKeyId;
-        state.error = null;
-      })
-      .addCase(fetchNodePrivateKey.rejected, (state, action) => {
-        state.isLoading = false;
-        // Don't log out just because key fetch failed, might be network
         state.error = action.payload as string;
       })
       // loginUser cases

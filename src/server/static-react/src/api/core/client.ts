@@ -35,7 +35,6 @@ import type {
   RequestMetrics,
   BatchRequest,
   BatchResponse,
-  SchemaValidationOptions,
   ApiClientInstance,
 } from "./types";
 
@@ -294,15 +293,6 @@ export class ApiClient implements ApiClientInstance {
         config = await interceptor(config);
       }
 
-      // Schema validation (SCHEMA-002 compliance)
-      if (config.validateSchema) {
-        await this.validateSchemaAccess(
-          endpoint,
-          method,
-          options.validateSchema || true,
-        );
-      }
-
       // Check cache for GET requests
       if (
         method === "GET" &&
@@ -546,33 +536,6 @@ export class ApiClient implements ApiClientInstance {
         fromCache: false,
       },
     };
-  }
-
-  /**
-   * Add authentication headers using the authentication wrapper
-   */
-  private async addAuthHeaders(
-    _headers: Record<string, string>,
-    _body?: unknown,
-  ): Promise<void> {
-    // No-op: UI does not perform authentication
-    return;
-  }
-
-  /**
-   * Validate schema access according to SCHEMA-002 rules
-   * Note: Schema validation is enforced at the component/hook level (useApprovedSchemas)
-   * This method is kept for API compatibility but validation should be done before API calls
-   */
-  private async validateSchemaAccess(
-    _endpoint: string,
-    _method: HttpMethod,
-    _options: SchemaValidationOptions | boolean,
-  ): Promise<void> {
-    // Schema validation is now handled at the component/hook level
-    // using useApprovedSchemas hook which has access to Redux state
-    // This avoids circular dependency between ApiClient and Redux store
-    return;
   }
 
   /**

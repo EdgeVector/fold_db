@@ -13,10 +13,8 @@
  */
 
 import { useState, useCallback, useMemo } from 'react';
-import { useAppSelector, useAppDispatch } from '../store/hooks.ts';
-import { selectAllSchemas, selectFetchLoading } from '../store/schemaSlice';
-import { fetchSchemas } from '../store/schemaSlice';
-import { SCHEMA_STATES } from '../constants/redux.js';
+import { useAppSelector, useAppDispatch } from '../store/hooks';
+import { selectApprovedSchemas, selectAllSchemas, selectFetchLoading, fetchSchemas } from '../store/schemaSlice';
 import { isHashRangeSchema, isRangeSchema, getRangeKey } from '../utils/rangeSchemaHelpers.js';
 
 /**
@@ -93,15 +91,8 @@ function useQueryState() {
   const [hashKeyValue, setHashKeyValue] = useState('');
   const [rangeSchemaFilter, setRangeSchemaFilter] = useState({});
 
-  // Memoized approved schemas - following QueryTab.jsx pattern (lines 265-271)
-  const approvedSchemas = useMemo(() => {
-    return (schemas || []).filter(schema => {
-      const state = typeof schema.state === 'string'
-        ? schema.state.toLowerCase()
-        : String(schema.state || '').toLowerCase();
-      return state === SCHEMA_STATES.APPROVED;
-    });
-  }, [schemas]);
+  // Approved schemas from Redux selector (SCHEMA-002 compliant)
+  const approvedSchemas = useAppSelector(selectApprovedSchemas);
 
   // Memoized selected schema object
   const selectedSchemaObj = useMemo(() => {

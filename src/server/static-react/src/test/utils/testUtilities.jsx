@@ -23,15 +23,9 @@ import {
 } from '../config/constants';
 import authReducer from '../../store/authSlice';
 import schemaReducer from '../../store/schemaSlice';
+import { SCHEMA_STATES } from '../../constants/schemas';
 
-// Schema states for testing
-export const SCHEMA_STATES = {
-  APPROVED: 'approved',
-  AVAILABLE: 'available', 
-  BLOCKED: 'blocked',
-  LOADING: 'loading',
-  ERROR: 'error'
-};
+export { SCHEMA_STATES };
 
 /**
  * Creates a test store with optional initial state

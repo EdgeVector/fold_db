@@ -201,12 +201,8 @@ export const SCHEMA_ERROR_MESSAGES = {
 /**
  * Valid schema states - extends base SCHEMA_STATES with Redux-specific UI states
  */
-import { SCHEMA_STATES as BASE_SCHEMA_STATES } from "./schemas";
-export const SCHEMA_STATES = {
-  ...BASE_SCHEMA_STATES,
-  LOADING: "loading",
-  ERROR: "error",
-};
+import { SCHEMA_STATES } from "./schemas";
+export { SCHEMA_STATES };
 
 /**
  * Schema operations that require specific states

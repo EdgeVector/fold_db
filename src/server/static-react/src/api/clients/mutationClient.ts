@@ -76,7 +76,6 @@ export class UnifiedMutationClient implements MutationApiClient {
       API_ENDPOINTS.EXECUTE_MUTATION,
       _mutation,
       {
-        validateSchema: false, // Skip schema validation for mutations
         timeout: 15000, // Longer timeout for mutation operations
         retries: 0, // No retries for mutations to prevent duplicate operations
         cacheable: false, // Never cache mutation results
@@ -95,10 +94,6 @@ export class UnifiedMutationClient implements MutationApiClient {
     query: Record<string, unknown>,
   ): Promise<EnhancedApiResponse<Record<string, unknown>>> {
     return this.client.post<QueryResponse>(API_ENDPOINTS.EXECUTE_QUERY, query, {
-      validateSchema: {
-        operation: "read" as const,
-        requiresApproved: true, // SCHEMA-002: Only approved schemas for queries
-      },
       timeout: 10000, // Standard timeout for queries
       retries: 2, // Limited retries for read operations
       cacheable: true, // Query results can be cached
@@ -125,11 +120,6 @@ export class UnifiedMutationClient implements MutationApiClient {
       API_ENDPOINTS.EXECUTE_QUERY,
       queryParams,
       {
-        validateSchema: {
-          schemaName: queryParams.schema,
-          operation: "read" as const,
-          requiresApproved: true,
-        },
         timeout: 15000,
         retries: 2,
         cacheable: true,

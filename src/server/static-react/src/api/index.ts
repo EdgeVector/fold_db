@@ -22,7 +22,6 @@ export type {
   RequestMetrics,
   BatchRequest,
   BatchResponse,
-  SchemaValidationOptions,
   ApiClientInstance
 } from './core/types';
 

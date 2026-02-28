@@ -56,7 +56,6 @@ export {
   initializeSystemKey,
   validatePrivateKey,
   refreshSystemKey,
-  fetchNodePrivateKey,
   loginUser,
   clearAuthentication,
   setError,
