@@ -51,6 +51,9 @@
     "react-dom": "^18.2.0",
     "react-redux": "^9.2.0"
   },
+  "overrides": {
+    "minimatch@>=5.0.0 <5.1.8": "5.1.8"
+  },
   "devDependencies": {
     "@tailwindcss/forms": "^0.5.10",
     "@tauri-apps/api": "~2.10.0",
