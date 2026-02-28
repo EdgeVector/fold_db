@@ -1,7 +1,8 @@
 import { renderHook } from '@testing-library/react';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useRangeSchema } from '../useRangeSchema.js';
-import { RANGE_SCHEMA_CONFIG, VALIDATION_MESSAGES } from '../../constants/schemas.js';
+import { RANGE_SCHEMA_CONFIG } from '../../constants/schemas.js';
+import { VALIDATION_MESSAGES } from '../../constants/validation.js';
 
 describe('useRangeSchema Hook', () => {
   let mockConsole;

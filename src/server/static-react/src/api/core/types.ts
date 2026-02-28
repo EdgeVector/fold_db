@@ -40,7 +40,7 @@ export interface RequestOptions {
   requiresAuth?: boolean;
   timeout?: number;
   retries?: number;
-  validateSchema?: boolean | SchemaValidationOptions;
+  validateSchema?: boolean;
   cacheable?: boolean;
   cacheKey?: string;
   cacheTtl?: number;
@@ -106,13 +106,6 @@ export interface RetryConfig {
   backoffMultiplier: number;
   maxDelay: number;
   retryableStatusCodes: number[];
-}
-
-// Schema Validation Interface
-export interface SchemaValidationOptions {
-  requiresApproved?: boolean;
-  operation?: 'read' | 'write' | 'approve' | 'block';
-  schemaName?: string;
 }
 
 // Request Metrics Interface

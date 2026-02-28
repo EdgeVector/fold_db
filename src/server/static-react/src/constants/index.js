@@ -92,7 +92,7 @@ export {
   API_CONFIG,
   SCHEMA_STATES as API_SCHEMA_STATES,
   SCHEMA_OPERATIONS,
-} from "./api.ts";
+} from "./api";
 
 // ============================================================================
 // SCHEMA EXPORTS (from existing files)
@@ -105,7 +105,6 @@ export {
   RANGE_SCHEMA_FIELD_PREFIX,
   SCHEMA_STATES,
   SCHEMA_API_ENDPOINTS,
-  VALIDATION_MESSAGES as SCHEMA_VALIDATION_MESSAGES,
   RANGE_SCHEMA_CONFIG,
   FIELD_TYPES,
 } from "./schemas";

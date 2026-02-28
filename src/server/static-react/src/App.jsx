@@ -21,7 +21,7 @@ import ErrorBoundary from './components/ErrorBoundary'
 import { useApprovedSchemas } from './hooks/useApprovedSchemas.js'
 import { useIngestionStatus } from './hooks/useIngestionStatus'
 import { useAppSelector, useAppDispatch } from './store/hooks'
-import { initializeSystemKey, fetchNodePrivateKey, restoreSession } from './store/authSlice'
+import { initializeSystemKey, restoreSession } from './store/authSlice'
 import LoginPage from './components/LoginPage'
 import { DEFAULT_TAB } from './constants'
 import { BROWSER_CONFIG } from './constants/config'
@@ -106,13 +106,6 @@ export function AppContent() {
   useEffect(() => {
     if (isAuthenticated) {
       dispatch(initializeSystemKey())
-    }
-  }, [dispatch, isAuthenticated])
-
-  // Fetch node private key ONLY after authenticated
-  useEffect(() => {
-    if (isAuthenticated) {
-      dispatch(fetchNodePrivateKey())
     }
   }, [dispatch, isAuthenticated])
 

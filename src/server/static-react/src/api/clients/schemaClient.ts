@@ -135,11 +135,6 @@ export class UnifiedSchemaClient {
    */
   async getSchema(name: string): Promise<EnhancedApiResponse<Schema>> {
     return this.client.get<Schema>(API_ENDPOINTS.GET_SCHEMA(name), {
-      validateSchema: {
-        schemaName: name,
-        operation: 'read' as const,
-        requiresApproved: false // Allow reading any schema for inspection
-      },
       cacheable: true,
       cacheKey: `schema:${name}`,
       cacheTtl: 300000 // 5 minutes
@@ -263,11 +258,6 @@ export class UnifiedSchemaClient {
       API_ENDPOINTS.APPROVE_SCHEMA(name),
       {}, // Empty body, schema name is in URL
       {
-        validateSchema: {
-          schemaName: name,
-          operation: 'approve' as const,
-          requiresApproved: false // Can approve non-approved schemas
-        },
         timeout: 10000, // Longer timeout for state changes
         retries: 1 // Limited retries for state-changing operations
       }
@@ -286,11 +276,6 @@ export class UnifiedSchemaClient {
       API_ENDPOINTS.BLOCK_SCHEMA(name),
       {}, // Empty body, schema name is in URL
       {
-        validateSchema: {
-          schemaName: name,
-          operation: 'block' as const,
-          requiresApproved: true // Only approved schemas can be blocked
-        },
         timeout: 10000, // Longer timeout for state changes
         retries: 1 // Limited retries for state-changing operations
       }

@@ -9,10 +9,10 @@ import { renderHook, act } from '@testing-library/react';
 import { Provider } from 'react-redux';
 import { useQueryState } from '../useQueryState.js';
 import { createTestStore } from '../../test/utils/testUtilities.jsx';
-import { selectFetchLoading, selectAllSchemas } from '../../store/schemaSlice.ts';
+import { selectFetchLoading, selectAllSchemas, selectApprovedSchemas } from '../../store/schemaSlice';
 
 // Mock the Redux store hooks
-vi.mock('../../store/hooks.ts', () => ({
+vi.mock('../../store/hooks', () => ({
   useAppSelector: vi.fn(),
   useAppDispatch: vi.fn(() => vi.fn())
 }));
@@ -47,7 +47,7 @@ describe('useQueryState Hook', () => {
     mockStore = await createTestStore();
     
     // Import the mocked hook
-    const { useAppSelector } = await import('../../store/hooks.ts');
+    const { useAppSelector } = await import('../../store/hooks');
     mockUseAppSelector = useAppSelector;
 
     // Set up default mock implementation
@@ -57,6 +57,9 @@ describe('useQueryState Hook', () => {
       }
       if (selector === selectAllSchemas) {
         return mockSchemas;
+      }
+      if (selector === selectApprovedSchemas) {
+        return mockSchemas.filter(s => s.state === 'approved');
       }
       if (selector === selectFetchLoading) {
         return false;
@@ -420,6 +423,8 @@ describe('useQueryState Hook', () => {
         { name: 'Schema1', state: 'APPROVED', fields: {} },
         { name: 'Schema2', state: 'BLOCKED', fields: {} }
       ];
+      // selectApprovedSchemas normalizes case, so APPROVED matches
+      const approvedOnly = [schemasWithUppercaseState[0]];
 
       mockUseAppSelector.mockImplementation((selector) => {
         if (selector.toString().includes('auth')) {
@@ -427,6 +432,9 @@ describe('useQueryState Hook', () => {
         }
         if (selector === selectAllSchemas) {
           return schemasWithUppercaseState;
+        }
+        if (selector === selectApprovedSchemas) {
+          return approvedOnly;
         }
         return false;
       });
@@ -439,10 +447,10 @@ describe('useQueryState Hook', () => {
 
     it('should handle schema state objects with toString', () => {
       const schemasWithObjectState = [
-        { 
-          name: 'Schema1', 
-          state: { toString: () => 'approved' }, 
-          fields: {} 
+        {
+          name: 'Schema1',
+          state: { toString: () => 'approved' },
+          fields: {}
         }
       ];
 
@@ -451,6 +459,9 @@ describe('useQueryState Hook', () => {
           return { isAuthenticated: true };
         }
         if (selector === selectAllSchemas) {
+          return schemasWithObjectState;
+        }
+        if (selector === selectApprovedSchemas) {
           return schemasWithObjectState;
         }
         return false;
