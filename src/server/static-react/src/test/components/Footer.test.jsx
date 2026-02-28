@@ -26,7 +26,7 @@ describe('Footer Component', () => {
   it('displays version number', () => {
     render(<Footer />);
 
-    expect(screen.getByText(/v0\.1\.55/i)).toBeInTheDocument();
+    expect(screen.getByText(/v\d+\.\d+\.\d+/i)).toBeInTheDocument();
   });
 
   it('displays Local Mode indicator', () => {

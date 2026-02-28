@@ -215,14 +215,14 @@ describe('QueryTab Workflow Integration Tests', () => {
     it('handles schema change and state reset workflow', async () => {
       const user = userEvent.setup();
       const onSchemaChange = vi.fn();
-      const mockClearQuery = vi.fn();
+      const mockClearState = vi.fn();
 
       mockUseQueryState.mockReturnValue({
         ...defaultQueryState,
         selectedSchema: 'UserSchema',
         queryFields: ['id'],
         fieldValues: { id: 'test' },
-        clearState: mockClearQuery,
+        clearState: mockClearState,
         updateField: vi.fn(),
         updateFieldValue: vi.fn()
       });
@@ -237,7 +237,7 @@ describe('QueryTab Workflow Integration Tests', () => {
       await user.selectOptions(schemaSelect, 'RangeSchema');
 
       // Should trigger query state reset when schema changes
-      expect(mockClearQuery).toHaveBeenCalled();
+      expect(mockClearState).toHaveBeenCalled();
     });
 
     it('has no validation errors - backend validates', () => {
@@ -433,14 +433,14 @@ describe('QueryTab Workflow Integration Tests', () => {
   describe('Query Clear and Reset Workflow', () => {
     it('handles query clear across all components', async () => {
       const user = userEvent.setup();
-      const mockClearQuery = vi.fn();
+      const mockClearState = vi.fn();
       const onClear = vi.fn();
 
       mockUseQueryState.mockReturnValue({
         ...defaultQueryState,
         queryFields: ['id', 'name'],
         fieldValues: { id: 'test', name: 'John' },
-        clearState: mockClearQuery,
+        clearState: mockClearState,
         updateField: vi.fn(),
         updateFieldValue: vi.fn()
       });
@@ -455,7 +455,7 @@ describe('QueryTab Workflow Integration Tests', () => {
 
       // Should call clear handlers
       expect(onClear).toHaveBeenCalled();
-      expect(mockClearQuery).toHaveBeenCalled();
+      expect(mockClearState).toHaveBeenCalled();
     });
   });
 

@@ -17,18 +17,10 @@ import { HELP_TEXT } from '../constants/ui.js';
  */
 export function generateRangeHelpText(mode = 'all', rangeKeyName = 'key', customHelpText = '') {
   if (customHelpText) return customHelpText;
-  
+
   if (mode !== 'all') return null;
-  
-  const help = { ...HELP_TEXT.rangeKeyFilter };
-  
-  // Return a properly formatted string instead of an object
-  const keyRange = help.keyRange || '';
-  const exactKey = (help.exactKey || '').replace('key', rangeKeyName);
-  const keyPrefix = (help.keyPrefix || '').replace('keys', `${rangeKeyName} values`);
-  const emptyNote = help.emptyNote || '';
-  
-  return `${keyRange} ${exactKey} ${keyPrefix} ${emptyNote}`.trim();
+
+  return `Filter by ${rangeKeyName}: use exact ${rangeKeyName}, ${rangeKeyName} range, or ${rangeKeyName} prefix. Leave empty to return all records.`;
 }
 
 /**

@@ -48,6 +48,8 @@ type ErrorInterceptor = (error: ApiError) => ApiError | Promise<ApiError>;
 class ApiCache {
   private cache = new Map<string, CacheEntry>();
   private readonly maxSize: number;
+  private hits = 0;
+  private misses = 0;
 
   constructor(maxSize: number = CACHE_CONFIG.MAX_CACHE_SIZE) {
     this.maxSize = maxSize;
@@ -55,14 +57,19 @@ class ApiCache {
 
   get<T>(key: string): T | null {
     const entry = this.cache.get(key);
-    if (!entry) return null;
+    if (!entry) {
+      this.misses++;
+      return null;
+    }
 
     // Check if entry has expired
     if (Date.now() > entry.timestamp + entry.ttl) {
       this.cache.delete(key);
+      this.misses++;
       return null;
     }
 
+    this.hits++;
     return entry.data as T;
   }
 
@@ -94,8 +101,8 @@ class ApiCache {
   }
 
   getHitRate(): number {
-    // Simple implementation - in production this would track hits/misses
-    return this.cache.size > 0 ? 0.8 : 0;
+    const total = this.hits + this.misses;
+    return total > 0 ? this.hits / total : 0;
   }
 }
 
