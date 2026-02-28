@@ -30,10 +30,10 @@ pub mod schema_types;
 pub mod types;
 
 // Public re-exports
-pub use core::*;
+pub use core::SchemaCore;
 pub use molecule_variants::MoleculeVariant;
 pub use schema_types::{SchemaState, SchemaWithState};
-pub use types::*;
+pub use types::{Schema, SchemaError};
 
 /// Public prelude module containing types needed by tests and external code
 pub mod prelude {

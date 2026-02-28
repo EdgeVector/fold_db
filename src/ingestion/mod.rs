@@ -27,12 +27,9 @@
 //! 7. Execute mutations to persist the data
 
 pub mod ai_helpers;
-pub mod ai_schema_response;
 pub mod batch_controller;
 pub mod batch_routes;
 pub mod config;
-pub mod cost_estimation;
-pub mod date_handling;
 pub mod decomposer;
 pub mod error;
 pub mod file_conversion;
@@ -40,12 +37,10 @@ pub mod file_upload;
 pub mod ingestion_service;
 pub mod key_extraction;
 pub mod json_processor;
-pub mod multipart_parser;
 pub mod mutation_generator;
 pub mod ollama_service;
 pub mod openrouter_service;
 pub mod progress;
-pub mod prompts;
 pub mod routes;
 pub mod smart_folder;
 pub mod smart_folder_classifier;
@@ -71,7 +66,7 @@ pub fn is_image_file(filename: &str) -> bool {
 }
 
 // Public re-exports
-pub use ai_schema_response::AISchemaResponse;
+pub use ai_helpers::AISchemaResponse;
 pub use config::IngestionConfig;
 pub use error::IngestionError;
 pub use progress::{

@@ -44,7 +44,8 @@ where
         // If we have a molecule_uuid, look up the corresponding Molecule
         if let Some(molecule_uuid) = self.inner.molecule_uuid() {
             let ref_key = format!("ref:{}", molecule_uuid);
-            match db_ops.get_item::<M>(&ref_key).await {
+            use crate::storage::traits::TypedStore;
+            match db_ops.atoms_store().get_item::<M>(&ref_key).await {
                 Ok(Some(molecule)) => {
                     self.molecule = Some(molecule);
                 }

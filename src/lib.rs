@@ -53,24 +53,10 @@ pub use fold_db_core::FoldDB;
 
 // Re-export schema types needed for CLI
 pub use schema::types::operations::MutationType;
-pub use schema::types::operations::Operation;
-pub use schema::Schema;
 pub use schema::SchemaState;
 
-// Re-export security types
-pub use security::{
-    Ed25519KeyPair, EncryptionManager, PublicKeyInfo, SecurityConfig, SecurityError, SecurityManager,
-    SecurityResult,
-};
-
 // Re-export ingestion types
-pub use ingestion::{IngestionConfig, IngestionError, IngestionResponse};
+pub use ingestion::IngestionConfig;
 
 // Re-export storage types
-pub use storage::{DatabaseConfig, StorageError};
-
-// Re-export node manager for multi-tenant deployments
-pub use server::{NodeManager, NodeManagerConfig, NodeManagerError};
-
-// Re-export commonly used constants
-pub use constants::DEFAULT_HTTP_PORT;
+pub use storage::DatabaseConfig;

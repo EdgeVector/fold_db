@@ -5,7 +5,7 @@
 
 use crate::fold_node::node::FoldNode;
 use crate::fold_node::OperationProcessor;
-use crate::handlers::response::{ApiResponse, HandlerError, HandlerResult};
+use crate::handlers::response::{ApiResponse, HandlerError, HandlerResult, SuccessResponse};
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "ts-bindings")]
@@ -65,16 +65,6 @@ pub struct SchemaApproveResponse {
     pub backfill_hash: Option<String>,
 }
 
-/// Simple success response
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-bindings", derive(TS))]
-#[cfg_attr(
-    feature = "ts-bindings",
-    ts(export, export_to = "src/fold_node/static-react/src/types/")
-)]
-pub struct SuccessResponse {
-    pub success: bool,
-}
 
 /// List all schemas
 pub async fn list_schemas(
@@ -165,7 +155,7 @@ pub async fn block_schema(
 
     match processor.block_schema(schema_name).await {
         Ok(_) => Ok(ApiResponse::success_with_user(
-            SuccessResponse { success: true },
+            SuccessResponse { success: true, message: None },
             user_hash,
         )),
         Err(e) => Err(HandlerError::Internal(format!(

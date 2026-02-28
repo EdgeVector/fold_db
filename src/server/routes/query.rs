@@ -7,11 +7,7 @@ use log::{debug, error, info, warn};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SuccessResponse {
-    pub success: bool,
-    pub message: String,
-}
+use crate::handlers::response::SuccessResponse;
 
 #[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct MutationResponse {
@@ -215,8 +211,7 @@ pub async fn add_to_transform_queue(
             message: response
                 .data
                 .as_ref()
-                .map(|d| d.message.clone())
-                .unwrap_or_default(),
+                .and_then(|d| d.message.clone()),
         }),
         Err(e) => handler_error_to_response(e),
     }

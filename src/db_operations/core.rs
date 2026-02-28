@@ -4,7 +4,6 @@ use crate::storage::traits::*;
 #[cfg(feature = "aws-backend")]
 use crate::storage::DynamoDbNamespacedStore;
 use crate::storage::{SledNamespacedStore, TypedKvStore};
-use serde::{de::DeserializeOwned, Serialize};
 use std::sync::Arc;
 
 /// Enhanced database operations with pluggable storage backend
@@ -128,21 +127,6 @@ impl DbOperations {
         Self::from_namespaced_store(Arc::new(store), None).await
     }
 
-    // ===== Generic storage operations (async API) =====
-
-    /// Get an item from the main namespace
-    pub async fn get_item<T: DeserializeOwned + Send + Sync>(
-        &self,
-        key: &str,
-    ) -> Result<Option<T>, SchemaError> {
-        Ok(self.main_store.get_item(key).await?)
-    }
-
-    /// Delete an item from the main namespace
-    pub async fn delete_item(&self, key: &str) -> Result<bool, SchemaError> {
-        Ok(self.main_store.delete_item(key).await?)
-    }
-
     // ===== Namespace-specific store getters =====
 
     pub fn metadata_store(&self) -> &Arc<TypedKvStore<dyn KvStore>> {
@@ -206,42 +190,4 @@ impl DbOperations {
         Ok(self.main_store.inner().flush().await?)
     }
 
-    // ===== Batch operations =====
-
-    /// Batch store items in a specific namespace
-    pub async fn batch_store_in_namespace<T: Serialize + Send + Sync + Clone>(
-        &self,
-        namespace: &str,
-        items: &[(String, T)],
-    ) -> Result<(), SchemaError> {
-        let store = self.get_namespace_store(namespace)?;
-        let items_vec: Vec<(String, T)> =
-            items.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
-        Ok(store.batch_put_items(items_vec).await?)
-    }
-
-    // ===== Helper methods =====
-
-    fn get_namespace_store(
-        &self,
-        namespace: &str,
-    ) -> Result<&Arc<TypedKvStore<dyn KvStore>>, SchemaError> {
-        match namespace {
-            "metadata" => Ok(&self.metadata_store),
-            "permissions" | "node_id_schema_permissions" => Ok(&self.permissions_store),
-            "transforms" => Ok(&self.transforms_store),
-            "orchestrator" | "orchestrator_state" => Ok(&self.orchestrator_store),
-            "schema_states" => Ok(&self.schema_states_store),
-            "schemas" => Ok(&self.schemas_store),
-            "public_keys" => Ok(&self.public_keys_store),
-            "transform_queue" | "transform_queue_tree" => Ok(&self.transform_queue_store),
-            "idempotency" => Ok(&self.idempotency_store),
-            "process_results" => Ok(&self.process_results_store),
-            "main" => Ok(&self.main_store),
-            _ => Err(SchemaError::InvalidData(format!(
-                "Unknown namespace: {}",
-                namespace
-            ))),
-        }
-    }
 }

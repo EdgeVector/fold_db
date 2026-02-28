@@ -4,7 +4,7 @@
 
 use crate::fold_node::node::FoldNode;
 use crate::fold_node::OperationProcessor;
-use crate::handlers::response::{ApiResponse, HandlerError, HandlerResult};
+use crate::handlers::response::{ApiResponse, HandlerError, HandlerResult, SuccessResponse};
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "ts-bindings")]
@@ -33,21 +33,6 @@ pub struct TransformQueueResponse {
     pub queued_transforms: Vec<String>,
 }
 
-/// Simple success response (for transform operations)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-bindings", derive(TS))]
-#[cfg_attr(
-    feature = "ts-bindings",
-    ts(
-        export,
-        rename = "TransformSuccessResponse",
-        export_to = "src/fold_node/static-react/src/types/"
-    )
-)]
-pub struct SuccessResponse {
-    pub success: bool,
-    pub message: String,
-}
 
 /// Response for backfill list
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -155,7 +140,7 @@ pub async fn add_to_transform_queue(
         Ok(_) => Ok(ApiResponse::success_with_user(
             SuccessResponse {
                 success: true,
-                message: format!("Transform '{}' added to queue", transform_id),
+                message: Some(format!("Transform '{}' added to queue", transform_id)),
             },
             user_hash,
         )),

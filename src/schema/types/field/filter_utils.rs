@@ -43,8 +43,10 @@ pub async fn fetch_atoms_for_matches_async(
 ) -> Result<HashMap<KeyValue, FieldValue>, SchemaError> {
     let mut resolved_values: HashMap<KeyValue, FieldValue> = HashMap::new();
 
+    use crate::storage::traits::TypedStore;
     for (key, atom_uuid) in matches.into_iter() {
         match db_ops
+            .atoms_store()
             .get_item::<crate::atom::Atom>(&format!("atom:{}", atom_uuid))
             .await
         {
