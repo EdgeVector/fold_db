@@ -86,7 +86,7 @@ describe('QueryTab Workflow Integration Tests', () => {
       addFilter: vi.fn(),
       removeFilter: vi.fn(),
       setOrderBy: vi.fn(),
-      clearQuery: vi.fn()
+      clearState: vi.fn()
     });
 
     mockUseQueryBuilder.mockReturnValue({
@@ -176,7 +176,7 @@ describe('QueryTab Workflow Integration Tests', () => {
         fieldValues: { id: 'user123', name: 'John Doe' },
         updateField: vi.fn(),
         updateFieldValue: vi.fn(),
-        clearQuery: vi.fn()
+        clearState: vi.fn()
       });
 
       mockUseQueryBuilder.mockReturnValue({
@@ -222,7 +222,7 @@ describe('QueryTab Workflow Integration Tests', () => {
         selectedSchema: 'UserSchema',
         queryFields: ['id'],
         fieldValues: { id: 'test' },
-        clearQuery: mockClearQuery,
+        clearState: mockClearQuery,
         updateField: vi.fn(),
         updateFieldValue: vi.fn()
       });
@@ -232,7 +232,7 @@ describe('QueryTab Workflow Integration Tests', () => {
         onSchemaChange
       });
 
-      // Directly call the schema change handler to test clearQuery is called
+      // Directly call the schema change handler to test clearState is called
       const schemaSelect = screen.getByRole('combobox');
       await user.selectOptions(schemaSelect, 'RangeSchema');
 
@@ -440,7 +440,7 @@ describe('QueryTab Workflow Integration Tests', () => {
         ...defaultQueryState,
         queryFields: ['id', 'name'],
         fieldValues: { id: 'test', name: 'John' },
-        clearQuery: mockClearQuery,
+        clearState: mockClearQuery,
         updateField: vi.fn(),
         updateFieldValue: vi.fn()
       });
