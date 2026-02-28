@@ -52,7 +52,8 @@
     "react-redux": "^9.2.0"
   },
   "overrides": {
-    "minimatch@>=5.0.0 <5.1.8": "5.1.8"
+    "minimatch@>=5.0.0 <5.1.8": "5.1.8",
+    "js-yaml": "4.1.1"
   },
   "devDependencies": {
     "@tailwindcss/forms": "^0.5.10",
