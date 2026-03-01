@@ -319,4 +319,18 @@ impl NodeManager {
     pub async fn get_base_config(&self) -> NodeConfig {
         self.config.read().await.base_config.clone()
     }
+
+    /// Check if any active node exists in the cache.
+    ///
+    /// In local mode, checks the shared local node.
+    /// In cloud mode, checks if any per-user node has been created.
+    pub async fn has_active_node(&self) -> bool {
+        if *self.is_local_mode.read().await {
+            let shared = self.shared_local_node.lock().await;
+            shared.is_some()
+        } else {
+            let nodes = self.nodes.lock().await;
+            !nodes.is_empty()
+        }
+    }
 }

@@ -19,7 +19,7 @@ pub mod schema_client;
 mod transform_queue;
 
 // Re-export the FoldNode struct for easier imports
-pub use crate::server::{start_embedded_server, EmbeddedServerHandle};
+pub use crate::server::{start_embedded_server, start_embedded_server_lazy, EmbeddedServerHandle};
 pub use config::load_node_config;
 pub use config::NodeConfig;
 pub use node::FileIngestionRecord;

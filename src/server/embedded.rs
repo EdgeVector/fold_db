@@ -44,6 +44,42 @@ impl EmbeddedServerHandle {
     }
 }
 
+/// Start an embedded FoldDB HTTP server with lazy database initialization.
+///
+/// This function creates and starts a FoldDB HTTP server without initializing
+/// the database. The database is initialized lazily on the first API request.
+/// This is ideal for desktop applications where you want the UI to appear
+/// immediately without waiting for database locks.
+///
+/// # Arguments
+///
+/// * `config` - The NodeManagerConfig to use for lazy node creation
+/// * `port` - The port to bind to (e.g., 9001)
+///
+/// # Returns
+///
+/// Returns an `EmbeddedServerHandle` that can be used to manage the server.
+pub async fn start_embedded_server_lazy(
+    config: NodeManagerConfig,
+    port: u16,
+) -> FoldDbResult<EmbeddedServerHandle> {
+    let bind_address = format!("127.0.0.1:{}", port);
+
+    // Create a NodeManager without pre-populating it.
+    // The node gets created lazily by NodeManager::get_node() on first API request.
+    let node_manager = NodeManager::new(config);
+
+    let server = FoldHttpServer::new(node_manager, &bind_address).await?;
+
+    let address = bind_address.clone();
+    let task_handle = tokio::spawn(async move { server.run().await });
+
+    Ok(EmbeddedServerHandle {
+        task_handle,
+        bind_address: address,
+    })
+}
+
 /// Start an embedded FoldDB HTTP server in a background task.
 ///
 /// This function creates and starts a FoldDB HTTP server without blocking the

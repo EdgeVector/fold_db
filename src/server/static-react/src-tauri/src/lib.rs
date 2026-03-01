@@ -1,10 +1,11 @@
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use fold_db::fold_node::FoldNode;
 use fold_db::load_node_config;
 use fold_db::security::Ed25519KeyPair;
-use fold_db::server::{start_embedded_server, EmbeddedServerHandle};
+use fold_db::server::{start_embedded_server_lazy, EmbeddedServerHandle, NodeManagerConfig};
+use fold_db::DatabaseConfig;
 use tauri::{Manager, State, WebviewUrl, WebviewWindowBuilder};
+use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
 use serde::{Serialize, Deserialize};
 
 /// Shared state for the Tauri application
@@ -80,7 +81,7 @@ pub fn run() {
   // Start the server in a separate thread with its own tokio runtime
   // so we can block on it without deadlocking Tauri's runtime
   let server_port = 9001u16;
-  let (tx, rx) = std::sync::mpsc::channel::<Option<EmbeddedServerHandle>>();
+  let (tx, rx) = std::sync::mpsc::channel::<Result<EmbeddedServerHandle, String>>();
 
   std::thread::spawn(move || {
     let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
@@ -88,25 +89,25 @@ pub fn run() {
     match result {
       Ok(handle) => {
         eprintln!("[FoldDB] Server started on port {}", server_port);
-        let _ = tx.send(Some(handle));
+        let _ = tx.send(Ok(handle));
         // Keep runtime alive so the server keeps running
         rt.block_on(std::future::pending::<()>());
       }
       Err(e) => {
         eprintln!("[FoldDB] Failed to start server: {}", e);
-        let _ = tx.send(None);
+        let _ = tx.send(Err(e));
       }
     }
   });
 
   // Wait for the server to start (with timeout)
-  let server_handle = rx.recv_timeout(std::time::Duration::from_secs(30))
-    .ok()
-    .flatten();
+  let server_result = rx.recv_timeout(std::time::Duration::from_secs(30));
 
-  if server_handle.is_none() {
-    eprintln!("[FoldDB] Warning: Server did not start, UI may not load correctly");
-  }
+  let (server_handle, startup_error) = match server_result {
+    Ok(Ok(handle)) => (Some(handle), None),
+    Ok(Err(e)) => (None, Some(e)),
+    Err(_) => (None, Some("Server failed to start within 30 seconds.".to_string())),
+  };
 
   tauri::Builder::default()
     .plugin(tauri_plugin_shell::init())
@@ -130,9 +131,24 @@ pub fn run() {
         server_port,
       });
 
+      // If the server failed to start, show an error dialog and exit.
+      // Note: sled lock conflicts no longer happen at startup (lazy init),
+      // but other failures (config load, identity generation) can still occur.
+      if let Some(error) = startup_error {
+        let message = format!("FoldDB server failed to start:\n\n{}", error);
+
+        app.dialog()
+          .message(message)
+          .kind(MessageDialogKind::Error)
+          .title("FoldDB - Startup Error")
+          .blocking_show();
+
+        std::process::exit(1);
+      }
+
       // Create the main window — server is already listening
       let url = format!("http://localhost:{}", server_port);
-      let window = WebviewWindowBuilder::new(app, "main", WebviewUrl::External(url.parse().unwrap()))
+      let _window = WebviewWindowBuilder::new(app, "main", WebviewUrl::External(url.parse().unwrap()))
         .title("FoldDB - Personal Database")
         .inner_size(1400.0, 900.0)
         .min_inner_size(1000.0, 700.0)
@@ -140,16 +156,17 @@ pub fn run() {
         .build()
         .map_err(|e| format!("Failed to create window: {}", e))?;
 
-      // Open devtools to debug blank screen
-      window.open_devtools();
-
       Ok(())
     })
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
 }
 
-/// Start the Fold embedded server
+/// Start the Fold embedded server with lazy database initialization.
+///
+/// No database is opened at startup — the node is created lazily on the first
+/// API request. This means the UI window appears immediately without waiting
+/// for sled locks or other DB initialization.
 async fn start_fold_server(port: u16) -> Result<EmbeddedServerHandle, String> {
     let data_dir = dirs::home_dir()
         .ok_or_else(|| "Could not determine home directory".to_string())?
@@ -193,13 +210,23 @@ async fn start_fold_server(port: u16) -> Result<EmbeddedServerHandle, String> {
         (pub_k, priv_k)
     };
 
-    // Load node configuration
+    // Set NODE_CONFIG to a writable path so persist_node_config() can save.
+    // The bundled .app runs inside a read-only code-signed directory,
+    // so the default relative "config/node_config.json" would fail.
+    let config_path = dirs::home_dir()
+        .ok_or_else(|| "Could not determine home directory".to_string())?
+        .join(".datafold")
+        .join("node_config.json");
+    std::env::set_var("NODE_CONFIG", &config_path);
+    eprintln!("[FoldDB] Config path: {:?}", config_path);
+
+    // Load node configuration (no DB access — just reads config file)
     let mut config = load_node_config(None, None)
         .map_err(|e| format!("Failed to load config: {}", e))?;
 
     // Set identity, database path, and schema service
     config = config.with_identity(&pub_key, &priv_key);
-    config.database = fold_db::DatabaseConfig::Local { path: data_dir };
+    config.database = DatabaseConfig::Local { path: data_dir };
 
     if let Ok(schema_url) = std::env::var("FOLD_SCHEMA_SERVICE_URL") {
         config.schema_service_url = Some(schema_url);
@@ -207,11 +234,25 @@ async fn start_fold_server(port: u16) -> Result<EmbeddedServerHandle, String> {
         config.schema_service_url = Some("https://axo709qs11.execute-api.us-east-1.amazonaws.com".to_string());
     }
 
-    let node = FoldNode::new(config).await
-        .map_err(|e| format!("Failed to create node: {}", e))?;
+    // Build NodeManagerConfig — no FoldNode created yet
+    let node_manager_config = NodeManagerConfig {
+        base_config: config,
+    };
 
-    let handle = start_embedded_server(node, port).await
+    eprintln!("[FoldDB] Starting server with lazy database initialization...");
+
+    let handle = start_embedded_server_lazy(node_manager_config, port).await
         .map_err(|e| format!("Failed to start server: {}", e))?;
+
+    // Wait for the HTTP server to actually be listening before returning.
+    // With lazy init the handle returns before actix binds the port.
+    for i in 0..50 {
+        if std::net::TcpStream::connect(format!("127.0.0.1:{}", port)).is_ok() {
+            eprintln!("[FoldDB] Server is listening on port {} (took {}ms)", port, i * 50);
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
 
     Ok(handle)
 }

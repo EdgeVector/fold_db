@@ -476,6 +476,10 @@ impl FoldHttpServer {
             web::post().to(system_routes::migrate_to_cloud),
         )
         .route(
+            "/system/database-status",
+            web::get().to(system_routes::get_database_status),
+        )
+        .route(
             "/system/complete-path",
             web::post().to(system_routes::complete_path),
         );
