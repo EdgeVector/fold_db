@@ -1,7 +1,6 @@
 use crate::fold_node::config::NodeConfig;
 use crate::log_feature;
 use crate::logging::features::LogFeature;
-use crate::security::Ed25519KeyPair;
 use crate::server::http_server::AppState;
 use crate::server::node_manager::NodeManagerConfig;
 use crate::server::routes::{handler_error_to_response, require_node, require_user_context};
@@ -378,10 +377,11 @@ pub async fn get_database_config(state: web::Data<AppState>) -> impl Responder {
     HttpResponse::Ok().json(db_config)
 }
 
-/// Get a default auto-generated identity for local development.
+/// Get the auto-generated identity for local/desktop mode.
 ///
-/// This endpoint returns a deterministic identity derived from the node's
-/// public key. It does NOT require authentication, allowing the frontend
+/// Returns the node's unique public key (from config) as the user identity.
+/// Each installation gets its own keypair, so every user has a unique identity.
+/// This endpoint does NOT require authentication, allowing the frontend
 /// to auto-authenticate without a login step.
 #[utoipa::path(
     get,
@@ -391,20 +391,19 @@ pub async fn get_database_config(state: web::Data<AppState>) -> impl Responder {
         (status = 200, description = "Default identity for auto-login", body = serde_json::Value)
     )
 )]
-pub async fn auto_identity() -> impl Responder {
-    // Generate a deterministic keypair from a fixed seed
-    let seed = Sha256::digest(b"local_default_user");
-    let keypair = match Ed25519KeyPair::from_secret_key(seed.as_slice()) {
-        Ok(kp) => kp,
-        Err(e) => {
+pub async fn auto_identity(state: web::Data<AppState>) -> impl Responder {
+    // Use the node's unique public key from config (set per-installation)
+    let config = state.node_manager.get_base_config().await;
+
+    let public_key = match &config.public_key {
+        Some(pk) if !pk.is_empty() => pk.clone(),
+        _ => {
             return HttpResponse::InternalServerError().json(json!({
                 "ok": false,
-                "error": format!("Failed to generate identity: {}", e)
+                "error": "No node public key configured. The server identity has not been initialized."
             }));
         }
     };
-
-    let public_key = keypair.public_key_base64();
 
     // Derive user_hash = SHA256(public_key)[0:32] (same algorithm as frontend)
     let hash = Sha256::digest(public_key.as_bytes());
@@ -632,18 +631,17 @@ pub async fn get_database_status(state: web::Data<AppState>) -> impl Responder {
 
     // For returning users with a saved config, auto-initialize the node
     if has_saved_config {
-        // Use the auto-identity user hash to trigger lazy node creation
-        let seed = sha2::Sha256::digest(b"local_default_user");
-        let keypair = match Ed25519KeyPair::from_secret_key(seed.as_slice()) {
-            Ok(kp) => kp,
-            Err(_) => {
+        // Use the node's unique public key from config to derive user_hash
+        let config = state.node_manager.get_base_config().await;
+        let public_key = match &config.public_key {
+            Some(pk) if !pk.is_empty() => pk.clone(),
+            _ => {
                 return HttpResponse::Ok().json(DatabaseStatusResponse {
                     initialized: false,
                     has_saved_config,
                 });
             }
         };
-        let public_key = keypair.public_key_base64();
         let hash = sha2::Sha256::digest(public_key.as_bytes());
         let user_hash: String =
             hash.iter().map(|b| format!("{:02x}", b)).collect::<String>()[..32].to_string();
