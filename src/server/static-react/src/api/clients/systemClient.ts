@@ -99,6 +99,11 @@ export interface SetupResponse {
   message: string;
 }
 
+export interface DatabaseStatusResponse {
+  initialized: boolean;
+  has_saved_config: boolean;
+}
+
 /**
  * Unified System API Client Implementation
  */
@@ -353,6 +358,21 @@ export class UnifiedSystemClient {
   }
 
   /**
+   * Get database initialization status
+   * UNPROTECTED - No authentication required
+   *
+   * @returns Promise resolving to database status (initialized, has_saved_config)
+   */
+  async getDatabaseStatus(): Promise<EnhancedApiResponse<DatabaseStatusResponse>> {
+    return this.client.get<DatabaseStatusResponse>(API_ENDPOINTS.GET_DATABASE_STATUS, {
+      requiresAuth: false,
+      timeout: API_TIMEOUTS.QUICK,
+      retries: API_RETRIES.STANDARD,
+      cacheable: false,
+    });
+  }
+
+  /**
    * Clear system-related cache
    */
   clearCache(): void {
@@ -378,6 +398,7 @@ export const getNodePublicKey = systemClient.getNodePublicKey.bind(systemClient)
 export const getDatabaseConfig = systemClient.getDatabaseConfig.bind(systemClient);
 export const updateDatabaseConfig = systemClient.updateDatabaseConfig.bind(systemClient);
 export const applySetup = systemClient.applySetup.bind(systemClient);
+export const getDatabaseStatus = systemClient.getDatabaseStatus.bind(systemClient);
 export const createLogStream = systemClient.createLogStream.bind(systemClient);
 export const validateResetRequest = systemClient.validateResetRequest.bind(systemClient);
 

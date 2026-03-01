@@ -25,7 +25,8 @@ import { initializeSystemKey, fetchNodePrivateKey, restoreSession } from './stor
 import LoginPage from './components/LoginPage'
 import { DEFAULT_TAB } from './constants'
 import { BROWSER_CONFIG } from './constants/config'
-import { getAutoIdentity } from './api/clients/systemClient'
+import { getAutoIdentity, getDatabaseStatus } from './api/clients/systemClient'
+import DatabaseSetupScreen from './components/DatabaseSetupScreen'
 
 function isIngestionResult(results) {
   if (!results?.success) return false
@@ -62,6 +63,8 @@ export function AppContent() {
   const [isOnboardingOpen, setIsOnboardingOpen] = useState(false)
   const userHash = useAppSelector(state => state.auth.user?.hash)
   const [onboardingCompleted, setOnboardingCompleted] = useState(false)
+  const [dbStatus, setDbStatus] = useState(null) // { initialized, has_saved_config }
+  const [dbStatusLoading, setDbStatusLoading] = useState(true)
 
   // Sync activeTab with URL hash changes
   useEffect(() => {
@@ -102,19 +105,39 @@ export function AppContent() {
     }
   }, [dispatch])
 
-  // Initialize system key ONLY after authenticated
+  // Check database status after authenticated
   useEffect(() => {
-    if (isAuthenticated) {
+    if (!isAuthenticated) return
+    setDbStatusLoading(true)
+    getDatabaseStatus()
+      .then(response => {
+        if (response.success && response.data) {
+          setDbStatus(response.data)
+        } else {
+          // If endpoint is unavailable (older backend), assume initialized
+          setDbStatus({ initialized: true, has_saved_config: true })
+        }
+      })
+      .catch(() => {
+        // If endpoint doesn't exist, assume initialized (backwards compat)
+        setDbStatus({ initialized: true, has_saved_config: true })
+      })
+      .finally(() => setDbStatusLoading(false))
+  }, [isAuthenticated])
+
+  // Initialize system key ONLY after authenticated and DB initialized
+  useEffect(() => {
+    if (isAuthenticated && dbStatus?.initialized) {
       dispatch(initializeSystemKey())
     }
-  }, [dispatch, isAuthenticated])
+  }, [dispatch, isAuthenticated, dbStatus?.initialized])
 
-  // Fetch node private key ONLY after authenticated
+  // Fetch node private key ONLY after authenticated and DB initialized
   useEffect(() => {
-    if (isAuthenticated) {
+    if (isAuthenticated && dbStatus?.initialized) {
       dispatch(fetchNodePrivateKey())
     }
-  }, [dispatch, isAuthenticated])
+  }, [dispatch, isAuthenticated, dbStatus?.initialized])
 
   // Check per-user onboarding status when user hash becomes available
   useEffect(() => {
@@ -204,8 +227,8 @@ export function AppContent() {
     return <LoginPage />;
   }
 
-  // Show loading spinner while restoring session or checking auth
-  if (isAuthLoading) {
+  // Show loading spinner while restoring session or checking auth/db status
+  if (isAuthLoading || dbStatusLoading) {
     return (
       <div className="h-screen flex items-center justify-center bg-surface-secondary">
         <div className="text-center">
@@ -213,6 +236,29 @@ export function AppContent() {
           <p className="text-secondary text-sm">Loading...</p>
         </div>
       </div>
+    );
+  }
+
+  // Show database setup screen for fresh installs (no saved config, not initialized)
+  if (dbStatus && !dbStatus.initialized && !dbStatus.has_saved_config) {
+    return (
+      <DatabaseSetupScreen
+        onComplete={() => {
+          // Re-check database status after setup
+          setDbStatusLoading(true)
+          getDatabaseStatus()
+            .then(response => {
+              if (response.success && response.data) {
+                setDbStatus(response.data)
+              }
+            })
+            .catch(() => {
+              // Assume initialized after successful setup call
+              setDbStatus({ initialized: true, has_saved_config: true })
+            })
+            .finally(() => setDbStatusLoading(false))
+        }}
+      />
     );
   }
 

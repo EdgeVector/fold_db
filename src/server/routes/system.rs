@@ -588,6 +588,96 @@ pub struct PathCompleteRequest {
     pub partial_path: String,
 }
 
+/// Response for database status check
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct DatabaseStatusResponse {
+    /// Whether the database has been initialized (a node is active)
+    pub initialized: bool,
+    /// Whether a saved config file exists on disk (returning user)
+    pub has_saved_config: bool,
+}
+
+/// Get database initialization status
+///
+/// Returns whether the database has been initialized and whether a saved config
+/// exists. For returning users with a saved config, this endpoint auto-initializes
+/// the node and returns `initialized: true`. For fresh installs, returns
+/// `initialized: false` so the frontend can show the setup screen.
+///
+/// This endpoint does NOT require a node to exist — it's safe to call before
+/// the database is initialized.
+#[utoipa::path(
+    get,
+    path = "/api/system/database-status",
+    tag = "system",
+    responses(
+        (status = 200, description = "Database status", body = DatabaseStatusResponse)
+    )
+)]
+pub async fn get_database_status(state: web::Data<AppState>) -> impl Responder {
+    // Check if a saved config file exists on disk
+    let config_path =
+        std::env::var("NODE_CONFIG").unwrap_or_else(|_| "config/node_config.json".to_string());
+    let has_saved_config = Path::new(&config_path).exists();
+
+    // Check if a node is already active
+    let already_initialized = state.node_manager.has_active_node().await;
+
+    if already_initialized {
+        return HttpResponse::Ok().json(DatabaseStatusResponse {
+            initialized: true,
+            has_saved_config,
+        });
+    }
+
+    // For returning users with a saved config, auto-initialize the node
+    if has_saved_config {
+        // Use the auto-identity user hash to trigger lazy node creation
+        let seed = sha2::Sha256::digest(b"local_default_user");
+        let keypair = match Ed25519KeyPair::from_secret_key(seed.as_slice()) {
+            Ok(kp) => kp,
+            Err(_) => {
+                return HttpResponse::Ok().json(DatabaseStatusResponse {
+                    initialized: false,
+                    has_saved_config,
+                });
+            }
+        };
+        let public_key = keypair.public_key_base64();
+        let hash = sha2::Sha256::digest(public_key.as_bytes());
+        let user_hash: String =
+            hash.iter().map(|b| format!("{:02x}", b)).collect::<String>()[..32].to_string();
+
+        // Try to initialize the node lazily
+        match state.node_manager.get_node(&user_hash).await {
+            Ok(_) => {
+                return HttpResponse::Ok().json(DatabaseStatusResponse {
+                    initialized: true,
+                    has_saved_config,
+                });
+            }
+            Err(e) => {
+                log_feature!(
+                    LogFeature::HttpServer,
+                    warn,
+                    "Auto-initialization failed for returning user: {}",
+                    e
+                );
+                return HttpResponse::Ok().json(DatabaseStatusResponse {
+                    initialized: false,
+                    has_saved_config,
+                });
+            }
+        }
+    }
+
+    // Fresh install — no config, no node
+    HttpResponse::Ok().json(DatabaseStatusResponse {
+        initialized: false,
+        has_saved_config,
+    })
+}
+
 /// Complete a partial filesystem path with matching directories
 ///
 /// This endpoint provides directory-only path completion for the folder picker UI.

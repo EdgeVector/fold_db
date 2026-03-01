@@ -215,6 +215,15 @@ const mockApprovedSchemas = {
 };
 
 // Mock hooks
+vi.mock('../../api/clients/systemClient', () => ({
+  getAutoIdentity: () => Promise.resolve({ success: true, data: { user_id: 'test', user_hash: 'testhash', public_key: 'pk' } }),
+  getDatabaseStatus: () => Promise.resolve({ success: true, data: { initialized: true, has_saved_config: true } }),
+}));
+
+vi.mock('../../components/DatabaseSetupScreen', () => ({
+  default: ({ onComplete }) => <div data-testid="database-setup-screen"><button onClick={onComplete}>Setup</button></div>
+}));
+
 vi.mock('../../hooks/useApprovedSchemas.js', () => ({
   useApprovedSchemas: () => mockApprovedSchemas
 }));
@@ -233,7 +242,7 @@ describe('App Component', () => {
     });
 
     describe('Initial Rendering', () => {
-      it('renders all main layout components', () => {
+      it('renders all main layout components', async () => {
         const store = createTestStore({
           auth: {
             isAuthenticated: true,
@@ -251,14 +260,16 @@ describe('App Component', () => {
 
         renderWithRedux(<AppContent />, { store });
 
-        expect(screen.getByTestId('header')).toBeInTheDocument();
+        await waitFor(() => {
+          expect(screen.getByTestId('header')).toBeInTheDocument();
+        });
         expect(screen.getByTestId('footer')).toBeInTheDocument();
         // StatusSection removed - now in Settings modal
         expect(screen.getByTestId('tab-navigation')).toBeInTheDocument();
         expect(screen.getByTestId('log-sidebar')).toBeInTheDocument();
       });
 
-      it('initializes with default tab (smart-folder)', () => {
+      it('initializes with default tab (smart-folder)', async () => {
         const store = createTestStore({
           auth: {
             isAuthenticated: true,
@@ -276,11 +287,13 @@ describe('App Component', () => {
 
         renderWithRedux(<AppContent />, { store });
 
-        expect(screen.getByTestId('smart-folder-tab')).toBeInTheDocument();
+        await waitFor(() => {
+          expect(screen.getByTestId('smart-folder-tab')).toBeInTheDocument();
+        });
         expect(screen.queryByTestId('schema-tab')).not.toBeInTheDocument();
       });
 
-      it('dispatches actions on mount', () => {
+      it('dispatches actions on mount', async () => {
         const store = createTestStore({
           auth: {
             isAuthenticated: true,
@@ -299,8 +312,10 @@ describe('App Component', () => {
         const dispatchSpy = vi.spyOn(store, 'dispatch');
         renderWithRedux(<AppContent />, { store });
 
-        // Should dispatch initializeSystemKey
-        expect(dispatchSpy).toHaveBeenCalled();
+        // Wait for DB status to resolve, then initializeSystemKey dispatches
+        await waitFor(() => {
+          expect(dispatchSpy).toHaveBeenCalled();
+        });
       });
     });
 
@@ -324,8 +339,10 @@ describe('App Component', () => {
 
         renderWithRedux(<AppContent />, { store });
 
-        // Default should be smart-folder tab
-        expect(screen.getByTestId('smart-folder-tab')).toBeInTheDocument();
+        // Default should be smart-folder tab (wait for DB status to resolve)
+        await waitFor(() => {
+          expect(screen.getByTestId('smart-folder-tab')).toBeInTheDocument();
+        });
 
         // Switch to schemas tab
         fireEvent.click(screen.getByTestId('tab-schemas'));
@@ -358,6 +375,11 @@ describe('App Component', () => {
 
         renderWithRedux(<AppContent />, { store });
 
+        // Wait for DB status to resolve
+        await waitFor(() => {
+          expect(screen.getByTestId('tab-navigation')).toBeInTheDocument();
+        });
+
         // Generate a result in query tab
         fireEvent.click(screen.getByTestId('tab-query'));
         fireEvent.click(screen.getByTestId('query-action'));
@@ -377,7 +399,7 @@ describe('App Component', () => {
     });
 
     describe('Schema Loading States', () => {
-      it('shows schema error message', () => {
+      it('shows schema error message', async () => {
         // Update mock to return error state
         mockApprovedSchemas.isLoading = false;
         mockApprovedSchemas.error = 'Failed to load schemas';
@@ -400,7 +422,9 @@ describe('App Component', () => {
         renderWithRedux(<AppContent />, { store });
 
         // Error message is displayed (component shows the error text directly)
-        expect(screen.getByText(/failed to load schemas/i)).toBeInTheDocument();
+        await waitFor(() => {
+          expect(screen.getByText(/failed to load schemas/i)).toBeInTheDocument();
+        });
       });
     });
 
@@ -422,6 +446,10 @@ describe('App Component', () => {
         });
 
         renderWithRedux(<AppContent />, { store });
+
+        await waitFor(() => {
+          expect(screen.getByTestId('tab-navigation')).toBeInTheDocument();
+        });
 
         // Switch to query tab and trigger an action
         fireEvent.click(screen.getByTestId('tab-query'));
@@ -452,6 +480,10 @@ describe('App Component', () => {
 
         renderWithRedux(<AppContent />, { store });
 
+        await waitFor(() => {
+          expect(screen.getByTestId('tab-navigation')).toBeInTheDocument();
+        });
+
         // Switch to schemas tab and trigger schema update
         fireEvent.click(screen.getByTestId('tab-schemas'));
         fireEvent.click(screen.getByTestId('schema-update'));
@@ -464,7 +496,7 @@ describe('App Component', () => {
     });
 
     describe('Integration with Child Components', () => {
-      it('passes correct props to TabNavigation', () => {
+      it('passes correct props to TabNavigation', async () => {
         const store = createTestStore({
           auth: {
             isAuthenticated: true,
@@ -482,15 +514,16 @@ describe('App Component', () => {
 
         renderWithRedux(<AppContent />, { store });
 
-        const tabNavigation = screen.getByTestId('tab-navigation');
-        expect(tabNavigation).toBeInTheDocument();
+        await waitFor(() => {
+          expect(screen.getByTestId('tab-navigation')).toBeInTheDocument();
+        });
 
         // Ingestion tab should be active by default
         const ingestionTab = screen.getByTestId('tab-ingestion');
         expect(ingestionTab).toBeInTheDocument();
       });
 
-      it('renders different tab components correctly', () => {
+      it('renders different tab components correctly', async () => {
         const store = createTestStore({
           auth: {
             isAuthenticated: true,
@@ -507,6 +540,10 @@ describe('App Component', () => {
         });
 
         renderWithRedux(<AppContent />, { store });
+
+        await waitFor(() => {
+          expect(screen.getByTestId('tab-navigation')).toBeInTheDocument();
+        });
 
         // Test each tab
         const tabs = [
@@ -538,6 +575,10 @@ describe('App Component', () => {
         });
 
         renderWithRedux(<AppContent />, { store });
+
+        await waitFor(() => {
+          expect(screen.getByTestId('tab-navigation')).toBeInTheDocument();
+        });
 
         // Initially no results (ResultsSection not rendered when no results)
         expect(screen.queryByTestId('results-section')).not.toBeInTheDocument();
@@ -577,7 +618,7 @@ describe('App Component', () => {
         expect(screen.queryByTestId('unknown-tab')).not.toBeInTheDocument();
       });
 
-      it('maintains stable state during rapid tab switches', () => {
+      it('maintains stable state during rapid tab switches', async () => {
         const store = createTestStore({
           auth: {
             isAuthenticated: true,
@@ -594,6 +635,10 @@ describe('App Component', () => {
         });
 
         renderWithRedux(<AppContent />, { store });
+
+        await waitFor(() => {
+          expect(screen.getByTestId('tab-navigation')).toBeInTheDocument();
+        });
 
         // Rapidly switch between tabs
         fireEvent.click(screen.getByTestId('tab-schemas'));
@@ -624,6 +669,10 @@ describe('App Component', () => {
         });
 
         renderWithRedux(<AppContent />, { store });
+
+        await waitFor(() => {
+          expect(screen.getByTestId('tab-navigation')).toBeInTheDocument();
+        });
 
         // Generate results in query tab
         fireEvent.click(screen.getByTestId('tab-query'));
