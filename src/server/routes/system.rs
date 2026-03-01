@@ -635,6 +635,54 @@ pub async fn complete_path(body: web::Json<PathCompleteRequest>) -> impl Respond
     HttpResponse::Ok().json(json!({ "completions": completions }))
 }
 
+/// Request body for listing directory contents
+#[derive(Deserialize)]
+pub struct ListDirectoryRequest {
+    pub path: String,
+}
+
+/// List subdirectories inside a given directory path.
+///
+/// Returns directory **names** (not full paths), up to 200 entries, hiding dotfiles.
+/// Used by the web-based directory browser modal.
+pub async fn list_directory(body: web::Json<ListDirectoryRequest>) -> impl Responder {
+    let dir_path = PathBuf::from(&body.path);
+
+    if !dir_path.is_dir() {
+        return HttpResponse::BadRequest().json(json!({
+            "error": format!("'{}' is not a directory or is unreadable", body.path),
+            "path": body.path,
+            "directories": Vec::<String>::new(),
+        }));
+    }
+
+    let entries = match std::fs::read_dir(&dir_path) {
+        Ok(entries) => entries,
+        Err(e) => {
+            return HttpResponse::BadRequest().json(json!({
+                "error": format!("Cannot read directory: {}", e),
+                "path": body.path,
+                "directories": Vec::<String>::new(),
+            }));
+        }
+    };
+
+    let mut directories: Vec<String> = entries
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().is_dir())
+        .filter(|e| !e.file_name().to_string_lossy().starts_with('.'))
+        .map(|e| e.file_name().to_string_lossy().to_string())
+        .collect();
+
+    directories.sort();
+    directories.truncate(200);
+
+    HttpResponse::Ok().json(json!({
+        "path": body.path,
+        "directories": directories,
+    }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

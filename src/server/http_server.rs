@@ -475,6 +475,10 @@ impl FoldHttpServer {
         .route(
             "/system/complete-path",
             web::post().to(system_routes::complete_path),
+        )
+        .route(
+            "/system/list-directory",
+            web::post().to(system_routes::list_directory),
         );
     }
 

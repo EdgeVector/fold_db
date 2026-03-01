@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import DirectoryBrowserModal from './DirectoryBrowserModal'
 
 const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__
 
@@ -36,17 +37,26 @@ export default function FolderInput({
   } = autocomplete
 
   const [, setPickerError] = useState(null)
+  const [showBrowser, setShowBrowser] = useState(false)
 
   const openFolderPicker = async () => {
-    if (!isTauri) return
-    try {
-      const { open } = await import('@tauri-apps/plugin-dialog')
-      const selected = await open({ directory: true, multiple: false, title: 'Select folder to scan' })
-      if (selected) onFolderPathChange(selected)
-    } catch (error) {
-      setPickerError(error)
-      console.error('Failed to open folder picker:', error)
+    if (isTauri) {
+      try {
+        const { open } = await import('@tauri-apps/plugin-dialog')
+        const selected = await open({ directory: true, multiple: false, title: 'Select folder to scan' })
+        if (selected) onFolderPathChange(selected)
+      } catch (error) {
+        setPickerError(error)
+        console.error('Failed to open folder picker:', error)
+      }
+    } else {
+      setShowBrowser(true)
     }
+  }
+
+  const handleBrowserSelect = (path) => {
+    onFolderPathChange(path)
+    setShowBrowser(false)
   }
 
   return (
@@ -85,7 +95,7 @@ export default function FolderInput({
             </ul>
           )}
         </div>
-        {isTauri && <button onClick={openFolderPicker} disabled={isScanning} className="btn-secondary" title="Browse">Browse</button>}
+        <button onClick={openFolderPicker} disabled={isScanning} className="btn-secondary" title="Browse">Browse</button>
         {isScanning
           ? <button onClick={onCancelScan} className="btn-secondary">Cancel</button>
           : <button onClick={() => onScan()} disabled={!folderPath.trim()} className="btn-primary">Scan</button>
@@ -113,6 +123,13 @@ export default function FolderInput({
         >
           Try sample data
         </button>
+      )}
+      {showBrowser && (
+        <DirectoryBrowserModal
+          initialPath={folderPath.includes('/') ? folderPath : '/'}
+          onSelect={handleBrowserSelect}
+          onClose={() => setShowBrowser(false)}
+        />
       )}
     </>
   )

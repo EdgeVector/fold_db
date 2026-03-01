@@ -547,6 +547,23 @@ export class UnifiedIngestionClient {
   }
 
   /**
+   * List subdirectories inside a given directory path
+   */
+  async listDirectory(
+    path: string,
+  ): Promise<EnhancedApiResponse<{ path: string; directories: string[]; error?: string }>> {
+    return this.client.post<{ path: string; directories: string[]; error?: string }>(
+      "/system/list-directory",
+      { path },
+      {
+        timeout: API_TIMEOUTS.QUICK,
+        retries: API_RETRIES.NONE,
+        cacheable: false,
+      },
+    );
+  }
+
+  /**
    * Upload a file for AI-powered ingestion
    * UNPROTECTED - No authentication required per project preference
    *
