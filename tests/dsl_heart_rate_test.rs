@@ -146,7 +146,7 @@ async fn test_heart_rate_average_dsl() {
         schema.field_molecule_uuids
     );
     assert!(
-        schema.field_molecule_uuids.as_ref().map_or(false, |m| !m.is_empty()),
+        schema.field_molecule_uuids.as_ref().is_some_and(|m| !m.is_empty()),
         "Schema should have molecule UUIDs after mutations"
     );
 
