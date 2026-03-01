@@ -21,7 +21,7 @@ import ErrorBoundary from './components/ErrorBoundary'
 import { useApprovedSchemas } from './hooks/useApprovedSchemas.js'
 import { useIngestionStatus } from './hooks/useIngestionStatus'
 import { useAppSelector, useAppDispatch } from './store/hooks'
-import { initializeSystemKey, fetchNodePrivateKey, restoreSession } from './store/authSlice'
+import { initializeSystemKey, restoreSession } from './store/authSlice'
 import LoginPage from './components/LoginPage'
 import { DEFAULT_TAB } from './constants'
 import { BROWSER_CONFIG } from './constants/config'
@@ -132,12 +132,6 @@ export function AppContent() {
     }
   }, [dispatch, isAuthenticated, dbStatus?.initialized])
 
-  // Fetch node private key ONLY after authenticated and DB initialized
-  useEffect(() => {
-    if (isAuthenticated && dbStatus?.initialized) {
-      dispatch(fetchNodePrivateKey())
-    }
-  }, [dispatch, isAuthenticated, dbStatus?.initialized])
 
 
   // Check per-user onboarding status when user hash becomes available
