@@ -748,6 +748,12 @@ fn expand_tilde(raw: &str) -> PathBuf {
     PathBuf::from(raw)
 }
 
+/// Returns true if the given path string points to an existing directory.
+pub fn is_existing_directory(p: &str) -> bool {
+    let path = expand_tilde(p);
+    path.is_dir()
+}
+
 /// Request body for filesystem path completion
 #[derive(Deserialize)]
 pub struct PathCompleteRequest {
