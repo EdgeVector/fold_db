@@ -12,8 +12,6 @@ permissions:
   contents: write
   pull-requests: write
   issues: write
-  id-token: write
-  actions: read
 
 jobs:
   claude:
@@ -22,34 +20,101 @@ jobs:
       (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
       (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude'))
     runs-on: ubuntu-latest
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
     steps:
-      - name: Debug token availability
-        run: |
-          echo "GITHUB_TOKEN length: ${#GITHUB_TOKEN}"
-          echo "ACTIONS_ID_TOKEN_REQUEST_URL set: ${ACTIONS_ID_TOKEN_REQUEST_URL:+yes}"
+      - name: Get PR info
+        id: pr
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ "${{ github.event_name }}" = "issue_comment" ]; then
+            PR_NUMBER="${{ github.event.issue.number }}"
+          elif [ "${{ github.event_name }}" = "pull_request_review_comment" ]; then
+            PR_NUMBER="${{ github.event.pull_request.number }}"
+          elif [ "${{ github.event_name }}" = "pull_request_review" ]; then
+            PR_NUMBER="${{ github.event.pull_request.number }}"
+          fi
+          echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
 
-      - name: Checkout repository
+          PR_BRANCH=$(gh pr view "$PR_NUMBER" --repo "${{ github.repository }}" --json headRefName -q .headRefName)
+          echo "branch=$PR_BRANCH" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout PR branch
         uses: actions/checkout@v4
         with:
+          ref: ${{ steps.pr.outputs.branch }}
+          token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 1
 
+      - name: Configure Git
+        run: |
+          git config user.name "Claude Code"
+          git config user.email "claude@anthropic.com"
+
+      - name: Get comment body
+        id: comment
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request_review_comment" ]; then
+            BODY=$(cat <<'COMMENT_EOF'
+          ${{ github.event.comment.body }}
+          COMMENT_EOF
+            )
+            FILE="${{ github.event.comment.path }}"
+            LINE="${{ github.event.comment.line }}"
+            echo "prompt=Review comment on $FILE line $LINE: $BODY" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event_name }}" = "pull_request_review" ]; then
+            BODY=$(cat <<'COMMENT_EOF'
+          ${{ github.event.review.body }}
+          COMMENT_EOF
+            )
+            echo "prompt=PR review: $BODY" >> "$GITHUB_OUTPUT"
+          else
+            BODY=$(cat <<'COMMENT_EOF'
+          ${{ github.event.comment.body }}
+          COMMENT_EOF
+            )
+            echo "prompt=$BODY" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install Claude Code
+        run: npm install -g @anthropic-ai/claude-code
+
       - name: Run Claude Code
-        id: claude
-        uses: anthropics/claude-code-action@v1
-        with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          github_token: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          claude -p "${{ steps.comment.outputs.prompt }}" \
+            --max-turns 20 \
+            --allowedTools "Bash,Read,Edit,Glob,Grep"
+
+      - name: Push changes
+        if: always()
+        run: |
+          if git diff --quiet && git diff --cached --quiet; then
+            echo "No changes to push"
+          else
+            git add -A
+            git commit -m "Address review comment
+
+          Co-Authored-By: Claude Code <claude@anthropic.com>"
+            git push origin ${{ steps.pr.outputs.branch }}
+          fi
+
+      - name: Comment on PR
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if git diff --quiet HEAD~1 2>/dev/null; then
+            gh pr comment "${{ steps.pr.outputs.pr_number }}" --repo "${{ github.repository }}" --body "I reviewed the comment but no code changes were needed."
+          else
+            gh pr comment "${{ steps.pr.outputs.pr_number }}" --repo "${{ github.repository }}" --body "I've pushed a fix addressing the review comment."
+          fi
 
   auto-merge:
     needs: claude
     if: success()
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
       - name: Enable auto-merge
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -64,5 +129,5 @@ jobs:
           fi
 
           if [ -n "$PR_NUMBER" ]; then
-            gh pr merge "$PR_NUMBER" --auto --squash || echo "Auto-merge already enabled or not eligible"
+            gh pr merge "$PR_NUMBER" --repo "${{ github.repository }}" --auto --squash || echo "Auto-merge already enabled or not eligible"
           fi
