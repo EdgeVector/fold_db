@@ -71,20 +71,21 @@ impl LlmQueryService {
             - For HashRange schemas, HashKey filters operate on the hash_field, Range filters operate on the range_field\n\
             - For Range schemas, Range filters operate on the range_field\n\
             - SampleN returns RANDOM records, NOT sorted or ordered\n\
-            - For \"most recent\" or \"latest\" queries, use null filter to get all records (backend will handle sorting)\n\
+            - For \"most recent\" or \"latest\" queries, use null filter with sort_order \"desc\" to get results sorted newest-first by range key\n\
             - Range keys are stored as strings and compared lexicographically\n\n\
             EXAMPLES:\n\
             - Search for word \"ai\" in BlogPostWordIndex (hash_field=word): {\"HashKey\": \"ai\"} ✓ CORRECT\n\
             - Search for author \"Jennifer Liu\" in schema with hash_field=author: {\"HashKey\": \"Jennifer Liu\"} ✓ CORRECT\n\
             - Get blog post by ID in BlogPost (range_field=post_id): {\"RangePrefix\": \"post-123\"} ✓ CORRECT\n\
-            - Get most recent posts: null (returns all, sorted by backend) ✓ CORRECT\n\
+            - Get most recent posts: null filter + sort_order \"desc\" ✓ CORRECT\n\
             - Get posts in date range (range_field=publish_date): {\"RangeRange\": {\"start\": \"2025-09-01\", \"end\": \"2025-09-30\"}} ✓ CORRECT\n\n\
             Respond in JSON format with:\n\
             {\n\
               \"query\": {\n\
                 \"schema_name\": \"string\",\n\
                 \"fields\": [\"field1\", \"field2\"],\n\
-                \"filter\": null or one of the filter types above\n\
+                \"filter\": null or one of the filter types above,\n\
+                \"sort_order\": \"asc\" or \"desc\" or null\n\
               },\n\
               \"index_schema\": null or index schema definition (see below),\n\
               \"reasoning\": \"your analysis\"\n\
@@ -183,7 +184,7 @@ impl LlmQueryService {
             IMPORTANT: \n\
             - Return ONLY the JSON object, no additional text\n\
             - Use the EXACT filter format shown above\n\
-            - For \"most recent\", \"latest\", or \"newest\" queries, use null filter (NOT SampleN)\n\
+            - For \"most recent\", \"latest\", or \"newest\" queries, use null filter with sort_order \"desc\" (NOT SampleN)\n\
             - Prefer existing approved schemas; only recommend index_schema if no efficient schema exists\n\
             - Index schemas must always have schema_type \"HashRange\" (implicit)\n\
             - Always include field_classifications for all fields in transform_fields\n\
@@ -351,7 +352,7 @@ impl LlmQueryService {
             "Respond in JSON format:\n\
             {\n\
               \"needs_query\": true/false,\n\
-              \"query\": null or {\"schema_name\": \"...\", \"fields\": [...], \"filter\": ...},\n\
+              \"query\": null or {\"schema_name\": \"...\", \"fields\": [...], \"filter\": ..., \"sort_order\": \"asc\" or \"desc\" or null},\n\
               \"reasoning\": \"explanation\"\n\
             }\n\n\
             IMPORTANT: Return ONLY the JSON object, no additional text.",
@@ -593,7 +594,7 @@ impl LlmQueryService {
         prompt.push_str("{\n");
         prompt.push_str("  \"has_alternative\": true,\n");
         prompt.push_str(
-            "  \"query\": {\"schema_name\": \"...\", \"fields\": [...], \"filter\": ...},\n",
+            "  \"query\": {\"schema_name\": \"...\", \"fields\": [...], \"filter\": ..., \"sort_order\": \"asc\" or \"desc\" or null},\n",
         );
         prompt.push_str("  \"reasoning\": \"why this approach might work\"\n");
         prompt.push_str("}\n\n");

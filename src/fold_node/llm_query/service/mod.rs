@@ -158,8 +158,10 @@ impl LlmQueryService {
         prompt.push_str(&format!("  - {{\"RangeRange\": {{\"start\": \"{}\", \"end\": \"9999-12-31\"}}}} - range key between start and end (inclusive). Use today's date as start for upcoming/future items.\n", chrono::Local::now().format("%Y-%m-%d")));
         prompt.push_str("  - {\"SampleN\": 10} - random sample of N records\n");
         prompt.push_str("  - null - no filter (all records)\n");
+        prompt.push_str("- sort_order (string, optional): \"asc\" or \"desc\" — sorts results by range key. Use \"desc\" for most recent/latest queries.\n");
         prompt.push_str("When the user asks for \"upcoming\", \"future\", or \"after today\" items and a schema has a date-based range key, use RangeRange with today's date as start.\n");
-        prompt.push_str("Example: {\"tool\": \"query\", \"params\": {\"schema_name\": \"Tweet\", \"fields\": [\"content\", \"author\"], \"filter\": {\"SampleN\": 5}}}\n\n");
+        prompt.push_str("When the user asks for \"most recent\", \"latest\", or \"newest\" items, use null filter with sort_order \"desc\".\n");
+        prompt.push_str("Example: {\"tool\": \"query\", \"params\": {\"schema_name\": \"Tweet\", \"fields\": [\"content\", \"author\"], \"filter\": null, \"sort_order\": \"desc\"}}\n\n");
 
         prompt.push_str("### list_schemas\n");
         prompt.push_str("List all available schemas.\n");

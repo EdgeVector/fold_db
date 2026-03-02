@@ -1,22 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-/// Response for analyze query
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AnalyzeQueryHandlerResponse {
-    pub session_id: String,
-    pub query_plan: crate::fold_node::llm_query::types::QueryPlan,
-}
-
-/// Response for execute query plan
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ExecuteQueryPlanHandlerResponse {
-    pub status: crate::fold_node::llm_query::types::QueryExecutionStatus,
-    pub backfill_progress: Option<f64>,
-    pub results: Option<Vec<Value>>,
-    pub summary: Option<String>,
-}
-
 /// Response for chat
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatHandlerResponse {

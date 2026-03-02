@@ -13,38 +13,6 @@ const client = createApiClient({
   retries: API_RETRIES.LIMITED
 });
 
-export interface AnalyzeQueryRequest {
-  query: string;
-  session_id?: string;
-}
-
-export interface QueryPlan {
-  query: {
-    schema_name: string;
-    fields: string[];
-    filter?: Record<string, unknown>;
-  };
-  index_schema?: Record<string, unknown>;
-  reasoning: string;
-}
-
-export interface AnalyzeQueryResponse {
-  session_id: string;
-  query_plan: QueryPlan;
-}
-
-export interface ExecuteQueryPlanRequest {
-  session_id: string;
-  query_plan: QueryPlan;
-}
-
-export interface ExecuteQueryPlanResponse {
-  status: 'pending' | 'running' | 'complete';
-  backfill_progress?: number;
-  results?: unknown[];
-  summary?: string;
-}
-
 export interface ChatRequest {
   session_id: string;
   question: string;
@@ -65,7 +33,7 @@ export interface BackfillStatusResponse {
 
 export interface FollowupAnalysis {
   needs_query: boolean;
-  query?: QueryPlan;
+  query?: Record<string, unknown>;
   reasoning: string;
 }
 
@@ -88,20 +56,6 @@ export interface AgentQueryResponse {
 }
 
 export const llmQueryClient = {
-  /**
-   * Analyze a natural language query
-   */
-  async analyzeQuery(request: AnalyzeQueryRequest) {
-    return client.post<AnalyzeQueryResponse>(API_ENDPOINTS.ANALYZE_QUERY, request);
-  },
-
-  /**
-   * Execute a query plan
-   */
-  async executeQueryPlan(request: ExecuteQueryPlanRequest) {
-    return client.post<ExecuteQueryPlanResponse>(API_ENDPOINTS.EXECUTE_QUERY_PLAN, request);
-  },
-
   /**
    * Ask a follow-up question about results
    */

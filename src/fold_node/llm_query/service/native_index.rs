@@ -154,6 +154,7 @@ impl LlmQueryService {
                 }
 
                 let filter = params.get("filter").cloned();
+                let sort_order = params.get("sort_order").cloned();
 
                 let query = Query {
                     schema_name: schema_name.to_string(),
@@ -161,6 +162,7 @@ impl LlmQueryService {
                     filter: filter.and_then(|f| serde_json::from_value(f).ok()),
                     as_of: None,
                     rehydrate_depth: Some(1),
+                    sort_order: sort_order.and_then(|s| serde_json::from_value(s).ok()),
                 };
 
                 let results = processor
