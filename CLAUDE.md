@@ -72,6 +72,9 @@ pub trait KvStore: Send + Sync {
 - States flow: `Pending` → `Approved` (via backfill process)
 - Key types in `src/schema/types/`: `Schema`, `Field`, `Query`, `Mutation`, `Transform`
 
+### Query Sort Order
+The `Query` struct supports an optional `sort_order` field (`"asc"` or `"desc"`) that sorts `execute_query_json` results by range key (lexicographic string comparison — works for ISO dates). Defined as `SortOrder` enum in `src/schema/types/operations.rs`. Sorting happens in `query_ops.rs` before rehydration. The LLM agent tool definition instructs the AI to use `sort_order: "desc"` for "most recent" / "latest" queries.
+
 ### Handler Pattern
 Handlers in `src/handlers/` are framework-agnostic, shared between HTTP server and Lambda:
 ```rust
