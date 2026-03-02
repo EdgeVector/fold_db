@@ -6,51 +6,12 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::time::SystemTime;
 
-/// Request to analyze a natural language query
-#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
-pub struct AnalyzeQueryRequest {
-    pub query: String,
-    pub session_id: Option<String>,
-}
-
-/// Response from query analysis
-#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
-pub struct AnalyzeQueryResponse {
-    pub session_id: String,
-    pub query_plan: QueryPlan,
-}
-
 /// The plan for executing a query
 #[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct QueryPlan {
     pub query: Query,
     pub index_schema: Option<DeclarativeSchemaDefinition>,
     pub reasoning: String,
-}
-
-/// Request to execute a query plan
-#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
-pub struct ExecuteQueryPlanRequest {
-    pub session_id: String,
-    pub query_plan: QueryPlan,
-}
-
-/// Status of query execution
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum QueryExecutionStatus {
-    Pending,
-    Running,
-    Complete,
-}
-
-/// Response from query execution
-#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
-pub struct ExecuteQueryPlanResponse {
-    pub status: QueryExecutionStatus,
-    pub backfill_progress: Option<f64>,
-    pub results: Option<Vec<serde_json::Value>>,
-    pub summary: Option<String>,
 }
 
 /// Request for follow-up question

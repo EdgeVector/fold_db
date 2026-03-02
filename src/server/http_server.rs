@@ -483,14 +483,6 @@ impl FoldHttpServer {
             "/llm-query/native-index",
             web::post().to(llm_query::ai_native_index_query),
         )
-        .route(
-            "/llm-query/analyze",
-            web::post().to(llm_query::analyze_query),
-        )
-        .route(
-            "/llm-query/execute",
-            web::post().to(llm_query::execute_query_plan),
-        )
         .route("/llm-query/chat", web::post().to(llm_query::chat))
         .route(
             "/llm-query/analyze-followup",
