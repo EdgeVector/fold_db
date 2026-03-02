@@ -49,6 +49,7 @@
     "buffer": "^6.0.3",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
+    "react-force-graph-2d": "^1.29.1",
     "react-redux": "^9.2.0"
   },
   "overrides": {
