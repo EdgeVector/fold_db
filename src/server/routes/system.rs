@@ -737,6 +737,17 @@ pub async fn apply_setup(
     })
 }
 
+/// Expand a leading `~` or `~/` to the current user's home directory.
+fn expand_tilde(raw: &str) -> PathBuf {
+    if raw == "~" || raw.starts_with("~/") {
+        if let Ok(home) = std::env::var("HOME") {
+            let rest = raw.strip_prefix("~/").unwrap_or("");
+            return PathBuf::from(home).join(rest);
+        }
+    }
+    PathBuf::from(raw)
+}
+
 /// Request body for filesystem path completion
 #[derive(Deserialize)]
 pub struct PathCompleteRequest {
@@ -837,14 +848,14 @@ pub async fn get_database_status(state: web::Data<AppState>) -> impl Responder {
 /// This endpoint provides directory-only path completion for the folder picker UI.
 /// It lists directories matching a partial path prefix, hiding dotfiles.
 pub async fn complete_path(body: web::Json<PathCompleteRequest>) -> impl Responder {
-    let partial = &body.partial_path;
+    let partial = expand_tilde(&body.partial_path);
+    let partial_str = partial.to_string_lossy();
 
-    let (parent, prefix) = if partial.ends_with('/') || partial.ends_with('\\') {
-        (PathBuf::from(partial), String::new())
+    let (parent, prefix) = if partial_str.ends_with('/') || partial_str.ends_with('\\') {
+        (PathBuf::from(partial_str.as_ref()), String::new())
     } else {
-        let path = PathBuf::from(partial);
-        let parent = path.parent().unwrap_or(Path::new("/")).to_path_buf();
-        let prefix = path
+        let parent = partial.parent().unwrap_or(Path::new("/")).to_path_buf();
+        let prefix = partial
             .file_name()
             .map(|f| f.to_string_lossy().to_string())
             .unwrap_or_default();
@@ -877,6 +888,55 @@ pub async fn complete_path(body: web::Json<PathCompleteRequest>) -> impl Respond
     completions.truncate(20);
 
     HttpResponse::Ok().json(json!({ "completions": completions }))
+}
+
+/// Request body for listing directory contents
+#[derive(Deserialize)]
+pub struct ListDirectoryRequest {
+    pub path: String,
+}
+
+/// List subdirectories inside a given directory path.
+///
+/// Returns directory **names** (not full paths), up to 200 entries, hiding dotfiles.
+/// Used by the web-based directory browser modal.
+pub async fn list_directory(body: web::Json<ListDirectoryRequest>) -> impl Responder {
+    let dir_path = expand_tilde(&body.path);
+    let resolved = dir_path.to_string_lossy().to_string();
+
+    if !dir_path.is_dir() {
+        return HttpResponse::Ok().json(json!({
+            "error": format!("'{}' is not a directory or is unreadable", body.path),
+            "path": resolved,
+            "directories": Vec::<String>::new(),
+        }));
+    }
+
+    let entries = match std::fs::read_dir(&dir_path) {
+        Ok(entries) => entries,
+        Err(e) => {
+            return HttpResponse::Ok().json(json!({
+                "error": format!("Cannot read directory: {}", e),
+                "path": resolved,
+                "directories": Vec::<String>::new(),
+            }));
+        }
+    };
+
+    let mut directories: Vec<String> = entries
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().is_dir())
+        .filter(|e| !e.file_name().to_string_lossy().starts_with('.'))
+        .map(|e| e.file_name().to_string_lossy().to_string())
+        .collect();
+
+    directories.sort();
+    directories.truncate(200);
+
+    HttpResponse::Ok().json(json!({
+        "path": resolved,
+        "directories": directories,
+    }))
 }
 
 #[cfg(test)]
@@ -1031,5 +1091,172 @@ mod tests {
             assert!(resp.status() == 202 || resp.status() == 500);
         })
         .await;
+    }
+
+    // --- expand_tilde tests ---
+
+    #[test]
+    fn test_expand_tilde_home() {
+        let home = std::env::var("HOME").unwrap();
+        assert_eq!(expand_tilde("~"), PathBuf::from(&home));
+    }
+
+    #[test]
+    fn test_expand_tilde_subpath() {
+        let home = std::env::var("HOME").unwrap();
+        assert_eq!(
+            expand_tilde("~/Documents"),
+            PathBuf::from(&home).join("Documents")
+        );
+    }
+
+    #[test]
+    fn test_expand_tilde_noop_absolute() {
+        assert_eq!(expand_tilde("/tmp"), PathBuf::from("/tmp"));
+    }
+
+    #[test]
+    fn test_expand_tilde_noop_relative() {
+        assert_eq!(expand_tilde("foo/bar"), PathBuf::from("foo/bar"));
+    }
+
+    // --- complete_path tests ---
+
+    #[tokio::test]
+    async fn test_complete_path_with_known_dir() {
+        let req = test::TestRequest::post().to_http_request();
+        let body = web::Json(PathCompleteRequest {
+            partial_path: "/tmp".to_string(),
+        });
+        let resp = complete_path(body).await.respond_to(&req);
+        assert_eq!(resp.status(), 200);
+
+        let bytes = actix_web::body::to_bytes(resp.into_body())
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert!(json["completions"].is_array());
+    }
+
+    #[tokio::test]
+    async fn test_complete_path_tilde_expansion() {
+        let req = test::TestRequest::post().to_http_request();
+        let body = web::Json(PathCompleteRequest {
+            partial_path: "~/".to_string(),
+        });
+        let resp = complete_path(body).await.respond_to(&req);
+        assert_eq!(resp.status(), 200);
+
+        let bytes = actix_web::body::to_bytes(resp.into_body())
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        let completions = json["completions"].as_array().unwrap();
+        // Home directory should have at least one visible subdirectory
+        assert!(!completions.is_empty());
+        // Completions should be absolute paths (tilde expanded)
+        for c in completions {
+            assert!(c.as_str().unwrap().starts_with('/'));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_complete_path_nonexistent() {
+        let req = test::TestRequest::post().to_http_request();
+        let body = web::Json(PathCompleteRequest {
+            partial_path: "/nonexistent_path_abc123/".to_string(),
+        });
+        let resp = complete_path(body).await.respond_to(&req);
+        assert_eq!(resp.status(), 200);
+
+        let bytes = actix_web::body::to_bytes(resp.into_body())
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert!(json["completions"].as_array().unwrap().is_empty());
+    }
+
+    // --- list_directory tests ---
+
+    #[tokio::test]
+    async fn test_list_directory_root() {
+        let req = test::TestRequest::post().to_http_request();
+        let body = web::Json(ListDirectoryRequest {
+            path: "/".to_string(),
+        });
+        let resp = list_directory(body).await.respond_to(&req);
+        assert_eq!(resp.status(), 200);
+
+        let bytes = actix_web::body::to_bytes(resp.into_body())
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        let dirs = json["directories"].as_array().unwrap();
+        assert!(!dirs.is_empty());
+        assert!(json["error"].is_null());
+        // Should contain well-known directories
+        let names: Vec<&str> = dirs.iter().map(|d| d.as_str().unwrap()).collect();
+        assert!(names.contains(&"usr"));
+    }
+
+    #[tokio::test]
+    async fn test_list_directory_tilde_expansion() {
+        let req = test::TestRequest::post().to_http_request();
+        let body = web::Json(ListDirectoryRequest {
+            path: "~".to_string(),
+        });
+        let resp = list_directory(body).await.respond_to(&req);
+        assert_eq!(resp.status(), 200);
+
+        let bytes = actix_web::body::to_bytes(resp.into_body())
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        let dirs = json["directories"].as_array().unwrap();
+        assert!(!dirs.is_empty());
+        // Path should be the expanded home directory
+        assert!(json["path"].as_str().unwrap().starts_with('/'));
+    }
+
+    #[tokio::test]
+    async fn test_list_directory_nonexistent() {
+        let req = test::TestRequest::post().to_http_request();
+        let body = web::Json(ListDirectoryRequest {
+            path: "/nonexistent_path_abc123".to_string(),
+        });
+        let resp = list_directory(body).await.respond_to(&req);
+        assert_eq!(resp.status(), 200);
+
+        let bytes = actix_web::body::to_bytes(resp.into_body())
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert!(json["directories"].as_array().unwrap().is_empty());
+        assert!(json["error"].as_str().is_some());
+    }
+
+    #[tokio::test]
+    async fn test_list_directory_returns_names_not_paths() {
+        let td = tempdir().unwrap();
+        std::fs::create_dir(td.path().join("subdir_a")).unwrap();
+        std::fs::create_dir(td.path().join("subdir_b")).unwrap();
+        // Create a dotfile dir that should be hidden
+        std::fs::create_dir(td.path().join(".hidden")).unwrap();
+
+        let req = test::TestRequest::post().to_http_request();
+        let body = web::Json(ListDirectoryRequest {
+            path: td.path().to_string_lossy().to_string(),
+        });
+        let resp = list_directory(body).await.respond_to(&req);
+        assert_eq!(resp.status(), 200);
+
+        let bytes = actix_web::body::to_bytes(resp.into_body())
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        let dirs = json["directories"].as_array().unwrap();
+        let names: Vec<&str> = dirs.iter().map(|d| d.as_str().unwrap()).collect();
+        assert_eq!(names, vec!["subdir_a", "subdir_b"]);
+        assert!(!names.contains(&".hidden"));
     }
 }

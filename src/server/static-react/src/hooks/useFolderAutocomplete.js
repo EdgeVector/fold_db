@@ -2,6 +2,21 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { ingestionClient } from '../api/clients'
 
 /**
+ * Returns the longest common prefix of an array of strings.
+ */
+function longestCommonPrefix(strings) {
+  if (strings.length === 0) return ''
+  let prefix = strings[0]
+  for (let i = 1; i < strings.length; i++) {
+    while (strings[i].indexOf(prefix) !== 0) {
+      prefix = prefix.slice(0, -1)
+      if (prefix === '') return ''
+    }
+  }
+  return prefix
+}
+
+/**
  * Manages folder path autocomplete: debounced completions, keyboard nav,
  * click-outside dismiss, and suggestion acceptance.
  *
@@ -18,6 +33,10 @@ export function useFolderAutocomplete({ folderPath, isDisabled, onFolderPathChan
   const inputRef = useRef(null)
   const suggestionsRef = useRef(null)
   const debounceRef = useRef(null)
+  const folderPathRef = useRef(folderPath)
+
+  // Keep ref in sync so async handlers always see the latest value
+  useEffect(() => { folderPathRef.current = folderPath }, [folderPath])
 
   const fetchCompletions = useCallback(async (path) => {
     if (!path.includes('/')) {
@@ -75,7 +94,40 @@ export function useFolderAutocomplete({ folderPath, isDisabled, onFolderPathChan
     inputRef.current?.focus()
   }, [onFolderPathChange])
 
-  const handleInputKeyDown = useCallback((e) => {
+  const handleInputKeyDown = useCallback(async (e) => {
+    // Shell-like Tab: intercept before checking if suggestions are visible
+    if (e.key === 'Tab' && folderPathRef.current.includes('/') && !isDisabled) {
+      e.preventDefault()
+
+      // If suggestions are already loaded, accept from current list
+      if (showSuggestions && suggestions.length > 0) {
+        const idx = selectedIndex >= 0 ? selectedIndex : 0
+        acceptSuggestion(suggestions[idx])
+        return
+      }
+
+      // No suggestions yet — fetch immediately (bypass debounce)
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+      try {
+        const response = await ingestionClient.completePath(folderPathRef.current)
+        if (response.success && response.data?.completions?.length) {
+          const completions = response.data.completions
+          if (completions.length === 1) {
+            acceptSuggestion(completions[0])
+          } else {
+            const prefix = longestCommonPrefix(completions)
+            if (prefix.length > folderPathRef.current.length) {
+              onFolderPathChange(prefix)
+            }
+            setSuggestions(completions)
+            setSelectedIndex(-1)
+            setShowSuggestions(true)
+          }
+        }
+      } catch { /* tab-complete is best-effort */ }
+      return
+    }
+
     if (showSuggestions && suggestions.length > 0) {
       if (e.key === 'ArrowDown') {
         e.preventDefault()
@@ -85,12 +137,6 @@ export function useFolderAutocomplete({ folderPath, isDisabled, onFolderPathChan
       if (e.key === 'ArrowUp') {
         e.preventDefault()
         setSelectedIndex((prev) => (prev > 0 ? prev - 1 : suggestions.length - 1))
-        return
-      }
-      if (e.key === 'Tab') {
-        e.preventDefault()
-        const idx = selectedIndex >= 0 ? selectedIndex : 0
-        acceptSuggestion(suggestions[idx])
         return
       }
       if (e.key === 'Enter') {
@@ -107,7 +153,7 @@ export function useFolderAutocomplete({ folderPath, isDisabled, onFolderPathChan
       }
     }
     if (e.key === 'Enter') onSubmit()
-  }, [showSuggestions, suggestions, selectedIndex, acceptSuggestion, onSubmit])
+  }, [showSuggestions, suggestions, selectedIndex, acceptSuggestion, onSubmit, isDisabled, onFolderPathChange])
 
   return {
     suggestions,
