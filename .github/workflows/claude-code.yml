@@ -19,7 +19,6 @@ jobs:
       contents: write
       pull-requests: write
       issues: write
-      id-token: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -31,7 +30,6 @@ jobs:
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           track_progress: true
-          use_commit_signing: true
 
   auto-merge:
     needs: claude
