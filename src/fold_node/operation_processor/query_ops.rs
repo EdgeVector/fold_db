@@ -3,6 +3,7 @@ use crate::error::{FoldDbError, FoldDbResult};
 use crate::fold_node::response_types::QueryResultMap;
 use crate::schema::types::field::Field;
 use crate::schema::types::{KeyValue, Query};
+use crate::schema::types::operations::SortOrder;
 #[cfg(test)]
 use crate::schema::types::field::HashRangeFilter;
 use serde_json::Value;
@@ -46,6 +47,7 @@ impl OperationProcessor {
     ) -> FoldDbResult<Vec<Value>> {
         let schema_name = query.schema_name.clone();
         let rehydrate_depth = query.rehydrate_depth;
+        let sort_order = query.sort_order.clone();
 
         let result_map = self.execute_query_map(query).await?;
         let records_map = crate::fold_db_core::query::records_from_field_map(&result_map);
@@ -60,6 +62,23 @@ impl OperationProcessor {
                 })
             })
             .collect();
+
+        if let Some(ref order) = sort_order {
+            results.sort_by(|a, b| {
+                let range_a = a.get("key")
+                    .and_then(|k| k.get("range"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                let range_b = b.get("key")
+                    .and_then(|k| k.get("range"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                match order {
+                    SortOrder::Asc => range_a.cmp(range_b),
+                    SortOrder::Desc => range_b.cmp(range_a),
+                }
+            });
+        }
 
         if let Some(depth) = rehydrate_depth {
             if depth > 0 {

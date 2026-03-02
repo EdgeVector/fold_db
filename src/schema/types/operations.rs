@@ -3,6 +3,41 @@ use chrono::{DateTime, Utc};
 use clap::ValueEnum;
 use serde::{Deserialize, Serialize};
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum SortOrder {
+    Asc,
+    Desc,
+}
+
+impl Serialize for SortOrder {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            SortOrder::Asc => serializer.serialize_str("asc"),
+            SortOrder::Desc => serializer.serialize_str("desc"),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for SortOrder {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        match s.to_lowercase().as_str() {
+            "asc" => Ok(SortOrder::Asc),
+            "desc" => Ok(SortOrder::Desc),
+            _ => Err(serde::de::Error::custom(format!(
+                "unknown sort order '{}', expected 'asc' or 'desc'",
+                s
+            ))),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Query {
@@ -13,6 +48,8 @@ pub struct Query {
     pub as_of: Option<DateTime<Utc>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rehydrate_depth: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sort_order: Option<SortOrder>,
 }
 
 impl Query {
@@ -24,6 +61,7 @@ impl Query {
             filter: None,
             as_of: None,
             rehydrate_depth: None,
+            sort_order: None,
         }
     }
 
@@ -39,6 +77,7 @@ impl Query {
             filter,
             as_of: None,
             rehydrate_depth: None,
+            sort_order: None,
         }
     }
 }
@@ -148,5 +187,53 @@ mod tests {
                 assert_eq!(source_file_name, None);
             }
         }
+    }
+
+    #[test]
+    fn test_sort_order_round_trip() {
+        let query = Query {
+            schema_name: "Tweet".to_string(),
+            fields: vec!["text".to_string()],
+            filter: None,
+            as_of: None,
+            rehydrate_depth: None,
+            sort_order: Some(SortOrder::Desc),
+        };
+
+        let json = serde_json::to_value(&query).unwrap();
+        assert_eq!(json["sort_order"], json!("desc"));
+
+        let deserialized: Query = serde_json::from_value(json).unwrap();
+        assert_eq!(deserialized.sort_order, Some(SortOrder::Desc));
+    }
+
+    #[test]
+    fn test_sort_order_case_insensitive() {
+        let json = json!({
+            "schema_name": "Tweet",
+            "fields": ["text"],
+            "filter": null,
+            "sort_order": "ASC"
+        });
+        let query: Query = serde_json::from_value(json).unwrap();
+        assert_eq!(query.sort_order, Some(SortOrder::Asc));
+    }
+
+    #[test]
+    fn test_sort_order_none_by_default() {
+        let json = json!({
+            "schema_name": "Tweet",
+            "fields": ["text"],
+            "filter": null
+        });
+        let query: Query = serde_json::from_value(json).unwrap();
+        assert_eq!(query.sort_order, None);
+    }
+
+    #[test]
+    fn test_sort_order_skipped_when_none() {
+        let query = Query::new("Tweet".to_string(), vec!["text".to_string()]);
+        let json = serde_json::to_value(&query).unwrap();
+        assert!(json.get("sort_order").is_none());
     }
 }
