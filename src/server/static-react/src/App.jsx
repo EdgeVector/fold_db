@@ -14,6 +14,7 @@ import FileUploadTab from './components/tabs/FileUploadTab'
 import NativeIndexTab from './components/tabs/NativeIndexTab'
 import SmartFolderTab from './components/tabs/SmartFolderTab'
 import DataBrowserTab from './components/tabs/DataBrowserTab'
+import WordGraphTab from './components/tabs/WordGraphTab'
 import SettingsModal from './components/SettingsModal'
 import OnboardingWizard from './components/OnboardingWizard'
 import LogSidebar from './components/LogSidebar'
@@ -43,6 +44,7 @@ const HASH_TO_TAB = {
   'llm-query': 'llm-query', 'ai-query': 'llm-query',
   'smart-folder': 'smart-folder',
   'data-browser': 'data-browser',
+  'word-graph': 'word-graph',
 }
 
 function resolveTabFromHash() {
@@ -212,6 +214,8 @@ export function AppContent() {
         return <NativeIndexTab onResult={handleOperationResult} />
       case 'data-browser':
         return <DataBrowserTab />
+      case 'word-graph':
+        return <WordGraphTab />
       default:
         return null
     }

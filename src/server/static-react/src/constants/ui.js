@@ -29,6 +29,7 @@ export const DEFAULT_TABS = [
     group: "advanced",
   },
   { id: "data-browser", label: "Data Browser", icon: "🗄️", group: "advanced" },
+  { id: "word-graph", label: "Word Graph", icon: "🕸️", group: "advanced" },
 ];
 
 // Button Text Constants
