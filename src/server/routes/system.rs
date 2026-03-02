@@ -749,7 +749,7 @@ fn expand_tilde(raw: &str) -> PathBuf {
 }
 
 /// Returns true if the given path string points to an existing directory.
-pub fn chk(p: &str) -> bool {
+pub fn is_existing_directory(p: &str) -> bool {
     let path = expand_tilde(p);
     path.is_dir()
 }
