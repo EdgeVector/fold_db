@@ -1095,14 +1095,14 @@ mod tests {
 
     // --- expand_tilde tests ---
 
-    #[test]
-    fn test_expand_tilde_home() {
+    #[tokio::test]
+    async fn test_expand_tilde_home() {
         let home = std::env::var("HOME").unwrap();
         assert_eq!(expand_tilde("~"), PathBuf::from(&home));
     }
 
-    #[test]
-    fn test_expand_tilde_subpath() {
+    #[tokio::test]
+    async fn test_expand_tilde_subpath() {
         let home = std::env::var("HOME").unwrap();
         assert_eq!(
             expand_tilde("~/Documents"),
@@ -1110,13 +1110,13 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_expand_tilde_noop_absolute() {
+    #[tokio::test]
+    async fn test_expand_tilde_noop_absolute() {
         assert_eq!(expand_tilde("/tmp"), PathBuf::from("/tmp"));
     }
 
-    #[test]
-    fn test_expand_tilde_noop_relative() {
+    #[tokio::test]
+    async fn test_expand_tilde_noop_relative() {
         assert_eq!(expand_tilde("foo/bar"), PathBuf::from("foo/bar"));
     }
 
@@ -1133,6 +1133,7 @@ mod tests {
 
         let bytes = actix_web::body::to_bytes(resp.into_body())
             .await
+            .ok()
             .unwrap();
         let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         assert!(json["completions"].is_array());
@@ -1149,6 +1150,7 @@ mod tests {
 
         let bytes = actix_web::body::to_bytes(resp.into_body())
             .await
+            .ok()
             .unwrap();
         let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         let completions = json["completions"].as_array().unwrap();
@@ -1171,6 +1173,7 @@ mod tests {
 
         let bytes = actix_web::body::to_bytes(resp.into_body())
             .await
+            .ok()
             .unwrap();
         let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         assert!(json["completions"].as_array().unwrap().is_empty());
@@ -1189,6 +1192,7 @@ mod tests {
 
         let bytes = actix_web::body::to_bytes(resp.into_body())
             .await
+            .ok()
             .unwrap();
         let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         let dirs = json["directories"].as_array().unwrap();
@@ -1210,6 +1214,7 @@ mod tests {
 
         let bytes = actix_web::body::to_bytes(resp.into_body())
             .await
+            .ok()
             .unwrap();
         let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         let dirs = json["directories"].as_array().unwrap();
@@ -1229,6 +1234,7 @@ mod tests {
 
         let bytes = actix_web::body::to_bytes(resp.into_body())
             .await
+            .ok()
             .unwrap();
         let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         assert!(json["directories"].as_array().unwrap().is_empty());
@@ -1252,6 +1258,7 @@ mod tests {
 
         let bytes = actix_web::body::to_bytes(resp.into_body())
             .await
+            .ok()
             .unwrap();
         let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         let dirs = json["directories"].as_array().unwrap();

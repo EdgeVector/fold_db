@@ -96,7 +96,7 @@ async fn test_sort_order_desc_range_schema() {
 
     assert_eq!(results.len(), 4, "Should return all 4 posts");
 
-    let ranges: Vec<String> = results.iter().map(|r| range_of(r)).collect();
+    let ranges: Vec<String> = results.iter().map(range_of).collect();
     assert_eq!(
         ranges,
         vec!["2024-12-25", "2024-06-15", "2024-03-10", "2024-01-01"],
@@ -144,7 +144,7 @@ async fn test_sort_order_asc_range_schema() {
 
     assert_eq!(results.len(), 4, "Should return all 4 posts");
 
-    let ranges: Vec<String> = results.iter().map(|r| range_of(r)).collect();
+    let ranges: Vec<String> = results.iter().map(range_of).collect();
     assert_eq!(
         ranges,
         vec!["2024-01-01", "2024-03-10", "2024-06-15", "2024-12-25"],
@@ -247,7 +247,7 @@ async fn test_sort_order_desc_hashrange_schema() {
 
     assert_eq!(results.len(), 4, "Should return all 4 messages");
 
-    let ranges: Vec<String> = results.iter().map(|r| range_of(r)).collect();
+    let ranges: Vec<String> = results.iter().map(range_of).collect();
     assert_eq!(
         ranges,
         vec![
@@ -308,7 +308,7 @@ async fn test_sort_order_asc_hashrange_schema() {
 
     assert_eq!(results.len(), 3, "Should return all 3 messages");
 
-    let ranges: Vec<String> = results.iter().map(|r| range_of(r)).collect();
+    let ranges: Vec<String> = results.iter().map(range_of).collect();
     assert_eq!(
         ranges,
         vec![
@@ -368,7 +368,7 @@ async fn test_sort_order_via_json_deserialization() {
 
     assert_eq!(results.len(), 3, "Should return all 3 posts");
 
-    let ranges: Vec<String> = results.iter().map(|r| range_of(r)).collect();
+    let ranges: Vec<String> = results.iter().map(range_of).collect();
     assert_eq!(
         ranges,
         vec!["2024-12-25", "2024-06-15", "2024-01-01"],
