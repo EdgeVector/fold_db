@@ -84,7 +84,7 @@ function buildFromResults(results) {
   return { nodes, links }
 }
 
-async function searchBatch(words, onBatchResult) {
+async function searchBatch(words, onBatchResult, onWordComplete) {
   const pending = [...words]
   while (pending.length > 0) {
     const batch = pending.splice(0, SEARCH_BATCH)
@@ -94,6 +94,7 @@ async function searchBatch(words, onBatchResult) {
         const results = res.data?.results ?? []
         if (results.length) onBatchResult(results)
       }
+      onWordComplete()
     }))
   }
 }
@@ -227,13 +228,18 @@ export default function WordGraphTab() {
     const wordList = Array.from(allWords)
     let done = 0
     setLoadStatus({ phase: 'Indexing words…', progress: 0, total: wordList.length })
-    await searchBatch(wordList, (results) => {
-      addResults(results)
-      done += SEARCH_BATCH
-      setLoadStatus({ phase: 'Indexing words…', progress: Math.min(done, wordList.length), total: wordList.length })
-    })
-
-    setLoadStatus(null)
+    try {
+      await searchBatch(
+        wordList,
+        (results) => { addResults(results) },
+        () => {
+          done += 1
+          setLoadStatus({ phase: 'Indexing words…', progress: done, total: wordList.length })
+        }
+      )
+    } finally {
+      setLoadStatus(null)
+    }
   }, [addResults])
 
   useEffect(() => {
@@ -337,6 +343,7 @@ export default function WordGraphTab() {
     setHighlightNodes(new Set())
     setHighlightLinks(new Set())
     prepopulatedRef.current = false
+    prepopulate(approvedSchemas)
   }
 
   const wordNodeCount   = graphData.nodes.filter(n => n.type === 'word').length

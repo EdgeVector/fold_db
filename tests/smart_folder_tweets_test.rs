@@ -21,9 +21,10 @@ use fold_db::ingestion::smart_folder::{perform_smart_folder_scan, read_file_with
 use fold_db::ingestion::{create_progress_tracker, IngestionConfig, IngestionRequest, ProgressService};
 use fold_db::logging::core::run_with_user;
 use fold_db::schema_service::server::{
-    AddSchemaResponse, ConflictResponse, ErrorResponse, SchemaAddOutcome, SchemaServiceState,
-    SchemasListResponse,
+    AddSchemaResponse, AvailableSchemasResponse, ConflictResponse, ErrorResponse, SchemaAddOutcome,
+    SchemaServiceState, SchemasListResponse,
 };
+use fold_db::security::Ed25519KeyPair;
 use fold_db::testing_utils::TestDatabaseFactory;
 
 use actix_web::{web, App, HttpResponse, HttpServer};
@@ -52,7 +53,7 @@ async fn handle_list_schemas(state: web::Data<SchemaServiceState>) -> HttpRespon
 
 async fn handle_get_available_schemas(state: web::Data<SchemaServiceState>) -> HttpResponse {
     match state.get_all_schemas_cached() {
-        Ok(schemas) => HttpResponse::Ok().json(serde_json::json!({ "schemas": schemas })),
+        Ok(schemas) => HttpResponse::Ok().json(AvailableSchemasResponse { schemas }),
         Err(e) => HttpResponse::InternalServerError().json(ErrorResponse {
             error: format!("Failed to get schemas: {}", e),
         }),
@@ -158,13 +159,10 @@ async fn spawn_local_schema_service() -> (String, actix_web::dev::ServerHandle, 
 #[actix_web::test]
 #[ignore] // Requires FOLD_OPENROUTER_API_KEY and AI calls
 async fn test_smart_folder_tweets_ingest_and_query() {
-    // Guard: skip if no API key
-    if std::env::var("FOLD_OPENROUTER_API_KEY").is_err()
-        && std::env::var("OPENROUTER_API_KEY").is_err()
-    {
-        eprintln!("Skipping: FOLD_OPENROUTER_API_KEY not set");
-        return;
-    }
+    // Guard: fail loudly if no API key (test is #[ignore] — must be opted in explicitly)
+    std::env::var("FOLD_OPENROUTER_API_KEY")
+        .or_else(|_| std::env::var("OPENROUTER_API_KEY"))
+        .expect("FOLD_OPENROUTER_API_KEY or OPENROUTER_API_KEY must be set to run this test");
 
     // Verify the tweets.js fixture is present
     let tweets_fixture =
@@ -181,7 +179,7 @@ async fn test_smart_folder_tweets_ingest_and_query() {
     eprintln!("Schema service: {}", schema_url);
 
     let mut config = TestDatabaseFactory::create_test_node_config();
-    let keypair = fold_db::security::Ed25519KeyPair::generate().unwrap();
+    let keypair = Ed25519KeyPair::generate().unwrap();
     let user_id = keypair.public_key_base64();
     config = config
         .with_identity(&user_id, &keypair.secret_key_base64())
@@ -337,9 +335,11 @@ async fn test_smart_folder_tweets_ingest_and_query() {
     eprintln!("Tool calls: {}", tool_calls.len());
     for tc in &tool_calls {
         let result_str = tc.result.to_string();
-        eprintln!("  {} -> {}", tc.tool, &result_str[..result_str.len().min(120)]);
+        let result_preview: String = result_str.chars().take(120).collect();
+        eprintln!("  {} -> {}", tc.tool, result_preview);
     }
-    eprintln!("Answer (first 400 chars): {}", &answer[..answer.len().min(400)]);
+    let answer_preview: String = answer.chars().take(400).collect();
+    eprintln!("Answer (first 400 chars): {}", answer_preview);
 
     assert!(
         !answer.trim().is_empty(),
@@ -363,7 +363,7 @@ async fn test_smart_folder_tweets_ingest_and_query() {
         matched,
         "Query answer should reference tweet-related content; keywords {:?} not found in: {}",
         tweet_keywords,
-        &answer[..answer.len().min(400)]
+        answer.chars().take(400).collect::<String>()
     );
 
     // ── Cleanup ──────────────────────────────────────────────────────────────
