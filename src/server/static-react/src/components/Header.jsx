@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useAppDispatch, useAppSelector } from '../store/hooks'
 import { logoutUser } from '../store/authSlice'
+import { selectIngestionConfig, selectAiProvider, selectActiveModel, selectIsAiConfigured } from '../store/ingestionSlice'
 import { BROWSER_CONFIG } from '../constants/config'
 import { systemClient } from '../api/clients/systemClient'
 import HeaderProgress from './HeaderProgress'
@@ -22,9 +23,13 @@ function formatStorageSize(bytes) {
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`
 }
 
-function Header({ onSettingsClick, onAiSettingsClick, onCloudSettingsClick, ingestionStatus }) {
+function Header({ onSettingsClick, onAiSettingsClick, onCloudSettingsClick }) {
   const dispatch = useAppDispatch()
   const { isAuthenticated, user } = useAppSelector(state => state.auth)
+  const ingestionConfig = useAppSelector(selectIngestionConfig)
+  const aiProvider = useAppSelector(selectAiProvider)
+  const activeModel = useAppSelector(selectActiveModel)
+  const aiReady = useAppSelector(selectIsAiConfigured)
   const [storageMode, setStorageMode] = useState(null)
   const [storageSize, setStorageSize] = useState(null)
   const [schemaEnv, setSchemaEnv] = useState(null)
@@ -47,7 +52,6 @@ function Header({ onSettingsClick, onAiSettingsClick, onCloudSettingsClick, inge
     localStorage.removeItem(BROWSER_CONFIG.STORAGE_KEYS.USER_HASH)
   }
 
-  const aiReady = ingestionStatus?.enabled && ingestionStatus?.configured
   const isLocal = storageMode === 'Local'
   const formattedSize = formatStorageSize(storageSize)
 
@@ -66,13 +70,13 @@ function Header({ onSettingsClick, onAiSettingsClick, onCloudSettingsClick, inge
             <span>{storageMode || '...'}</span>
             {formattedSize && <><span className="text-tertiary">/</span><span className="text-secondary">{formattedSize}</span></>}
             {schemaEnv && <><span className="text-tertiary">/</span><span className={schemaEnv.color}>Schema: {schemaEnv.label}</span></>}
-            {ingestionStatus && (
+            {ingestionConfig && (
               <><span className="text-tertiary">/</span><button
                 onClick={onAiSettingsClick}
                 className={`bg-transparent border-none cursor-pointer p-0 font-mono text-sm ${aiReady ? 'text-gruvbox-green' : 'text-gruvbox-red'} hover:text-primary`}
-                title={aiReady ? `${ingestionStatus.provider} · ${ingestionStatus.model}` : 'AI not configured -- click to open Settings'}
+                title={aiReady ? `${aiProvider} · ${activeModel}` : 'AI not configured -- click to open Settings'}
               >
-                {aiReady ? `AI: ${ingestionStatus.provider}` : 'AI: off'}
+                {aiReady ? `AI: ${aiProvider}` : 'AI: off'}
               </button></>
             )}
             {isLocal && (

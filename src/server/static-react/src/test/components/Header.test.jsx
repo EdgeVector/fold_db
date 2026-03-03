@@ -1,11 +1,22 @@
 import { screen, fireEvent } from '@testing-library/react'
 import { describe, it, expect, vi } from 'vitest'
 import Header from '../../components/Header'
-import { renderWithRedux, createMockAuthState } from '../utils/testStore.jsx'
+import { renderWithRedux } from '../utils/testHelpers.jsx'
+
+const createAuthState = (overrides = {}) => ({
+  isAuthenticated: false,
+  privateKey: null,
+  systemKeyId: null,
+  publicKey: null,
+  loading: false,
+  error: null,
+  user: null,
+  ...overrides
+})
 
 describe('Header Component', () => {
   const defaultPreloadedState = {
-    auth: createMockAuthState()
+    auth: createAuthState()
   }
 
   it('renders header with correct title', () => {
@@ -89,7 +100,7 @@ describe('Header Component', () => {
 
   it('shows user info when authenticated', () => {
     const authenticatedState = {
-      auth: createMockAuthState({ isAuthenticated: true, user: { id: 'testuser' } })
+      auth: createAuthState({ isAuthenticated: true, user: { id: 'testuser' } })
     }
     renderWithRedux(<Header onSettingsClick={vi.fn()} />, {
       preloadedState: authenticatedState

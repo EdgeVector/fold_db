@@ -66,7 +66,7 @@ export function createTestStore(preloadedState = {}) {
   return configureStore({
     reducer: {
       auth: authReducer,
-      schemas: schemaReducer
+      schemas: schemaReducer,
     },
     preloadedState: {
       ...defaultState,

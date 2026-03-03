@@ -1,7 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { ingestionClient } from '../../api/clients'
+import { useAppSelector, useAppDispatch } from '../../store/hooks'
+import { selectIngestionConfig, saveIngestionConfig } from '../../store/ingestionSlice'
 
-function useAiConfig({ configSaveStatus, setConfigSaveStatus, onClose, onConfigSaved }) {
+function useAiConfig({ configSaveStatus, setConfigSaveStatus, onClose }) {
+  const dispatch = useAppDispatch()
+  const savedConfig = useAppSelector(selectIngestionConfig)
   const [aiProvider, setAiProvider] = useState('OpenRouter')
   const [openrouterApiKey, setOpenrouterApiKey] = useState('')
   const [hasEnvKey, setHasEnvKey] = useState(false)
@@ -62,28 +66,24 @@ function useAiConfig({ configSaveStatus, setConfigSaveStatus, onClose, onConfigS
     return () => { if (ollamaFetchTimeoutRef.current) clearTimeout(ollamaFetchTimeoutRef.current) }
   }, [aiProvider, ollamaBaseUrl, fetchOllamaModels])
 
-  useEffect(() => { loadAiConfig() }, [])
-
-  const loadAiConfig = async () => {
-    try {
-      const response = await ingestionClient.getConfig()
-      if (response.success) {
-        const apiKey = response.data.openrouter.api_key || ''
-        if (apiKey === '***configured***') {
-          setHasEnvKey(true)
-          setOpenrouterApiKey('')
-        } else {
-          setHasEnvKey(false)
-          setOpenrouterApiKey(apiKey)
-        }
-        setOpenrouterModel(response.data.openrouter.model || 'google/gemini-2.5-flash')
-        setOpenrouterBaseUrl(response.data.openrouter.base_url || 'https://openrouter.ai/api/v1')
-        setOllamaModel(response.data.ollama.model || 'llama3')
-        setOllamaBaseUrl(response.data.ollama.base_url || 'http://localhost:11434')
-        setAiProvider(response.data.provider || 'OpenRouter')
+  // Initialize form state from Redux store
+  useEffect(() => {
+    if (savedConfig) {
+      const apiKey = savedConfig.openrouter?.api_key || ''
+      if (apiKey === '***configured***') {
+        setHasEnvKey(true)
+        setOpenrouterApiKey('')
+      } else {
+        setHasEnvKey(false)
+        setOpenrouterApiKey(apiKey)
       }
-    } catch (error) { console.error('Failed to load AI config:', error) }
-  }
+      setOpenrouterModel(savedConfig.openrouter?.model || 'google/gemini-2.5-flash')
+      setOpenrouterBaseUrl(savedConfig.openrouter?.base_url || 'https://openrouter.ai/api/v1')
+      setOllamaModel(savedConfig.ollama?.model || 'llama3.3')
+      setOllamaBaseUrl(savedConfig.ollama?.base_url || 'http://localhost:11434')
+      setAiProvider(savedConfig.provider || 'OpenRouter')
+    }
+  }, [savedConfig])
 
   const saveAiConfig = async () => {
     try {
@@ -92,20 +92,15 @@ function useAiConfig({ configSaveStatus, setConfigSaveStatus, onClose, onConfigS
         openrouter: { api_key: openrouterApiKey, model: openrouterModel, base_url: openrouterBaseUrl },
         ollama: { model: ollamaModel, base_url: ollamaBaseUrl },
       }
-      const response = await ingestionClient.saveConfig(config)
-      if (response.success) {
-        setConfigSaveStatus({ success: true, message: 'Configuration saved successfully' })
-        if (onConfigSaved) onConfigSaved()
-        if (statusTimeoutRef.current) clearTimeout(statusTimeoutRef.current)
-        statusTimeoutRef.current = setTimeout(() => { setConfigSaveStatus(null); onClose() }, 1500)
-      } else {
-        setConfigSaveStatus({ success: false, message: 'Failed to save configuration' })
-      }
+      await dispatch(saveIngestionConfig(config)).unwrap()
+      setConfigSaveStatus({ success: true, message: 'Configuration saved successfully' })
+      if (statusTimeoutRef.current) clearTimeout(statusTimeoutRef.current)
+      statusTimeoutRef.current = setTimeout(() => { setConfigSaveStatus(null); onClose() }, 1500)
     } catch (error) {
       setConfigSaveStatus({ success: false, message: (error instanceof Error ? error.message : String(error)) || 'Failed to save configuration' })
+      if (statusTimeoutRef.current) clearTimeout(statusTimeoutRef.current)
+      statusTimeoutRef.current = setTimeout(() => setConfigSaveStatus(null), 3000)
     }
-    if (statusTimeoutRef.current) clearTimeout(statusTimeoutRef.current)
-    statusTimeoutRef.current = setTimeout(() => setConfigSaveStatus(null), 3000)
   }
 
   return {
@@ -147,7 +142,7 @@ function useAiConfig({ configSaveStatus, setConfigSaveStatus, onClose, onConfigS
                     type="text"
                     value={ollamaModel}
                     onChange={(e) => setOllamaModel(e.target.value)}
-                    placeholder="e.g. llama3"
+                    placeholder="e.g. llama3.3"
                     className="input"
                   />
                 )}

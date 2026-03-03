@@ -56,6 +56,7 @@ pub struct IngestionStatusResponse {
     pub configured: bool,
     pub provider: String,
     pub model: String,
+    pub auto_execute_mutations: bool,
 }
 
 // ============================================================================
@@ -162,8 +163,9 @@ pub async fn get_status(
                 IngestionStatusResponse {
                     enabled: status.enabled,
                     configured: status.configured,
-                    provider: format!("{:?}", status.provider),
+                    provider: status.provider.clone(),
                     model: status.model,
+                    auto_execute_mutations: status.auto_execute_mutations,
                 },
                 user_hash,
             )),
@@ -180,6 +182,7 @@ pub async fn get_status(
                     configured: false,
                     provider: "None".to_string(),
                     model: "".to_string(),
+                    auto_execute_mutations: false,
                 },
                 user_hash,
             ))

@@ -8,7 +8,7 @@ import CloudMigrationSettings from './tabs/CloudMigrationSettings'
 
 const NOOP = () => {}
 
-function SettingsModal({ isOpen, onClose, onConfigSaved, initialTab }) {
+function SettingsModal({ isOpen, onClose, initialTab }) {
   const [activeTab, setActiveTab] = useState(initialTab || 'ai')
   const [configSaveStatus, setConfigSaveStatus] = useState(null)
 
@@ -53,7 +53,7 @@ function SettingsModal({ isOpen, onClose, onConfigSaved, initialTab }) {
 
   // These custom hooks use React hooks internally and MUST be
   // called unconditionally before the early return below.
-  const aiConfig = useAiConfig({ configSaveStatus, setConfigSaveStatus, onClose, onConfigSaved })
+  const aiConfig = useAiConfig({ configSaveStatus, setConfigSaveStatus, onClose })
   const dbConfig = useDatabaseConfig({ configSaveStatus, setConfigSaveStatus, onClose })
 
   if (!isOpen) return null
