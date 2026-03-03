@@ -20,9 +20,9 @@ import OnboardingWizard from './components/OnboardingWizard'
 import LogSidebar from './components/LogSidebar'
 import ErrorBoundary from './components/ErrorBoundary'
 import { useApprovedSchemas } from './hooks/useApprovedSchemas.js'
-import { useIngestionStatus } from './hooks/useIngestionStatus'
 import { useAppSelector, useAppDispatch } from './store/hooks'
 import { initializeSystemKey, restoreSession } from './store/authSlice'
+import { fetchIngestionConfig, selectIngestionConfig, selectIsAiConfigured, selectAiProvider } from './store/ingestionSlice'
 import LoginPage from './components/LoginPage'
 import { DEFAULT_TAB } from './constants'
 import { BROWSER_CONFIG } from './constants/config'
@@ -158,7 +158,7 @@ export function AppContent() {
     if (userHash) {
       localStorage.setItem(`${BROWSER_CONFIG.STORAGE_KEYS.ONBOARDING_COMPLETED}_${userHash}`, '1')
     }
-    refetchIngestionStatus()
+    dispatch(fetchIngestionConfig())
   }
 
   // Only fetch schemas when authenticated
@@ -167,10 +167,18 @@ export function AppContent() {
     refetch: refetchSchemas
   } = useApprovedSchemas({ enabled: isAuthenticated })
 
+  // Fetch AI configuration on mount (after auth)
+  useEffect(() => {
+    if (isAuthenticated) {
+      dispatch(fetchIngestionConfig())
+    }
+  }, [dispatch, isAuthenticated])
+
   // Check AI configuration status for setup banner
-  const { ingestionStatus, refetchIngestionStatus } = useIngestionStatus()
-  const aiConfigured = ingestionStatus?.enabled && ingestionStatus?.configured
-  const showSetupBanner = isAuthenticated && ingestionStatus && !aiConfigured && !setupDismissed && !isOnboardingOpen && onboardingCompleted
+  const ingestionConfig = useAppSelector(selectIngestionConfig)
+  const aiConfigured = useAppSelector(selectIsAiConfigured)
+  const aiProvider = useAppSelector(selectAiProvider)
+  const showSetupBanner = isAuthenticated && ingestionConfig !== null && !aiConfigured && !setupDismissed && !isOnboardingOpen && onboardingCompleted
 
   const handleTabChange = (tab) => {
     setActiveTab(tab)
@@ -267,9 +275,8 @@ export function AppContent() {
         onSettingsClick={() => { setSettingsInitialTab(null); setIsSettingsOpen(true) }}
         onAiSettingsClick={() => { setSettingsInitialTab('ai'); setIsSettingsOpen(true) }}
         onCloudSettingsClick={() => { setSettingsInitialTab('upgrade-cloud'); setIsSettingsOpen(true) }}
-        ingestionStatus={ingestionStatus}
       />
-      <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} onConfigSaved={refetchIngestionStatus} initialTab={settingsInitialTab} />
+      <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} initialTab={settingsInitialTab} />
       <OnboardingWizard isOpen={isOnboardingOpen} onClose={handleOnboardingClose} userHash={userHash} />
 
       {showSetupBanner && (
@@ -297,10 +304,10 @@ export function AppContent() {
         </div>
       )}
 
-      {aiConfigured && ingestionStatus?.provider !== 'Ollama' && (
+      {aiConfigured && aiProvider !== 'Ollama' && (
         <div className="bg-gruvbox-yellow/15 border-b-2 border-gruvbox-yellow px-8 py-3 flex items-center justify-between">
           <span className="text-gruvbox-yellow text-sm font-medium">
-            Warning: AI is using {ingestionStatus.provider} — personal data may be sent to external servers. Switch to a local LLM (Ollama) to keep data on your device.
+            Warning: AI is using {aiProvider} — personal data may be sent to external servers. Switch to a local LLM (Ollama) to keep data on your device.
           </span>
           <button
             onClick={() => { setSettingsInitialTab('ai'); setIsSettingsOpen(true) }}

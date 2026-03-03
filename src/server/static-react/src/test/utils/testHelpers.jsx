@@ -4,6 +4,7 @@ import { Provider } from 'react-redux';
 import { configureStore } from '@reduxjs/toolkit';
 import authSlice from '../../store/authSlice';
 import schemaSlice from '../../store/schemaSlice';
+import ingestionSlice from '../../store/ingestionSlice';
 
 /**
  * Test helper to render components with Redux store
@@ -17,6 +18,7 @@ export const renderWithRedux = (
       reducer: {
         auth: authSlice,
         schemas: schemaSlice,
+        ingestion: ingestionSlice,
       },
       preloadedState: { ...preloadedState, ...initialState },
     }),
@@ -38,6 +40,7 @@ export const createTestStore = (preloadedState = {}) => {
     reducer: {
       auth: authSlice,
       schemas: schemaSlice,
+      ingestion: ingestionSlice,
     },
     preloadedState,
   });

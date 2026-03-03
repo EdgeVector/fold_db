@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { ingestionClient, llmQueryClient } from '../api/clients'
 import { BROWSER_CONFIG } from '../constants/config'
+import { useAppDispatch } from '../store/hooks'
+import { fetchIngestionConfig } from '../store/ingestionSlice'
 
 const TOTAL_STEPS = 6
 
@@ -9,6 +11,8 @@ const OPENROUTER_MODELS = [
   { value: 'anthropic/claude-sonnet-4.6', label: 'Claude Sonnet 4.6' },
   { value: 'google/gemini-3.1-pro', label: 'Gemini 3.1 Pro' },
   { value: 'openai/gpt-4.1-mini', label: 'GPT-4.1 Mini' },
+  { value: 'openai/gpt-4.1', label: 'GPT-4.1' },
+  { value: 'deepseek/deepseek-chat-v3-0324', label: 'DeepSeek V3' },
 ]
 
 // Gruvbox-warm palette matching fold_db_website
@@ -155,7 +159,8 @@ function WelcomeStep({ onNext }) {
 }
 
 // Step 2: Configure AI
-function ConfigureAiStep({ onNext, onSkip, onConfigSaved }) {
+function ConfigureAiStep({ onNext, onSkip }) {
+  const dispatch = useAppDispatch()
   const [provider, setProvider] = useState('OpenRouter')
   const [model, setModel] = useState('')
   const [apiKey, setApiKey] = useState('')
@@ -257,7 +262,7 @@ function ConfigureAiStep({ onNext, onSkip, onConfigSaved }) {
       const response = await ingestionClient.saveConfig(config)
       if (response.success) {
         setSaveResult('success')
-        onConfigSaved()
+        dispatch(fetchIngestionConfig())
         advanceTimeoutRef.current = setTimeout(() => onNext(), 1000)
       } else {
         setSaveResult('error')
@@ -880,7 +885,6 @@ function DoneStep({ onComplete }) {
 
 export default function OnboardingWizard({ isOpen, onClose, userHash }) {
   const [currentStep, setCurrentStep] = useState(1)
-  const [, setAiWasConfigured] = useState(false)
   const [ingestedFile, setIngestedFile] = useState(null)
 
   const handleComplete = useCallback(() => {
@@ -905,7 +909,7 @@ export default function OnboardingWizard({ isOpen, onClose, userHash }) {
   const renderStep = () => {
     switch (currentStep) {
       case 1: return <WelcomeStep onNext={goNext} />
-      case 2: return <ConfigureAiStep onNext={goNext} onSkip={goNext} onConfigSaved={() => setAiWasConfigured(true)} />
+      case 2: return <ConfigureAiStep onNext={goNext} onSkip={goNext} />
       case 3: return <FirstFileStep onNext={goNext} onSkip={goNext} onFileIngested={setIngestedFile} />
       case 4: return <AiQueryDemoStep onNext={goNext} onSkip={goNext} ingestedFile={ingestedFile} />
       case 5: return <SmartFolderStep onNext={goNext} onSkip={goNext} />

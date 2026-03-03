@@ -2,12 +2,14 @@ import { configureStore } from "@reduxjs/toolkit";
 import authReducer from "./authSlice";
 import schemaReducer from "./schemaSlice";
 import aiQueryReducer from "./aiQuerySlice";
+import ingestionReducer from "./ingestionSlice";
 
 export const store = configureStore({
   reducer: {
     auth: authReducer,
     schemas: schemaReducer,
     aiQuery: aiQueryReducer,
+    ingestion: ingestionReducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware({
