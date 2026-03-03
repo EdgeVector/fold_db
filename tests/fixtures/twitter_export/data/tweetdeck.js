@@ -7,7 +7,7 @@ window.YTD.tweetdeck.part0 = [
           "pathname" : "/home?mode=home_latest"
         },
         {
-          "pathname" : "/testuser"
+          "pathname" : "/nycShibe"
         },
         {
           "pathname" : "/notifications"

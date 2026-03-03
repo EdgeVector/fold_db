@@ -1,8 +1,8 @@
 INTRODUCTION
 ============
 This archive was generated at the request of the following user:
-- @username at the time the archive was generated: testuser
-- Account ID: 12345678
+- @username at the time the archive was generated: nycShibe
+- Account ID: 16621905
 
 The easiest way to navigate your archive is to open the HTML renderer in a desktop web browser by double clicking the “Your archive” file included in the main folder once the archive is unzipped.
 

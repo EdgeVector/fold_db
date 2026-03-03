@@ -1,11 +1,11 @@
 window.YTD.direct_messages.part0 = [
   {
     "dmConversation" : {
-      "conversationId" : "12345678-25378459",
+      "conversationId" : "16621905-25378459",
       "messages" : [
         {
           "messageCreate" : {
-            "recipientId" : "12345678",
+            "recipientId" : "16621905",
             "reactions" : [ ],
             "urls" : [
               {
@@ -26,7 +26,7 @@ window.YTD.direct_messages.part0 = [
         },
         {
           "messageCreate" : {
-            "recipientId" : "12345678",
+            "recipientId" : "16621905",
             "reactions" : [ ],
             "urls" : [ ],
             "text" : "It's mt gox 2.0",
@@ -44,7 +44,7 @@ window.YTD.direct_messages.part0 = [
             "urls" : [ ],
             "text" : "Doing ok. This ftx thing is messed up and makes me sad for the industry.",
             "mediaUrls" : [ ],
-            "senderId" : "12345678",
+            "senderId" : "16621905",
             "id" : "1591461096119885828",
             "createdAt" : "2022-11-12T16:01:07.923Z",
             "editHistory" : [ ]
@@ -52,7 +52,7 @@ window.YTD.direct_messages.part0 = [
         },
         {
           "messageCreate" : {
-            "recipientId" : "12345678",
+            "recipientId" : "16621905",
             "reactions" : [ ],
             "urls" : [ ],
             "text" : "I'm good, been mining eth but that kinda dried up 🤣. How are you?",
@@ -70,7 +70,7 @@ window.YTD.direct_messages.part0 = [
             "urls" : [ ],
             "text" : "How’ve your been?",
             "mediaUrls" : [ ],
-            "senderId" : "12345678",
+            "senderId" : "16621905",
             "id" : "1591460716740898825",
             "createdAt" : "2022-11-12T15:59:37.472Z",
             "editHistory" : [ ]
@@ -81,7 +81,7 @@ window.YTD.direct_messages.part0 = [
   },
   {
     "dmConversation" : {
-      "conversationId" : "12345678-33861289",
+      "conversationId" : "16621905-33861289",
       "messages" : [
         {
           "messageCreate" : {
@@ -90,7 +90,7 @@ window.YTD.direct_messages.part0 = [
             "urls" : [ ],
             "text" : "Sounds good. Enjoy LA!",
             "mediaUrls" : [ ],
-            "senderId" : "12345678",
+            "senderId" : "16621905",
             "id" : "1591559428779622404",
             "createdAt" : "2022-11-12T22:31:52.254Z",
             "editHistory" : [ ]
@@ -98,7 +98,7 @@ window.YTD.direct_messages.part0 = [
         },
         {
           "messageCreate" : {
-            "recipientId" : "12345678",
+            "recipientId" : "16621905",
             "reactions" : [ ],
             "urls" : [
               {
@@ -122,7 +122,7 @@ window.YTD.direct_messages.part0 = [
             "urls" : [ ],
             "text" : "Just got the address for the party: 14954 Corona Del Mar, Pacific Palisades",
             "mediaUrls" : [ ],
-            "senderId" : "12345678",
+            "senderId" : "16621905",
             "id" : "1591475874305495046",
             "createdAt" : "2022-11-12T16:59:51.317Z",
             "editHistory" : [ ]
@@ -135,7 +135,7 @@ window.YTD.direct_messages.part0 = [
             "urls" : [ ],
             "text" : "Great to meet you too.",
             "mediaUrls" : [ ],
-            "senderId" : "12345678",
+            "senderId" : "16621905",
             "id" : "1591459803171155972",
             "createdAt" : "2022-11-12T15:55:59.655Z",
             "editHistory" : [ ]
@@ -143,7 +143,7 @@ window.YTD.direct_messages.part0 = [
         },
         {
           "messageCreate" : {
-            "recipientId" : "12345678",
+            "recipientId" : "16621905",
             "reactions" : [ ],
             "urls" : [ ],
             "text" : "Great to meet you at the conference Tom, let's keep in touch.",
@@ -159,11 +159,11 @@ window.YTD.direct_messages.part0 = [
   },
   {
     "dmConversation" : {
-      "conversationId" : "12345678-1443703292647940098",
+      "conversationId" : "16621905-1443703292647940098",
       "messages" : [
         {
           "messageCreate" : {
-            "recipientId" : "12345678",
+            "recipientId" : "16621905",
             "reactions" : [ ],
             "urls" : [ ],
             "text" : "Hi Tom - I'm reaching out to a few followers for some quick feedback if you have a minute.\n\nMy startup @perchdotapp has raised $6 million from Naval Ravikant, Alexis Ohanian, and a few others to build an aggregator for writing on the internet (e.g. blogs, newsletters, substacks, etc.).\n\nThe easiest way to think of it is “Spotify for reading.” It’s 100% free and has AI text-to-speech for listening to articles too.\n\nWould you be open to trying the app? I’d be deeply appreciative of any thoughts/feedback you have.\n\n(I'm @mikemcg0 by the way)",
@@ -179,7 +179,7 @@ window.YTD.direct_messages.part0 = [
   },
   {
     "dmConversation" : {
-      "conversationId" : "12345678-1856751787644260354",
+      "conversationId" : "16621905-1856751787644260354",
       "messages" : [
         {
           "messageCreate" : {
@@ -202,9 +202,9 @@ window.YTD.direct_messages.part0 = [
                 "display" : "github.com/shiba4life"
               }
             ],
-            "text" : "Cover Letter for DOGE\n\nThis is the opportunity I had hoped for since listening to Ron Paul’s speeches in 2007. Systems accrue inefficiencies over time. It’s important to delete things so you can build new things.\n\nThis role is most important work I can do. It will reverse civilizational decline caused by bloated bureaucracy and the inevitable monetary debasement that results. I will apply my decade+ of technical experience to make our government work more effectively for the people.\n\nSincerely,\nTest User\n\nCV\nWork\n2021 - present: Founder at Athena Capital. Macro analysis and algo trading with options.\n2017-2021: Senior Software Engineer at Amazon\n2016: Technical Engineer at Bridgewater\n2015-2016: Head of mobile at HireArt (YC 2012)\n2013-2015: Founder at Corkket\n2010-2013: Architectural Designer at KPF\n2009: Architectural Designer at OMA, Rotterdam\n\nEducation\n2006-2009: Yale University - Master of Architecture\n2000-2004: University of Illinois Urbana Champaign - BS in Computer Science\n\nhttps://t.co/9dBjKSPp8S\nhttps://t.co/o0TVSW6rfC\nhttps://t.co/XkaoEJqJTl",
+            "text" : "Cover Letter for DOGE\n\nThis is the opportunity I had hoped for since listening to Ron Paul’s speeches in 2007. Systems accrue inefficiencies over time. It’s important to delete things so you can build new things.\n\nThis role is most important work I can do. It will reverse civilizational decline caused by bloated bureaucracy and the inevitable monetary debasement that results. I will apply my decade+ of technical experience to make our government work more effectively for the people.\n\nSincerely,\nTom Tang\n\nCV\nWork\n2021 - present: Founder at Athena Capital. Macro analysis and algo trading with options.\n2017-2021: Senior Software Engineer at Amazon\n2016: Technical Engineer at Bridgewater\n2015-2016: Head of mobile at HireArt (YC 2012)\n2013-2015: Founder at Corkket\n2010-2013: Architectural Designer at KPF\n2009: Architectural Designer at OMA, Rotterdam\n\nEducation\n2006-2009: Yale University - Master of Architecture\n2000-2004: University of Illinois Urbana Champaign - BS in Computer Science\n\nhttps://t.co/9dBjKSPp8S\nhttps://t.co/o0TVSW6rfC\nhttps://t.co/XkaoEJqJTl",
             "mediaUrls" : [ ],
-            "senderId" : "12345678",
+            "senderId" : "16621905",
             "id" : "1869812694838358160",
             "createdAt" : "2024-12-19T18:31:00.642Z",
             "editHistory" : [ ]

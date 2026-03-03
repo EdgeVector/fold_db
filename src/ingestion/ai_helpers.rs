@@ -412,16 +412,16 @@ pub fn validate_schema_has_classifications(schema_val: &Value) -> IngestionResul
         None => return Ok(()),
     };
 
-    // Check each field's classifications are non-empty arrays
+    // Check each field's classifications are non-empty arrays.
+    // Empty arrays are treated the same as absent — defaults will be applied later.
     for (field_name, classifications_val) in field_classifications {
         match classifications_val.as_array() {
             Some(arr) if !arr.is_empty() => {}
             _ => {
-                return Err(IngestionError::ai_response_validation_error(format!(
-                    "Schema '{}' field '{}' has empty or invalid classifications. \
-                        AI must provide at least one classification (e.g., [\"word\"])",
+                log::debug!(
+                    "Schema '{}' field '{}' has empty or non-array classifications — defaults will be applied",
                     schema_name, field_name
-                )));
+                );
             }
         }
     }

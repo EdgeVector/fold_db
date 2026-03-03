@@ -137,7 +137,11 @@ jobs:
           fi
 
       - name: Fail if clippy or tests failed
-        if: steps.clippy.outcome == 'failure' || steps.cargo-test.outcome == 'failure'
+        if: |
+          steps.clippy.outcome == 'failure' ||
+          steps.cargo-test.outcome == 'failure' ||
+          steps.ingestion-test.outcome == 'failure' ||
+          steps.twitter-scan-test.outcome == 'failure'
         run: exit 1
 
   frontend-tests:
