@@ -39,12 +39,6 @@ impl DynamoDbKvStore {
         super::dynamodb_utils::require_user_context()
     }
 
-    /// Get the partition key to use for this store
-    #[cfg(test)]
-    pub fn get_partition_key(&self) -> String {
-        self.get_partition_key_impl()
-    }
-
     fn get_partition_key_impl(&self) -> StorageResult<String> {
         self.get_current_user_id()
     }
