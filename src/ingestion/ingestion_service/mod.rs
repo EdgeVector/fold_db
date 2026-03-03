@@ -684,7 +684,11 @@ impl IngestionService {
             };
 
             for field_name in fields {
-                if !schema.field_classifications.contains_key(field_name) {
+                let needs_default = schema.field_classifications
+                    .get(field_name)
+                    .map(|v| v.is_empty())
+                    .unwrap_or(true);
+                if needs_default {
                     let default = match sample_for_defaults.get(field_name) {
                         Some(Value::Number(_)) => vec!["number".to_string()],
                         _ => vec!["word".to_string()],
