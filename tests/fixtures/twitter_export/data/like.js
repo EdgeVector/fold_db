@@ -4306,14 +4306,14 @@ window.YTD.like.part0 = [
   {
     "like" : {
       "tweetId" : "1939161830326518042",
-      "fullText" : "@nycShibe @RnaudBertrand I think it depends a lot, but I know that, for example the desert beach that’s west of San Francisco was colonized and that’s what created the sunset and the Golden Gate Park",
+      "fullText" : "@testuser @RnaudBertrand I think it depends a lot, but I know that, for example the desert beach that’s west of San Francisco was colonized and that’s what created the sunset and the Golden Gate Park",
       "expandedUrl" : "https://twitter.com/i/web/status/1939161830326518042"
     }
   },
   {
     "like" : {
       "tweetId" : "1939160609528160609",
-      "fullText" : "@nycShibe @RnaudBertrand it’s about the ability for the land to retain water, so deserts that are colonized by a progression of erosion stabilizing and water retaining plants can be used to reclaim desert to forest over time",
+      "fullText" : "@testuser @RnaudBertrand it’s about the ability for the land to retain water, so deserts that are colonized by a progression of erosion stabilizing and water retaining plants can be used to reclaim desert to forest over time",
       "expandedUrl" : "https://twitter.com/i/web/status/1939160609528160609"
     }
   },

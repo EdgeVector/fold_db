@@ -1,8 +1,8 @@
 window.__THAR_CONFIG = {
   "userInfo" : {
-    "accountId" : "16621905",
-    "userName" : "nycShibe",
-    "displayName" : "Tom Tang"
+    "accountId" : "12345678",
+    "userName" : "testuser",
+    "displayName" : "Test User"
   },
   "archiveInfo" : {
     "sizeBytes" : "37095960",

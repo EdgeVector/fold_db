@@ -1,12 +1,12 @@
 window.YTD.account.part0 = [
   {
     "account" : {
-      "email" : "tomtang2@gmail.com",
+      "email" : "testuser@example.com",
       "createdVia" : "web",
-      "username" : "nycShibe",
-      "accountId" : "16621905",
+      "username" : "testuser",
+      "accountId" : "12345678",
       "createdAt" : "2008-10-06T22:58:01.000Z",
-      "accountDisplayName" : "Tom Tang"
+      "accountDisplayName" : "Test User"
     }
   }
 ]
