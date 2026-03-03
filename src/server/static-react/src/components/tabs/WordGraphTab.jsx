@@ -84,7 +84,7 @@ function buildFromResults(results) {
   return { nodes, links }
 }
 
-async function searchBatch(words, onBatchResult) {
+async function searchBatch(words, onBatchResult, onWordComplete) {
   const pending = [...words]
   while (pending.length > 0) {
     const batch = pending.splice(0, SEARCH_BATCH)
@@ -94,6 +94,7 @@ async function searchBatch(words, onBatchResult) {
         const results = res.data?.results ?? []
         if (results.length) onBatchResult(results)
       }
+      onWordComplete()
     }))
   }
 }
@@ -185,55 +186,57 @@ export default function WordGraphTab() {
     setError(null)
     const allWords = new Set()
 
-    // Phase 1: query records from each schema to extract real words
-    setLoadStatus({ phase: 'Reading records…', progress: 0, total: schemas.length })
-    for (let i = 0; i < schemas.length; i++) {
-      const schema = schemas[i]
-      setLoadStatus({ phase: `Reading ${schema.name}…`, progress: i, total: schemas.length })
-      try {
-        const fields = getFieldNames(schema)
-        const res = await mutationClient.executeQuery({ schema_name: schema.name, fields })
-        const records = Array.isArray(res.data?.results) ? res.data.results : []
-        for (const record of records.slice(0, MAX_RECORDS)) {
-          for (const w of extractWordsFromRecord(record)) {
-            if (allWords.size < MAX_WORDS) allWords.add(w)
-          }
-        }
-      } catch {
-        // schema query failure is non-fatal
-      }
-    }
-
-    if (allWords.size === 0) {
-      // Fallback: list keys and use their hashes as seed terms
-      for (const schema of schemas) {
-        if (allWords.size >= MAX_WORDS) break
+    try {
+      // Phase 1: query records from each schema to extract real words
+      setLoadStatus({ phase: 'Reading records…', progress: 0, total: schemas.length })
+      for (let i = 0; i < schemas.length; i++) {
+        const schema = schemas[i]
+        setLoadStatus({ phase: `Reading ${schema.name}…`, progress: i, total: schemas.length })
         try {
-          const res = await schemaClient.listSchemaKeys(schema.name, 0, 50)
-          for (const kv of (res.data?.keys ?? [])) {
-            if (kv.hash && allWords.size < MAX_WORDS) allWords.add(kv.hash)
-            if (kv.range && allWords.size < MAX_WORDS) allWords.add(kv.range)
+          const fields = getFieldNames(schema)
+          const res = await mutationClient.executeQuery({ schema_name: schema.name, fields })
+          const records = Array.isArray(res.data?.results) ? res.data.results : []
+          for (const record of records.slice(0, MAX_RECORDS)) {
+            for (const w of extractWordsFromRecord(record)) {
+              if (allWords.size < MAX_WORDS) allWords.add(w)
+            }
           }
-        } catch { /* non-fatal */ }
+        } catch {
+          // schema query failure is non-fatal
+        }
       }
-    }
 
-    if (allWords.size === 0) {
+      if (allWords.size === 0) {
+        // Fallback: list keys and use their hashes as seed terms
+        for (const schema of schemas) {
+          if (allWords.size >= MAX_WORDS) break
+          try {
+            const res = await schemaClient.listSchemaKeys(schema.name, 0, 50)
+            for (const kv of (res.data?.keys ?? [])) {
+              if (kv.hash && allWords.size < MAX_WORDS) allWords.add(kv.hash)
+              if (kv.range && allWords.size < MAX_WORDS) allWords.add(kv.range)
+            }
+          } catch { /* non-fatal */ }
+        }
+      }
+
+      if (allWords.size === 0) return
+
+      // Phase 2: search each word in the native index
+      const wordList = Array.from(allWords)
+      let done = 0
+      setLoadStatus({ phase: 'Indexing words…', progress: 0, total: wordList.length })
+      await searchBatch(
+        wordList,
+        (results) => { addResults(results) },
+        () => {
+          done += 1
+          setLoadStatus({ phase: 'Indexing words…', progress: done, total: wordList.length })
+        }
+      )
+    } finally {
       setLoadStatus(null)
-      return
     }
-
-    // Phase 2: search each word in the native index
-    const wordList = Array.from(allWords)
-    let done = 0
-    setLoadStatus({ phase: 'Indexing words…', progress: 0, total: wordList.length })
-    await searchBatch(wordList, (results) => {
-      addResults(results)
-      done += SEARCH_BATCH
-      setLoadStatus({ phase: 'Indexing words…', progress: Math.min(done, wordList.length), total: wordList.length })
-    })
-
-    setLoadStatus(null)
   }, [addResults])
 
   useEffect(() => {
@@ -337,6 +340,7 @@ export default function WordGraphTab() {
     setHighlightNodes(new Set())
     setHighlightLinks(new Set())
     prepopulatedRef.current = false
+    prepopulate(approvedSchemas)
   }
 
   const wordNodeCount   = graphData.nodes.filter(n => n.type === 'word').length

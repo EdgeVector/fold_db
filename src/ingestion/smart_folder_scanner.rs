@@ -132,7 +132,13 @@ fn scan_directory_recursive(
         } else if path.is_file() {
             // Get relative path from root
             if let Ok(relative) = path.strip_prefix(root) {
-                files.push(relative.to_string_lossy().to_string());
+                let rel_str = relative.to_string_lossy().to_string();
+                // Skip binary/media files so they don't consume the max_files budget
+                // and prevent data files from being discovered.
+                if is_never_personal_data(&rel_str) {
+                    continue;
+                }
+                files.push(rel_str);
             }
         }
     }
@@ -225,7 +231,12 @@ fn is_coding_project(dir: &Path) -> bool {
     PROJECT_MANIFEST_FILES.iter().any(|f| dir.join(f).exists())
 }
 
-/// Extensions for truly binary files that can never contain personal data.
+/// Extensions for files that can never be ingested as structured data.
+///
+/// These are filtered out **during directory collection** so they do not consume
+/// the `max_files` budget.  This prevents large media/font directories (e.g. a
+/// Twitter export's `assets/images/`) from exhausting the quota before the
+/// scanner reaches the actual data files (e.g. `data/tweets.js`).
 const BINARY_SKIP_EXTS: &[&str] = &[
     // Compiled binaries
     "exe", "dll", "so", "dylib", "o", "a", "lib", "class", "pyc", "pyo", "beam", "wasm",
@@ -233,6 +244,13 @@ const BINARY_SKIP_EXTS: &[&str] = &[
     "woff", "woff2", "eot", "ttf", "otf",
     // Source maps / lock files
     "map", "lock",
+    // Images — not handled by read_file_with_hash
+    "jpg", "jpeg", "png", "gif", "webp", "bmp", "ico", "tiff", "tif", "avif", "heic", "heif",
+    "svg",
+    // Video
+    "mp4", "mov", "avi", "mkv", "webm", "m4v", "flv", "wmv", "3gp",
+    // Audio
+    "mp3", "wav", "ogg", "aac", "m4a", "flac", "opus", "wma",
 ];
 
 /// Returns true if the file is a truly binary format that can never contain personal data.

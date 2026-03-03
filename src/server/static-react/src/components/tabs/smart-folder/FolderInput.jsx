@@ -1,6 +1,11 @@
 import { useState } from 'react'
 import DirectoryBrowserModal from './DirectoryBrowserModal'
 
+/**
+ * Tauri capabilities required in src-tauri/capabilities/default.json:
+ *   - dialog:allow-open   (Browse button: open({ directory: true }))
+ */
+
 const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__
 
 /**
