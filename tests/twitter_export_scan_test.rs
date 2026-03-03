@@ -5,11 +5,9 @@
 //! 1. `test_twitter_export_scanner_excludes_media` — always runs, no API key.
 //!    Builds a synthetic Twitter-export directory (data/*.js + hundreds of media
 //!    files + fonts) and calls `scan_directory_tree_with_context` directly.
-//!    Verifies that all .js and .txt files are discovered while image, video,
-//!    audio, SVG, and font files are silently excluded — even when the total
-//!    file count exceeds `max_files`.  This is the regression test for the bug
-//!    where assets/images/ exhausted the max_files budget before data/*.js was
-//!    reached.
+//!    Verifies that only files with whitelisted (ingestible) extensions are
+//!    discovered, and that non-ingestible files (images, video, audio, fonts)
+//!    never appear — even when the total file count exceeds `max_files`.
 //!
 //! 2. `test_twitter_export_llm_scan` — ignored (requires FOLD_OPENROUTER_API_KEY).
 //!    Scans a realistic Twitter export with AI classification and asserts that
@@ -139,10 +137,14 @@ fn test_twitter_export_scanner_excludes_media() {
         );
     }
 
-    // Media and font files must be completely absent from the file list.
-    let forbidden_exts = ["jpg", "jpeg", "png", "gif", "webp", "svg",
-                          "mp4", "mov", "mp3", "wav",
-                          "woff", "woff2", "ttf", "otf", "eot", "ico"];
+    // All results must have whitelisted (ingestible) extensions.
+    let allowed_exts = [
+        "json", "csv", "txt", "md",
+        "js", "jsx", "ts", "tsx", "py", "rs", "go", "java", "kt", "rb",
+        "c", "cpp", "h", "hpp", "cs", "swift", "scala", "lua", "r", "pl",
+        "sh", "bash", "zsh",
+        "yaml", "yml", "toml", "xml",
+    ];
     for path in &result.file_paths {
         let ext = Path::new(path)
             .extension()
@@ -150,9 +152,10 @@ fn test_twitter_export_scanner_excludes_media() {
             .unwrap_or("")
             .to_lowercase();
         assert!(
-            !forbidden_exts.contains(&ext.as_str()),
-            "Media/binary file '{}' appeared in scan results — it should have been excluded.",
-            path
+            allowed_exts.contains(&ext.as_str()),
+            "File '{}' with extension '{}' is not in the ingestible whitelist — \
+             only whitelisted extensions should appear in scan results.",
+            path, ext
         );
     }
 
@@ -237,11 +240,15 @@ async fn test_twitter_export_llm_scan() {
     assert!(scan.success, "Scan must succeed");
     assert!(!scan.scan_truncated, "Scan must not be truncated at max_files=500");
 
-    // ── No media/font files must appear anywhere in the results ──────────────
+    // ── All results must have whitelisted (ingestible) extensions ──────────────
 
-    let forbidden_exts = ["jpg", "jpeg", "png", "gif", "webp", "svg",
-                          "mp4", "mov", "mp3", "wav",
-                          "woff", "woff2", "ttf", "otf", "eot", "ico"];
+    let allowed_exts = [
+        "json", "csv", "txt", "md",
+        "js", "jsx", "ts", "tsx", "py", "rs", "go", "java", "kt", "rb",
+        "c", "cpp", "h", "hpp", "cs", "swift", "scala", "lua", "r", "pl",
+        "sh", "bash", "zsh",
+        "yaml", "yml", "toml", "xml",
+    ];
 
     let all_paths: Vec<&str> = scan.recommended_files
         .iter()
@@ -256,9 +263,10 @@ async fn test_twitter_export_llm_scan() {
             .unwrap_or("")
             .to_lowercase();
         assert!(
-            !forbidden_exts.contains(&ext.as_str()),
-            "Media/binary file '{}' appeared in scan results — should have been excluded during collection.",
-            path
+            allowed_exts.contains(&ext.as_str()),
+            "File '{}' with extension '{}' is not in the ingestible whitelist — \
+             only whitelisted extensions should appear in scan results.",
+            path, ext
         );
     }
 

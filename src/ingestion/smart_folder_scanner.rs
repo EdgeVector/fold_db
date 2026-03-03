@@ -1,4 +1,4 @@
-//! Directory scanning, tree building, binary detection, and file hashing
+//! Directory scanning, tree building, extension whitelist, and file hashing
 //! for the smart folder feature.
 
 use crate::ingestion::error::IngestionError;
@@ -124,18 +124,14 @@ fn scan_directory_recursive(
         }
 
         if path.is_dir() {
-            // Skip directories that are coding projects (contain manifest files)
-            if is_coding_project(&path) {
-                continue;
-            }
             scan_directory_recursive(root, &path, depth + 1, max_depth, max_files, files)?;
         } else if path.is_file() {
             // Get relative path from root
             if let Ok(relative) = path.strip_prefix(root) {
                 let rel_str = relative.to_string_lossy().to_string();
-                // Skip binary/media files so they don't consume the max_files budget
-                // and prevent data files from being discovered.
-                if is_never_personal_data(&rel_str) {
+                // Only collect files with ingestible extensions so non-ingestible
+                // files don't consume the max_files budget.
+                if !is_ingestible_file(&rel_str) {
                     continue;
                 }
                 files.push(rel_str);
@@ -211,56 +207,31 @@ pub fn compute_file_hash(file_path: &Path) -> IngestionResult<String> {
     Ok(format!("{:x}", Sha256::digest(&raw_bytes)))
 }
 
-/// Files whose presence marks a directory as a coding project.
-const PROJECT_MANIFEST_FILES: &[&str] = &[
-    "package.json",
-    "Cargo.toml",
-    "go.mod",
-    "pyproject.toml",
-    "setup.py",
-    "pom.xml",
-    "build.gradle",
-    "build.gradle.kts",
-    "Gemfile",
-    "composer.json",
-    "CMakeLists.txt",
-];
-
-/// Returns true if the directory contains a project manifest file.
-fn is_coding_project(dir: &Path) -> bool {
-    PROJECT_MANIFEST_FILES.iter().any(|f| dir.join(f).exists())
-}
-
-/// Extensions for files that can never be ingested as structured data.
+/// Extensions for files that can be ingested as structured data or code metadata.
 ///
-/// These are filtered out **during directory collection** so they do not consume
-/// the `max_files` budget.  This prevents large media/font directories (e.g. a
-/// Twitter export's `assets/images/`) from exhausting the quota before the
-/// scanner reaches the actual data files (e.g. `data/tweets.js`).
-const BINARY_SKIP_EXTS: &[&str] = &[
-    // Compiled binaries
-    "exe", "dll", "so", "dylib", "o", "a", "lib", "class", "pyc", "pyo", "beam", "wasm",
-    // Fonts
-    "woff", "woff2", "eot", "ttf", "otf",
-    // Source maps / lock files
-    "map", "lock",
-    // Images — not handled by read_file_with_hash
-    "jpg", "jpeg", "png", "gif", "webp", "bmp", "ico", "tiff", "tif", "avif", "heic", "heif",
-    "svg",
-    // Video
-    "mp4", "mov", "avi", "mkv", "webm", "m4v", "flv", "wmv", "3gp",
-    // Audio
-    "mp3", "wav", "ogg", "aac", "m4a", "flac", "opus", "wma",
+/// Only files matching these extensions are collected during directory scanning.
+/// This prevents binary, media, and other non-ingestible files from consuming
+/// the `max_files` budget (e.g. a Twitter export's `assets/images/` would
+/// otherwise exhaust the quota before data files are reached).
+const INGESTIBLE_EXTS: &[&str] = &[
+    // Data
+    "json", "csv", "txt", "md",
+    // Code
+    "js", "jsx", "ts", "tsx", "py", "rs", "go", "java", "kt", "rb",
+    "c", "cpp", "h", "hpp", "cs", "swift", "scala", "lua", "r", "pl",
+    "sh", "bash", "zsh",
+    // Config
+    "yaml", "yml", "toml", "xml",
 ];
 
-/// Returns true if the file is a truly binary format that can never contain personal data.
-pub fn is_never_personal_data(path: &str) -> bool {
+/// Returns true if the file has an extension we can ingest (data, code, or config).
+pub fn is_ingestible_file(path: &str) -> bool {
     let ext = Path::new(path)
         .extension()
         .and_then(|e| e.to_str())
         .unwrap_or("")
         .to_lowercase();
-    BINARY_SKIP_EXTS.contains(&ext.as_str())
+    INGESTIBLE_EXTS.contains(&ext.as_str())
 }
 
 #[cfg(test)]
@@ -301,5 +272,74 @@ mod tests {
         assert!(result.is_err());
         let err_msg = format!("{}", result.unwrap_err());
         assert!(err_msg.contains("Failed to read file for hashing"));
+    }
+
+    // ---- is_ingestible_file tests ----
+
+    #[test]
+    fn test_data_files_are_ingestible() {
+        assert!(is_ingestible_file("data.json"));
+        assert!(is_ingestible_file("records.csv"));
+        assert!(is_ingestible_file("notes.txt"));
+        assert!(is_ingestible_file("readme.md"));
+    }
+
+    #[test]
+    fn test_code_files_are_ingestible() {
+        assert!(is_ingestible_file("app.js"));
+        assert!(is_ingestible_file("component.tsx"));
+        assert!(is_ingestible_file("main.py"));
+        assert!(is_ingestible_file("lib.rs"));
+        assert!(is_ingestible_file("main.go"));
+        assert!(is_ingestible_file("App.java"));
+        assert!(is_ingestible_file("script.sh"));
+        assert!(is_ingestible_file("code.c"));
+        assert!(is_ingestible_file("code.cpp"));
+        assert!(is_ingestible_file("header.h"));
+    }
+
+    #[test]
+    fn test_config_files_are_ingestible() {
+        assert!(is_ingestible_file("config.yaml"));
+        assert!(is_ingestible_file("config.yml"));
+        assert!(is_ingestible_file("settings.toml"));
+        assert!(is_ingestible_file("data.xml"));
+    }
+
+    #[test]
+    fn test_binary_files_not_ingestible() {
+        assert!(!is_ingestible_file("program.exe"));
+        assert!(!is_ingestible_file("lib/native.so"));
+        assert!(!is_ingestible_file("module.dll"));
+        assert!(!is_ingestible_file("code.class"));
+        assert!(!is_ingestible_file("script.pyc"));
+        assert!(!is_ingestible_file("app.wasm"));
+    }
+
+    #[test]
+    fn test_media_files_not_ingestible() {
+        assert!(!is_ingestible_file("photo.jpg"));
+        assert!(!is_ingestible_file("photo.jpeg"));
+        assert!(!is_ingestible_file("image.png"));
+        assert!(!is_ingestible_file("image.gif"));
+        assert!(!is_ingestible_file("icon.svg"));
+        assert!(!is_ingestible_file("video.mp4"));
+        assert!(!is_ingestible_file("song.mp3"));
+        assert!(!is_ingestible_file("audio.wav"));
+    }
+
+    #[test]
+    fn test_font_files_not_ingestible() {
+        assert!(!is_ingestible_file("font.woff"));
+        assert!(!is_ingestible_file("font.woff2"));
+        assert!(!is_ingestible_file("font.ttf"));
+        assert!(!is_ingestible_file("font.otf"));
+        assert!(!is_ingestible_file("font.eot"));
+    }
+
+    #[test]
+    fn test_no_extension_not_ingestible() {
+        assert!(!is_ingestible_file("README"));
+        assert!(!is_ingestible_file("Makefile"));
     }
 }

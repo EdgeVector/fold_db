@@ -182,12 +182,10 @@ pub async fn perform_smart_folder_scan_with_progress(
         });
     }
 
-    report(15, format!("Found {} candidate files (binary/media already excluded).", scan.file_paths.len()));
+    report(15, format!("Found {} candidate files (only ingestible extensions collected).", scan.file_paths.len()));
 
-    // Binary and media files are filtered out during directory collection so they
-    // do not consume the max_files budget.  All paths that reach here are
-    // ingestible candidates; send them all to the LLM for classification.
-    let binary_skipped: Vec<FileRecommendation> = Vec::new();
+    // The scanner whitelist already filtered to ingestible extensions, so all
+    // paths here are candidates for LLM classification.
     let mut llm_candidates: Vec<String> = scan.file_paths.clone();
 
     log_feature!(
@@ -203,8 +201,7 @@ pub async fn perform_smart_folder_scan_with_progress(
 
     if let (Some(ref pk), Some(n)) = (&pub_key, node) {
         report(20, format!(
-            "Skipped {} binary files. Checking {} files for previously ingested (concurrent)...",
-            binary_skipped.len(),
+            "Checking {} files for previously ingested (concurrent)...",
             llm_candidates.len(),
         ));
 
@@ -252,13 +249,12 @@ pub async fn perform_smart_folder_scan_with_progress(
     }
 
     report(25, format!(
-        "Classifying {} files with AI ({} already ingested, {} binary-skipped)...",
+        "Classifying {} files with AI ({} already ingested)...",
         llm_candidates.len(),
         already_ingested_recs.len(),
-        binary_skipped.len(),
     ));
 
-    // Send remaining non-binary, non-ingested files to LLM in batches (with tree context)
+    // Send remaining non-ingested files to LLM in batches (with tree context)
     let llm_recs = if llm_candidates.is_empty() {
         Vec::new()
     } else {
@@ -310,9 +306,7 @@ pub async fn perform_smart_folder_scan_with_progress(
 
     report(80, "Computing costs and finalizing...".into());
 
-    // Merge binary-skipped + LLM recommendations (already-ingested handled separately)
-    let recommendations: Vec<FileRecommendation> =
-        binary_skipped.into_iter().chain(llm_recs).collect();
+    let recommendations: Vec<FileRecommendation> = llm_recs;
 
     // Split into recommended and skipped, build summary, compute costs
     let mut recommended_files = Vec::new();
@@ -493,86 +487,54 @@ mod tests {
         assert!(result.is_err());
     }
 
-    // ---- is_never_personal_data tests ----
+    // ---- is_ingestible_file tests (re-exported from scanner) ----
 
     #[test]
-    fn test_binary_files_are_never_personal() {
-        assert!(is_never_personal_data("program.exe"));
-        assert!(is_never_personal_data("lib/native.so"));
-        assert!(is_never_personal_data("module.dll"));
-        assert!(is_never_personal_data("code.class"));
-        assert!(is_never_personal_data("script.pyc"));
-        assert!(is_never_personal_data("app.wasm"));
+    fn test_data_files_are_ingestible() {
+        assert!(is_ingestible_file("data.json"));
+        assert!(is_ingestible_file("notes.txt"));
+        assert!(is_ingestible_file("readme.md"));
+        assert!(is_ingestible_file("script.js"));
+        assert!(is_ingestible_file("records.csv"));
     }
 
     #[test]
-    fn test_fonts_are_never_personal() {
-        assert!(is_never_personal_data("font.woff"));
-        assert!(is_never_personal_data("font.woff2"));
-        assert!(is_never_personal_data("font.ttf"));
-        assert!(is_never_personal_data("font.otf"));
-        assert!(is_never_personal_data("font.eot"));
+    fn test_code_files_are_ingestible() {
+        assert!(is_ingestible_file("code.py"));
+        assert!(is_ingestible_file("lib.rs"));
+        assert!(is_ingestible_file("main.go"));
     }
 
     #[test]
-    fn test_lock_and_map_are_never_personal() {
-        assert!(is_never_personal_data("package-lock.lock"));
-        assert!(is_never_personal_data("bundle.map"));
+    fn test_config_files_are_ingestible() {
+        assert!(is_ingestible_file("config.yaml"));
+        assert!(is_ingestible_file("settings.toml"));
+        assert!(is_ingestible_file("data.xml"));
     }
 
     #[test]
-    fn test_media_files_are_never_personal() {
-        // Images, video, and audio cannot be ingested as structured data and
-        // are filtered during directory collection so they don't exhaust max_files.
-        assert!(is_never_personal_data("photo.jpg"));
-        assert!(is_never_personal_data("photo.jpeg"));
-        assert!(is_never_personal_data("image.png"));
-        assert!(is_never_personal_data("image.gif"));
-        assert!(is_never_personal_data("image.webp"));
-        assert!(is_never_personal_data("icon.svg"));
-        assert!(is_never_personal_data("song.mp3"));
-        assert!(is_never_personal_data("audio.wav"));
-        assert!(is_never_personal_data("video.mp4"));
-        assert!(is_never_personal_data("clip.mov"));
+    fn test_binary_and_media_not_ingestible() {
+        assert!(!is_ingestible_file("program.exe"));
+        assert!(!is_ingestible_file("lib/native.so"));
+        assert!(!is_ingestible_file("photo.jpg"));
+        assert!(!is_ingestible_file("video.mp4"));
+        assert!(!is_ingestible_file("font.woff"));
+        assert!(!is_ingestible_file("song.mp3"));
     }
 
     #[test]
-    fn test_ingestible_files_go_to_llm() {
-        // These should NOT be auto-skipped — they go to the LLM for classification
-        // because read_file_with_hash can handle them.
-        assert!(!is_never_personal_data("data.json"));
-        assert!(!is_never_personal_data("notes.txt"));
-        assert!(!is_never_personal_data("readme.md"));
-        assert!(!is_never_personal_data("script.js"));
-        assert!(!is_never_personal_data("records.csv"));
+    fn test_non_whitelisted_not_ingestible() {
+        assert!(!is_ingestible_file("document.pdf"));
+        assert!(!is_ingestible_file("style.css"));
+        assert!(!is_ingestible_file("page.html"));
+        assert!(!is_ingestible_file("archive.zip"));
+        assert!(!is_ingestible_file("spreadsheet.xlsx"));
     }
 
     #[test]
-    fn test_non_ingestible_non_media_go_to_llm() {
-        // `is_never_personal_data` is a **scanner-phase** gate: it only skips
-        // truly binary/media formats (images, video, compiled objects, etc.)
-        // so they don't consume the `max_files` budget.
-        //
-        // These file types are intentionally NOT pre-filtered here because:
-        //   - Some (.css, .html, .py, .yaml) are plain text that
-        //     `read_file_with_hash` can read, and may contain personal data.
-        //   - Others (.pdf, .zip, .xlsx) can't be ingested yet, but the
-        //     LLM classifier — not the scanner — decides whether to recommend
-        //     them.  If the LLM recommends them, ingestion will fail
-        //     gracefully at the file-read stage.
-        assert!(!is_never_personal_data("document.pdf"));
-        assert!(!is_never_personal_data("style.css"));
-        assert!(!is_never_personal_data("page.html"));
-        assert!(!is_never_personal_data("code.py"));
-        assert!(!is_never_personal_data("archive.zip"));
-        assert!(!is_never_personal_data("spreadsheet.xlsx"));
-        assert!(!is_never_personal_data("config.yaml"));
-    }
-
-    #[test]
-    fn test_no_extension_goes_to_llm() {
-        assert!(!is_never_personal_data("README"));
-        assert!(!is_never_personal_data("Makefile"));
+    fn test_no_extension_not_ingestible() {
+        assert!(!is_ingestible_file("README"));
+        assert!(!is_ingestible_file("Makefile"));
     }
 
     // ---- build_directory_tree_string tests ----
@@ -682,7 +644,7 @@ mod tests {
     }
 
     #[test]
-    fn test_scan_skips_coding_projects() {
+    fn test_scan_includes_coding_project_files() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
 
@@ -709,30 +671,14 @@ mod tests {
 
         let files = scan_directory_tree(root, 10, 50000).unwrap();
 
-        // Should find the personal file but none of the coding project files
+        // Should find personal files AND coding project files with ingestible extensions
         assert!(files.contains(&"notes.txt".to_string()));
-        assert!(!files.iter().any(|f| f.contains("index.js")));
-        assert!(!files.iter().any(|f| f.contains("main.rs")));
-        assert!(!files.iter().any(|f| f.contains("analysis.py")));
-        assert!(!files.iter().any(|f| f.contains("package.json")));
-        assert!(!files.iter().any(|f| f.contains("Cargo.toml")));
-        assert!(!files.iter().any(|f| f.contains("pyproject.toml")));
-    }
-
-    #[test]
-    fn test_scan_does_not_skip_root_coding_project() {
-        let tmp = tempfile::tempdir().unwrap();
-        let root = tmp.path();
-
-        // The root itself contains a package.json
-        std::fs::write(root.join("package.json"), r#"{"name":"root"}"#).unwrap();
-        std::fs::write(root.join("readme.md"), "# Hello").unwrap();
-
-        let files = scan_directory_tree(root, 10, 50000).unwrap();
-
-        // Should still find files in the root even though it has a manifest
-        assert!(files.contains(&"readme.md".to_string()));
-        assert!(files.contains(&"package.json".to_string()));
+        assert!(files.iter().any(|f| f.contains("index.js")));
+        assert!(files.iter().any(|f| f.contains("main.rs")));
+        assert!(files.iter().any(|f| f.contains("analysis.py")));
+        assert!(files.iter().any(|f| f.contains("package.json")));
+        assert!(files.iter().any(|f| f.contains("Cargo.toml")));
+        assert!(files.iter().any(|f| f.contains("pyproject.toml")));
     }
 
     #[test]
