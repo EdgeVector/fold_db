@@ -1,17 +1,12 @@
 # FoldDB
 
-[![Crates.io](https://img.shields.io/crates/v/fold_db.svg)](https://crates.io/crates/fold_db)
-[![Documentation](https://docs.rs/fold_db/badge.svg)](https://docs.rs/fold_db)
 [![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](https://github.com/shiba4life/fold_db)
 
-FoldDB is a personal database that uses AI to automatically organize your data. Drop in files, JSON, or social media exports — FoldDB detects schemas, extracts searchable keywords, and lets you query with natural language. Runs locally with minimal config, or scales to AWS with DynamoDB and Lambda.
+**Your personal database with AI that organizes everything for you.**
 
-## When to Use FoldDB
+Drop in files, JSON, or social media exports — FoldDB detects schemas, extracts searchable keywords, and lets you query with natural language. Runs locally on your machine. Your data stays yours.
 
-- **Organize personal data** — Tweets, notes, photos, documents. Drop them in and FoldDB schemas, indexes, and stores them automatically.
-- **Build apps with AI-powered ingestion** — Skip writing schema definitions and field mappings. Send JSON, get structured storage.
-- **Self-hosted alternative to cloud databases** — Everything runs on your machine with AES-256-GCM encryption at rest. Your data stays yours.
-- **Serverless data backends** — Deploy to AWS Lambda with DynamoDB multi-tenant isolation out of the box.
+<!-- TODO: Add demo GIF showing: drag-and-drop file ingestion → automatic schema detection → natural language query → results -->
 
 ## Quick Start
 
@@ -21,111 +16,97 @@ FoldDB is a personal database that uses AI to automatically organize your data. 
 curl -fsSL https://raw.githubusercontent.com/shiba4life/fold_db/master/install.sh | sh
 ```
 
-Auto-detects macOS (Apple Silicon / Intel) and Linux x86_64. Or install from source:
-
-```bash
-cargo install --git https://github.com/shiba4life/fold_db.git --bin folddb
-```
-
-### 2. Set your API key (for AI features)
-
-```bash
-export FOLD_OPENROUTER_API_KEY="sk-..."
-```
-
-### 3. Run
+### 2. Run
 
 ```bash
 ./run.sh --local
 ```
 
-Visit `http://localhost:5173` for the web UI. The backend runs on port 9001.
+### 3. Open your browser
+
+Visit [http://localhost:5173](http://localhost:5173) — that's it. No API key required if you use [Ollama](https://ollama.com) (free, runs locally).
+
+## What You Can Do
+
+- **Import your Twitter archive** — Drop in your Twitter data export, then ask "what were my most liked tweets?"
+- **Organize a folder of documents** — Point FoldDB at `~/Documents` and let AI classify, schema, and ingest everything automatically
+- **Search across all your data** — Ask "what taxes did I pay last year?" and get answers pulled from ingested PDFs, JSON, and notes
+- **Upload a CSV or PDF** — Get automatic schema detection, keyword extraction, and full-text search with zero configuration
+- **Explore connections** — Visualize how your data relates using the built-in word graph
 
 ## Features
 
-- **AI-Powered Ingestion** — Drop any JSON and AI generates schemas, maps fields, and stores your data
+- **AI-Powered Ingestion** — Drop any file and AI generates schemas, maps fields, and stores your data
 - **Smart Folder Ingestion** — Point at a directory and let AI filter, classify, and batch-ingest files
 - **Natural Language Queries** — Ask questions in plain English, get structured results
-- **Encryption at Rest** — AES-256-GCM encryption with local keys or AWS KMS
-- **Fine-Grained Permissions** — Trust-based access control at the field level
+- **Encryption at Rest** — AES-256-GCM encryption with local key management
 - **Dynamic Schemas** — Schemas evolve with your data, no migrations needed
-- **Serverless Ready** — DynamoDB + S3 storage backend, deploy to AWS Lambda with zero modifications
-- **Distributed P2P** — Built-in peer discovery and networking for horizontal scaling
+- **Keyword Indexing** — AI extracts and normalizes searchable terms (dates, names, topics)
+- **Web UI** — Browse schemas, ingest data, query, and manage everything from your browser
+- **CLI** — Full command-line interface for scripting and power users
+- **Runs 100% Local** — No cloud account required. Sled embedded storage, Ollama for AI
 
 ## How It Works
 
 ```
-Files / JSON / APIs
-        |
-        v
-   AI Ingestion ──> Schema Service (detects or creates schema)
-        |
-        v
-   Mutation ──> Storage (Sled local or DynamoDB cloud)
-        |
-        v
-   Keyword Indexing ──> AI extracts and normalizes searchable terms
-        |
-        v
-   Query ──> Natural language or structured field queries
+  Your Files (JSON, CSV, PDF, images, exports)
+                    |
+                    v
+          +------------------+
+          |   AI Ingestion   |  ← Ollama (local) or OpenRouter (cloud)
+          +------------------+
+                    |
+        +-----------+-----------+
+        |                       |
+        v                       v
+  Schema Service          Keyword Indexing
+  (detect/create)         (extract & normalize)
+        |                       |
+        +-----------+-----------+
+                    |
+                    v
+          +------------------+
+          |   Sled Storage   |  ← Encrypted at rest
+          +------------------+
+                    |
+                    v
+     Query with natural language or fields
 ```
 
-1. **Ingest** — Send data in any format. AI analyzes the structure and maps it to a schema.
-2. **Schema** — The global schema service checks for existing compatible schemas or creates new ones.
-3. **Store** — Data is written as mutations with encryption at rest.
-4. **Index** — AI extracts keywords and normalizes terms (dates, names, etc.) for search.
-5. **Query** — Search with natural language or structured field queries.
+## Supported Formats
 
-## Core Concepts
+| Format | What Happens |
+|--------|-------------|
+| **JSON** | Schema auto-detected, fields mapped, data stored |
+| **CSV** | Rows parsed, columns become schema fields |
+| **PDF** | Text extracted, AI identifies structure and keywords |
+| **Images** | EXIF metadata extracted (dates, locations, camera info) |
+| **Twitter JS exports** | Tweets, likes, and metadata parsed into searchable records |
+| **Plain text** | Content indexed with AI-generated keywords |
 
-### Schemas
+## AI Providers
 
-FoldDB uses dynamic schemas that define data structure and operations. Schemas are managed automatically during AI ingestion or can be loaded manually:
+FoldDB works with two AI backends. Pick one (or both):
 
-```bash
-folddb schema load my_schema.json
-folddb schema approve my_schema
-folddb schema list -p
-```
+| Provider | Cost | Runs Where | Setup |
+|----------|------|-----------|-------|
+| **[Ollama](https://ollama.com)** | Free | Your machine | Install Ollama, pull a model, done |
+| **[OpenRouter](https://openrouter.ai)** | Pay-per-use | Cloud API | `export FOLD_OPENROUTER_API_KEY="sk-..."` |
 
-### Global Schema Service
+Ollama is the default — no API key needed. FoldDB will use it automatically if it's running.
 
-A shared registry at [schema.folddb.com](https://schema.folddb.com) ensures schema consistency across FoldDB instances. During ingestion, the AI checks the registry for compatible schemas before creating new ones.
+## Web UI
 
-```bash
-export FOLD_SCHEMA_SERVICE_URL=https://schema.folddb.com
-```
+Start with `./run.sh --local` and visit `http://localhost:5173`. The UI provides:
 
-### Ingestion
+- Schema browsing and approval
+- File upload, smart folder ingestion, and social media imports
+- Natural language and structured queries
+- Native index search
+- Word graph visualization
+- System status and configuration
 
-```rust
-use fold_db::{IngestionConfig, IngestionCore, IngestionRequest};
-use serde_json::json;
-
-let config = IngestionConfig::from_env_allow_empty();
-let ingestion = IngestionCore::new(config)?;
-
-let data = json!({
-    "name": "John Doe",
-    "email": "john@example.com",
-    "age": 30
-});
-
-let result = ingestion.process_json_ingestion(
-    IngestionRequest { data }
-).await?;
-```
-
-### Queries
-
-```rust
-use fold_db::FoldNode;
-
-let node = FoldNode::new_with_defaults().await?;
-
-// Natural language query
-let response = node.ai_query("Show me all purchases over $50").await?;
-```
+<!-- TODO: Add screenshot of main UI -->
 
 ## CLI Reference
 
@@ -152,106 +133,6 @@ folddb schema get my_schema -p                # Inspect a schema
 
 Run `folddb --help` for the full command reference.
 
-## Web UI
-
-Start with `./run.sh --local` and visit `http://localhost:5173`. The UI provides:
-
-- Schema browsing and approval
-- Data ingestion (file upload, smart folders, social media imports)
-- Natural language and structured queries
-- Native index search
-- System status and configuration
-
-## Frontend Development
-
-FoldDB includes a React frontend with type-safe API clients:
-
-```typescript
-import { schemaClient, securityClient, systemClient } from "../api/clients";
-
-// Schema operations with automatic caching
-const response = await schemaClient.getSchemas();
-if (response.success) {
-  const schemas = response.data; // Fully typed SchemaData[]
-}
-
-// System monitoring with intelligent caching
-const status = await systemClient.getSystemStatus(); // 30-second cache
-```
-
-### Available Clients
-
-- **SchemaClient** — Schema management and SCHEMA-002 compliance
-- **SecurityClient** — Authentication, key management, cryptographic operations
-- **SystemClient** — System operations, logging, database management
-- **TransformClient** — Data transformation and queue management
-- **IngestionClient** — AI-powered data ingestion (60s timeout for AI processing)
-- **MutationClient** — Data mutation operations and query execution
-
-### Frontend Setup
-
-```bash
-# Start both backend and frontend
-./run.sh --local
-
-# Frontend-only development
-cd src/server/static-react
-npm install
-npm run dev
-```
-
-## Advanced: AWS Deployment
-
-### S3 Storage
-
-FoldDB can use S3-backed storage for serverless environments:
-
-```bash
-export FOLD_STORAGE_MODE=s3
-export FOLD_S3_BUCKET=my-folddb-bucket
-export FOLD_S3_REGION=us-west-2
-```
-
-### Lambda + DynamoDB
-
-Add the `lambda` feature for multi-tenant serverless deployments:
-
-```toml
-[dependencies]
-fold_db = { version = "0.1.0", features = ["lambda"] }
-```
-
-```rust
-use fold_db::lambda::{LambdaConfig, LambdaContext, LambdaStorage, LambdaLogging};
-use fold_db::storage::{DynamoDbConfig, ExplicitTables};
-
-let config = LambdaConfig::new(
-    LambdaStorage::DynamoDb(DynamoDbConfig {
-        region: "us-east-1".to_string(),
-        tables: ExplicitTables::from_prefix("MyApp"),
-        auto_create: true,
-        user_id: None,
-    }),
-    LambdaLogging::Stdout,
-);
-
-LambdaContext::init(config).await?;
-```
-
-This creates 11 DynamoDB tables (`MyApp-main`, `MyApp-schemas`, etc.) with automatic multi-tenant isolation via `user_id`.
-
-### File Ingestion from S3
-
-Process files already in S3 without re-uploading:
-
-```bash
-curl -X POST http://localhost:9001/api/ingestion/upload \
-  -F "s3FilePath=s3://my-bucket/path/to/file.json" \
-  -F "autoExecute=true"
-```
-
-See [S3 Configuration Guide](docs/S3_CONFIGURATION.md) for complete setup.
-
 ## Development Setup
 
 ### Prerequisites
@@ -277,10 +158,10 @@ cargo test --workspace
 ./run.sh --local --dev              # Local Sled + dev schema service
 ```
 
-### TypeScript Bindings
+### Install from Source (alternative)
 
 ```bash
-cargo build --features ts-bindings
+cargo install --git https://github.com/shiba4life/fold_db.git --bin folddb
 ```
 
 ## Configuration
@@ -289,32 +170,57 @@ cargo build --features ts-bindings
 
 | Variable | Purpose |
 |----------|---------|
-| `FOLD_OPENROUTER_API_KEY` | API key for AI-powered ingestion (or `OPENROUTER_API_KEY`) |
+| `FOLD_OPENROUTER_API_KEY` | API key for OpenRouter AI (or `OPENROUTER_API_KEY`). Not needed with Ollama. |
 | `FOLD_SCHEMA_SERVICE_URL` | Schema service URL (default: `https://schema.folddb.com`) |
 | `FOLD_CONFIG` | Path to configuration file |
 | `FOLD_LOG_LEVEL` | Logging level (`trace`, `debug`, `info`, `warn`, `error`) |
-| `FOLD_STORAGE_MODE` | Storage backend (`s3` for cloud) |
+
+<details>
+<summary><h2>Advanced: AWS Deployment</h2></summary>
+
+FoldDB can scale to AWS with DynamoDB + S3 storage and Lambda for serverless multi-tenant deployments.
+
+### S3 Storage
+
+```bash
+export FOLD_STORAGE_MODE=s3
+export FOLD_S3_BUCKET=my-folddb-bucket
+export FOLD_S3_REGION=us-west-2
+```
+
+### Lambda + DynamoDB
+
+Enable with the `lambda` feature flag:
+
+```toml
+[dependencies]
+fold_db = { version = "0.1.0", features = ["lambda"] }
+```
+
+This creates 11 DynamoDB tables with automatic multi-tenant isolation via `user_id`.
+
+### AWS Environment Variables
+
+| Variable | Purpose |
+|----------|---------|
+| `FOLD_STORAGE_MODE` | Set to `s3` for cloud storage |
 | `FOLD_S3_BUCKET` | S3 bucket for database storage |
 | `FOLD_S3_REGION` | AWS region for S3 |
 | `FOLD_UPLOAD_STORAGE_MODE` | Upload storage backend (`s3` for cloud) |
 
+See [Lambda Multitenancy](docs/LAMBDA_MULTITENANCY.md) for architecture details.
+
+</details>
+
 ## Documentation
 
-- **[API Reference](https://docs.rs/fold_db)** — Complete Rust API docs
-- **[Ingestion Guide](INGESTION_README.md)** — AI-powered data ingestion
-- **[AI Query Guide](docs/AI_QUERY_USAGE_GUIDE.md)** — Natural language queries
-- **[S3 Storage Guide](docs/S3_CONFIGURATION.md)** — Serverless deployment with S3
-- **[Architecture](docs/Unified_Architecture.md)** — System design and patterns
+- **[Vision & Goals](docs/GOAL.md)** — What FoldDB is building toward
+- **[Launch Plan](docs/LAUNCH_PLAN.md)** — Roadmap and milestones
+- **[Strategy](docs/STRATEGY.md)** — Product strategy
 
 ## Contributing
 
-We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes with tests
-4. Run `cargo test --workspace`
-5. Submit a pull request
+We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines, frontend development setup, and API client documentation.
 
 ## License
 
