@@ -4,6 +4,8 @@
 //! HTTP handlers (`routes.rs`) and the CLI (`folddb`).
 
 use crate::ingestion::IngestionResult;
+use crate::log_feature;
+use crate::logging::features::LogFeature;
 use futures::stream::{self, StreamExt};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -180,31 +182,18 @@ pub async fn perform_smart_folder_scan_with_progress(
         });
     }
 
-    report(15, format!("Found {} files. Filtering known extensions...", scan.file_paths.len()));
+    report(15, format!("Found {} candidate files (binary/media already excluded).", scan.file_paths.len()));
 
-    // Split files: binary auto-skip vs everything else goes to LLM
-    let mut binary_skipped: Vec<FileRecommendation> = Vec::new();
-    let mut llm_candidates: Vec<String> = Vec::new();
+    // Binary and media files are filtered out during directory collection so they
+    // do not consume the max_files budget.  All paths that reach here are
+    // ingestible candidates; send them all to the LLM for classification.
+    let binary_skipped: Vec<FileRecommendation> = Vec::new();
+    let mut llm_candidates: Vec<String> = scan.file_paths.clone();
 
-    for path in &scan.file_paths {
-        if is_never_personal_data(path) {
-            binary_skipped.push(FileRecommendation {
-                path: path.clone(),
-                should_ingest: false,
-                category: "binary_or_system".to_string(),
-                reason: "Binary/system file".to_string(),
-                file_size_bytes: 0,
-                estimated_cost: 0.0,
-                already_ingested: false,
-            });
-        } else {
-            llm_candidates.push(path.clone());
-        }
-    }
-
-    log::info!(
-        "File classification: {} binary-skipped, {} candidates for dedup check",
-        binary_skipped.len(),
+    log_feature!(
+        LogFeature::Ingestion,
+        info,
+        "File classification: {} candidates for dedup check",
         llm_candidates.len(),
     );
 
@@ -253,7 +242,9 @@ pub async fn perform_smart_folder_scan_with_progress(
         }
         llm_candidates = remaining;
 
-        log::info!(
+        log_feature!(
+            LogFeature::Ingestion,
+            info,
             "Dedup check: {} already ingested, {} remaining for LLM",
             already_ingested_recs.len(),
             llm_candidates.len(),
@@ -534,23 +525,52 @@ mod tests {
     }
 
     #[test]
-    fn test_common_files_go_to_llm() {
-        // These should NOT be auto-skipped — they go to the LLM
-        assert!(!is_never_personal_data("photo.jpg"));
-        assert!(!is_never_personal_data("document.pdf"));
-        assert!(!is_never_personal_data("notes.txt"));
+    fn test_media_files_are_never_personal() {
+        // Images, video, and audio cannot be ingested as structured data and
+        // are filtered during directory collection so they don't exhaust max_files.
+        assert!(is_never_personal_data("photo.jpg"));
+        assert!(is_never_personal_data("photo.jpeg"));
+        assert!(is_never_personal_data("image.png"));
+        assert!(is_never_personal_data("image.gif"));
+        assert!(is_never_personal_data("image.webp"));
+        assert!(is_never_personal_data("icon.svg"));
+        assert!(is_never_personal_data("song.mp3"));
+        assert!(is_never_personal_data("audio.wav"));
+        assert!(is_never_personal_data("video.mp4"));
+        assert!(is_never_personal_data("clip.mov"));
+    }
+
+    #[test]
+    fn test_ingestible_files_go_to_llm() {
+        // These should NOT be auto-skipped — they go to the LLM for classification
+        // because read_file_with_hash can handle them.
         assert!(!is_never_personal_data("data.json"));
+        assert!(!is_never_personal_data("notes.txt"));
+        assert!(!is_never_personal_data("readme.md"));
+        assert!(!is_never_personal_data("script.js"));
+        assert!(!is_never_personal_data("records.csv"));
+    }
+
+    #[test]
+    fn test_non_ingestible_non_media_go_to_llm() {
+        // `is_never_personal_data` is a **scanner-phase** gate: it only skips
+        // truly binary/media formats (images, video, compiled objects, etc.)
+        // so they don't consume the `max_files` budget.
+        //
+        // These file types are intentionally NOT pre-filtered here because:
+        //   - Some (.css, .html, .py, .yaml) are plain text that
+        //     `read_file_with_hash` can read, and may contain personal data.
+        //   - Others (.pdf, .zip, .xlsx) can't be ingested yet, but the
+        //     LLM classifier — not the scanner — decides whether to recommend
+        //     them.  If the LLM recommends them, ingestion will fail
+        //     gracefully at the file-read stage.
+        assert!(!is_never_personal_data("document.pdf"));
         assert!(!is_never_personal_data("style.css"));
         assert!(!is_never_personal_data("page.html"));
-        assert!(!is_never_personal_data("script.js"));
         assert!(!is_never_personal_data("code.py"));
         assert!(!is_never_personal_data("archive.zip"));
-        assert!(!is_never_personal_data("image.gif"));
-        assert!(!is_never_personal_data("song.mp3"));
-        assert!(!is_never_personal_data("video.mp4"));
         assert!(!is_never_personal_data("spreadsheet.xlsx"));
         assert!(!is_never_personal_data("config.yaml"));
-        assert!(!is_never_personal_data("readme.md"));
     }
 
     #[test]
@@ -600,11 +620,14 @@ mod tests {
 
         std::fs::create_dir_all(root.join("docs")).unwrap();
         std::fs::write(root.join("docs/notes.txt"), "hello").unwrap();
+        // photo.jpg is filtered during collection — it must NOT consume max_files budget
         std::fs::write(root.join("photo.jpg"), "fake jpg").unwrap();
 
         let result = scan_directory_tree_with_context(root, 10, 50000).unwrap();
 
-        assert_eq!(result.file_paths.len(), 2);
+        // Only the ingestible file appears in file_paths; the jpg is silently excluded
+        assert_eq!(result.file_paths.len(), 1);
+        assert!(result.file_paths.contains(&"docs/notes.txt".to_string()));
         assert!(!result.truncated);
         assert!(!result.tree_display.is_empty());
         assert!(result.tree_display.contains("docs/"));

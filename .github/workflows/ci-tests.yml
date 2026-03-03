@@ -79,6 +79,13 @@ jobs:
         run: cargo test --test ingest_tweets_test -- --ignored
         timeout-minutes: 5
 
+      - name: Run Twitter export scan integration test
+        id: twitter-scan-test
+        continue-on-error: true
+        if: env.FOLD_OPENROUTER_API_KEY != ''
+        run: cargo test --test twitter_export_scan_test -- --ignored --nocapture
+        timeout-minutes: 10
+
       - name: Check AWS Backend
         id: check-aws
         run: cargo check --workspace --features aws-backend
@@ -114,6 +121,18 @@ jobs:
             echo "Skipped (FOLD_OPENROUTER_API_KEY not configured)." >> $GITHUB_STEP_SUMMARY
           else
             echo "❌ **Tweets Ingestion Test**" >> $GITHUB_STEP_SUMMARY
+            echo "Integration test failed. Check the job logs for details." >> $GITHUB_STEP_SUMMARY
+          fi
+
+          twitter_scan_status="${{ steps.twitter-scan-test.outcome }}"
+          if [ "$twitter_scan_status" = "success" ]; then
+            echo "✅ **Twitter Export Scan Test**" >> $GITHUB_STEP_SUMMARY
+            echo "All 83 .js files found and recommended for ingestion." >> $GITHUB_STEP_SUMMARY
+          elif [ "$twitter_scan_status" = "skipped" ]; then
+            echo "⏭️ **Twitter Export Scan Test**" >> $GITHUB_STEP_SUMMARY
+            echo "Skipped (FOLD_OPENROUTER_API_KEY not configured)." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Twitter Export Scan Test**" >> $GITHUB_STEP_SUMMARY
             echo "Integration test failed. Check the job logs for details." >> $GITHUB_STEP_SUMMARY
           fi
 
