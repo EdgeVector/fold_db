@@ -215,21 +215,23 @@ pub async fn get_scan_result(
     let tracker = progress_tracker.get_ref();
 
     match tracker.load(&progress_id).await {
-        Ok(Some(job)) => {
-            if !matches!(job.status, JobStatus::Completed) {
-                return HttpResponse::NotFound().json(json!({
-                    "success": false,
-                    "error": "Scan not yet complete"
-                }));
-            }
-            match job.result {
+        Ok(Some(job)) => match job.status {
+            JobStatus::Failed => HttpResponse::InternalServerError().json(json!({
+                "success": false,
+                "error": job.error.unwrap_or_else(|| "Scan failed".to_string())
+            })),
+            JobStatus::Completed => match job.result {
                 Some(result) => HttpResponse::Ok().json(result),
-                None => HttpResponse::NotFound().json(json!({
+                None => HttpResponse::InternalServerError().json(json!({
                     "success": false,
-                    "error": "Scan result not available"
+                    "error": "Scan completed but result is unavailable"
                 })),
-            }
-        }
+            },
+            _ => HttpResponse::NotFound().json(json!({
+                "success": false,
+                "error": "Scan not yet complete"
+            })),
+        },
         _ => HttpResponse::NotFound().json(json!({
             "success": false,
             "error": "Scan not found"

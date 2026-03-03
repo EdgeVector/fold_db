@@ -80,7 +80,7 @@ impl DbOperations {
                     // Transform not found - skip
                 }
                 Err(e) => {
-                    log::warn!(
+                    log::debug!(
                         "Failed to deserialize transform {} (possibly old format): {}",
                         key,
                         e

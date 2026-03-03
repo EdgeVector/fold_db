@@ -179,7 +179,7 @@ impl IngestionConfig {
                 true
             }
             Err(e) => {
-                log::warn!(
+                log::info!(
                     "No saved ingestion config found ({}), using env vars/defaults: provider={:?}, model={}",
                     e,
                     config.provider,
