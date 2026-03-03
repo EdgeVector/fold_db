@@ -140,6 +140,10 @@ fn test_twitter_export_scanner_excludes_media() {
     // All results must have whitelisted (ingestible) extensions.
     let allowed_exts = [
         "json", "csv", "txt", "md",
+        "pdf", "doc", "docx", "rtf", "odt", "pages",
+        "xls", "xlsx", "ods", "numbers",
+        "pptx", "ppt", "odp", "key",
+        "eml", "mbox", "vcf",
         "js", "jsx", "ts", "tsx", "py", "rs", "go", "java", "kt", "rb",
         "c", "cpp", "h", "hpp", "cs", "swift", "scala", "lua", "r", "pl",
         "sh", "bash", "zsh",
@@ -244,6 +248,10 @@ async fn test_twitter_export_llm_scan() {
 
     let allowed_exts = [
         "json", "csv", "txt", "md",
+        "pdf", "doc", "docx", "rtf", "odt", "pages",
+        "xls", "xlsx", "ods", "numbers",
+        "pptx", "ppt", "odp", "key",
+        "eml", "mbox", "vcf",
         "js", "jsx", "ts", "tsx", "py", "rs", "go", "java", "kt", "rb",
         "c", "cpp", "h", "hpp", "cs", "swift", "scala", "lua", "r", "pl",
         "sh", "bash", "zsh",

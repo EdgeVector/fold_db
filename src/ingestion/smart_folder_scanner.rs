@@ -216,6 +216,11 @@ pub fn compute_file_hash(file_path: &Path) -> IngestionResult<String> {
 const INGESTIBLE_EXTS: &[&str] = &[
     // Data
     "json", "csv", "txt", "md",
+    // Documents (personal data — handled by LLM classifier)
+    "pdf", "doc", "docx", "rtf", "odt", "pages",
+    "xls", "xlsx", "ods", "numbers",
+    "pptx", "ppt", "odp", "key",
+    "eml", "mbox", "vcf",
     // Code
     "js", "jsx", "ts", "tsx", "py", "rs", "go", "java", "kt", "rb",
     "c", "cpp", "h", "hpp", "cs", "swift", "scala", "lua", "r", "pl",
@@ -282,6 +287,15 @@ mod tests {
         assert!(is_ingestible_file("records.csv"));
         assert!(is_ingestible_file("notes.txt"));
         assert!(is_ingestible_file("readme.md"));
+    }
+
+    #[test]
+    fn test_document_files_are_ingestible() {
+        assert!(is_ingestible_file("report.pdf"));
+        assert!(is_ingestible_file("letter.docx"));
+        assert!(is_ingestible_file("budget.xlsx"));
+        assert!(is_ingestible_file("contacts.vcf"));
+        assert!(is_ingestible_file("mail.eml"));
     }
 
     #[test]

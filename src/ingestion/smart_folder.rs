@@ -524,11 +524,18 @@ mod tests {
 
     #[test]
     fn test_non_whitelisted_not_ingestible() {
-        assert!(!is_ingestible_file("document.pdf"));
         assert!(!is_ingestible_file("style.css"));
         assert!(!is_ingestible_file("page.html"));
         assert!(!is_ingestible_file("archive.zip"));
-        assert!(!is_ingestible_file("spreadsheet.xlsx"));
+        assert!(!is_ingestible_file("image.png"));
+    }
+
+    #[test]
+    fn test_document_files_are_ingestible() {
+        assert!(is_ingestible_file("document.pdf"));
+        assert!(is_ingestible_file("spreadsheet.xlsx"));
+        assert!(is_ingestible_file("letter.docx"));
+        assert!(is_ingestible_file("contacts.vcf"));
     }
 
     #[test]
