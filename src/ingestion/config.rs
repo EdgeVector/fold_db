@@ -85,19 +85,12 @@ impl OllamaConfig {
 /// Configuration for the ingestion module.
 #[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct IngestionConfig {
-    /// The AI provider to use.
     pub provider: AIProvider,
-    /// OpenRouter specific configuration.
     pub openrouter: OpenRouterConfig,
-    /// Ollama specific configuration.
     pub ollama: OllamaConfig,
-    /// Whether ingestion is enabled.
     pub enabled: bool,
-    /// Maximum number of retries for API calls.
     pub max_retries: u32,
-    /// Timeout for API calls in seconds.
     pub timeout_seconds: u64,
-    /// Whether to auto-execute mutations after generation.
     pub auto_execute_mutations: bool,
 }
 
@@ -125,131 +118,78 @@ impl IngestionConfig {
         copy
     }
 
-    /// Create a new ingestion config from environment variables and saved config file.
+    /// Load config from the saved file and environment variables, then require
+    /// the API key to be set for OpenRouter. Call `load()` directly if you
+    /// only need the config for display without requiring credentials.
     pub fn from_env() -> Result<Self, crate::ingestion::IngestionError> {
-        let config = Self::from_env_allow_empty();
-
-        match config.provider {
-            AIProvider::OpenRouter => {
-                if config.openrouter.api_key.is_empty() {
-                    return Err(crate::ingestion::IngestionError::configuration_error(
-                        "OpenRouter API key is required. Set FOLD_OPENROUTER_API_KEY or configure in the UI.",
-                    ));
-                }
-            }
-            AIProvider::Ollama => {
-                // No specific required fields for Ollama at the moment,
-                // as it often runs without an API key.
-            }
+        let config = Self::load();
+        if config.provider == AIProvider::OpenRouter && config.openrouter.api_key.is_empty() {
+            return Err(crate::ingestion::IngestionError::configuration_error(
+                "OpenRouter API key is required. Set FOLD_OPENROUTER_API_KEY or configure in the UI.",
+            ));
         }
-
         Ok(config)
     }
 
-    /// Create a new ingestion config allowing empty API key (for configuration endpoints).
-    pub fn from_env_allow_empty() -> Self {
-        // Load provider from environment, default to OpenRouter
-        let provider = env::var("AI_PROVIDER")
-            .ok()
-            .map(|p| match p.to_lowercase().as_str() {
-                "ollama" => AIProvider::Ollama,
-                _ => AIProvider::OpenRouter,
-            })
-            .unwrap_or_default();
+    /// Load config from the saved file and environment variables.
+    ///
+    /// Precedence (highest to lowest):
+    /// - `FOLD_OPENROUTER_API_KEY` env var (secrets never live in files)
+    /// - Saved config file (UI choices)
+    /// - Other env vars (only when no saved config)
+    /// - Compiled-in defaults
+    pub fn load() -> Self {
+        let mut config = IngestionConfig::default();
 
-        let mut config = IngestionConfig {
-            provider,
-            ..Default::default()
-        };
-
-        // Load saved config if it exists — UI choices take precedence over env vars
-        let has_saved_config = match Self::load_saved_config() {
-            Ok(saved_config) => {
+        // Apply saved config (UI choices override defaults)
+        let has_saved = match Self::load_from_file() {
+            Ok(saved) => {
                 log::info!(
                     "Loaded saved ingestion config: provider={:?}, model={}",
-                    saved_config.provider,
-                    match saved_config.provider {
-                        AIProvider::Ollama => &saved_config.ollama.model,
-                        AIProvider::OpenRouter => &saved_config.openrouter.model,
+                    saved.provider,
+                    match saved.provider {
+                        AIProvider::Ollama => &saved.ollama.model,
+                        AIProvider::OpenRouter => &saved.openrouter.model,
                     }
                 );
-                config.provider = saved_config.provider;
-                config.openrouter = saved_config.openrouter;
-                config.ollama = saved_config.ollama;
+                config.provider = saved.provider;
+                config.openrouter = saved.openrouter;
+                config.ollama = saved.ollama;
                 true
             }
             Err(e) => {
-                log::info!(
-                    "No saved ingestion config found ({}), using env vars/defaults: provider={:?}, model={}",
-                    e,
-                    config.provider,
-                    config.openrouter.model
-                );
+                log::info!("No saved ingestion config ({}), using env vars/defaults", e);
                 false
             }
         };
 
-        // API key: env var always wins (secrets shouldn't live in config files)
+        // API key: env var always wins — secrets shouldn't live in config files
         if let Ok(key) = env::var("FOLD_OPENROUTER_API_KEY") {
             config.openrouter.api_key = key;
         }
 
-        // Non-secret settings: env vars are only defaults when no saved config exists
-        if !has_saved_config {
-            if let Ok(model) = env::var("OPENROUTER_MODEL") {
-                config.openrouter.model = model;
+        // Provider selection and non-secret model settings only apply when
+        // there's no saved config (saved config already has these)
+        if !has_saved {
+            if let Ok(p) = env::var("AI_PROVIDER") {
+                config.provider = if p.to_lowercase() == "ollama" {
+                    AIProvider::Ollama
+                } else {
+                    AIProvider::OpenRouter
+                };
             }
-            if let Ok(url) = env::var("OPENROUTER_BASE_URL") {
-                config.openrouter.base_url = url;
-            }
-            if let Ok(model) = env::var("OLLAMA_MODEL") {
-                config.ollama.model = model;
-            }
-            if let Ok(url) = env::var("OLLAMA_BASE_URL") {
-                config.ollama.base_url = url;
-            }
+            if let Ok(v) = env::var("OPENROUTER_MODEL") { config.openrouter.model = v; }
+            if let Ok(v) = env::var("OPENROUTER_BASE_URL") { config.openrouter.base_url = v; }
+            if let Ok(v) = env::var("OLLAMA_MODEL") { config.ollama.model = v; }
+            if let Ok(v) = env::var("OLLAMA_BASE_URL") { config.ollama.base_url = v; }
         }
 
-        config.enabled = env::var("INGESTION_ENABLED")
-            .unwrap_or_else(|_| "true".to_string())
-            .parse()
-            .unwrap_or(true);
-
-        config.max_retries = env::var("INGESTION_MAX_RETRIES")
-            .unwrap_or_else(|_| "3".to_string())
-            .parse()
-            .unwrap_or(3);
-
-        config.timeout_seconds = env::var("INGESTION_TIMEOUT_SECONDS")
-            .unwrap_or_else(|_| "300".to_string())
-            .parse()
-            .unwrap_or(300);
-
-        config.auto_execute_mutations = env::var("INGESTION_AUTO_EXECUTE")
-            .unwrap_or_else(|_| "true".to_string())
-            .parse()
-            .unwrap_or(true);
+        config.enabled          = env_bool("INGESTION_ENABLED", true);
+        config.max_retries      = env_parse("INGESTION_MAX_RETRIES", 3);
+        config.timeout_seconds  = env_parse("INGESTION_TIMEOUT_SECONDS", 300);
+        config.auto_execute_mutations = env_bool("INGESTION_AUTO_EXECUTE", true);
 
         config
-    }
-
-    /// Load saved configuration from file.
-    fn load_saved_config() -> Result<SavedConfig, Box<dyn std::error::Error>> {
-        use std::fs;
-
-        let config_path = Self::get_config_file_path();
-
-        if !config_path.exists() {
-            return Err(format!("Config file does not exist at {}", config_path.display()).into());
-        }
-
-        let content = fs::read_to_string(&config_path)?;
-        let mut config: SavedConfig = serde_json::from_str(&content)?;
-        // Strip redacted placeholder — it should never be treated as a real key
-        if config.openrouter.api_key == "***configured***" {
-            config.openrouter.api_key = String::new();
-        }
-        Ok(config)
     }
 
     /// Validate the configuration based on the selected provider.
@@ -265,96 +205,80 @@ impl IngestionConfig {
         self.enabled && self.validate().is_ok()
     }
 
-    /// Save configuration to file.
+    /// Save provider/model settings to the config file.
     ///
-    /// If the incoming `api_key` is empty and an existing config has one,
-    /// the existing key is preserved (prevents accidental clearing).
+    /// If the incoming api_key is empty or redacted, the existing saved key is
+    /// preserved to prevent accidental clearing via UI round-trips.
     pub fn save_to_file(config: &SavedConfig) -> Result<(), Box<dyn std::error::Error>> {
-        use std::fs;
-        use std::io::Write;
+        let config_path = Self::config_file_path();
 
-        let config_path = Self::get_config_file_path();
-
-        // Merge: preserve existing api_key when the incoming value is empty or redacted
-        let merged = if config.openrouter.api_key.is_empty()
-            || config.openrouter.api_key == "***configured***"
-        {
-            if let Ok(existing) = Self::load_saved_config() {
-                if !existing.openrouter.api_key.is_empty() {
-                    let mut merged = config.clone();
-                    merged.openrouter.api_key = existing.openrouter.api_key;
-                    merged
-                } else {
-                    config.clone()
-                }
+        // Preserve the existing API key when the caller didn't supply one
+        let mut to_save = config.clone();
+        if to_save.openrouter.api_key.is_empty() || to_save.openrouter.api_key == "***configured***" {
+            if let Ok(existing) = Self::load_from_file() {
+                to_save.openrouter.api_key = existing.openrouter.api_key;
             } else {
-                config.clone()
+                to_save.openrouter.api_key = String::new();
             }
-        } else {
-            config.clone()
-        };
-
-        // Create directory if it doesn't exist
-        if let Some(parent) = config_path.parent() {
-            fs::create_dir_all(parent)?;
         }
 
-        let content = serde_json::to_string_pretty(&merged)?;
-        let mut file = fs::File::create(&config_path)?;
-        file.write_all(content.as_bytes())?;
-
+        if let Some(parent) = config_path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let content = serde_json::to_string_pretty(&to_save)?;
+        std::fs::write(&config_path, content)?;
         Ok(())
     }
 
-    /// Get the path to the ingestion configuration file.
+    /// Path to the ingestion config file.
     ///
-    /// Resolution order:
-    /// 1. `FOLD_CONFIG_DIR` env var (if set)
-    /// 2. `./config` relative to the executable's directory
-    /// 3. `./config` relative to the current working directory (fallback)
+    /// Uses `FOLD_CONFIG_DIR` env var when set (production/Tauri), otherwise
+    /// falls back to `./config/ingestion_config.json` relative to CWD (dev).
     pub fn get_config_file_path() -> std::path::PathBuf {
-        if let Ok(dir) = std::env::var("FOLD_CONFIG_DIR") {
+        Self::config_file_path()
+    }
+
+    fn config_file_path() -> std::path::PathBuf {
+        if let Ok(dir) = env::var("FOLD_CONFIG_DIR") {
             return std::path::Path::new(&dir).join("ingestion_config.json");
         }
-
-        // Resolve relative to the executable's directory so CWD changes don't break config loading
-        if let Ok(exe) = std::env::current_exe() {
-            if let Some(exe_dir) = exe.parent() {
-                let candidate = exe_dir.join("config").join("ingestion_config.json");
-                if candidate.exists() {
-                    return candidate;
-                }
-            }
-        }
-
-        // Walk up from CWD looking for a config/ directory with the config file.
-        // This handles cases like `cargo run` where the executable is in target/debug/
-        // but the config is in the project root.
-        if let Ok(cwd) = std::env::current_dir() {
-            let mut dir = cwd.as_path();
-            loop {
-                let candidate = dir.join("config").join("ingestion_config.json");
-                if candidate.exists() {
-                    return candidate;
-                }
-                match dir.parent() {
-                    Some(parent) => dir = parent,
-                    None => break,
-                }
-            }
-        }
-
-        // Final fallback: relative path (original behavior)
         std::path::PathBuf::from("./config/ingestion_config.json")
+    }
+
+    fn load_from_file() -> Result<SavedConfig, Box<dyn std::error::Error>> {
+        let path = Self::config_file_path();
+        if !path.exists() {
+            return Err(format!("config file not found at {}", path.display()).into());
+        }
+        let content = std::fs::read_to_string(&path)?;
+        let config: SavedConfig = serde_json::from_str(&content)?;
+        Ok(config)
+    }
+
+    // Keep old name as an alias so existing callers compile without changes
+    #[doc(hidden)]
+    pub fn from_env_allow_empty() -> Self {
+        Self::load()
     }
 }
 
-/// Structure for saving AI provider configuration.
+/// Provider/model settings persisted to disk by the UI.
+/// Runtime fields (enabled, retries, timeout) are controlled via env vars only.
 #[derive(Debug, Clone, Serialize, Deserialize, Default, utoipa::ToSchema)]
 pub struct SavedConfig {
     pub provider: AIProvider,
     pub openrouter: OpenRouterConfig,
     pub ollama: OllamaConfig,
+}
+
+// ---- env var helpers ----
+
+fn env_bool(name: &str, default: bool) -> bool {
+    env::var(name).ok().and_then(|v| v.parse().ok()).unwrap_or(default)
+}
+
+fn env_parse<T: std::str::FromStr>(name: &str, default: T) -> T {
+    env::var(name).ok().and_then(|v| v.parse().ok()).unwrap_or(default)
 }
 
 #[cfg(test)]
