@@ -279,31 +279,27 @@ pub async fn perform_smart_folder_scan_with_progress(
 
         // Run LLM classification batches concurrently — up to 4 at a time (API rate limits)
         let tree_display = &scan.tree_display;
-        let batch_results: Vec<Vec<FileRecommendation>> = stream::iter(chunks.into_iter().enumerate())
+        let batch_results: Vec<IngestionResult<Vec<FileRecommendation>>> = stream::iter(chunks.into_iter().enumerate())
             .map(|(i, chunk_vec)| async move {
                 let prompt = create_smart_folder_prompt(tree_display, &chunk_vec);
-                match call_llm_for_file_analysis(&prompt, svc).await {
-                    Ok(llm_response) => {
-                        parse_llm_file_recommendations(&llm_response, &chunk_vec)
-                            .unwrap_or_else(|e| {
-                                log::warn!(
-                                    "Failed to parse LLM response for batch {}: {}",
-                                    i, e
-                                );
-                                apply_heuristic_filtering(&chunk_vec)
-                            })
-                    }
-                    Err(e) => {
-                        log::warn!("LLM call failed for batch {}: {}", i, e);
+                let llm_response = call_llm_for_file_analysis(&prompt, svc).await
+                    .map_err(|e| {
+                        log::error!("LLM unavailable for batch {}: {}", i, e);
+                        e
+                    })?;
+                Ok(parse_llm_file_recommendations(&llm_response, &chunk_vec)
+                    .unwrap_or_else(|e| {
+                        log::warn!("Failed to parse LLM response for batch {}: {}", i, e);
                         apply_heuristic_filtering(&chunk_vec)
-                    }
-                }
+                    }))
             })
             .buffer_unordered(4)
             .collect()
             .await;
 
-        batch_results.into_iter().flatten().collect()
+        // Propagate the first LLM error — if the AI is unreachable, stop the scan.
+        batch_results.into_iter().collect::<IngestionResult<Vec<Vec<FileRecommendation>>>>()?
+            .into_iter().flatten().collect()
     };
 
     report(80, "Computing costs and finalizing...".into());

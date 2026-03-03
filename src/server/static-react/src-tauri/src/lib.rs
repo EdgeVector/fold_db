@@ -220,6 +220,23 @@ async fn start_fold_server(port: u16) -> Result<EmbeddedServerHandle, String> {
     std::env::set_var("NODE_CONFIG", &config_path);
     eprintln!("[FoldDB] Config path: {:?}", config_path);
 
+    // Set FOLD_UPLOAD_PATH so upload storage uses an absolute writable path.
+    // Without this, UploadStorageConfig defaults to the relative "data/uploads"
+    // which resolves inside the read-only .app bundle on macOS.
+    let upload_path = dirs::home_dir()
+        .ok_or_else(|| "Could not determine home directory".to_string())?
+        .join(".datafold")
+        .join("uploads");
+    std::env::set_var("FOLD_UPLOAD_PATH", &upload_path);
+    eprintln!("[FoldDB] Upload path: {:?}", upload_path);
+
+    // Set FOLD_CONFIG_DIR so ingestion_config.json is saved/loaded from ~/.datafold/
+    // rather than ./config/ which resolves into the read-only .app bundle.
+    let config_dir = dirs::home_dir()
+        .ok_or_else(|| "Could not determine home directory".to_string())?
+        .join(".datafold");
+    std::env::set_var("FOLD_CONFIG_DIR", &config_dir);
+
     // Load node configuration (no DB access — just reads config file)
     let mut config = load_node_config(None, None)
         .map_err(|e| format!("Failed to load config: {}", e))?;
