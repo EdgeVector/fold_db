@@ -262,3 +262,44 @@ pub fn is_never_personal_data(path: &str) -> bool {
         .to_lowercase();
     BINARY_SKIP_EXTS.contains(&ext.as_str())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sha2::{Digest, Sha256};
+    use std::io::Write;
+
+    #[test]
+    fn test_compute_file_hash_known_content() {
+        let mut tmp = tempfile::NamedTempFile::new().unwrap();
+        let content = b"hello world";
+        tmp.write_all(content).unwrap();
+
+        let hash = compute_file_hash(tmp.path()).unwrap();
+        let expected = format!("{:x}", Sha256::digest(content));
+        assert_eq!(hash, expected);
+    }
+
+    #[test]
+    fn test_compute_file_hash_same_content_identical() {
+        let content = b"identical content for hashing";
+
+        let mut tmp1 = tempfile::NamedTempFile::new().unwrap();
+        tmp1.write_all(content).unwrap();
+
+        let mut tmp2 = tempfile::NamedTempFile::new().unwrap();
+        tmp2.write_all(content).unwrap();
+
+        let hash1 = compute_file_hash(tmp1.path()).unwrap();
+        let hash2 = compute_file_hash(tmp2.path()).unwrap();
+        assert_eq!(hash1, hash2);
+    }
+
+    #[test]
+    fn test_compute_file_hash_nonexistent_file() {
+        let result = compute_file_hash(Path::new("/tmp/nonexistent_hash_test_abc.txt"));
+        assert!(result.is_err());
+        let err_msg = format!("{}", result.unwrap_err());
+        assert!(err_msg.contains("Failed to read file for hashing"));
+    }
+}

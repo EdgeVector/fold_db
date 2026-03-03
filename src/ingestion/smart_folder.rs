@@ -4,6 +4,8 @@
 //! HTTP handlers (`routes.rs`) and the CLI (`folddb`).
 
 use crate::ingestion::IngestionResult;
+use crate::log_feature;
+use crate::logging::features::LogFeature;
 use futures::stream::{self, StreamExt};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -188,7 +190,9 @@ pub async fn perform_smart_folder_scan_with_progress(
     let binary_skipped: Vec<FileRecommendation> = Vec::new();
     let mut llm_candidates: Vec<String> = scan.file_paths.clone();
 
-    log::info!(
+    log_feature!(
+        LogFeature::Ingestion,
+        info,
         "File classification: {} candidates for dedup check",
         llm_candidates.len(),
     );
@@ -238,7 +242,9 @@ pub async fn perform_smart_folder_scan_with_progress(
         }
         llm_candidates = remaining;
 
-        log::info!(
+        log_feature!(
+            LogFeature::Ingestion,
+            info,
             "Dedup check: {} already ingested, {} remaining for LLM",
             already_ingested_recs.len(),
             llm_candidates.len(),
@@ -543,9 +549,17 @@ mod tests {
 
     #[test]
     fn test_non_ingestible_non_media_go_to_llm() {
-        // These aren't handled by read_file_with_hash but aren't clearly
-        // binary/media either — let the LLM classify them (they'll fail at
-        // ingestion time if the LLM incorrectly recommends them).
+        // `is_never_personal_data` is a **scanner-phase** gate: it only skips
+        // truly binary/media formats (images, video, compiled objects, etc.)
+        // so they don't consume the `max_files` budget.
+        //
+        // These file types are intentionally NOT pre-filtered here because:
+        //   - Some (.css, .html, .py, .yaml) are plain text that
+        //     `read_file_with_hash` can read, and may contain personal data.
+        //   - Others (.pdf, .zip, .xlsx) can't be ingested yet, but the
+        //     LLM classifier — not the scanner — decides whether to recommend
+        //     them.  If the LLM recommends them, ingestion will fail
+        //     gracefully at the file-read stage.
         assert!(!is_never_personal_data("document.pdf"));
         assert!(!is_never_personal_data("style.css"));
         assert!(!is_never_personal_data("page.html"));

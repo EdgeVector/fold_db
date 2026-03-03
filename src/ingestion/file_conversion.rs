@@ -165,3 +165,122 @@ pub fn read_file_with_hash(file_path: &Path) -> IngestionResult<(Value, String, 
 
     Ok((value, hash_hex, raw_bytes))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sha2::{Digest, Sha256};
+    use std::io::Write;
+
+    #[test]
+    fn test_read_file_with_hash_json() {
+        let mut tmp = tempfile::Builder::new()
+            .suffix(".json")
+            .tempfile()
+            .unwrap();
+        let json_content = r#"{"name": "Alice", "age": 30}"#;
+        write!(tmp, "{}", json_content).unwrap();
+
+        let (value, hash, raw) = read_file_with_hash(tmp.path()).unwrap();
+        assert_eq!(value["name"], "Alice");
+        assert_eq!(value["age"], 30);
+
+        let expected_hash = format!("{:x}", Sha256::digest(json_content.as_bytes()));
+        assert_eq!(hash, expected_hash);
+        assert_eq!(raw, json_content.as_bytes());
+    }
+
+    #[test]
+    fn test_read_file_with_hash_twitter_js() {
+        let mut tmp = tempfile::Builder::new()
+            .suffix(".js")
+            .tempfile()
+            .unwrap();
+        let content = r#"window.YTD.tweet.part0 = [{"id": "123", "text": "hello"}]"#;
+        write!(tmp, "{}", content).unwrap();
+
+        let (value, hash, _raw) = read_file_with_hash(tmp.path()).unwrap();
+        let arr = value.as_array().unwrap();
+        assert_eq!(arr.len(), 1);
+        assert_eq!(arr[0]["id"], "123");
+
+        let expected_hash = format!("{:x}", Sha256::digest(content.as_bytes()));
+        assert_eq!(hash, expected_hash);
+    }
+
+    #[test]
+    fn test_read_file_with_hash_csv() {
+        let mut tmp = tempfile::Builder::new()
+            .suffix(".csv")
+            .tempfile()
+            .unwrap();
+        let content = "name,age\nAlice,30\nBob,25\n";
+        write!(tmp, "{}", content).unwrap();
+
+        let (value, hash, _raw) = read_file_with_hash(tmp.path()).unwrap();
+        let arr = value.as_array().unwrap();
+        assert_eq!(arr.len(), 2);
+        assert_eq!(arr[0]["name"], "Alice");
+
+        let expected_hash = format!("{:x}", Sha256::digest(content.as_bytes()));
+        assert_eq!(hash, expected_hash);
+    }
+
+    #[test]
+    fn test_read_file_with_hash_txt() {
+        let mut tmp = tempfile::Builder::new()
+            .suffix(".txt")
+            .tempfile()
+            .unwrap();
+        let content = "Hello, this is a text file.";
+        write!(tmp, "{}", content).unwrap();
+
+        let (value, hash, _raw) = read_file_with_hash(tmp.path()).unwrap();
+        assert_eq!(value["content"], content);
+        assert_eq!(value["file_type"], "txt");
+        assert!(value["source_file"].as_str().unwrap().ends_with(".txt"));
+
+        let expected_hash = format!("{:x}", Sha256::digest(content.as_bytes()));
+        assert_eq!(hash, expected_hash);
+    }
+
+    #[test]
+    fn test_read_file_with_hash_md() {
+        let mut tmp = tempfile::Builder::new()
+            .suffix(".md")
+            .tempfile()
+            .unwrap();
+        let content = "# Heading\n\nSome markdown content.";
+        write!(tmp, "{}", content).unwrap();
+
+        let (value, hash, _raw) = read_file_with_hash(tmp.path()).unwrap();
+        assert_eq!(value["content"], content);
+        assert_eq!(value["file_type"], "md");
+        assert!(value["source_file"].as_str().unwrap().ends_with(".md"));
+
+        let expected_hash = format!("{:x}", Sha256::digest(content.as_bytes()));
+        assert_eq!(hash, expected_hash);
+    }
+
+    #[test]
+    fn test_read_file_with_hash_unsupported_extension() {
+        let mut tmp = tempfile::Builder::new()
+            .suffix(".xyz")
+            .tempfile()
+            .unwrap();
+        write!(tmp, "some content").unwrap();
+
+        let result = read_file_with_hash(tmp.path());
+        assert!(result.is_err());
+        let err_msg = format!("{}", result.unwrap_err());
+        assert!(err_msg.contains("Unsupported file type"));
+    }
+
+    #[test]
+    fn test_read_file_with_hash_nonexistent_file() {
+        let result = read_file_with_hash(Path::new("/tmp/nonexistent_file_abc123.json"));
+        assert!(result.is_err());
+        let err_msg = format!("{}", result.unwrap_err());
+        assert!(err_msg.contains("Failed to read file"));
+    }
+}

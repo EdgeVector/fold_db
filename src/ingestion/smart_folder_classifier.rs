@@ -166,3 +166,159 @@ pub fn apply_heuristic_filtering(file_tree: &[String]) -> Vec<FileRecommendation
         })
         .collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ---- parse_llm_file_recommendations tests ----
+
+    #[test]
+    fn test_parse_llm_valid_json_with_matching_paths() {
+        let response = r#"```json
+[
+  {"path": "docs/notes.txt", "should_ingest": true, "category": "personal_data", "reason": "Personal notes"},
+  {"path": "photos/pic.jpg", "should_ingest": true, "category": "media", "reason": "Photo"}
+]
+```"#;
+        let file_tree = vec![
+            "docs/notes.txt".to_string(),
+            "photos/pic.jpg".to_string(),
+        ];
+        let result = parse_llm_file_recommendations(response, &file_tree).unwrap();
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].path, "docs/notes.txt");
+        assert_eq!(result[1].path, "photos/pic.jpg");
+    }
+
+    #[test]
+    fn test_parse_llm_hallucinated_paths_filtered() {
+        let response = r#"[
+  {"path": "docs/notes.txt", "should_ingest": true, "category": "personal_data", "reason": "ok"},
+  {"path": "fake/hallucinated.txt", "should_ingest": true, "category": "unknown", "reason": "nope"}
+]"#;
+        let file_tree = vec!["docs/notes.txt".to_string()];
+        let result = parse_llm_file_recommendations(response, &file_tree).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].path, "docs/notes.txt");
+    }
+
+    #[test]
+    fn test_parse_llm_empty_response_returns_error() {
+        let file_tree = vec!["a.txt".to_string()];
+        let result = parse_llm_file_recommendations("", &file_tree);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_llm_mixed_valid_invalid_paths() {
+        let response = r#"[
+  {"path": "a.txt", "should_ingest": true, "category": "personal_data", "reason": "ok"},
+  {"path": "b.txt", "should_ingest": false, "category": "unknown", "reason": "nope"},
+  {"path": "c.txt", "should_ingest": true, "category": "work", "reason": "work file"}
+]"#;
+        let file_tree = vec!["a.txt".to_string(), "c.txt".to_string()];
+        let result = parse_llm_file_recommendations(response, &file_tree).unwrap();
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].path, "a.txt");
+        assert_eq!(result[1].path, "c.txt");
+    }
+
+    #[test]
+    fn test_parse_llm_empty_file_tree_returns_empty() {
+        let response = r#"[
+  {"path": "a.txt", "should_ingest": true, "category": "personal_data", "reason": "ok"}
+]"#;
+        let file_tree: Vec<String> = vec![];
+        let result = parse_llm_file_recommendations(response, &file_tree).unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_parse_llm_malformed_json_returns_error() {
+        let response = r#"This is not JSON at all, just some text."#;
+        let file_tree = vec!["a.txt".to_string()];
+        let result = parse_llm_file_recommendations(response, &file_tree);
+        assert!(result.is_err());
+    }
+
+    // ---- create_smart_folder_prompt tests ----
+
+    #[test]
+    fn test_prompt_contains_tree_and_file_paths() {
+        let tree = "docs/\n  notes.txt\n  report.pdf";
+        let files = vec![
+            "docs/notes.txt".to_string(),
+            "docs/report.pdf".to_string(),
+        ];
+        let prompt = create_smart_folder_prompt(tree, &files);
+        assert!(prompt.contains(tree));
+        assert!(prompt.contains("docs/notes.txt"));
+        assert!(prompt.contains("docs/report.pdf"));
+    }
+
+    #[test]
+    fn test_prompt_contains_categories_and_instructions() {
+        let prompt = create_smart_folder_prompt("tree", &["f.txt".to_string()]);
+        assert!(prompt.contains("personal_data"));
+        assert!(prompt.contains("media"));
+        assert!(prompt.contains("website_scaffolding"));
+        assert!(prompt.contains("should_ingest"));
+        assert!(prompt.contains("JSON array"));
+    }
+
+    // ---- apply_heuristic_filtering tests ----
+
+    #[test]
+    fn test_heuristic_mixed_file_types() {
+        let files = vec![
+            "report.pdf".to_string(),
+            "photo.jpg".to_string(),
+            "script.py".to_string(),
+            "data.csv".to_string(),
+            "export/backup.json".to_string(),
+        ];
+        let recs = apply_heuristic_filtering(&files);
+        assert_eq!(recs.len(), 5);
+
+        // PDF → personal_data, should_ingest
+        assert!(recs[0].should_ingest);
+        assert_eq!(recs[0].category, "personal_data");
+
+        // JPG without export context → media, should_ingest = false
+        assert!(!recs[1].should_ingest);
+        assert_eq!(recs[1].category, "media");
+
+        // .py → unknown, should_ingest = false
+        assert!(!recs[2].should_ingest);
+
+        // CSV → personal_data, should_ingest
+        assert!(recs[3].should_ingest);
+        assert_eq!(recs[3].category, "personal_data");
+
+        // backup path → personal_data, should_ingest
+        assert!(recs[4].should_ingest);
+    }
+
+    #[test]
+    fn test_heuristic_case_insensitive_extensions() {
+        let files = vec![
+            "REPORT.PDF".to_string(),
+            "Data.Csv".to_string(),
+            "photo.JPG".to_string(),
+        ];
+        let recs = apply_heuristic_filtering(&files);
+
+        // .PDF → personal_data (extension lowercased internally)
+        assert!(recs[0].should_ingest);
+        assert_eq!(recs[0].category, "personal_data");
+
+        // .Csv → personal_data
+        assert!(recs[1].should_ingest);
+        assert_eq!(recs[1].category, "personal_data");
+
+        // .JPG without export → media, not ingested
+        assert!(!recs[2].should_ingest);
+        assert_eq!(recs[2].category, "media");
+    }
+}

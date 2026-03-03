@@ -608,4 +608,75 @@ That should work."###;
         let value = serde_json::json!({"x": 1});
         assert!(pretty_json(&value).contains("\"x\": 1"));
     }
+
+    // ---- extract_json_from_response edge cases ----
+
+    #[test]
+    fn test_extract_json_array_in_markdown_fence() {
+        let response = r#"Here are the results:
+```json
+[{"path": "a.txt", "should_ingest": true}]
+```
+Done."#;
+        let result = extract_json_from_response(response).unwrap();
+        let parsed: Value = serde_json::from_str(&result).unwrap();
+        assert!(parsed.is_array());
+        assert_eq!(parsed.as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn test_extract_nested_json_with_trailing_prose() {
+        let response = r#"{"outer": {"inner": {"value": 42}}} And here is some extra explanation."#;
+        let result = extract_json_from_response(response).unwrap();
+        let parsed: Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(parsed["outer"]["inner"]["value"], 42);
+    }
+
+    #[test]
+    fn test_extract_first_json_object_from_multiple() {
+        let response = r#"{"first": 1} {"second": 2}"#;
+        let result = extract_json_from_response(response).unwrap();
+        let parsed: Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(parsed["first"], 1);
+    }
+
+    #[test]
+    fn test_extract_only_prose_returns_error() {
+        let response = "This response contains no JSON at all, just plain text.";
+        let result = extract_json_from_response(response);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_extract_empty_string_returns_error() {
+        let result = extract_json_from_response("");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_extract_json_with_unicode() {
+        let response = r#"{"name": "日本語テスト", "emoji": "🎉"}"#;
+        let result = extract_json_from_response(response).unwrap();
+        let parsed: Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(parsed["name"], "日本語テスト");
+        assert_eq!(parsed["emoji"], "🎉");
+    }
+
+    #[test]
+    fn test_extract_unclosed_markdown_fence() {
+        let response = "```json\n{\"key\": \"value\"}\nsome trailing text without closing fence";
+        let result = extract_json_from_response(response).unwrap();
+        let parsed: Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(parsed["key"], "value");
+    }
+
+    #[test]
+    fn test_extract_brace_matching_fallback() {
+        // JSON with invalid trailing content that stream parser may choke on,
+        // but brace-matching should rescue
+        let response = "prefix {\"a\": 1, \"b\": [2, 3]} suffix with } brace";
+        let result = extract_json_from_response(response).unwrap();
+        let parsed: Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(parsed["a"], 1);
+    }
 }

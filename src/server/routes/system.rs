@@ -738,14 +738,32 @@ pub async fn apply_setup(
 }
 
 /// Expand a leading `~` or `~/` to the current user's home directory.
-fn expand_tilde(raw: &str) -> PathBuf {
+///
+/// Returns `Err` when the path starts with `~` but the `HOME` environment
+/// variable is not set.
+fn expand_tilde(raw: &str) -> Result<PathBuf, String> {
     if raw == "~" || raw.starts_with("~/") {
-        if let Ok(home) = std::env::var("HOME") {
-            let rest = raw.strip_prefix("~/").unwrap_or("");
-            return PathBuf::from(home).join(rest);
+        match std::env::var("HOME") {
+            Ok(home) => {
+                let rest = raw.strip_prefix("~/").unwrap_or("");
+                Ok(PathBuf::from(home).join(rest))
+            }
+            Err(_) => Err(format!(
+                "Cannot expand ~ in path \"{}\": HOME environment variable not set",
+                raw
+            )),
         }
+    } else {
+        Ok(PathBuf::from(raw))
     }
-    PathBuf::from(raw)
+}
+
+/// Returns true if the given path string points to an existing directory.
+pub fn is_existing_directory(p: &str) -> bool {
+    match expand_tilde(p) {
+        Ok(path) => path.is_dir(),
+        Err(_) => false,
+    }
 }
 
 /// Request body for filesystem path completion
@@ -848,7 +866,16 @@ pub async fn get_database_status(state: web::Data<AppState>) -> impl Responder {
 /// This endpoint provides directory-only path completion for the folder picker UI.
 /// It lists directories matching a partial path prefix, hiding dotfiles.
 pub async fn complete_path(body: web::Json<PathCompleteRequest>) -> impl Responder {
-    let partial = expand_tilde(&body.partial_path);
+    let partial = match expand_tilde(&body.partial_path) {
+        Ok(p) => p,
+        Err(msg) => {
+            log_feature!(LogFeature::HttpServer, warn, "{}", msg);
+            return HttpResponse::BadRequest().json(json!({
+                "error": msg,
+                "completions": Vec::<String>::new()
+            }));
+        }
+    };
     let partial_str = partial.to_string_lossy();
 
     let (parent, prefix) = if partial_str.ends_with('/') || partial_str.ends_with('\\') {
@@ -901,7 +928,17 @@ pub struct ListDirectoryRequest {
 /// Returns directory **names** (not full paths), up to 200 entries, hiding dotfiles.
 /// Used by the web-based directory browser modal.
 pub async fn list_directory(body: web::Json<ListDirectoryRequest>) -> impl Responder {
-    let dir_path = expand_tilde(&body.path);
+    let dir_path = match expand_tilde(&body.path) {
+        Ok(p) => p,
+        Err(msg) => {
+            log_feature!(LogFeature::HttpServer, warn, "{}", msg);
+            return HttpResponse::BadRequest().json(json!({
+                "error": msg,
+                "path": body.path,
+                "directories": Vec::<String>::new(),
+            }));
+        }
+    };
     let resolved = dir_path.to_string_lossy().to_string();
 
     if !dir_path.is_dir() {
@@ -1098,26 +1135,26 @@ mod tests {
     #[tokio::test]
     async fn test_expand_tilde_home() {
         let home = std::env::var("HOME").unwrap();
-        assert_eq!(expand_tilde("~"), PathBuf::from(&home));
+        assert_eq!(expand_tilde("~").unwrap(), PathBuf::from(&home));
     }
 
     #[tokio::test]
     async fn test_expand_tilde_subpath() {
         let home = std::env::var("HOME").unwrap();
         assert_eq!(
-            expand_tilde("~/Documents"),
+            expand_tilde("~/Documents").unwrap(),
             PathBuf::from(&home).join("Documents")
         );
     }
 
     #[tokio::test]
     async fn test_expand_tilde_noop_absolute() {
-        assert_eq!(expand_tilde("/tmp"), PathBuf::from("/tmp"));
+        assert_eq!(expand_tilde("/tmp").unwrap(), PathBuf::from("/tmp"));
     }
 
     #[tokio::test]
     async fn test_expand_tilde_noop_relative() {
-        assert_eq!(expand_tilde("foo/bar"), PathBuf::from("foo/bar"));
+        assert_eq!(expand_tilde("foo/bar").unwrap(), PathBuf::from("foo/bar"));
     }
 
     // --- complete_path tests ---
