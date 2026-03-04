@@ -309,10 +309,51 @@ jobs:
           tag: ${{ github.ref }}
           overwrite: true
 
+  # Generate SHA256 checksums for all release assets
+  generate-checksums:
+    name: Generate SHA256 Checksums
+    needs: [build-cli, build-macos-app]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Get version from tag
+        id: get_version
+        shell: bash
+        run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Download all release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p assets
+          gh release download "${{ github.ref_name }}" \
+            --repo "${{ github.repository }}" \
+            --dir assets \
+            --pattern '*.tar.gz' \
+            --pattern '*.dmg' \
+            --pattern '*.app.zip' \
+            --pattern 'folddb*'
+
+      - name: Compute SHA256 checksums
+        run: |
+          cd assets
+          sha256sum * | sort > SHA256SUMS.txt
+          echo "--- SHA256SUMS.txt ---"
+          cat SHA256SUMS.txt
+
+      - name: Upload SHA256SUMS.txt to release
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: assets/SHA256SUMS.txt
+          asset_name: SHA256SUMS.txt
+          tag: ${{ github.ref }}
+          overwrite: true
+
   # Create release notes
   create-release-notes:
     name: Create Release Notes
-    needs: [build-cli, build-macos-app, update-homebrew]
+    needs: [build-cli, build-macos-app, update-homebrew, generate-checksums]
     runs-on: ubuntu-latest
 
     steps:
@@ -421,6 +462,23 @@ jobs:
             ### Documentation
 
             - [README & Full Documentation](https://github.com/shiba4life/fold_db/blob/master/README.md)
+
+            ---
+
+            ### Verify Your Download
+
+            Each release includes a `SHA256SUMS.txt` file. To verify your download:
+
+            ```bash
+            # Download the checksums file
+            curl -fsSL https://github.com/shiba4life/fold_db/releases/download/${{ github.ref_name }}/SHA256SUMS.txt -o SHA256SUMS.txt
+
+            # Verify (macOS)
+            shasum -a 256 -c SHA256SUMS.txt --ignore-missing
+
+            # Verify (Linux)
+            sha256sum -c SHA256SUMS.txt --ignore-missing
+            ```
 
             ---
 

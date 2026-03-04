@@ -115,10 +115,11 @@ impl OpenRouterService {
             .header("X-Title", "FoldDB Ingestion")
             .json(request)
             .send()
-            .await?;
+            .await
+            .map_err(|e| crate::ingestion::error::classify_transport_error("OpenRouter", &e))?;
 
         if !response.status().is_success() {
-            let status = response.status();
+            let status = response.status().as_u16();
             let error_text = response
                 .text()
                 .await
@@ -126,10 +127,7 @@ impl OpenRouterService {
                     log::warn!("Failed to read OpenRouter error response body: {}", e);
                     "Unknown error (response body unreadable)".to_string()
                 });
-            return Err(IngestionError::openrouter_error(format!(
-                "API request failed with status {}: {}",
-                status, error_text
-            )));
+            return Err(crate::ingestion::error::classify_llm_error("OpenRouter", status, &error_text));
         }
 
         let openrouter_response: OpenRouterResponse = response.json().await?;
@@ -167,12 +165,13 @@ mod tests {
         let port = listener.local_addr().unwrap().port();
         let base_url = format!("http://127.0.0.1:{}", port);
 
-        // Spawn a thread that accepts a connection and sleeps longer than the timeout
-        tokio::spawn(async move {
-            std::thread::spawn(move || {
-                let _ = listener.accept();
-                std::thread::sleep(std::time::Duration::from_secs(5));
-            });
+        // Accept connection on a background thread and hold it open longer than the timeout.
+        // The thread owns `listener` so it stays alive for the duration.
+        let _handle = std::thread::spawn(move || {
+            // Accept one connection, then sleep so it never responds.
+            if let Ok((_stream, _addr)) = listener.accept() {
+                std::thread::sleep(std::time::Duration::from_secs(10));
+            }
         });
 
         // Config with 1 second timeout
@@ -182,18 +181,18 @@ mod tests {
             ..Default::default()
         };
 
-        // Create service with 1 second timeout, 0 retries to fail fast
-        let service = OpenRouterService::new(config, 1, 0).unwrap();
+        // Create service with 1 second timeout, 1 attempt (no retries) to fail fast
+        let service = OpenRouterService::new(config, 1, 1).unwrap();
 
         // Make a request - it should timeout
         let result = service.call_openrouter_api("test").await;
 
         assert!(result.is_err());
-        let error_msg = result.unwrap_err().to_string();
+        let err = result.unwrap_err();
         assert!(
-            error_msg.to_lowercase().contains("time") || error_msg.to_lowercase().contains("out"),
-            "Error message '{}' did not contain 'time' or 'out' indicating a timeout",
-            error_msg
+            matches!(err, IngestionError::TimeoutError { .. }),
+            "Expected TimeoutError, got: {:?}",
+            err
         );
     }
 }

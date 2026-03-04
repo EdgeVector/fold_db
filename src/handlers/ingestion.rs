@@ -274,7 +274,7 @@ pub async fn process_json(
                         e
                     );
                     progress_service
-                        .fail_progress(&progress_id_clone, format!("Processing failed: {}", e))
+                        .fail_progress(&progress_id_clone, e.user_message())
                         .await;
                 }
             }

@@ -534,7 +534,7 @@ pub(crate) async fn process_single_file_via_smart_folder(
             progress_id.to_string(),
         )
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| e.user_message())?;
 
     Ok(())
 }
