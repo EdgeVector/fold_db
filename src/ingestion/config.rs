@@ -141,33 +141,34 @@ impl IngestionConfig {
         let mut config = IngestionConfig::default();
 
         // Apply saved config (UI choices override defaults).
-        // "File not found" → silent fallback to defaults.
-        // Any other error (corrupt JSON, permission denied) → fail fast.
-        let config_path = Self::config_file_path()?;
-        let has_saved = if config_path.exists() {
-            let saved = Self::load_from_file(&config_path)?;
-            log_feature!(
-                LogFeature::Ingestion,
-                info,
-                "Loaded saved ingestion config: provider={:?}, model={}",
-                saved.provider,
-                match saved.provider {
-                    AIProvider::Ollama => &saved.ollama.model,
-                    AIProvider::OpenRouter => &saved.openrouter.model,
-                }
-            );
-            config.provider = saved.provider;
-            config.openrouter = saved.openrouter;
-            config.ollama = saved.ollama;
-            true
-        } else {
-            log_feature!(
-                LogFeature::Ingestion,
-                info,
-                "No saved ingestion config at {}, using env vars/defaults",
-                config_path.display()
-            );
-            false
+        // No FOLD_CONFIG_DIR or file not found → silent fallback to defaults.
+        // File exists but unreadable/unparseable → fail fast.
+        let has_saved = match Self::config_file_path() {
+            None => {
+                log_feature!(LogFeature::Ingestion, info, "FOLD_CONFIG_DIR not set; using env vars/defaults");
+                false
+            }
+            Some(path) if !path.exists() => {
+                log_feature!(LogFeature::Ingestion, info, "No saved ingestion config at {}; using env vars/defaults", path.display());
+                false
+            }
+            Some(path) => {
+                let saved = Self::load_from_file(&path)?;
+                log_feature!(
+                    LogFeature::Ingestion,
+                    info,
+                    "Loaded saved ingestion config: provider={:?}, model={}",
+                    saved.provider,
+                    match saved.provider {
+                        AIProvider::Ollama => &saved.ollama.model,
+                        AIProvider::OpenRouter => &saved.openrouter.model,
+                    }
+                );
+                config.provider = saved.provider;
+                config.openrouter = saved.openrouter;
+                config.ollama = saved.ollama;
+                true
+            }
         };
 
         // API key: env var always wins — secrets shouldn't live in config files
@@ -219,7 +220,7 @@ impl IngestionConfig {
     /// preserved. If the file exists but cannot be read, returns an error rather
     /// than silently clearing the key.
     pub fn save_to_file(config: &SavedConfig) -> Result<(), Box<dyn std::error::Error>> {
-        let config_path = Self::config_file_path()?;
+        let config_path = Self::config_file_path().ok_or("FOLD_CONFIG_DIR is not set; cannot save ingestion config")?;
 
         let mut to_save = config.clone();
         if to_save.openrouter.api_key.is_empty() || to_save.openrouter.api_key == "***configured***" {
@@ -240,18 +241,16 @@ impl IngestionConfig {
         Ok(())
     }
 
-    /// Path to the ingestion config file. Requires `FOLD_CONFIG_DIR` to be set.
-    pub fn get_config_file_path() -> Result<std::path::PathBuf, crate::ingestion::IngestionError> {
+    /// Path to the ingestion config file, or `None` if `FOLD_CONFIG_DIR` is not set.
+    /// Saving config requires `FOLD_CONFIG_DIR`; loading without it silently uses defaults.
+    pub fn get_config_file_path() -> Option<std::path::PathBuf> {
         Self::config_file_path()
     }
 
-    fn config_file_path() -> Result<std::path::PathBuf, crate::ingestion::IngestionError> {
-        let dir = env::var("FOLD_CONFIG_DIR").map_err(|_| {
-            crate::ingestion::IngestionError::configuration_error(
-                "FOLD_CONFIG_DIR environment variable is not set",
-            )
-        })?;
-        Ok(std::path::Path::new(&dir).join("ingestion_config.json"))
+    fn config_file_path() -> Option<std::path::PathBuf> {
+        env::var("FOLD_CONFIG_DIR")
+            .ok()
+            .map(|dir| std::path::Path::new(&dir).join("ingestion_config.json"))
     }
 
     fn load_from_file(
