@@ -102,7 +102,7 @@ impl IngestionService {
                 let db_guard = node
                     .get_fold_db()
                     .await
-                    .map_err(|error| IngestionError::SchemaCreationError(error.to_string()))?;
+                    .map_err(super::schema_err)?;
                 let manager = db_guard.schema_manager.clone();
                 drop(db_guard);
                 manager
@@ -327,7 +327,7 @@ impl IngestionService {
                 let db_guard = node
                     .get_fold_db()
                     .await
-                    .map_err(|error| IngestionError::SchemaCreationError(error.to_string()))?;
+                    .map_err(super::schema_err)?;
                 let manager = db_guard.schema_manager.clone();
                 drop(db_guard);
                 manager

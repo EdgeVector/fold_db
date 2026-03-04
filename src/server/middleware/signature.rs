@@ -18,36 +18,35 @@ use crate::server::http_server::AppState;
 
 use base64::{engine::general_purpose, Engine as _};
 
-/// Paths that require signature verification (write endpoints).
-const PROTECTED_PREFIXES: &[&str] = &[
-    "/api/mutation",
-    "/api/schemas/load",
-    "/api/schema/", // covers /api/schema/{name}/approve and /api/schema/{name}/block
-    "/api/ingestion/process",
-    "/api/ingestion/upload",
-    "/api/ingestion/config",
-    "/api/ingestion/batch-folder",
-    "/api/ingestion/smart-folder/",
-    "/api/system/reset-database",
-    "/api/system/setup",
-    "/api/system/database-config",
-    "/api/system/migrate-to-cloud",
-    "/api/llm-query/",
-];
-
-/// Paths explicitly exempt from signature verification.
-/// Note: GET requests are already excluded by the method check, so only
-/// POST/PUT/PATCH paths that should be exempt need to be listed here.
-const EXEMPT_PREFIXES: &[&str] = &[
-    "/api/system/auto-identity",
-    "/api/query",
-    "/api/system/private-key",
-    "/api/system/public-key",
-    "/api/system/status",
-    "/api/system/database-status",
-    "/api/system/complete-path",
-    "/api/security/",
-    "/api/openapi.json",
+/// Combined prefix rules: `(path_prefix, is_protected)`.
+/// Exempt entries appear first so they win over any overlapping protected entry.
+/// GET requests are excluded by the method check, so only POST/PUT/PATCH paths
+/// that should be exempt need exempt entries here.
+const PREFIX_RULES: &[(&str, bool)] = &[
+    // Exempt (not protected)
+    ("/api/system/auto-identity", false),
+    ("/api/query", false),
+    ("/api/system/private-key", false),
+    ("/api/system/public-key", false),
+    ("/api/system/status", false),
+    ("/api/system/database-status", false),
+    ("/api/system/complete-path", false),
+    ("/api/security/", false),
+    ("/api/openapi.json", false),
+    // Protected (require signature)
+    ("/api/mutation", true),
+    ("/api/schemas/load", true),
+    ("/api/schema/", true), // covers /api/schema/{name}/approve and /api/schema/{name}/block
+    ("/api/ingestion/process", true),
+    ("/api/ingestion/upload", true),
+    ("/api/ingestion/config", true),
+    ("/api/ingestion/batch-folder", true),
+    ("/api/ingestion/smart-folder/", true),
+    ("/api/system/reset-database", true),
+    ("/api/system/setup", true),
+    ("/api/system/database-config", true),
+    ("/api/system/migrate-to-cloud", true),
+    ("/api/llm-query/", true),
 ];
 
 pub fn is_protected_write(method: &actix_web::http::Method, path: &str) -> bool {
@@ -58,21 +57,10 @@ pub fn is_protected_write(method: &actix_web::http::Method, path: &str) -> bool 
         return false;
     }
 
-    // Check exempt paths first
-    for prefix in EXEMPT_PREFIXES {
-        if path.starts_with(prefix) {
-            return false;
-        }
-    }
-
-    // Check if it matches a protected prefix
-    for prefix in PROTECTED_PREFIXES {
-        if path.starts_with(prefix) {
-            return true;
-        }
-    }
-
-    false
+    PREFIX_RULES
+        .iter()
+        .find(|(prefix, _)| path.starts_with(prefix))
+        .is_some_and(|(_, protected)| *protected)
 }
 
 /// Middleware that verifies Ed25519 signatures on write endpoints.
