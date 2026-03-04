@@ -38,7 +38,7 @@ impl NativeIndexManager {
     }
 
     #[cfg(any(test, feature = "test-utils"))]
-    pub fn with_model(store: Arc<dyn KvStore>, model: Arc<dyn Embedder>) -> Self {
+    pub(crate) fn with_model(store: Arc<dyn KvStore>, model: Arc<dyn Embedder>) -> Self {
         Self {
             store,
             embedding_model: model,

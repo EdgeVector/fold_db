@@ -1,5 +1,5 @@
 use super::*;
-use super::embedding_model::{Embedder, MockEmbeddingModel};
+use super::embedding_model::MockEmbeddingModel;
 use crate::schema::types::key_value::KeyValue;
 use crate::storage::{NamespacedStore, SledNamespacedStore};
 use std::sync::Arc;
