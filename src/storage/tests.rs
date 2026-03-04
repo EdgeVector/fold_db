@@ -251,14 +251,14 @@ mod storage_abstraction_tests {
         let client = Client::new(&config);
 
         // Test table name generation
-        let store = DynamoDbNamespacedStore::new_with_prefix(client, "DataFoldStorage".to_string());
+        let store = DynamoDbNamespacedStore::new_with_prefix(client, "FoldDBStorage".to_string());
         let table_name = store.get_table_name_for_namespace("main");
-        assert_eq!(table_name, "DataFoldStorage-main");
+        assert_eq!(table_name, "FoldDBStorage-main");
 
         // Test that opening a namespace works (user context will be obtained from request context)
         let store2 = DynamoDbNamespacedStore::new_with_prefix(
             Client::new(&config),
-            "DataFoldStorage".to_string(),
+            "FoldDBStorage".to_string(),
         );
 
         // Verify the store is created correctly

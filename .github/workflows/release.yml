@@ -362,7 +362,7 @@ jobs:
             - Native macOS application
             - Double-click to launch
             - Embedded server (no separate process needed)
-            - Data stored in `~/.folddb/data`
+            - Data stored in `~/.datafold/data`
             - Same UI as web version
 
             ---

@@ -54,7 +54,6 @@ cleanup_processes() {
     # Force kill if still running
     pkill -9 -f folddb_server 2>/dev/null || true
     pkill -9 -f fold_db 2>/dev/null || true
-    pkill -9 -f "cargo run.*datafold" 2>/dev/null || true
     pkill -9 -f "cargo run.*fold_db" 2>/dev/null || true
     pkill -9 -f schema_service 2>/dev/null || true
     pkill -9 -f "cargo run.*schema" 2>/dev/null || true
@@ -243,7 +242,7 @@ RESET_DB=false
 EMPTY_DB=false
 DEMO_MODE=false
 REGION="us-west-2"
-TABLE_NAME="DataFoldStorage"
+TABLE_NAME="FoldDBStorage"
 
 for arg in "$@"; do
     case "$arg" in

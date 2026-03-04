@@ -6,7 +6,7 @@ import { TrashIcon } from '@heroicons/react/24/solid'
 function useDatabaseConfig({ configSaveStatus, setConfigSaveStatus, onClose }) {
   const [dbType, setDbType] = useState('local')
   const [dbPath, setDbPath] = useState('data')
-  const [dynamoTableName, setDynamoTableName] = useState('DataFoldStorage')
+  const [dynamoTableName, setDynamoTableName] = useState('FoldDBStorage')
   const [dynamoRegion, setDynamoRegion] = useState('us-west-2')
   const [dynamoUserId, setDynamoUserId] = useState('')
   const [s3Bucket, setS3Bucket] = useState('')
@@ -38,7 +38,7 @@ function useDatabaseConfig({ configSaveStatus, setConfigSaveStatus, onClose }) {
         const c = response.data
         setDbType(c.type)
         if (c.type === 'local') setDbPath(c.path || 'data')
-        else if (c.type === 'dynamodb') { setDynamoTableName(c.table_name || 'DataFoldStorage'); setDynamoRegion(c.region || 'us-west-2'); setDynamoUserId(c.user_id || '') }
+        else if (c.type === 'dynamodb') { setDynamoTableName(c.table_name || 'FoldDBStorage'); setDynamoRegion(c.region || 'us-west-2'); setDynamoUserId(c.user_id || '') }
         else if (c.type === 's3') { setS3Bucket(c.bucket || ''); setS3Region(c.region || 'us-east-1'); setS3Prefix(c.prefix || 'folddb'); setS3LocalPath(c.local_path || '/tmp/folddb-data') }
       }
     } catch (error) { console.error('Failed to load database config:', error) }

@@ -40,7 +40,7 @@ async fn get_server_status(state: State<'_, AppState>) -> Result<ServerStatus, S
 async fn open_data_directory() -> Result<(), String> {
     let data_dir = dirs::home_dir()
         .ok_or("Could not determine home directory")?
-        .join(".datafold")
+        .join(".folddb")
         .join("data");
 
     #[cfg(target_os = "macos")]
@@ -170,7 +170,7 @@ pub fn run() {
 async fn start_fold_server(port: u16) -> Result<EmbeddedServerHandle, String> {
     let data_dir = dirs::home_dir()
         .ok_or_else(|| "Could not determine home directory".to_string())?
-        .join(".datafold")
+        .join(".folddb")
         .join("data");
 
     std::fs::create_dir_all(&data_dir)
@@ -181,7 +181,7 @@ async fn start_fold_server(port: u16) -> Result<EmbeddedServerHandle, String> {
     // Load or generate node identity (persisted across launches)
     let identity_path = dirs::home_dir()
         .ok_or_else(|| "Could not determine home directory".to_string())?
-        .join(".datafold")
+        .join(".folddb")
         .join("node_identity.json");
 
     let (pub_key, priv_key) = if identity_path.exists() {
@@ -215,7 +215,7 @@ async fn start_fold_server(port: u16) -> Result<EmbeddedServerHandle, String> {
     // so the default relative "config/node_config.json" would fail.
     let config_path = dirs::home_dir()
         .ok_or_else(|| "Could not determine home directory".to_string())?
-        .join(".datafold")
+        .join(".folddb")
         .join("node_config.json");
     std::env::set_var("NODE_CONFIG", &config_path);
     eprintln!("[FoldDB] Config path: {:?}", config_path);
@@ -225,16 +225,16 @@ async fn start_fold_server(port: u16) -> Result<EmbeddedServerHandle, String> {
     // which resolves inside the read-only .app bundle on macOS.
     let upload_path = dirs::home_dir()
         .ok_or_else(|| "Could not determine home directory".to_string())?
-        .join(".datafold")
+        .join(".folddb")
         .join("uploads");
     std::env::set_var("FOLD_UPLOAD_PATH", &upload_path);
     eprintln!("[FoldDB] Upload path: {:?}", upload_path);
 
-    // Set FOLD_CONFIG_DIR so ingestion_config.json is saved/loaded from ~/.datafold/
+    // Set FOLD_CONFIG_DIR so ingestion_config.json is saved/loaded from ~/.folddb/
     // rather than ./config/ which resolves into the read-only .app bundle.
     let config_dir = dirs::home_dir()
         .ok_or_else(|| "Could not determine home directory".to_string())?
-        .join(".datafold");
+        .join(".folddb");
     std::env::set_var("FOLD_CONFIG_DIR", &config_dir);
 
     // Load node configuration (no DB access — just reads config file)

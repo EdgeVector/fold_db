@@ -27,7 +27,7 @@ export default function DatabaseSetupScreen({ onComplete }) {
     const homedir = typeof window !== 'undefined'
       ? (window.__TAURI__ ? null : null) // path comes from backend default
       : null
-    const defaultPath = '~/.datafold/data'
+    const defaultPath = '~/.folddb/data'
 
     try {
       const response = await applySetup({
@@ -123,7 +123,7 @@ export default function DatabaseSetupScreen({ onComplete }) {
               RECOMMENDED
             </div>
             <p style={{ fontSize: '13px', color: colors.dim, margin: 0, lineHeight: '1.5' }}>
-              Store data on your device. Fast, private, works offline. Uses ~/.datafold/data.
+              Store data on your device. Fast, private, works offline. Uses ~/.folddb/data.
             </p>
           </button>
 

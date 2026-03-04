@@ -13,7 +13,7 @@ async fn test_dynamo_progress_persistence_and_backfill_integration() {
     // In CI/Dev env, "process" table usually exists.
     // We'll use a unique ID to avoid collision.
     let table_name =
-        std::env::var("TABLE_NAME").unwrap_or_else(|_| "datafold-process-dev".to_string());
+        std::env::var("TABLE_NAME").unwrap_or_else(|_| "folddb-process-dev".to_string());
     let region = "us-east-1".to_string();
 
     println!("Connecting to DynamoDB table: {}", table_name);

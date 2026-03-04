@@ -17,7 +17,6 @@
  *
  * @module useRangeSchema
  * @since 2.0.0
- * @see {@link https://github.com/datafold/datafold/src/datafold_node/samples/RANGE_FIELD_EXAMPLES.md} Range schema examples
  */
 
 import { useCallback } from 'react';
