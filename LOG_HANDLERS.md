@@ -16,7 +16,7 @@
 
 ## How it fits in the architecture
 
-```
+```text
 HTTP route / Lambda handler
         │
         ▼
