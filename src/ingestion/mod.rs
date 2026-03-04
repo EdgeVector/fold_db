@@ -1,31 +1,9 @@
-//! # Ingestion Module
+//! Ingestion module: AI-powered JSON data ingestion for FoldDB.
 //!
-//! The ingestion module provides automated data ingestion capabilities for the FoldDB system.
-//! It takes JSON data, analyzes it against existing schemas using AI, and either maps it to
-//! existing schemas or creates new ones as needed.
-//!
-//! ## Components
-//!
-//! * `ingestion_service` - AI-powered ingestion service (works with FoldNode)
-//! * `ai_helpers` - Shared AI response parsing and validation
-//! * `openrouter_service` - OpenRouter API integration for AI-powered schema analysis
-//! * `ollama_service` - Ollama API integration for local AI-powered schema analysis
-//! * `mutation_generator` - Creates mutations from AI responses and JSON data
-//! * `error` - Custom error types for ingestion operations
-//! * `config` - Configuration structures for ingestion settings
-//! * `routes` - HTTP route handlers for ingestion API endpoints
-//!
-//! ## Architecture
-//!
-//! The ingestion process follows these steps:
-//! 1. Accept JSON input data
-//! 2. Retrieve available schemas from schema service
-//! 3. Send data and schemas to AI for analysis
-//! 4. Process AI response to determine schema usage or creation
-//! 5. Create new schema if needed and set to approved
-//! 6. Generate mutations to store the JSON data
-//! 7. Execute mutations to persist the data
+//! Accepts JSON data, uses an AI backend to recommend a schema, then generates
+//! and optionally executes mutations to persist the data.
 
+pub mod ai_client;
 pub mod ai_helpers;
 pub mod batch_controller;
 pub mod batch_routes;
@@ -38,8 +16,6 @@ pub mod ingestion_service;
 pub mod key_extraction;
 pub mod json_processor;
 pub mod mutation_generator;
-pub mod ollama_service;
-pub mod openrouter_service;
 pub mod progress;
 pub mod prompts;
 pub mod routes;
@@ -124,7 +100,7 @@ pub struct IngestionRequest {
 }
 
 /// Response from the ingestion process
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Default, Serialize, Deserialize, ToSchema)]
 pub struct IngestionResponse {
     /// Whether the ingestion was successful
     pub success: bool,
@@ -161,25 +137,15 @@ impl IngestionResponse {
             new_schema_created,
             mutations_generated,
             mutations_executed,
-            errors: Vec::new(),
             schemas_written,
+            ..Default::default()
         }
     }
 
     /// Create a failed ingestion response
     pub fn failure(errors: Vec<String>) -> Self {
-        Self {
-            success: false,
-            progress_id: None,
-            schema_used: None,
-            new_schema_created: false,
-            mutations_generated: 0,
-            mutations_executed: 0,
-            errors,
-            schemas_written: Vec::new(),
-        }
+        Self { errors, ..Default::default() }
     }
-
 }
 
 /// Status information for the ingestion service

@@ -6,12 +6,11 @@
 mod decomposition;
 
 use crate::fold_node::{FileIngestionRecord, FoldNode};
+use crate::ingestion::ai_client::{build_backend, AiBackend};
 use crate::ingestion::config::AIProvider;
 use crate::ingestion::decomposer;
 use crate::ingestion::key_extraction::extract_key_values_from_data;
 use crate::ingestion::mutation_generator;
-use crate::ingestion::ollama_service::OllamaService;
-use crate::ingestion::openrouter_service::OpenRouterService;
 use crate::ingestion::progress::{
     IngestionResults, IngestionStep, ProgressService, SchemaWriteRecord,
 };
@@ -25,14 +24,14 @@ use crate::logging::features::LogFeature;
 use crate::schema::types::{KeyValue, Mutation};
 use serde_json::Value;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use decomposition::CachedSchema;
 
 /// AI-powered ingestion service that works with FoldNode
 pub struct IngestionService {
     config: IngestionConfig,
-    openrouter_service: Option<OpenRouterService>,
-    ollama_service: Option<OllamaService>,
+    backend: Option<Arc<dyn AiBackend>>,
     /// Stores the reason if the configured provider failed to initialise.
     init_error: Option<String>,
 }
@@ -45,55 +44,13 @@ impl IngestionService {
     }
 
     /// Create a new ingestion service.
-    /// Provider services are initialised best-effort: if validation fails
+    /// The backend is initialised best-effort: if validation fails
     /// (e.g. missing API key) the service is still created so that
     /// `get_status()` can report the correct provider/model — actual
     /// ingestion calls will fail at runtime with a clear error.
     pub fn new(config: IngestionConfig) -> IngestionResult<Self> {
-        let mut init_error: Option<String> = None;
-
-        let openrouter_service = if config.provider == AIProvider::OpenRouter {
-            match OpenRouterService::new(
-                config.openrouter.clone(),
-                config.timeout_seconds,
-                config.max_retries,
-            ) {
-                Ok(svc) => Some(svc),
-                Err(e) => {
-                    let msg = format!("OpenRouter init failed: {}", e);
-                    log::warn!("{}", msg);
-                    init_error = Some(msg);
-                    None
-                }
-            }
-        } else {
-            None
-        };
-
-        let ollama_service = if config.provider == AIProvider::Ollama {
-            match OllamaService::new(
-                config.ollama.clone(),
-                config.timeout_seconds,
-                config.max_retries,
-            ) {
-                Ok(svc) => Some(svc),
-                Err(e) => {
-                    let msg = format!("Ollama init failed: {}", e);
-                    log::warn!("{}", msg);
-                    init_error = Some(msg);
-                    None
-                }
-            }
-        } else {
-            None
-        };
-
-        Ok(Self {
-            config,
-            openrouter_service,
-            ollama_service,
-            init_error,
-        })
+        let (backend, init_error) = build_backend(&config);
+        Ok(Self { config, backend, init_error })
     }
 
     /// Process JSON ingestion using a FoldNode with progress tracking
@@ -125,23 +82,13 @@ impl IngestionService {
         }
 
         // Step 1: Validate input
-        progress_service
-            .update_progress(
-                &progress_id,
-                IngestionStep::ValidatingConfig,
-                "Validating input data...".to_string(),
-            )
-            .await;
+        progress_service.update_progress(&progress_id, IngestionStep::ValidatingConfig,
+            "Validating input data...".to_string()).await;
         self.validate_input(&request.data)?;
 
         // Step 2: Flatten data structure for AI analysis
-        progress_service
-            .update_progress(
-                &progress_id,
-                IngestionStep::FlatteningData,
-                "Processing and flattening data structure...".to_string(),
-            )
-            .await;
+        progress_service.update_progress(&progress_id, IngestionStep::FlatteningData,
+            "Processing and flattening data structure...".to_string()).await;
         let flattened_data = crate::ingestion::json_processor::flatten_root_layers(request.data.clone());
 
         // Step 2.5: Decompose nested structures and decide code path
@@ -149,13 +96,8 @@ impl IngestionService {
 
         let (schema_name, new_schema_created, mutations_generated, mutations_executed, schemas_written) =
             if has_nested_children {
-                progress_service
-                    .update_progress(
-                        &progress_id,
-                        IngestionStep::GettingAIRecommendation,
-                        "Decomposing nested data structures...".to_string(),
-                    )
-                    .await;
+                progress_service.update_progress(&progress_id, IngestionStep::GettingAIRecommendation,
+                    "Decomposing nested data structures...".to_string()).await;
                 self.process_decomposed_path(&flattened_data, &request, node, &progress_id).await?
             } else {
                 self.process_flat_path(
@@ -280,13 +222,7 @@ impl IngestionService {
                 String::new()
             });
 
-        let schemas_written: Vec<SchemaWriteRecord> = schemas_written_map
-            .into_iter()
-            .map(|(name, keys)| SchemaWriteRecord {
-                schema_name: name,
-                keys_written: keys,
-            })
-            .collect();
+        let schemas_written = schemas_written_from_map(schemas_written_map);
 
         Ok((top_schema_name, true, total_mutations_generated, total_mutations_executed, schemas_written))
     }
@@ -309,13 +245,8 @@ impl IngestionService {
             .as_ref()
             .map(|name| crate::ingestion::is_image_file(name))
             .unwrap_or(false);
-        progress_service
-            .update_progress(
-                progress_id,
-                IngestionStep::GettingAIRecommendation,
-                "Analyzing data with AI to determine schema...".to_string(),
-            )
-            .await;
+        progress_service.update_progress(progress_id, IngestionStep::GettingAIRecommendation,
+            "Analyzing data with AI to determine schema...".to_string()).await;
         let mut ai_response = self.get_ai_recommendation(flattened_data).await?;
 
         // CRITICAL: Images MUST use HashRange(image_type, created_at).
@@ -333,26 +264,16 @@ impl IngestionService {
         }
 
         // Step 4: Determine schema to use
-        progress_service
-            .update_progress(
-                progress_id,
-                IngestionStep::SettingUpSchema,
-                "Setting up schema and preparing for data storage...".to_string(),
-            )
-            .await;
+        progress_service.update_progress(progress_id, IngestionStep::SettingUpSchema,
+            "Setting up schema and preparing for data storage...".to_string()).await;
         let schema_name = self
             .determine_schema_to_use(&ai_response, &request.data, node)
             .await?;
         let new_schema_created = ai_response.new_schemas.is_some();
 
         // Step 5: Generate mutations
-        progress_service
-            .update_progress(
-                progress_id,
-                IngestionStep::GeneratingMutations,
-                "Generating database mutations...".to_string(),
-            )
-            .await;
+        progress_service.update_progress(progress_id, IngestionStep::GeneratingMutations,
+            "Generating database mutations...".to_string()).await;
         let (mutations, schemas_written) = self
             .generate_flat_mutations(
                 flattened_data,
@@ -374,13 +295,8 @@ impl IngestionService {
         );
 
         // Step 6: Execute mutations if requested
-        progress_service
-            .update_progress(
-                progress_id,
-                IngestionStep::ExecutingMutations,
-                "Executing mutations to store data...".to_string(),
-            )
-            .await;
+        progress_service.update_progress(progress_id, IngestionStep::ExecutingMutations,
+            "Executing mutations to store data...".to_string()).await;
 
         let mutations_len = mutations.len();
 
@@ -479,20 +395,7 @@ impl IngestionService {
         }
 
         // Collect schemas_written from generated mutations
-        let schemas_written = {
-            let mut map: HashMap<String, Vec<KeyValue>> = HashMap::new();
-            for m in &mutations {
-                map.entry(m.schema_name.clone())
-                    .or_default()
-                    .push(m.key_value.clone());
-            }
-            map.into_iter()
-                .map(|(name, keys)| SchemaWriteRecord {
-                    schema_name: name,
-                    keys_written: keys,
-                })
-                .collect::<Vec<_>>()
-        };
+        let schemas_written = schemas_written_from(&mutations);
 
         Ok((mutations, schemas_written))
     }
@@ -534,32 +437,14 @@ impl IngestionService {
     /// This is the low-level API used by smart_folder scanning and other
     /// components that need raw AI text completion without schema parsing.
     pub async fn call_ai_raw(&self, prompt: &str) -> IngestionResult<String> {
-        match self.config.provider {
-            AIProvider::OpenRouter => {
-                self.openrouter_service
-                    .as_ref()
-                    .ok_or_else(|| {
-                        let detail = self.init_error.as_deref().unwrap_or("unknown reason");
-                        IngestionError::configuration_error(
-                            format!("OpenRouter service not initialized ({})", detail),
-                        )
-                    })?
-                    .call_openrouter_api(prompt)
-                    .await
-            }
-            AIProvider::Ollama => {
-                self.ollama_service
-                    .as_ref()
-                    .ok_or_else(|| {
-                        let detail = self.init_error.as_deref().unwrap_or("unknown reason");
-                        IngestionError::configuration_error(
-                            format!("Ollama service not initialized ({})", detail),
-                        )
-                    })?
-                    .call_ollama_api(prompt)
-                    .await
-            }
-        }
+        let detail = self.init_error.as_deref().unwrap_or("unknown reason");
+        self.backend
+            .as_ref()
+            .ok_or_else(|| IngestionError::configuration_error(
+                format!("{:?} backend not initialized ({})", self.config.provider, detail),
+            ))?
+            .call(prompt)
+            .await
     }
 
     /// Get AI schema recommendation with validation retries.
@@ -861,4 +746,20 @@ impl IngestionService {
 
         result
     }
+}
+
+/// Build a `Vec<SchemaWriteRecord>` from a mutations slice.
+fn schemas_written_from(mutations: &[Mutation]) -> Vec<SchemaWriteRecord> {
+    let mut map: HashMap<String, Vec<KeyValue>> = HashMap::new();
+    for m in mutations {
+        map.entry(m.schema_name.clone()).or_default().push(m.key_value.clone());
+    }
+    schemas_written_from_map(map)
+}
+
+/// Convert a `HashMap<schema_name, keys>` into `Vec<SchemaWriteRecord>`.
+fn schemas_written_from_map(map: HashMap<String, Vec<KeyValue>>) -> Vec<SchemaWriteRecord> {
+    map.into_iter()
+        .map(|(name, keys)| SchemaWriteRecord { schema_name: name, keys_written: keys })
+        .collect()
 }
