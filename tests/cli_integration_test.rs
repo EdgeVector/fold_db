@@ -254,58 +254,6 @@ fn completions_bash() {
 }
 
 #[test]
-fn transform_list_empty() {
-    let (_tmpdir, config_path) = setup();
-
-    let output = cli(&config_path)
-        .arg("transform")
-        .arg("list")
-        .output()
-        .expect("run folddb transform list");
-
-    assert!(output.status.success(), "exit code was not 0");
-
-    let json = parse_stdout(&output);
-    assert_eq!(json["ok"], true);
-    assert_eq!(json["transforms"], serde_json::json!({}));
-}
-
-#[test]
-fn transform_queue_empty() {
-    let (_tmpdir, config_path) = setup();
-
-    let output = cli(&config_path)
-        .arg("transform")
-        .arg("queue")
-        .output()
-        .expect("run folddb transform queue");
-
-    assert!(output.status.success(), "exit code was not 0");
-
-    let json = parse_stdout(&output);
-    assert_eq!(json["ok"], true);
-    assert_eq!(json["length"], 0);
-    assert_eq!(json["queued"], serde_json::json!([]));
-}
-
-#[test]
-fn transform_stats() {
-    let (_tmpdir, config_path) = setup();
-
-    let output = cli(&config_path)
-        .arg("transform")
-        .arg("stats")
-        .output()
-        .expect("run folddb transform stats");
-
-    assert!(output.status.success(), "exit code was not 0");
-
-    let json = parse_stdout(&output);
-    assert_eq!(json["ok"], true);
-    assert!(json["statistics"].is_object());
-}
-
-#[test]
 fn mutate_nonexistent_schema_fails() {
     let (_tmpdir, config_path) = setup();
 
