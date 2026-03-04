@@ -192,8 +192,9 @@ impl IngestionConfig {
             if let Ok(v) = env::var("OLLAMA_BASE_URL") { config.ollama.base_url = v; }
         }
 
-        // Runtime settings: env vars override defaults; unset vars keep the compiled default.
-        config.enabled = env_bool("INGESTION_ENABLED", config.enabled);
+        // Runtime settings: env vars override defaults; ingestion is enabled by default
+        // when INGESTION_ENABLED is unset (matches original behavior).
+        config.enabled = env_bool("INGESTION_ENABLED", true);
         config.max_retries = env_parse("INGESTION_MAX_RETRIES", config.max_retries);
         config.timeout_seconds = env_parse("INGESTION_TIMEOUT_SECONDS", config.timeout_seconds);
         config.auto_execute_mutations = env_bool("INGESTION_AUTO_EXECUTE", config.auto_execute_mutations);
