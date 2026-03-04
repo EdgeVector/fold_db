@@ -65,7 +65,6 @@ mod tests {
     fn test_security_manager_creation() {
         let config = crate::security::SecurityConfig {
             require_tls: true,
-            require_signatures: true,
             encrypt_at_rest: true,
             master_key: Some([0; 32]),
         };

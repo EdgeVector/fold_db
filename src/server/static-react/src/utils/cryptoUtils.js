@@ -116,3 +116,46 @@ export function base64ToBytes(base64) {
 export function bytesToBase64(bytes) {
   return encodeBase64(bytes);
 }
+
+/** The constant key ID used by the Rust backend (must match SINGLE_PUBLIC_KEY_ID) */
+export const SYSTEM_PUBLIC_KEY_ID = "SYSTEM_WIDE_PUBLIC_KEY";
+
+/**
+ * Create a SignedMessage envelope matching the Rust MessageSigner::sign_message() protocol.
+ *
+ * Signing format: sign(payload_bytes || timestamp_be_bytes(8) || key_id_bytes)
+ *
+ * @param {object} payload - The JSON payload to sign
+ * @param {string} privateKeyBase64 - Base64 encoded Ed25519 private key (32 bytes)
+ * @returns {Promise<object>} A SignedMessage object: { payload, public_key_id, signature, timestamp }
+ */
+export async function createSignedMessage(payload, privateKeyBase64) {
+  // Serialize payload to canonical JSON bytes (matches Rust's serde_json::to_vec)
+  const payloadBytes = new TextEncoder().encode(JSON.stringify(payload));
+
+  // Unix timestamp in seconds
+  const timestamp = Math.floor(Date.now() / 1000);
+
+  // Build the message to sign: payload_bytes + timestamp(i64 big-endian) + key_id_bytes
+  const timestampBytes = new ArrayBuffer(8);
+  new DataView(timestampBytes).setBigInt64(0, BigInt(timestamp));
+  const keyIdBytes = new TextEncoder().encode(SYSTEM_PUBLIC_KEY_ID);
+
+  const messageToSign = new Uint8Array(
+    payloadBytes.length + 8 + keyIdBytes.length,
+  );
+  messageToSign.set(payloadBytes, 0);
+  messageToSign.set(new Uint8Array(timestampBytes), payloadBytes.length);
+  messageToSign.set(keyIdBytes, payloadBytes.length + 8);
+
+  // Sign with Ed25519 (ensure Uint8Array, not Buffer, for @noble/ed25519)
+  const privateKey = Uint8Array.from(decodeBase64(privateKeyBase64));
+  const signatureBytes = await sign(messageToSign, privateKey);
+
+  return {
+    payload: encodeBase64(payloadBytes),
+    public_key_id: SYSTEM_PUBLIC_KEY_ID,
+    signature: encodeBase64(signatureBytes),
+    timestamp,
+  };
+}
