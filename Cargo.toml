@@ -83,10 +83,6 @@ async-trait = "0.1"
 serde_dynamo = { version = "4.3.0", features = ["aws-sdk-dynamodb+1"], optional = true }
 colored = "3.1.1"
 
-# TUI
-ratatui = "0.29"
-crossterm = "0.28"
-
 # Vector embedding model for semantic search (lazy-loads all-MiniLM-L6-v2 on first use)
 fastembed = "4"
 
@@ -128,9 +124,6 @@ path = "src/bin/openapi_dump.rs"
 name = "folddb"
 path = "src/bin/folddb/main.rs"
 
-[[bin]]
-name = "folddb_tui"
-path = "src/bin/folddb_tui/main.rs"
 
 [profile.dev-release]
 inherits = "release"
