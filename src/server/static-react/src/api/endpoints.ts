@@ -18,9 +18,6 @@ export const API_ENDPOINTS_DERIVED = {
   GET_STATUS: "/ingestion/status",
   VALIDATE_JSON: "/ingestion/validate",
   ANALYZE_QUERY: "/llm-query/analyze",
-  GET_BACKFILL_STATUS: (
-    hash: PathParams<"/api/llm-query/backfill/{hash}", "get">["hash"],
-  ) => `/llm-query/backfill/${hash}`,
   CHAT: "/llm-query/chat",
   EXECUTE_QUERY_PLAN: "/llm-query/execute",
   LIST_LOGS: "/logs",
@@ -50,18 +47,6 @@ export const API_ENDPOINTS_DERIVED = {
   RESET_SCHEMA_SERVICE: "/system/reset-schema-service",
   APPLY_SETUP: "/system/setup",
   GET_SYSTEM_STATUS: "/system/status",
-  LIST_TRANSFORMS: "/transforms",
-  GET_ALL_BACKFILLS: "/transforms/backfills",
-  GET_ACTIVE_BACKFILLS: "/transforms/backfills/active",
-  GET_BACKFILL_STATISTICS: "/transforms/backfills/statistics",
-  GET_BACKFILL: (
-    id: PathParams<"/api/transforms/backfills/{id}", "get">["id"],
-  ) => `/transforms/backfills/${id}`,
-  GET_TRANSFORM_QUEUE: "/transforms/queue",
-  ADD_TO_TRANSFORM_QUEUE: (
-    id: PathParams<"/api/transforms/queue/{id}", "post">["id"],
-  ) => `/transforms/queue/${id}`,
-  GET_TRANSFORM_STATISTICS: "/transforms/statistics",
 } as const;
 
 // Base URL prefixes derived from OpenAPI paths
@@ -78,7 +63,6 @@ export const API_BASE_URLS = {
   SCHEMAS: "/api/schemas",
   SECURITY: "/api/security",
   SYSTEM: "/api/system",
-  TRANSFORMS: "/api/transforms",
 } as const;
 
 // Endpoints not yet in OpenAPI spec but used by the backend

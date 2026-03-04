@@ -36,9 +36,6 @@ pub async fn create_fold_db(
             // Open sled database
             let db = sled::open(path)
                 .map_err(|e| FoldDbError::Config(format!("Failed to open sled database: {}", e)))?;
-            let orchestrator_tree = db
-                .open_tree("orchestrator_state")
-                .map_err(|e| FoldDbError::Config(format!("Failed to open orchestrator tree: {}", e)))?;
             let progress_tree = db
                 .open_tree("progress")
                 .map_err(|e| FoldDbError::Config(format!("Failed to open progress tree: {}", e)))?;
@@ -59,13 +56,12 @@ pub async fn create_fold_db(
             let store = Arc::new(enc_store) as Arc<dyn crate::storage::traits::NamespacedStore>;
 
             // Build DbOperations with E2E index key for keyword blinding
-            let mut db_ops = DbOperations::from_namespaced_store(
+            let db_ops = DbOperations::from_namespaced_store(
                 store,
                 Some(e2e_keys.index_key()),
             )
             .await
             .map_err(|e| FoldDbError::Config(e.to_string()))?;
-            db_ops.orchestrator_tree = Some(orchestrator_tree);
 
             let job_store = crate::progress::create_tracker_with_sled(progress_tree);
 
@@ -114,14 +110,6 @@ pub async fn create_fold_db(
                     cloud_config.tables.permissions.clone(),
                 ),
                 (
-                    "transforms".to_string(),
-                    cloud_config.tables.transforms.clone(),
-                ),
-                (
-                    "orchestrator_state".to_string(),
-                    cloud_config.tables.orchestrator.clone(),
-                ),
-                (
                     "schema_states".to_string(),
                     cloud_config.tables.schema_states.clone(),
                 ),
@@ -129,10 +117,6 @@ pub async fn create_fold_db(
                 (
                     "public_keys".to_string(),
                     cloud_config.tables.public_keys.clone(),
-                ),
-                (
-                    "transform_queue_tree".to_string(),
-                    cloud_config.tables.transform_queue.clone(),
                 ),
                 (
                     "native_index".to_string(),

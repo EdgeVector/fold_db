@@ -1,6 +1,6 @@
 //! Generic progress tracking system for FoldDB
 //!
-//! Provides a unified way to track long-running jobs (Ingestion, Backfill, etc.)
+//! Provides a unified way to track long-running jobs (Ingestion, Indexing, etc.)
 //! with pluggable persistence (InMemory, DynamoDB).
 
 use async_trait::async_trait;
@@ -15,7 +15,6 @@ use utoipa::ToSchema;
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq)]
 pub enum JobType {
     Ingestion,
-    Backfill,
     Indexing,
     Other(String),
 }

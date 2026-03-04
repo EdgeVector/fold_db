@@ -6,8 +6,6 @@ mod metadata_operations;
 pub mod native_index;
 mod public_key_operations;
 mod schema_operations;
-mod transform_operations;
-
 // Re-export the main DbOperations struct
 pub use core::DbOperations;
 pub use native_index::{IndexResult, NativeIndexManager};

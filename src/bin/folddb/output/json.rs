@@ -22,12 +22,10 @@ fn to_json(output: &CommandOutput) -> Value {
         }
         CommandOutput::SchemaApproved {
             name,
-            backfill_hash,
         } => {
             json!({
                 "ok": true,
                 "schema": name,
-                "backfill_hash": backfill_hash,
             })
         }
         CommandOutput::SchemaBlocked { name } => {
@@ -123,25 +121,6 @@ fn to_json(output: &CommandOutput) -> Value {
         CommandOutput::MigrateComplete => {
             json!({ "ok": true, "message": "Database migration to cloud complete" })
         }
-        CommandOutput::TransformList(transforms) => {
-            let val = serde_json::to_value(transforms).unwrap_or(Value::Null);
-            json!({ "ok": true, "transforms": val })
-        }
-        CommandOutput::TransformQueue { length, queued } => {
-            json!({
-                "ok": true,
-                "length": length,
-                "queued": queued,
-            })
-        }
-        CommandOutput::TransformStats(stats) => {
-            let val = serde_json::to_value(stats).unwrap_or(Value::Null);
-            json!({ "ok": true, "statistics": val })
-        }
-        CommandOutput::BackfillStats(stats) => {
-            let val = serde_json::to_value(stats).unwrap_or(Value::Null);
-            json!({ "ok": true, "statistics": val })
-        }
         CommandOutput::Completions(_) => {
             json!({ "ok": true, "message": "Completions written to stdout" })
         }
@@ -167,7 +146,6 @@ mod tests {
     fn json_schema_approved() {
         assert_ok(&CommandOutput::SchemaApproved {
             name: "test".into(),
-            backfill_hash: Some("abc".into()),
         });
     }
 
@@ -230,14 +208,6 @@ mod tests {
     #[test]
     fn json_config_path() {
         assert_ok(&CommandOutput::ConfigPath("/tmp/config.toml".into()));
-    }
-
-    #[test]
-    fn json_transform_queue() {
-        assert_ok(&CommandOutput::TransformQueue {
-            length: 0,
-            queued: vec![],
-        });
     }
 
     #[test]

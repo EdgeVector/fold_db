@@ -14,8 +14,6 @@ pub struct Mutation {
     pub pub_key: String,
     pub mutation_type: MutationType,
     pub synchronous: Option<bool>,
-    /// Optional backfill hash for tracking backfill completion
-    pub backfill_hash: Option<String>,
     /// Optional source filename for atoms created from file uploads
     pub source_file_name: Option<String>,
     /// Pre-extracted index terms (field_name → keywords), attached during ingestion
@@ -45,17 +43,10 @@ impl Mutation {
             pub_key,
             mutation_type,
             synchronous: None,
-            backfill_hash: None,
             source_file_name: None,
             index_terms: None,
             metadata: None,
         }
-    }
-
-    #[must_use]
-    pub fn with_backfill_hash(mut self, backfill_hash: String) -> Self {
-        self.backfill_hash = Some(backfill_hash);
-        self
     }
 
     #[must_use]
@@ -103,39 +94,6 @@ impl Mutation {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_mutation_clone_preserves_backfill_hash() {
-        let mut mutation = Mutation::new(
-            "TestSchema".to_string(),
-            HashMap::new(),
-            KeyValue::new(None, None),
-            "test_key".to_string(),
-            MutationType::Update,
-        );
-
-        mutation.backfill_hash = Some("test_hash_123".to_string());
-
-        let cloned = mutation.clone();
-
-        assert_eq!(cloned.backfill_hash, Some("test_hash_123".to_string()));
-        println!("✅ Clone preserves backfill_hash");
-    }
-
-    #[test]
-    fn test_with_backfill_hash() {
-        let mutation = Mutation::new(
-            "TestSchema".to_string(),
-            HashMap::new(),
-            KeyValue::new(None, None),
-            "test_key".to_string(),
-            MutationType::Update,
-        )
-        .with_backfill_hash("test_hash_456".to_string());
-
-        assert_eq!(mutation.backfill_hash, Some("test_hash_456".to_string()));
-        println!("✅ with_backfill_hash sets the field correctly");
-    }
 
     #[test]
     fn test_content_hash_deterministic() {
@@ -262,10 +220,9 @@ mod tests {
             "key".to_string(),
             MutationType::Update,
         )
-        .with_backfill_hash("some_hash".to_string())
         .with_source_file_name("file.json".to_string());
 
-        // backfill_hash and source_file_name should not affect the content hash
+        // source_file_name should not affect the content hash
         assert_eq!(m1.content_hash(), m2.content_hash());
     }
 

@@ -23,14 +23,6 @@ export interface ChatResponse {
   context_used: boolean;
 }
 
-export interface BackfillStatusResponse {
-  status: string;
-  progress: number;
-  total_records: number;
-  processed_records: number;
-  estimated_completion?: string;
-}
-
 export interface FollowupAnalysis {
   needs_query: boolean;
   query?: Record<string, unknown>;
@@ -68,13 +60,6 @@ export const llmQueryClient = {
    */
   async analyzeFollowup(request: ChatRequest) {
     return client.post<FollowupAnalysis>(API_ENDPOINTS.ANALYZE_FOLLOWUP, request);
-  },
-
-  /**
-   * Get backfill status by hash
-   */
-  async getBackfillStatus(hash: string) {
-    return client.get<BackfillStatusResponse>(API_ENDPOINTS.GET_BACKFILL_STATUS(hash));
   },
 
   /**

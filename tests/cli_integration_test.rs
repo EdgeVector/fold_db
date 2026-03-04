@@ -306,23 +306,6 @@ fn transform_stats() {
 }
 
 #[test]
-fn backfill_stats() {
-    let (_tmpdir, config_path) = setup();
-
-    let output = cli(&config_path)
-        .arg("backfill")
-        .arg("stats")
-        .output()
-        .expect("run folddb backfill stats");
-
-    assert!(output.status.success(), "exit code was not 0");
-
-    let json = parse_stdout(&output);
-    assert_eq!(json["ok"], true);
-    assert!(json["statistics"].is_object());
-}
-
-#[test]
 fn mutate_nonexistent_schema_fails() {
     let (_tmpdir, config_path) = setup();
 

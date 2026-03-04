@@ -1,11 +1,7 @@
 use crate::error::{FoldDbError, FoldDbResult};
-use crate::fold_db_core::infrastructure::backfill_tracker::{
-    BackfillInfo, BackfillStatistics, BackfillStatus,
-};
 use crate::fold_db_core::orchestration::IndexingStatus;
 use crate::fold_node::config::DatabaseConfig;
 use crate::ingestion::ingestion_service::IngestionService;
-use crate::schema::types::Transform;
 use std::collections::HashMap;
 
 use super::OperationProcessor;
@@ -48,123 +44,8 @@ impl OperationProcessor {
             .map_err(|e| FoldDbError::Config(format!("Failed to update log level: {}", e)))
     }
 
-    // --- Transform Operations ---
-
-    /// List transforms.
-    pub async fn list_transforms(&self) -> FoldDbResult<HashMap<String, Transform>> {
-        let db = self
-            .node
-            .get_fold_db()
-            .await?;
-
-        Ok(db.transform_manager
-            .list_transforms()?)
-    }
-
-    /// Add transform to queue.
-    pub async fn add_to_transform_queue(
-        &self,
-        transform_id: &str,
-        trigger: &str,
-    ) -> FoldDbResult<()> {
-        let db = self
-            .node
-            .get_fold_db()
-            .await?;
-
-        if let Some(orchestrator) = db.transform_orchestrator() {
-            orchestrator
-                .add_transform(transform_id, trigger)
-                .await
-                .map_err(|e| FoldDbError::Config(e.to_string()))
-        } else {
-            Err(FoldDbError::Config(
-                "Transform orchestrator not available".to_string(),
-            ))
-        }
-    }
-
-    /// Get transform queue info.
-    /// Returns (length, queued_transforms).
-    pub async fn get_transform_queue(&self) -> FoldDbResult<(usize, Vec<String>)> {
-        let db = self
-            .node
-            .get_fold_db()
-            .await?;
-
-        if let Some(orchestrator) = db.transform_orchestrator() {
-            let queued = orchestrator
-                .list_queued_transforms()
-                .map_err(|e| FoldDbError::Config(e.to_string()))?;
-            let len = orchestrator.len().unwrap_or(0);
-            Ok((len, queued))
-        } else {
-            Err(FoldDbError::Config(
-                "Transform orchestrator not available".to_string(),
-            ))
-        }
-    }
-
-    // --- Backfill Operations ---
-
-    /// Get all backfills.
-    pub async fn get_all_backfills(&self) -> FoldDbResult<Vec<BackfillInfo>> {
-        let db = self
-            .node
-            .get_fold_db()
-            .await?;
-        Ok(db.get_all_backfills())
-    }
-
-    /// Get active backfills.
-    pub async fn get_active_backfills(&self) -> FoldDbResult<Vec<BackfillInfo>> {
-        let db = self
-            .node
-            .get_fold_db()
-            .await?;
-        Ok(db.get_active_backfills())
-    }
-
-    /// Get backfill by ID/Hash.
-    pub async fn get_backfill(&self, id: &str) -> FoldDbResult<Option<BackfillInfo>> {
-        let db = self
-            .node
-            .get_fold_db()
-            .await?;
-        Ok(db.get_backfill(id))
-    }
-
-    /// Get backfill statistics.
-    pub async fn get_backfill_statistics(&self) -> FoldDbResult<BackfillStatistics> {
-        let backfills = self.get_all_backfills().await?;
-
-        let active_count = backfills
-            .iter()
-            .filter(|b| b.status == BackfillStatus::InProgress)
-            .count();
-        let completed_count = backfills
-            .iter()
-            .filter(|b| b.status == BackfillStatus::Completed)
-            .count();
-        let failed_count = backfills
-            .iter()
-            .filter(|b| b.status == BackfillStatus::Failed)
-            .count();
-
-        Ok(BackfillStatistics {
-            total_backfills: backfills.len(),
-            active_backfills: active_count,
-            completed_backfills: completed_count,
-            failed_backfills: failed_count,
-            total_mutations_expected: backfills.iter().map(|b| b.mutations_expected).sum(),
-            total_mutations_completed: backfills.iter().map(|b| b.mutations_completed).sum(),
-            total_mutations_failed: backfills.iter().map(|b| b.mutations_failed).sum(),
-            total_records_produced: backfills.iter().map(|b| b.records_produced).sum(),
-        })
-    }
-
-    /// Get event/transform statistics.
-    pub async fn get_transform_statistics(
+    /// Get event statistics.
+    pub async fn get_event_statistics(
         &self,
     ) -> FoldDbResult<crate::fold_db_core::infrastructure::event_statistics::EventStatistics> {
         let db = self
@@ -209,24 +90,19 @@ impl OperationProcessor {
     }
 
     /// Reset the database (destructive operation).
-    /// Handles closing DB and clearing storage (Local or DynamoDB).
-    /// Note: Schema service reset is NOT included.
     pub async fn perform_database_reset(
         &self,
         #[allow(unused_variables)] user_id_override: Option<&str>,
     ) -> FoldDbResult<()> {
-        // 1. Get config and path before closing
         let config = self.node.config.clone();
         let db_path = config.get_storage_path();
 
-        // 3. Close the current database
         if let Ok(db) = self.node.get_fold_db().await {
             if let Err(e) = db.close() {
                 log::warn!("Failed to close database during reset: {}", e);
             }
         }
 
-        // 4. Handle storage reset
         match &config.database {
             #[cfg(feature = "aws-backend")]
             DatabaseConfig::Cloud(cloud_config) => {
@@ -238,8 +114,6 @@ impl OperationProcessor {
                     .await;
                 let client = std::sync::Arc::new(aws_sdk_dynamodb::Client::new(&aws_config));
 
-                // Priority: 1) explicit override, 2) current user context from HTTP request,
-                // 3) config user_id, 4) node public key
                 let uid = user_id_override
                     .map(|s| s.to_string())
                     .or_else(crate::logging::core::get_current_user_id)
@@ -271,7 +145,6 @@ impl OperationProcessor {
                         return Err(FoldDbError::Io(e));
                     }
                 }
-                // Recreate the empty data directory so subsequent operations can use it
                 if let Err(e) = std::fs::create_dir_all(&db_path) {
                     log::error!("Failed to recreate database folder: {}", e);
                     return Err(FoldDbError::Io(e));
@@ -308,9 +181,6 @@ impl OperationProcessor {
     }
 
     /// Ingest a single file through the AI ingestion pipeline.
-    ///
-    /// Tries the native parser first for known formats (json, js/Twitter, csv, txt, md),
-    /// then falls back to file_to_json for everything else (images, PDFs, YAML, etc.).
     pub async fn ingest_single_file(
         &self,
         file_path: &std::path::Path,
@@ -320,9 +190,7 @@ impl OperationProcessor {
             .await
     }
 
-    /// Like `ingest_single_file` but accepts an optional external `ProgressTracker`
-    /// so callers (e.g. TUI) can poll progress while ingestion runs.
-    /// Returns `(progress_id, IngestionResponse)`.
+    /// Like `ingest_single_file` but accepts an optional external `ProgressTracker`.
     pub async fn ingest_single_file_with_tracker(
         &self,
         file_path: &std::path::Path,
@@ -334,8 +202,6 @@ impl OperationProcessor {
         use crate::ingestion::smart_folder;
         use crate::ingestion::IngestionRequest;
 
-        // Try native parser first (handles json, js/Twitter, csv, txt, md without LLM),
-        // fall back to file_to_json for unsupported types (images, PDFs, etc.)
         let data = match smart_folder::read_file_as_json(file_path) {
             Ok(json) => json,
             Err(_) => convert_file_to_json(&file_path.to_path_buf())
@@ -388,9 +254,6 @@ impl OperationProcessor {
     // --- LLM Query Operations ---
 
     /// Run an LLM agent query against the database.
-    ///
-    /// Creates an LlmQueryService, loads all schemas, and runs the agent
-    /// which can autonomously use tools (query, list_schemas, search) to answer.
     pub async fn llm_query(
         &self,
         user_query: &str,
@@ -416,12 +279,10 @@ impl OperationProcessor {
 
     // --- Cloud Migration Operations ---
 
-    /// Migrate local database to cloud (Encryption at Rest version).
-    /// Fetches all schemas and data from the local database and uploads them to the specified cloud API.
+    /// Migrate local database to cloud.
     pub async fn migrate_to_cloud(&self, api_url: &str, api_key: &str) -> FoldDbResult<()> {
         log::info!("🚀 Starting migration to cloud: {}", api_url);
 
-        // Use a high timeout as migration might be slow
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(60))
             .build()
@@ -432,14 +293,12 @@ impl OperationProcessor {
 
         let mut all_mutations: Vec<serde_json::Value> = Vec::new();
 
-        // 1. Sync Schemas and collect data
         for schema_state in schemas_with_state {
             let schema = schema_state.schema;
             let schema_name = schema.name.clone();
 
             log::info!("⬆️ Syncing schema: {}", schema_name);
 
-            // Upload schema definition (ignore 409 Conflict)
             let schema_url = format!("{}/api/schemas", api_url.trim_end_matches('/'));
             let request = serde_json::json!({
                 "schema": schema,
@@ -464,7 +323,6 @@ impl OperationProcessor {
                 )));
             }
 
-            // Read all data for this schema
             let queryable_fields = schema.fields.unwrap_or_default();
             let query = crate::schema::types::Query::new(schema_name.clone(), queryable_fields);
 
@@ -490,7 +348,6 @@ impl OperationProcessor {
                 let key_value = crate::fold_node::OperationProcessor::parse_ref_key(&record)
                     .unwrap_or_else(|| crate::schema::types::KeyValue::new(None, None));
 
-                // Construct an Operation::Mutation JSON representation
                 let mutation = serde_json::json!({
                     "type": "Mutation",
                     "schema": schema_name,
@@ -505,7 +362,6 @@ impl OperationProcessor {
             }
         }
 
-        // 2. Batch upload mutations (chunks of 100)
         let total_mutations = all_mutations.len();
         log::info!(
             "🚀 Starting data upload of {} total mutations",

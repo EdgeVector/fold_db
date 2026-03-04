@@ -1,7 +1,7 @@
 //! LLM response parsers for query plans, followup analysis, and alternatives.
 
 use super::super::types::{AgentAction, FollowupAnalysis, QueryPlan};
-use crate::schema::types::{DeclarativeSchemaDefinition, Query};
+use crate::schema::types::Query;
 use serde_json::Value;
 
 use super::LlmQueryService;
@@ -23,7 +23,6 @@ impl LlmQueryService {
         #[derive(serde::Deserialize)]
         struct LlmResponse {
             query: Query,
-            index_schema: Option<DeclarativeSchemaDefinition>,
             reasoning: String,
         }
 
@@ -36,7 +35,6 @@ impl LlmQueryService {
 
         Ok(QueryPlan {
             query: parsed.query,
-            index_schema: parsed.index_schema,
             reasoning: parsed.reasoning,
         })
     }
@@ -127,7 +125,6 @@ impl LlmQueryService {
             if let Some(query) = parsed.query {
                 Ok(Some(QueryPlan {
                     query,
-                    index_schema: None,
                     reasoning: parsed.reasoning,
                 }))
             } else {

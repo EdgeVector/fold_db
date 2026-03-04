@@ -116,18 +116,6 @@ pub enum Command {
         api_key: String,
     },
 
-    /// Manage transforms
-    Transform {
-        #[command(subcommand)]
-        action: TransformCommand,
-    },
-
-    /// Show backfill statistics
-    Backfill {
-        #[command(subcommand)]
-        action: BackfillCommand,
-    },
-
     /// Generate shell completions
     Completions {
         /// Shell to generate completions for
@@ -233,22 +221,6 @@ pub enum ConfigCommand {
     Show,
     /// Print the config file path
     Path,
-}
-
-#[derive(Subcommand, Debug)]
-pub enum TransformCommand {
-    /// List all transforms
-    List,
-    /// Show the transform queue
-    Queue,
-    /// Show transform statistics
-    Stats,
-}
-
-#[derive(Subcommand, Debug)]
-pub enum BackfillCommand {
-    /// Show backfill statistics
-    Stats,
 }
 
 #[cfg(test)]
@@ -600,50 +572,6 @@ mod tests {
     }
 
     #[test]
-    fn parse_transform_list() {
-        let cli = Cli::parse_from(["folddb", "transform", "list"]);
-        match cli.command {
-            Command::Transform {
-                action: TransformCommand::List,
-            } => {}
-            _ => panic!("Expected Transform List"),
-        }
-    }
-
-    #[test]
-    fn parse_transform_queue() {
-        let cli = Cli::parse_from(["folddb", "transform", "queue"]);
-        match cli.command {
-            Command::Transform {
-                action: TransformCommand::Queue,
-            } => {}
-            _ => panic!("Expected Transform Queue"),
-        }
-    }
-
-    #[test]
-    fn parse_transform_stats() {
-        let cli = Cli::parse_from(["folddb", "transform", "stats"]);
-        match cli.command {
-            Command::Transform {
-                action: TransformCommand::Stats,
-            } => {}
-            _ => panic!("Expected Transform Stats"),
-        }
-    }
-
-    #[test]
-    fn parse_backfill_stats() {
-        let cli = Cli::parse_from(["folddb", "backfill", "stats"]);
-        match cli.command {
-            Command::Backfill {
-                action: BackfillCommand::Stats,
-            } => {}
-            _ => panic!("Expected Backfill Stats"),
-        }
-    }
-
-    #[test]
     fn parse_completions() {
         let cli = Cli::parse_from(["folddb", "completions", "bash"]);
         match cli.command {
@@ -715,10 +643,6 @@ mod tests {
             vec!["folddb", "config", "show"],
             vec!["folddb", "config", "path"],
             vec!["folddb", "reset"],
-            vec!["folddb", "transform", "list"],
-            vec!["folddb", "transform", "queue"],
-            vec!["folddb", "transform", "stats"],
-            vec!["folddb", "backfill", "stats"],
             vec!["folddb", "completions", "bash"],
         ];
 

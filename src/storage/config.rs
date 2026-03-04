@@ -57,18 +57,15 @@ impl CloudConfig {
 
 /// Explicit table names for all required DynamoDB namespaces.
 ///
-/// All 12 tables must be explicitly configured:
+/// All 9 tables must be explicitly configured:
 /// - `main`: Primary data storage
-/// - `metadata`: Metadata storage  
+/// - `metadata`: Metadata storage
 /// - `permissions`: Node/schema permission mappings
-/// - `transforms`: Schema transformations
-/// - `orchestrator`: Orchestration state
 /// - `schema_states`: Schema state tracking
 /// - `schemas`: Schema definitions
 /// - `public_keys`: Public key storage
-/// - `transform_queue`: Transform processing queue
 /// - `native_index`: Native index data
-/// - `process`: Process tracking (ingestion, backfills)
+/// - `process`: Process tracking (ingestion)
 /// - `logs`: System logs
 #[cfg(feature = "aws-backend")]
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -76,15 +73,12 @@ pub struct ExplicitTables {
     pub main: String,
     pub metadata: String,
     pub permissions: String,
-    pub transforms: String,
-    pub orchestrator: String,
     pub schema_states: String,
     pub schemas: String,
     pub public_keys: String,
-    pub transform_queue: String,
     /// Native index table
     pub native_index: String,
-    /// Process tracking table (ingestion, backfills)
+    /// Process tracking table (ingestion)
     ///
     /// This table is used to track long-running operations.
     /// NOTE: If using DynamoDB storage, this table MUST exist or initialization will fail.
@@ -104,12 +98,9 @@ impl ExplicitTables {
             main: format!("{}-main", prefix),
             metadata: format!("{}-metadata", prefix),
             permissions: format!("{}-node_id_schema_permissions", prefix),
-            transforms: format!("{}-transforms", prefix),
-            orchestrator: format!("{}-orchestrator_state", prefix),
             schema_states: format!("{}-schema_states", prefix),
             schemas: format!("{}-schemas", prefix),
             public_keys: format!("{}-public_keys", prefix),
-            transform_queue: format!("{}-transform_queue_tree", prefix),
             native_index: format!("{}-native_index", prefix),
             process: format!("{}-process", prefix),
             logs: format!("{}-logs", prefix),

@@ -48,7 +48,7 @@ pub struct IngestionResults {
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct IngestionProgress {
     pub id: String,
-    /// Job type: "ingestion", "indexing", "backfill", or custom
+    /// Job type: "ingestion", "indexing", or custom
     pub job_type: String,
     pub current_step: IngestionStep,
     pub progress_percentage: u8,
@@ -76,7 +76,6 @@ impl From<Job> for IngestionProgress {
         let job_type = match &job.job_type {
             JobType::Ingestion => "ingestion".to_string(),
             JobType::Indexing => "indexing".to_string(),
-            JobType::Backfill => "backfill".to_string(),
             JobType::Other(s) => s.clone(),
         };
 

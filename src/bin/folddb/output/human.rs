@@ -32,16 +32,12 @@ pub fn render(output: &CommandOutput) {
 
         CommandOutput::SchemaApproved {
             name,
-            backfill_hash,
         } => {
             println!(
                 "{} Schema '{}' approved",
                 style("\u{2713}").green().bold(),
                 style(name).bold()
             );
-            if let Some(hash) = backfill_hash {
-                println!("  Backfill hash: {}", hash);
-            }
         }
 
         CommandOutput::SchemaBlocked { name } => {
@@ -252,51 +248,6 @@ pub fn render(output: &CommandOutput) {
             );
         }
 
-        CommandOutput::TransformList(transforms) => {
-            if transforms.is_empty() {
-                println!("No transforms registered.");
-                return;
-            }
-            let mut table = Table::new();
-            table.set_content_arrangement(ContentArrangement::Dynamic);
-            table.set_header(vec!["ID", "Schema"]);
-            for (id, t) in transforms {
-                table.add_row(vec![id.clone(), t.schema_name.clone()]);
-            }
-            println!("{table}");
-        }
-
-        CommandOutput::TransformQueue { length, queued } => {
-            println!("Transform queue length: {}", length);
-            if !queued.is_empty() {
-                for item in queued {
-                    println!("  {}", item);
-                }
-            }
-        }
-
-        CommandOutput::TransformStats(stats) => {
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&stats).unwrap_or_else(|_| format!("{:?}", stats))
-            );
-        }
-
-        CommandOutput::BackfillStats(stats) => {
-            println!("{}", style("Backfill Statistics").bold().underlined());
-            println!("  Total:     {}", stats.total_backfills);
-            println!("  Active:    {}", stats.active_backfills);
-            println!("  Completed: {}", stats.completed_backfills);
-            println!("  Failed:    {}", stats.failed_backfills);
-            println!(
-                "  Mutations: {}/{} completed, {} failed",
-                stats.total_mutations_completed,
-                stats.total_mutations_expected,
-                stats.total_mutations_failed
-            );
-            println!("  Records produced: {}", stats.total_records_produced);
-        }
-
         CommandOutput::Completions(script) => {
             print!("{}", script);
         }
@@ -395,25 +346,9 @@ mod tests {
     }
 
     #[test]
-    fn human_transform_list_empty() {
-        render(&CommandOutput::TransformList(
-            std::collections::HashMap::new(),
-        ));
-    }
-
-    #[test]
-    fn human_transform_queue_empty() {
-        render(&CommandOutput::TransformQueue {
-            length: 0,
-            queued: vec![],
-        });
-    }
-
-    #[test]
     fn human_schema_approved() {
         render(&CommandOutput::SchemaApproved {
             name: "test".into(),
-            backfill_hash: Some("abc".into()),
         });
     }
 
