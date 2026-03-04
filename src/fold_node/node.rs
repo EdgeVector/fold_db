@@ -6,7 +6,6 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use crate::fold_node::config::NodeConfig;
-use crate::fold_node::mutation_preprocessor::MutationPreprocessor;
 use crate::error::{FoldDbError, FoldDbResult};
 use crate::fold_db_core::FoldDB;
 use crate::security::{EncryptionManager, SecurityConfig, SecurityManager};
@@ -42,8 +41,6 @@ pub struct FoldNode {
     /// E2E encryption keys (content encryption + index blinding).
     /// Stored for future passkey integration where the key may need to be refreshed.
     pub(super) e2e_keys: crate::crypto::E2eKeys,
-    /// Preprocessor that enriches mutations with keyword index_terms.
-    mutation_preprocessor: MutationPreprocessor,
 }
 
 impl FoldNode {
@@ -121,7 +118,6 @@ impl FoldNode {
             private_key,
             public_key,
             e2e_keys,
-            mutation_preprocessor: MutationPreprocessor::new(),
         };
 
         Self::log_schema_service(&config);
@@ -224,16 +220,10 @@ impl FoldNode {
     }
 
     /// Execute a batch of mutations.
-    ///
-    /// Runs the MutationPreprocessor (keyword extraction) on any mutations
-    /// that don't already have `index_terms`, then delegates to FoldDB.
     pub async fn mutate_batch(
         &self,
-        mut mutations: Vec<crate::schema::types::operations::Mutation>,
+        mutations: Vec<crate::schema::types::operations::Mutation>,
     ) -> FoldDbResult<Vec<String>> {
-        // Preprocess: extract keywords for mutations missing index_terms
-        self.mutation_preprocessor.preprocess(&mut mutations);
-
         let mut db = self.db.lock().await;
         Ok(db.mutation_manager
             .write_mutations_batch_async(mutations)

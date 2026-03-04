@@ -172,22 +172,12 @@ impl MutationManager {
                 .entry("  - write_molecules_batch")
                 .or_insert(std::time::Duration::ZERO) += phase3_start.elapsed();
 
-            // Collect molecule versions for each mutated field
-            let mut mol_versions: HashSet<u64> = HashSet::new();
-            for schema_field in schema.runtime_fields.values() {
-                if let Some(v) = schema_field.molecule_version() {
-                    mol_versions.insert(v);
-                }
-            }
-
             // Phase 6: Inline index mutations
             let inline_index_start = std::time::Instant::now();
             self.inline_index_mutations(
                 &schema_name,
-                &schema,
                 &schema_mutations,
                 &mutation_key_values,
-                &mol_versions,
             )
             .await;
             *timing_breakdown
@@ -207,6 +197,14 @@ impl MutationManager {
             *timing_breakdown
                 .entry("schema_store")
                 .or_insert(std::time::Duration::ZERO) += store_start.elapsed();
+
+            // Collect molecule versions before schema is moved into load_schema_internal
+            let mut mol_versions: HashSet<u64> = HashSet::new();
+            for schema_field in schema.runtime_fields.values() {
+                if let Some(v) = schema_field.molecule_version() {
+                    mol_versions.insert(v);
+                }
+            }
 
             let reload_start = std::time::Instant::now();
             self.schema_manager.load_schema_internal(schema).await?;
@@ -534,65 +532,25 @@ impl MutationManager {
         Ok(())
     }
 
-    /// Indexes field names and keywords for mutations (best-effort, logs errors).
+    /// Embeds all mutations as document vectors (best-effort, logs errors).
     async fn inline_index_mutations(
         &self,
         schema_name: &str,
-        schema: &Schema,
         schema_mutations: &[Mutation],
         mutation_key_values: &[KeyValue],
-        mol_versions: &HashSet<u64>,
     ) {
         let native_index_mgr = match self.db_ops.native_index_manager() {
             Some(mgr) => mgr,
             None => return,
         };
 
-        let mut any_indexed = false;
-
         for (idx, mutation) in schema_mutations.iter().enumerate() {
             let key_value = &mutation_key_values[idx];
-            let mol_versions_ref = if mol_versions.is_empty() { None } else { Some(mol_versions) };
-
-            // Always index field names (no LLM needed)
-            let field_names: Vec<String> = mutation.fields_and_values.keys().cloned().collect();
             if let Err(e) = native_index_mgr
-                .batch_index_field_names(schema_name, key_value, &field_names, mol_versions_ref)
+                .index_record(schema_name, key_value, &mutation.fields_and_values)
                 .await
             {
-                error!("Inline indexing: field-name indexing failed for '{}': {}", schema_name, e);
-                continue;
-            }
-            any_indexed = true;
-
-            // Index keywords per field when present (best-effort)
-            if let Some(ref index_terms) = mutation.index_terms {
-                for (field_name, keywords) in index_terms {
-                    let classifications = schema.get_field_classifications(field_name)
-                        .map(|v| v.as_slice());
-                    if let Err(e) = native_index_mgr
-                        .batch_index_from_keywords(
-                            schema_name,
-                            key_value,
-                            field_name,
-                            keywords.clone(),
-                            mol_versions_ref,
-                            classifications,
-                        )
-                        .await
-                    {
-                        error!("Inline indexing: keyword indexing for field '{}' failed: {}", field_name, e);
-                    }
-                }
-            }
-
-            debug!("Inline indexed mutation {} for schema '{}'", mutation.uuid, schema_name);
-        }
-
-        // Flush index entries to storage so they're visible before events are published
-        if any_indexed {
-            if let Err(e) = native_index_mgr.flush().await {
-                warn!("Inline indexing: flush failed for schema '{}': {}", schema_name, e);
+                warn!("Embedding indexing failed for schema '{}': {}", schema_name, e);
             }
         }
     }

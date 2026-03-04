@@ -31,7 +31,6 @@ impl DbOperations {
     /// Create from a NamespacedStore (works with any backend)
     pub async fn from_namespaced_store(
         store: Arc<dyn NamespacedStore>,
-        e2e_index_key: Option<[u8; 32]>,
     ) -> Result<Self, crate::storage::StorageError> {
         // Open all required namespaces
         let main_kv = store.open_namespace("main").await?;
@@ -54,8 +53,9 @@ impl DbOperations {
         let idempotency_store = Arc::new(TypedKvStore::new(idempotency_kv));
         let process_results_store = Arc::new(TypedKvStore::new(process_results_kv));
 
-        // Create native index manager with the store and optional E2E index key
-        let native_index_manager = NativeIndexManager::new(native_index_kv, e2e_index_key);
+        // Create native index manager and load any previously stored embeddings
+        let native_index_manager = NativeIndexManager::new(native_index_kv);
+        native_index_manager.restore_from_store().await;
 
         Ok(Self {
             main_store,
@@ -73,7 +73,7 @@ impl DbOperations {
     /// Convenience constructor for Sled backend (backward compatible, no E2E)
     pub async fn from_sled(db: sled::Db) -> Result<Self, crate::storage::StorageError> {
         let store = Arc::new(SledNamespacedStore::new(db)) as Arc<dyn NamespacedStore>;
-        Self::from_namespaced_store(store, None).await
+        Self::from_namespaced_store(store).await
     }
 
     /// Convenience constructor for Cloud backend with simplified config
@@ -85,7 +85,7 @@ impl DbOperations {
     ) -> Result<Self, crate::storage::StorageError> {
         let _ = user_id; // Suppress unused warning - user_id will be obtained from request context
         let store = DynamoDbNamespacedStore::new_with_prefix(client, table_name);
-        Self::from_namespaced_store(Arc::new(store), None).await
+        Self::from_namespaced_store(Arc::new(store)).await
     }
 
     /// Constructor for Cloud backend with detailed configuration
@@ -98,7 +98,7 @@ impl DbOperations {
     ) -> Result<Self, crate::storage::StorageError> {
         let _ = user_id; // Suppress unused warning - user_id will be obtained from request context
         let store = DynamoDbNamespacedStore::new(client, resolver, auto_create);
-        Self::from_namespaced_store(Arc::new(store), None).await
+        Self::from_namespaced_store(Arc::new(store)).await
     }
 
     // ===== Namespace-specific store getters =====
