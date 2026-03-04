@@ -166,6 +166,26 @@ pub struct SuccessResponse {
     pub message: Option<String>,
 }
 
+/// Extension trait to convert any error into a HandlerError with context.
+///
+/// Replaces the repeated pattern:
+/// ```ignore
+/// .map_err(|e| HandlerError::Internal(format!("Failed to do X: {}", e)))?
+/// ```
+/// With:
+/// ```ignore
+/// .handler_err("do X")?
+/// ```
+pub trait IntoHandlerError<T> {
+    fn handler_err(self, context: &str) -> Result<T, HandlerError>;
+}
+
+impl<T, E: fmt::Display> IntoHandlerError<T> for Result<T, E> {
+    fn handler_err(self, context: &str) -> Result<T, HandlerError> {
+        self.map_err(|e| HandlerError::Internal(format!("Failed to {}: {}", context, e)))
+    }
+}
+
 /// Acquire the FoldDB guard from a node, mapping errors to HandlerError::Internal.
 ///
 /// Replaces the repeated pattern:

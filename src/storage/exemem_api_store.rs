@@ -206,7 +206,6 @@ impl KvStore for ExememApiStore {
 
     async fn batch_put(&self, items: Vec<(Vec<u8>, Vec<u8>)>) -> StorageResult<()> {
         const BATCH_SIZE: usize = 25;
-
         for chunk in items.chunks(BATCH_SIZE) {
             let encoded_items: Vec<Value> = chunk
                 .iter()
@@ -231,7 +230,6 @@ impl KvStore for ExememApiStore {
 
     async fn batch_delete(&self, keys: Vec<Vec<u8>>) -> StorageResult<()> {
         const BATCH_SIZE: usize = 25;
-
         for chunk in keys.chunks(BATCH_SIZE) {
             let encoded_items: Vec<Value> = chunk
                 .iter()

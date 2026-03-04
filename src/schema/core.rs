@@ -31,6 +31,24 @@ pub struct SchemaCore {
 }
 
 impl SchemaCore {
+    /// Acquire the schemas lock, mapping poison errors.
+    fn lock_schemas(
+        &self,
+    ) -> Result<std::sync::MutexGuard<'_, HashMap<String, Schema>>, SchemaError> {
+        self.schemas
+            .lock()
+            .map_err(|_| SchemaError::InvalidData("Failed to acquire schemas lock".to_string()))
+    }
+
+    /// Acquire the schema_states lock, mapping poison errors.
+    fn lock_states(
+        &self,
+    ) -> Result<std::sync::MutexGuard<'_, HashMap<String, SchemaState>>, SchemaError> {
+        self.schema_states
+            .lock()
+            .map_err(|_| SchemaError::InvalidData("Failed to acquire schema_states lock".to_string()))
+    }
+
     /// Creates a new SchemaCore with DbOperations (storage abstraction)
     pub async fn new(
         db_ops: std::sync::Arc<crate::db_operations::DbOperations>,
@@ -63,19 +81,13 @@ impl SchemaCore {
 
     pub fn get_schemas(&self) -> Result<HashMap<String, Schema>, SchemaError> {
         Ok(self
-            .schemas
-            .lock()
-            .map_err(|_| SchemaError::InvalidData("Failed to acquire schemas lock".to_string()))?
+            .lock_schemas()?
             .clone())
     }
 
     pub fn get_schema_states(&self) -> Result<HashMap<String, SchemaState>, SchemaError> {
         Ok(self
-            .schema_states
-            .lock()
-            .map_err(|_| {
-                SchemaError::InvalidData("Failed to acquire schema_states lock".to_string())
-            })?
+            .lock_states()?
             .clone())
     }
 
@@ -282,18 +294,14 @@ impl SchemaCore {
     pub async fn update_schema(&self, schema: &Schema) -> Result<(), SchemaError> {
         let name = &schema.name;
         self.db_ops.store_schema(name, schema).await?;
-        let mut schemas = self.schemas.lock().map_err(|_| {
-            SchemaError::InvalidData("Failed to acquire schemas lock".to_string())
-        })?;
+        let mut schemas = self.lock_schemas()?;
         schemas.insert(name.clone(), schema.clone());
         Ok(())
     }
 
     pub fn get_schema_metadata(&self, schema_name: &str) -> Result<Option<Schema>, SchemaError> {
         Ok(self
-            .schemas
-            .lock()
-            .map_err(|_| SchemaError::InvalidData("Failed to acquire schemas lock".to_string()))?
+            .lock_schemas()?
             .get(schema_name)
             .cloned())
     }
@@ -343,9 +351,7 @@ impl SchemaCore {
             // schema DOES have field_molecule_uuids (from sync_molecule_uuids),
             // so we allow the replacement.
             {
-                let mut schemas = self.schemas.lock().map_err(|_| {
-                    SchemaError::InvalidData("Failed to acquire schemas lock".to_string())
-                })?;
+                let mut schemas = self.lock_schemas()?;
 
                 let incoming_has_molecules = schema.field_molecule_uuids
                     .as_ref()
@@ -374,9 +380,7 @@ impl SchemaCore {
 
             // Preserve existing state from database
             let existing_state = self.db_ops.get_schema_state(&name).await?;
-            let mut schema_states = self.schema_states.lock().map_err(|_| {
-                SchemaError::InvalidData("Failed to acquire schema_states lock".to_string())
-            })?;
+            let mut schema_states = self.lock_states()?;
             let state = existing_state.unwrap_or(SchemaState::Available);
             schema_states.insert(name.clone(), state);
         } else {
@@ -387,9 +391,7 @@ impl SchemaCore {
                 .await?;
 
             {
-                let mut schemas = self.schemas.lock().map_err(|_| {
-                    SchemaError::InvalidData("Failed to acquire schemas lock".to_string())
-                })?;
+                let mut schemas = self.lock_schemas()?;
                 schemas.insert(name.clone(), schema);
             } // Drop lock
 

@@ -4,7 +4,7 @@
 //! These can be called by both HTTP server routes and Lambda handlers.
 
 use crate::fold_node::node::FoldNode;
-use crate::handlers::response::{ApiResponse, HandlerError, HandlerResult};
+use crate::handlers::response::{ApiResponse, HandlerError, HandlerResult, IntoHandlerError};
 use crate::ingestion::progress::{IngestionProgress, ProgressService, ProgressTracker};
 use crate::ingestion::ingestion_service::IngestionService;
 use crate::ingestion::IngestionRequest;
@@ -107,7 +107,7 @@ pub async fn get_all_progress(
     let jobs = tracker
         .list_by_user(user_hash)
         .await
-        .map_err(|e| HandlerError::Internal(format!("Failed to list progress: {}", e)))?;
+        .handler_err("list progress")?;
 
     let progress: Vec<IngestionProgress> = jobs
         .into_iter()

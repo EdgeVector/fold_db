@@ -2,6 +2,7 @@ use super::middleware::auth::UserContextMiddleware;
 use super::node_manager::NodeManager;
 use super::routes::log as log_routes;
 use super::routes::{
+    admin as admin_routes, config as config_routes, filesystem as filesystem_routes,
     query as query_routes, schema as schema_routes, security as security_routes,
     system as system_routes,
 };
@@ -456,36 +457,36 @@ impl FoldHttpServer {
         )
         .route(
             "/system/reset-database",
-            web::post().to(system_routes::reset_database),
+            web::post().to(admin_routes::reset_database),
         )
         .route(
             "/system/auto-identity",
-            web::get().to(system_routes::auto_identity),
+            web::get().to(config_routes::auto_identity),
         )
         .route(
             "/system/database-config",
-            web::get().to(system_routes::get_database_config),
+            web::get().to(config_routes::get_database_config),
         )
         .route(
             "/system/database-config",
-            web::post().to(system_routes::update_database_config),
+            web::post().to(config_routes::update_database_config),
         )
-        .route("/system/setup", web::post().to(system_routes::apply_setup))
+        .route("/system/setup", web::post().to(config_routes::apply_setup))
         .route(
             "/system/migrate-to-cloud",
-            web::post().to(system_routes::migrate_to_cloud),
+            web::post().to(admin_routes::migrate_to_cloud),
         )
         .route(
             "/system/database-status",
-            web::get().to(system_routes::get_database_status),
+            web::get().to(config_routes::get_database_status),
         )
         .route(
             "/system/complete-path",
-            web::post().to(system_routes::complete_path),
+            web::post().to(filesystem_routes::complete_path),
         )
         .route(
             "/system/list-directory",
-            web::post().to(system_routes::list_directory),
+            web::post().to(filesystem_routes::list_directory),
         );
     }
 

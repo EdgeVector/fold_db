@@ -10,6 +10,9 @@ pub const MAX_RETRIES: u32 = 3;
 /// Maximum number of retries for batch operations (more retries for unprocessed items)
 pub const MAX_BATCH_RETRIES: u32 = 10;
 
+/// DynamoDB batch write limit (maximum items per BatchWriteItem call)
+pub const DYNAMODB_BATCH_SIZE: usize = 25;
+
 /// Base delay for exponential backoff (in milliseconds)
 /// Higher for throttling scenarios
 const BASE_DELAY_MS: u64 = 500;

@@ -41,6 +41,7 @@ pub mod mutation_generator;
 pub mod ollama_service;
 pub mod openrouter_service;
 pub mod progress;
+pub mod prompts;
 pub mod routes;
 pub mod smart_folder;
 pub mod smart_folder_classifier;

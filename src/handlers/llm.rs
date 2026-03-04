@@ -5,12 +5,44 @@
 
 use crate::fold_node::llm_query::{conversation_store, types::*, LlmQueryService, SessionManager};
 use crate::fold_node::node::FoldNode;
-use crate::handlers::response::{get_db_guard, ApiResponse, HandlerError, HandlerResult};
+use crate::handlers::response::{get_db_guard, ApiResponse, HandlerError, HandlerResult, IntoHandlerError};
 use crate::schema::SchemaWithState;
 use serde_json::{json, Value};
 
 use super::llm_hydration::hydrate_index_results;
 pub use super::llm_types::*;
+
+// ============================================================================
+// Shared Helpers
+// ============================================================================
+
+/// Retrieve a session context and its query results, or return an appropriate error.
+fn get_session_with_results(
+    session_manager: &SessionManager,
+    session_id: &str,
+) -> Result<(SessionContext, Vec<Value>), HandlerError> {
+    let context = match session_manager.get_session(session_id) {
+        Ok(Some(ctx)) => ctx,
+        Ok(None) => return Err(HandlerError::NotFound("Session not found".to_string())),
+        Err(e) => return Err(HandlerError::Internal(format!("Failed to get session: {}", e))),
+    };
+
+    let results = context
+        .query_results
+        .clone()
+        .ok_or_else(|| HandlerError::BadRequest("No query results available in session".to_string()))?;
+
+    Ok((context, results))
+}
+
+/// Fetch all schemas with states from the database.
+async fn get_schemas(node: &FoldNode) -> Result<Vec<SchemaWithState>, HandlerError> {
+    let db_guard = get_db_guard(node).await?;
+    db_guard
+        .schema_manager()
+        .get_schemas_with_states()
+        .handler_err("get schemas")
+}
 
 // ============================================================================
 // Handler Functions
@@ -43,43 +75,14 @@ pub async fn chat(
     let session_id = &request.session_id;
     let question = &request.question;
 
-    // Get session context
-    let context = match session_manager.get_session(session_id) {
-        Ok(Some(ctx)) => ctx,
-        Ok(None) => {
-            return Err(HandlerError::NotFound("Session not found".to_string()));
-        }
-        Err(e) => {
-            return Err(HandlerError::Internal(format!(
-                "Failed to get session: {}",
-                e
-            )));
-        }
-    };
-
-    let results = match context.query_results {
-        Some(ref r) => r.clone(),
-        None => {
-            return Err(HandlerError::BadRequest(
-                "No query results available in session".to_string(),
-            ));
-        }
-    };
-
-    // Get schemas for analysis
-    let schemas: Vec<SchemaWithState> = {
-        let db_guard = get_db_guard(node).await?;
-        db_guard
-            .schema_manager()
-            .get_schemas_with_states()
-            .map_err(|e| HandlerError::Internal(format!("Failed to get schemas: {}", e)))?
-    };
+    let (context, results) = get_session_with_results(session_manager, session_id)?;
+    let schemas = get_schemas(node).await?;
 
     // Analyze if question needs a new query
     let analysis = service
         .analyze_followup_question(&context.original_query, &results, question, &schemas)
         .await
-        .map_err(|e| HandlerError::Internal(format!("Failed to analyze followup: {}", e)))?;
+        .handler_err("analyze followup")?;
 
     // Answer the question using existing context
     let answer = service
@@ -90,7 +93,7 @@ pub async fn chat(
             question,
         )
         .await
-        .map_err(|e| HandlerError::Internal(format!("Failed to answer question: {}", e)))?;
+        .handler_err("answer question")?;
 
     // Update session with conversation
     let _ = session_manager.add_message(session_id, "user".to_string(), question.clone());
@@ -143,43 +146,14 @@ pub async fn analyze_followup(
     let session_id = &request.session_id;
     let question = &request.question;
 
-    // Get session context
-    let context = match session_manager.get_session(session_id) {
-        Ok(Some(ctx)) => ctx,
-        Ok(None) => {
-            return Err(HandlerError::NotFound("Session not found".to_string()));
-        }
-        Err(e) => {
-            return Err(HandlerError::Internal(format!(
-                "Failed to get session: {}",
-                e
-            )));
-        }
-    };
-
-    let results = match context.query_results {
-        Some(ref r) => r.clone(),
-        None => {
-            return Err(HandlerError::BadRequest(
-                "No query results available in session".to_string(),
-            ));
-        }
-    };
-
-    // Get schemas
-    let schemas: Vec<SchemaWithState> = {
-        let db_guard = get_db_guard(node).await?;
-        db_guard
-            .schema_manager()
-            .get_schemas_with_states()
-            .map_err(|e| HandlerError::Internal(format!("Failed to get schemas: {}", e)))?
-    };
+    let (context, results) = get_session_with_results(session_manager, session_id)?;
+    let schemas = get_schemas(node).await?;
 
     // Analyze followup question
     let analysis = service
         .analyze_followup_question(&context.original_query, &results, question, &schemas)
         .await
-        .map_err(|e| HandlerError::Internal(format!("Failed to analyze followup: {}", e)))?;
+        .handler_err("analyze followup")?;
 
     Ok(ApiResponse::success_with_user(
         AnalyzeFollowupHandlerResponse {
@@ -270,7 +244,7 @@ pub async fn ai_native_index_query(
     // Create or get session
     let session_id = session_manager
         .create_or_get_session(request.session_id.clone(), request.query.clone())
-        .map_err(|e| HandlerError::Internal(format!("Failed to create session: {}", e)))?;
+        .handler_err("create session")?;
 
     // Get FoldDb for both schema access and hydration queries
     let db_guard = get_db_guard(node).await?;
@@ -279,16 +253,15 @@ pub async fn ai_native_index_query(
     let schemas: Vec<SchemaWithState> = db_guard
         .schema_manager()
         .get_schemas_with_states()
-        .map_err(|e| HandlerError::Internal(format!("Failed to get schemas: {}", e)))?;
+        .handler_err("get schemas")?;
 
-    // Get db_ops for native index search
     let db_ops = db_guard.get_db_ops();
 
     // Step 1: Search the native index
     let search_results = service
         .search_native_index(&request.query, &schemas, &db_ops)
         .await
-        .map_err(|e| HandlerError::Internal(format!("Native index search failed: {}", e)))?;
+        .handler_err("search native index")?;
 
     log::info!(
         "AI Native Index Query: found {} results, hydrating...",
@@ -307,7 +280,7 @@ pub async fn ai_native_index_query(
     let ai_interpretation = service
         .interpret_native_index_results(&request.query, &hydrated_results)
         .await
-        .map_err(|e| HandlerError::Internal(format!("AI interpretation failed: {}", e)))?;
+        .handler_err("interpret results")?;
 
     // Store results in session for context tracking
     let results_as_json: Vec<Value> = hydrated_results
@@ -380,16 +353,9 @@ pub async fn agent_query(
     // Create or get session
     let session_id = session_manager
         .create_or_get_session(request.session_id.clone(), request.query.clone())
-        .map_err(|e| HandlerError::Internal(format!("Failed to create session: {}", e)))?;
+        .handler_err("create session")?;
 
-    // Get available schemas
-    let schemas: Vec<SchemaWithState> = {
-        let db_guard = get_db_guard(node).await?;
-        db_guard
-            .schema_manager()
-            .get_schemas_with_states()
-            .map_err(|e| HandlerError::Internal(format!("Failed to get schemas: {}", e)))?
-    };
+    let schemas = get_schemas(node).await?;
 
     // Default max iterations
     let max_iterations = request.max_iterations.unwrap_or(10);
@@ -398,7 +364,7 @@ pub async fn agent_query(
     let (answer, tool_calls) = service
         .run_agent_query(&request.query, &schemas, node, user_hash, max_iterations)
         .await
-        .map_err(|e| HandlerError::Internal(format!("Agent query failed: {}", e)))?;
+        .handler_err("run agent query")?;
 
     // Store conversation in session
     if let Err(e) =

@@ -4,7 +4,7 @@
 
 use crate::fold_node::node::FoldNode;
 use crate::fold_node::OperationProcessor;
-use crate::handlers::response::{ApiResponse, HandlerError, HandlerResult};
+use crate::handlers::response::{ApiResponse, HandlerResult, IntoHandlerError};
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "ts-bindings")]
@@ -63,7 +63,7 @@ pub async fn get_indexing_status(
     let status = OperationProcessor::new(node.clone())
         .get_indexing_status()
         .await
-        .map_err(|e| HandlerError::Internal(format!("Failed to get indexing status: {}", e)))?;
+        .handler_err("get indexing status")?;
     let status_json = serde_json::to_value(&status).unwrap_or(serde_json::Value::Null);
     Ok(ApiResponse::success_with_user(
         IndexingStatusResponse { status: status_json },

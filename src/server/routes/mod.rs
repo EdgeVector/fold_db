@@ -1,4 +1,7 @@
+pub mod admin;
 pub mod common;
+pub mod config;
+pub mod filesystem;
 pub mod log;
 pub mod query;
 pub mod schema;

@@ -4,7 +4,7 @@
 
 use crate::fold_node::node::FoldNode;
 use crate::fold_node::OperationProcessor;
-use crate::handlers::response::{ApiResponse, HandlerError, HandlerResult, SuccessResponse};
+use crate::handlers::response::{ApiResponse, HandlerError, HandlerResult, IntoHandlerError, SuccessResponse};
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "ts-bindings")]
@@ -83,24 +83,16 @@ pub async fn list_transforms(
     user_hash: &str,
     node: &FoldNode,
 ) -> HandlerResult<TransformListResponse> {
-    let processor = OperationProcessor::new(node.clone());
-
-    match processor.list_transforms().await {
-        Ok(map) => {
-            let transforms_json = serde_json::to_value(&map)
-                .unwrap_or_else(|_| serde_json::Value::Object(serde_json::Map::new()));
-            Ok(ApiResponse::success_with_user(
-                TransformListResponse {
-                    transforms: transforms_json,
-                },
-                user_hash,
-            ))
-        }
-        Err(e) => Err(HandlerError::Internal(format!(
-            "Failed to list transforms: {}",
-            e
-        ))),
-    }
+    let map = OperationProcessor::new(node.clone())
+        .list_transforms()
+        .await
+        .handler_err("list transforms")?;
+    let transforms_json = serde_json::to_value(&map)
+        .unwrap_or_else(|_| serde_json::Value::Object(serde_json::Map::new()));
+    Ok(ApiResponse::success_with_user(
+        TransformListResponse { transforms: transforms_json },
+        user_hash,
+    ))
 }
 
 /// Get transform queue
@@ -108,21 +100,14 @@ pub async fn get_transform_queue(
     user_hash: &str,
     node: &FoldNode,
 ) -> HandlerResult<TransformQueueResponse> {
-    let processor = OperationProcessor::new(node.clone());
-
-    match processor.get_transform_queue().await {
-        Ok((len, queued)) => Ok(ApiResponse::success_with_user(
-            TransformQueueResponse {
-                length: len,
-                queued_transforms: queued,
-            },
-            user_hash,
-        )),
-        Err(e) => Err(HandlerError::Internal(format!(
-            "Failed to get transform queue: {}",
-            e
-        ))),
-    }
+    let (length, queued_transforms) = OperationProcessor::new(node.clone())
+        .get_transform_queue()
+        .await
+        .handler_err("get transform queue")?;
+    Ok(ApiResponse::success_with_user(
+        TransformQueueResponse { length, queued_transforms },
+        user_hash,
+    ))
 }
 
 /// Add to transform queue
@@ -131,24 +116,39 @@ pub async fn add_to_transform_queue(
     user_hash: &str,
     node: &FoldNode,
 ) -> HandlerResult<SuccessResponse> {
-    let processor = OperationProcessor::new(node.clone());
-
-    match processor
+    OperationProcessor::new(node.clone())
         .add_to_transform_queue(transform_id, "manual_api_trigger")
         .await
-    {
-        Ok(_) => Ok(ApiResponse::success_with_user(
-            SuccessResponse {
-                success: true,
-                message: Some(format!("Transform '{}' added to queue", transform_id)),
-            },
-            user_hash,
-        )),
-        Err(e) => Err(HandlerError::Internal(format!(
-            "Failed to add transform to queue: {}",
-            e
-        ))),
+        .handler_err("add transform to queue")?;
+    Ok(ApiResponse::success_with_user(
+        SuccessResponse {
+            success: true,
+            message: Some(format!("Transform '{}' added to queue", transform_id)),
+        },
+        user_hash,
+    ))
+}
+
+/// Shared helper for backfill list endpoints.
+async fn get_backfills_filtered(
+    user_hash: &str,
+    node: &FoldNode,
+    active_only: bool,
+) -> HandlerResult<BackfillListResponse> {
+    let processor = OperationProcessor::new(node.clone());
+    let backfills = if active_only {
+        processor.get_active_backfills().await
+    } else {
+        processor.get_all_backfills().await
     }
+    .handler_err("get backfills")?;
+
+    let backfills_json =
+        serde_json::to_value(&backfills).unwrap_or_else(|_| serde_json::Value::Array(vec![]));
+    Ok(ApiResponse::success_with_user(
+        BackfillListResponse { backfills: backfills_json },
+        user_hash,
+    ))
 }
 
 /// Get all backfills
@@ -156,24 +156,7 @@ pub async fn get_all_backfills(
     user_hash: &str,
     node: &FoldNode,
 ) -> HandlerResult<BackfillListResponse> {
-    let processor = OperationProcessor::new(node.clone());
-
-    match processor.get_all_backfills().await {
-        Ok(backfills) => {
-            let backfills_json = serde_json::to_value(&backfills)
-                .unwrap_or_else(|_| serde_json::Value::Array(vec![]));
-            Ok(ApiResponse::success_with_user(
-                BackfillListResponse {
-                    backfills: backfills_json,
-                },
-                user_hash,
-            ))
-        }
-        Err(e) => Err(HandlerError::Internal(format!(
-            "Failed to get all backfills: {}",
-            e
-        ))),
-    }
+    get_backfills_filtered(user_hash, node, false).await
 }
 
 /// Get active backfills
@@ -181,24 +164,7 @@ pub async fn get_active_backfills(
     user_hash: &str,
     node: &FoldNode,
 ) -> HandlerResult<BackfillListResponse> {
-    let processor = OperationProcessor::new(node.clone());
-
-    match processor.get_active_backfills().await {
-        Ok(backfills) => {
-            let backfills_json = serde_json::to_value(&backfills)
-                .unwrap_or_else(|_| serde_json::Value::Array(vec![]));
-            Ok(ApiResponse::success_with_user(
-                BackfillListResponse {
-                    backfills: backfills_json,
-                },
-                user_hash,
-            ))
-        }
-        Err(e) => Err(HandlerError::Internal(format!(
-            "Failed to get active backfills: {}",
-            e
-        ))),
-    }
+    get_backfills_filtered(user_hash, node, true).await
 }
 
 /// Get specific backfill
@@ -207,27 +173,16 @@ pub async fn get_backfill(
     user_hash: &str,
     node: &FoldNode,
 ) -> HandlerResult<BackfillResponse> {
-    let processor = OperationProcessor::new(node.clone());
-
-    match processor.get_backfill(backfill_id).await {
-        Ok(Some(backfill)) => {
-            let backfill_json = serde_json::to_value(&backfill).unwrap_or(serde_json::Value::Null);
-            Ok(ApiResponse::success_with_user(
-                BackfillResponse {
-                    backfill: backfill_json,
-                },
-                user_hash,
-            ))
-        }
-        Ok(None) => Err(HandlerError::NotFound(format!(
-            "Backfill not found: {}",
-            backfill_id
-        ))),
-        Err(e) => Err(HandlerError::Internal(format!(
-            "Failed to get backfill: {}",
-            e
-        ))),
-    }
+    let backfill = OperationProcessor::new(node.clone())
+        .get_backfill(backfill_id)
+        .await
+        .handler_err("get backfill")?
+        .ok_or_else(|| HandlerError::NotFound(format!("Backfill not found: {}", backfill_id)))?;
+    let backfill_json = serde_json::to_value(&backfill).unwrap_or(serde_json::Value::Null);
+    Ok(ApiResponse::success_with_user(
+        BackfillResponse { backfill: backfill_json },
+        user_hash,
+    ))
 }
 
 /// Get transform statistics
@@ -235,21 +190,15 @@ pub async fn get_transform_statistics(
     user_hash: &str,
     node: &FoldNode,
 ) -> HandlerResult<TransformStatsResponse> {
-    let processor = OperationProcessor::new(node.clone());
-
-    match processor.get_transform_statistics().await {
-        Ok(stats) => {
-            let stats_json = serde_json::to_value(&stats).unwrap_or(serde_json::Value::Null);
-            Ok(ApiResponse::success_with_user(
-                TransformStatsResponse { stats: stats_json },
-                user_hash,
-            ))
-        }
-        Err(e) => Err(HandlerError::Internal(format!(
-            "Failed to get transform statistics: {}",
-            e
-        ))),
-    }
+    let stats = OperationProcessor::new(node.clone())
+        .get_transform_statistics()
+        .await
+        .handler_err("get transform statistics")?;
+    let stats_json = serde_json::to_value(&stats).unwrap_or(serde_json::Value::Null);
+    Ok(ApiResponse::success_with_user(
+        TransformStatsResponse { stats: stats_json },
+        user_hash,
+    ))
 }
 
 /// Get backfill statistics
@@ -257,19 +206,13 @@ pub async fn get_backfill_statistics(
     user_hash: &str,
     node: &FoldNode,
 ) -> HandlerResult<BackfillStatsResponse> {
-    let processor = OperationProcessor::new(node.clone());
-
-    match processor.get_backfill_statistics().await {
-        Ok(stats) => {
-            let stats_json = serde_json::to_value(&stats).unwrap_or(serde_json::Value::Null);
-            Ok(ApiResponse::success_with_user(
-                BackfillStatsResponse { stats: stats_json },
-                user_hash,
-            ))
-        }
-        Err(e) => Err(HandlerError::Internal(format!(
-            "Failed to get backfill statistics: {}",
-            e
-        ))),
-    }
+    let stats = OperationProcessor::new(node.clone())
+        .get_backfill_statistics()
+        .await
+        .handler_err("get backfill statistics")?;
+    let stats_json = serde_json::to_value(&stats).unwrap_or(serde_json::Value::Null);
+    Ok(ApiResponse::success_with_user(
+        BackfillStatsResponse { stats: stats_json },
+        user_hash,
+    ))
 }

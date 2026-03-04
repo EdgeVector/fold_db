@@ -229,10 +229,8 @@ impl KvStore for DynamoDbKvStore {
     }
 
     async fn batch_put(&self, items: Vec<(Vec<u8>, Vec<u8>)>) -> StorageResult<()> {
-        const BATCH_SIZE: usize = 25;
-
         // DynamoDB batch write supports up to 25 items per request
-        for chunk in items.chunks(BATCH_SIZE) {
+        for chunk in items.chunks(super::dynamodb_utils::DYNAMODB_BATCH_SIZE) {
             let mut write_requests = Vec::new();
 
             for (key, value) in chunk {
@@ -286,9 +284,7 @@ impl KvStore for DynamoDbKvStore {
     }
 
     async fn batch_delete(&self, keys: Vec<Vec<u8>>) -> StorageResult<()> {
-        const BATCH_SIZE: usize = 25;
-
-        for chunk in keys.chunks(BATCH_SIZE) {
+        for chunk in keys.chunks(super::dynamodb_utils::DYNAMODB_BATCH_SIZE) {
             let mut write_requests = Vec::new();
 
             for key in chunk {
