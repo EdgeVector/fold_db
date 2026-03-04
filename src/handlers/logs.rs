@@ -5,7 +5,7 @@
 
 use crate::fold_node::node::FoldNode;
 use crate::fold_node::OperationProcessor;
-use crate::handlers::response::{ApiResponse, HandlerError, HandlerResult, SuccessResponse};
+use crate::handlers::response::{ApiResponse, HandlerError, HandlerResult, IntoHandlerError, SuccessResponse};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -38,7 +38,7 @@ pub async fn list_logs(
         .await;
     let count = logs.len();
     let logs_json = serde_json::to_value(&logs)
-        .map_err(|e| HandlerError::Internal(format!("Failed to serialize logs: {}", e)))?;
+        .handler_err("serialize logs")?;
     Ok(ApiResponse::success_with_user(
         LogListResponse {
             logs: logs_json,

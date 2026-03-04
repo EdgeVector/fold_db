@@ -5,7 +5,7 @@
 
 use crate::fold_node::node::FoldNode;
 use crate::fold_node::OperationProcessor;
-use crate::handlers::response::{ApiResponse, HandlerError, HandlerResult, SuccessResponse};
+use crate::handlers::response::{ApiResponse, HandlerError, HandlerResult, IntoHandlerError, SuccessResponse};
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "ts-bindings")]
@@ -63,7 +63,7 @@ pub async fn list_schemas(user_hash: &str, node: &FoldNode) -> HandlerResult<Sch
     let schemas = OperationProcessor::new(node.clone())
         .list_schemas()
         .await
-        .map_err(|e| HandlerError::Internal(format!("Failed to list schemas: {}", e)))?;
+        .handler_err("list schemas")?;
     let count = schemas.len();
     let schemas_json =
         serde_json::to_value(&schemas).unwrap_or_else(|_| serde_json::Value::Array(vec![]));
@@ -81,7 +81,7 @@ pub async fn get_schema(
     let schema_with_state = OperationProcessor::new(node.clone())
         .get_schema(schema_name)
         .await
-        .map_err(|e| HandlerError::Internal(format!("Failed to get schema: {}", e)))?
+        .handler_err("get schema")?
         .ok_or_else(|| HandlerError::NotFound(format!("Schema not found: {}", schema_name)))?;
     let schema_json = serde_json::to_value(&schema_with_state).unwrap_or(serde_json::Value::Null);
     Ok(ApiResponse::success_with_user(SchemaResponse { schema: schema_json }, user_hash))
@@ -95,7 +95,7 @@ pub async fn approve_schema(
     let backfill_hash = OperationProcessor::new(node.clone())
         .approve_schema(schema_name)
         .await
-        .map_err(|e| HandlerError::Internal(format!("Failed to approve schema: {}", e)))?;
+        .handler_err("approve schema")?;
     Ok(ApiResponse::success_with_user(SchemaApproveResponse { backfill_hash }, user_hash))
 }
 
@@ -107,7 +107,7 @@ pub async fn block_schema(
     OperationProcessor::new(node.clone())
         .block_schema(schema_name)
         .await
-        .map_err(|e| HandlerError::Internal(format!("Failed to block schema: {}", e)))?;
+        .handler_err("block schema")?;
     Ok(ApiResponse::success_with_user(
         SuccessResponse { success: true, message: None },
         user_hash,
@@ -119,7 +119,7 @@ pub async fn load_schemas(user_hash: &str, node: &FoldNode) -> HandlerResult<Sch
         OperationProcessor::new(node.clone())
             .load_schemas()
             .await
-            .map_err(|e| HandlerError::Internal(format!("Failed to load schemas: {}", e)))?;
+            .handler_err("load schemas")?;
     Ok(ApiResponse::success_with_user(
         SchemaLoadResponse { available_schemas_loaded, schemas_loaded_to_db, failed_schemas },
         user_hash,
@@ -136,7 +136,7 @@ pub async fn list_schema_keys(
     let (keys, total_count) = OperationProcessor::new(node.clone())
         .list_schema_keys(schema_name, offset, limit)
         .await
-        .map_err(|e| HandlerError::Internal(format!("Failed to list keys: {}", e)))?;
+        .handler_err("list keys")?;
     Ok(ApiResponse::success_with_user(SchemaKeysResponse { keys, total_count }, user_hash))
 }
 
@@ -148,7 +148,7 @@ pub async fn get_backfill_status(
     let info = OperationProcessor::new(node.clone())
         .get_backfill(backfill_hash)
         .await
-        .map_err(|e| HandlerError::Internal(format!("Failed to get backfill status: {}", e)))?
+        .handler_err("get backfill status")?
         .ok_or_else(|| HandlerError::NotFound(format!("Backfill not found: {}", backfill_hash)))?;
     let backfill = serde_json::to_value(&info).unwrap_or(serde_json::Value::Null);
     Ok(ApiResponse::success_with_user(BackfillStatusResponse { backfill }, user_hash))

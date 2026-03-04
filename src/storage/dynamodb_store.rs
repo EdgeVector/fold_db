@@ -475,9 +475,7 @@ impl DynamoDbSchemaStore {
         }
 
         // Use batch delete (DynamoDB limit is 25 items per batch)
-        const BATCH_SIZE: usize = 25;
-
-        for chunk in schema_names.chunks(BATCH_SIZE) {
+        for chunk in schema_names.chunks(super::dynamodb_utils::DYNAMODB_BATCH_SIZE) {
             let mut write_requests = Vec::new();
 
             for name in chunk {

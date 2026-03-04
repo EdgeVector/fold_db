@@ -192,8 +192,7 @@ impl DynamoDbResetManager {
         }
 
         // 2. Batch Delete
-        const BATCH_SIZE: usize = 25;
-        for chunk in keys_to_delete.chunks(BATCH_SIZE) {
+        for chunk in keys_to_delete.chunks(super::dynamodb_utils::DYNAMODB_BATCH_SIZE) {
             let mut write_requests = Vec::new();
 
             for key in chunk {
@@ -302,8 +301,7 @@ impl DynamoDbResetManager {
         }
 
         // 2. Batch Delete
-        const BATCH_SIZE: usize = 25;
-        for chunk in keys_to_delete.chunks(BATCH_SIZE) {
+        for chunk in keys_to_delete.chunks(super::dynamodb_utils::DYNAMODB_BATCH_SIZE) {
             let mut write_requests = Vec::new();
             for key in chunk {
                 write_requests.push(
@@ -397,8 +395,7 @@ impl DynamoDbResetManager {
         }
 
         // Batch Delete
-        const BATCH_SIZE: usize = 25;
-        for chunk in keys_to_delete.chunks(BATCH_SIZE) {
+        for chunk in keys_to_delete.chunks(super::dynamodb_utils::DYNAMODB_BATCH_SIZE) {
             let mut write_requests = Vec::new();
             for key in chunk {
                 write_requests.push(

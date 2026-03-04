@@ -47,28 +47,90 @@ pub struct FoldNode {
 }
 
 impl FoldNode {
-    /// Creates a new FoldNode with the specified configuration.
-    ///
-    /// Now fully async to support storage abstraction!
-    pub async fn new(#[allow(unused_mut)] mut config: NodeConfig) -> FoldDbResult<Self> {
-        // 1. Try to use identity from config
-        // 2. Fallback to loading from file (legacy/local dev)
-        // 3. Fail if neither is present (NO AUTO-GENERATION)
-        let (private_key, public_key) =
-            if let (Some(priv_k), Some(pub_k)) = (&config.private_key, &config.public_key) {
-                (priv_k.clone(), pub_k.clone())
+    /// Resolve node identity from config or persisted file.
+    fn resolve_identity(config: &NodeConfig) -> FoldDbResult<(String, String)> {
+        if let (Some(priv_k), Some(pub_k)) = (&config.private_key, &config.public_key) {
+            Ok((priv_k.clone(), pub_k.clone()))
+        } else {
+            match load_persisted_identity() {
+                Ok(Some((priv_k, pub_k))) => Ok((priv_k, pub_k)),
+                _ => Err(FoldDbError::SecurityError(
+                    "Node identity (keys) not configured and no persisted identity found. \
+                    Auto-generation is disabled. Please provide identity."
+                        .to_string(),
+                )),
+            }
+        }
+    }
+
+    /// Load or generate E2E encryption keys from the standard path.
+    async fn load_e2e_keys() -> FoldDbResult<crate::crypto::E2eKeys> {
+        let home = std::env::var("HOME")
+            .map(std::path::PathBuf::from)
+            .map_err(|_| FoldDbError::Config("HOME environment variable not set".to_string()))?;
+        let e2e_key_path = home.join(".fold_db/e2e.key");
+        crate::crypto::E2eKeys::load_or_generate(&e2e_key_path)
+            .await
+            .map_err(|e| FoldDbError::Config(format!("Failed to load E2E keys: {}", e)))
+    }
+
+    /// Log schema service configuration status.
+    fn log_schema_service(config: &NodeConfig) {
+        if let Some(schema_service_url) = &config.schema_service_url {
+            if schema_service_url.starts_with("test://")
+                || schema_service_url.starts_with("mock://")
+            {
+                log_feature!(
+                    LogFeature::Database,
+                    info,
+                    "Mock schema service configured: {}. Schemas must be loaded manually.",
+                    schema_service_url
+                );
             } else {
-                match load_persisted_identity() {
-                    Ok(Some((priv_k, pub_k))) => (priv_k, pub_k),
-                    _ => {
-                        return Err(FoldDbError::SecurityError(
-                            "Node identity (keys) not configured and no persisted identity found. \
-                        Auto-generation is disabled. Please provide identity."
-                                .to_string(),
-                        ));
-                    }
-                }
-            };
+                log_feature!(
+                    LogFeature::Database,
+                    info,
+                    "Schema service URL configured: {}. Schemas will be loaded asynchronously after node startup.",
+                    schema_service_url
+                );
+            }
+        } else {
+            log::info!("No schema service URL configured - using local schema management only");
+        }
+    }
+
+    /// Assemble a FoldNode from resolved components.
+    async fn assemble(
+        config: NodeConfig,
+        db: Arc<Mutex<FoldDB>>,
+        private_key: String,
+        public_key: String,
+        e2e_keys: crate::crypto::E2eKeys,
+    ) -> FoldDbResult<Self> {
+        let (node_id, security_manager, security_config) =
+            Self::init_internals(&config, &db).await?;
+
+        let node = Self {
+            db,
+            config: NodeConfig {
+                security_config,
+                ..config.clone()
+            },
+            node_id,
+            security_manager,
+            private_key,
+            public_key,
+            e2e_keys,
+            mutation_preprocessor: MutationPreprocessor::new(),
+        };
+
+        Self::log_schema_service(&config);
+        Ok(node)
+    }
+
+    /// Creates a new FoldNode with the specified configuration.
+    pub async fn new(#[allow(unused_mut)] mut config: NodeConfig) -> FoldDbResult<Self> {
+        let (private_key, public_key) = Self::resolve_identity(&config)?;
 
         // Update config with public key as user_id if not set (for DynamoDB)
         #[cfg(feature = "aws-backend")]
@@ -78,61 +140,10 @@ impl FoldNode {
             }
         }
 
-        // Load or generate E2E encryption keys
-        let home = std::env::var("HOME")
-            .map(std::path::PathBuf::from)
-            .map_err(|_| FoldDbError::Config("HOME environment variable not set".to_string()))?;
-        let e2e_key_path = home.join(".fold_db/e2e.key");
-        let e2e_keys = crate::crypto::E2eKeys::load_or_generate(&e2e_key_path)
-            .await
-            .map_err(|e| FoldDbError::Config(format!("Failed to load E2E keys: {}", e)))?;
-
+        let e2e_keys = Self::load_e2e_keys().await?;
         let db = crate::fold_db_core::factory::create_fold_db(&config.database, &e2e_keys).await?;
 
-        let (node_id, security_manager, security_config) =
-            Self::init_internals(&config, &db).await?;
-
-        let node = Self {
-            db,
-            config: NodeConfig {
-                security_config,
-                ..config.clone()
-            },
-            node_id,
-            security_manager,
-            private_key,
-            public_key,
-            e2e_keys,
-            mutation_preprocessor: MutationPreprocessor::new(),
-        };
-
-        // Require schema service to be configured
-        if let Some(schema_service_url) = &config.schema_service_url {
-            // Check if this is a mock/test schema service
-            if schema_service_url.starts_with("test://")
-                || schema_service_url.starts_with("mock://")
-            {
-                log_feature!(
-                    LogFeature::Database,
-                    info,
-                    "Mock schema service configured: {}. Schemas must be loaded manually.",
-                    schema_service_url
-                );
-            } else {
-                log_feature!(
-                    LogFeature::Database,
-                    info,
-                    "Schema service URL configured: {}. Schemas will be loaded asynchronously after node startup.",
-                    schema_service_url
-                );
-                // Note: Schema loading from service is deferred to avoid runtime nesting issues
-                // It will be performed by the HTTP server after node initialization
-            }
-        } else {
-            // Schema service is optional - log info and continue
-            log::info!("No schema service URL configured - using local schema management only");
-        }
-
+        let node = Self::assemble(config, db, private_key, public_key, e2e_keys).await?;
         log_feature!(
             LogFeature::Database,
             info,
@@ -142,85 +153,11 @@ impl FoldNode {
     }
 
     /// Creates a new FoldNode with a pre-created FoldDB instance.
-    ///
-    /// This is useful when you need to control the storage backend (e.g., S3)
-    /// before creating the node.
-    ///
-    /// # Arguments
-    ///
-    /// * `config` - Node configuration
-    /// * `db` - Pre-created FoldDB instance
     pub async fn new_with_db(config: NodeConfig, db: Arc<Mutex<FoldDB>>) -> FoldDbResult<Self> {
-        // Generate a new keypair (we can't update DB config as it's already created)
-        // 1. Check config for identity
-        let (private_key, public_key) =
-            if let (Some(priv_k), Some(pub_k)) = (&config.private_key, &config.public_key) {
-                (priv_k.clone(), pub_k.clone())
-            } else {
-                // 2. Fallback to loading from file
-                match load_persisted_identity() {
-                    Ok(Some((priv_k, pub_k))) => (priv_k, pub_k),
-                    _ => {
-                        return Err(FoldDbError::SecurityError(
-                            "Node identity (keys) not configured and no persisted identity found. \
-                        Auto-generation is disabled."
-                                .to_string(),
-                        ));
-                    }
-                }
-            };
+        let (private_key, public_key) = Self::resolve_identity(&config)?;
+        let e2e_keys = Self::load_e2e_keys().await?;
 
-        // Load or generate E2E encryption keys
-        let home = std::env::var("HOME")
-            .map(std::path::PathBuf::from)
-            .map_err(|_| FoldDbError::Config("HOME environment variable not set".to_string()))?;
-        let e2e_key_path = home.join(".fold_db/e2e.key");
-        let e2e_keys = crate::crypto::E2eKeys::load_or_generate(&e2e_key_path)
-            .await
-            .map_err(|e| FoldDbError::Config(format!("Failed to load E2E keys: {}", e)))?;
-
-        let (node_id, security_manager, security_config) =
-            Self::init_internals(&config, &db).await?;
-
-        let node = Self {
-            db,
-            config: NodeConfig {
-                security_config,
-                ..config.clone()
-            },
-            node_id,
-            security_manager,
-            private_key,
-            public_key,
-            e2e_keys,
-            mutation_preprocessor: MutationPreprocessor::new(),
-        };
-
-        // Require schema service to be configured
-        if let Some(schema_service_url) = &config.schema_service_url {
-            // Check if this is a mock/test schema service
-            if schema_service_url.starts_with("test://")
-                || schema_service_url.starts_with("mock://")
-            {
-                log_feature!(
-                    LogFeature::Database,
-                    info,
-                    "Mock schema service configured: {}. Schemas must be loaded manually.",
-                    schema_service_url
-                );
-            } else {
-                log_feature!(
-                    LogFeature::Database,
-                    info,
-                    "Schema service URL configured: {}. Schemas will be loaded asynchronously after node startup.",
-                    schema_service_url
-                );
-            }
-        } else {
-            // Schema service is optional - log info and continue
-            log::info!("No schema service URL configured - using local schema management only");
-        }
-
+        let node = Self::assemble(config, db, private_key, public_key, e2e_keys).await?;
         log_feature!(
             LogFeature::Database,
             info,

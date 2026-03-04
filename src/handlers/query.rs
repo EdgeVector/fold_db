@@ -5,7 +5,7 @@
 
 use crate::fold_node::node::FoldNode;
 use crate::fold_node::OperationProcessor;
-use crate::handlers::response::{get_db_guard, ApiResponse, HandlerError, HandlerResult};
+use crate::handlers::response::{get_db_guard, ApiResponse, HandlerError, HandlerResult, IntoHandlerError};
 use crate::schema::types::operations::Query;
 use crate::storage::traits::TypedStore;
 use serde::{Deserialize, Serialize};
@@ -129,7 +129,7 @@ pub async fn get_molecule_history(
     let events = db_ops
         .get_mutation_events(molecule_uuid)
         .await
-        .map_err(|e| HandlerError::Internal(format!("Failed to load history: {}", e)))?;
+        .handler_err("load history")?;
 
     let summaries: Vec<MutationEventSummary> = events
         .into_iter()
@@ -165,7 +165,7 @@ pub async fn get_atom_content(
         .atoms_store()
         .get_item(&format!("atom:{}", atom_uuid))
         .await
-        .map_err(|e| HandlerError::Internal(format!("Failed to fetch atom: {}", e)))?
+        .handler_err("fetch atom")?
         .ok_or_else(|| HandlerError::NotFound(format!("Atom '{}' not found", atom_uuid)))?;
 
     Ok(ApiResponse::success_with_user(
@@ -194,9 +194,7 @@ pub async fn get_process_results(
     let results = node
         .get_process_results(progress_id)
         .await
-        .map_err(|e| {
-            HandlerError::Internal(format!("Failed to get process results: {}", e))
-        })?;
+        .handler_err("get process results")?;
 
     Ok(ApiResponse::success_with_user(
         ProcessResultsResponse { results },

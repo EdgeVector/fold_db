@@ -214,9 +214,7 @@ impl KvStore for DynamoDbNativeIndexStore {
 
     async fn batch_put(&self, items: Vec<(Vec<u8>, Vec<u8>)>) -> StorageResult<()> {
         // DynamoDB has a 25-item batch limit
-        const BATCH_SIZE: usize = 25;
-
-        for chunk in items.chunks(BATCH_SIZE) {
+        for chunk in items.chunks(super::dynamodb_utils::DYNAMODB_BATCH_SIZE) {
             let mut write_requests = Vec::new();
 
             for (key, value) in chunk {
@@ -267,9 +265,7 @@ impl KvStore for DynamoDbNativeIndexStore {
 
     async fn batch_delete(&self, keys: Vec<Vec<u8>>) -> StorageResult<()> {
         // DynamoDB has a 25-item batch limit
-        const BATCH_SIZE: usize = 25;
-
-        for chunk in keys.chunks(BATCH_SIZE) {
+        for chunk in keys.chunks(super::dynamodb_utils::DYNAMODB_BATCH_SIZE) {
             let mut write_requests = Vec::new();
 
             for key in chunk {
