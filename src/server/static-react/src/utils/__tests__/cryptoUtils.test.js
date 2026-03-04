@@ -8,8 +8,9 @@ import {
 import * as ed from "@noble/ed25519";
 import { sha512 } from "@noble/hashes/sha512";
 
-// Set up SHA-512 hash function for ed25519
+// Set up SHA-512 hash function for ed25519 (both sync and async paths)
 ed.etc.sha512Sync = (...m) => sha512(ed.etc.concatBytes(...m));
+ed.etc.sha512Async = async (...m) => sha512(ed.etc.concatBytes(...m));
 
 describe("createSignedMessage", () => {
   it("produces a valid SignedMessage envelope", async () => {
