@@ -39,10 +39,14 @@ jobs:
       - name: Build frontend (required for rust_embed)
         run: cd src/server/static-react && npm ci && npm run build
 
-      - name: Run clippy (includes AWS backend feature check)
+      - name: Run clippy
         id: clippy
         continue-on-error: true
-        run: cargo clippy --workspace --all-targets --features aws-backend -- -D warnings
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Check AWS backend compiles
+        id: check-aws
+        run: cargo check --workspace --features aws-backend
 
       - name: Run cargo test
         id: cargo-test
