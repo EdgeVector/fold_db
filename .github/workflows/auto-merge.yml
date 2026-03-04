@@ -1,11 +1,26 @@
 name: Auto-merge
 on:
   pull_request:
-    types: [opened]
+    types: [opened, reopened, synchronize]
+  check_suite:
+    types: [completed]
+
 jobs:
   auto-merge:
     runs-on: ubuntu-latest
     steps:
-      - run: gh pr merge ${{ github.event.pull_request.number }} --auto --squash --repo ${{ github.repository }}
+      - name: Enable auto-merge on PR
+        if: github.event_name == 'pull_request'
+        run: gh pr merge ${{ github.event.pull_request.number }} --auto --squash --repo ${{ github.repository }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Enable auto-merge on all open PRs
+        if: github.event_name == 'check_suite'
+        run: |
+          prs=$(gh pr list --base mainline --state open --json number --jq '.[].number' --repo ${{ github.repository }})
+          for pr in $prs; do
+            gh pr merge "$pr" --auto --squash --repo ${{ github.repository }} 2>&1 || true
+          done
         env:
           GH_TOKEN: ${{ github.token }}
