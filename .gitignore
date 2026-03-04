@@ -1,11 +1,9 @@
 # Rust specific
 /target/
-/datafold_sdk/target/
 /social_app_example/target/
 /fold_client/target/
 **/*.rs.bk
 Cargo.lock
-datafold_sdk/Cargo.lock
 social_app_example/Cargo.lock
 **/target/**/*.lock
 
@@ -33,8 +31,6 @@ Thumbs.db
 /data/
 fold_node/data/
 fold_node/data_temp/
-src/datafold_node/data/db/
-src/datafold_node/data
 data/db*
 /config/
 *.log
@@ -59,8 +55,6 @@ schema_registry/
 /test_db/
 /test_data/
 /fold_node/test_data/
-/fold_node/src/datafold_node/static-react/data/
-/fold_node/src/datafold_node/static-react/data_temp/
 /fold_node/tests/test_data/request_forwarding/
 /tests/test_data/
 /data_temp/

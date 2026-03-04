@@ -170,7 +170,7 @@ impl Default for FileConfig {
     fn default() -> Self {
         Self {
             enabled: false,
-            path: "logs/datafold.log".to_string(),
+            path: "logs/folddb.log".to_string(),
             level: "DEBUG".to_string(),
             max_size: "10MB".to_string(),
             max_files: 5,
@@ -198,7 +198,7 @@ impl Default for StructuredConfig {
         Self {
             enabled: false,
             level: "DEBUG".to_string(),
-            path: Some("logs/datafold-structured.json".to_string()),
+            path: Some("logs/folddb-structured.json".to_string()),
             include_context: true,
             include_metrics: false,
         }
@@ -211,7 +211,7 @@ impl Default for DynamoConfig {
         Self {
             enabled: false,
             level: "INFO".to_string(),
-            table_name: "datafold-logs".to_string(),
+            table_name: "folddb-logs".to_string(),
             region: None,
         }
     }

@@ -55,7 +55,7 @@ fn generate_mutations(count: usize) -> Vec<Mutation> {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_dynamodb_mutation_performance() {
     // 1. Setup Configuration for DynamoDB
-    let table_name = "DataFoldStorage"; // Using the same table name as run script
+    let table_name = "FoldDBStorage"; // Using the same table name as run script
     let region = "us-west-2";
 
     println!("=== DynamoDB Mutation Performance Test ===");
