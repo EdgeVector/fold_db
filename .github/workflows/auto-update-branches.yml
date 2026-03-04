@@ -3,6 +3,11 @@ name: Auto-update PR branches
 on:
   push:
     branches: [mainline]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
 
 jobs:
   update-branches:
@@ -11,12 +16,15 @@ jobs:
       - name: Update all open PR branches
         run: |
           prs=$(gh pr list --base mainline --state open --json number,headRefName --jq '.[].number')
+          if [ -z "$prs" ]; then
+            echo "No open PRs to update."
+            exit 0
+          fi
           for pr in $prs; do
             echo "Updating PR #$pr..."
             gh api repos/${{ github.repository }}/pulls/$pr/update-branch \
               -X PUT \
-              -f update_method=rebase \
-              2>&1 || echo "  Skipped (already up to date or conflict)"
+              2>&1 && echo "  Updated." || echo "  Skipped (already up to date or conflict)"
           done
         env:
           GH_TOKEN: ${{ github.token }}
