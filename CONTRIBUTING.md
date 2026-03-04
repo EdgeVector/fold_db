@@ -19,6 +19,17 @@ Thank you for your interest in contributing to FoldDB! This document provides gu
 - Node.js 16+ (for frontend development)
 - AWS credentials (optional, for cloud features)
 
+### Git LFS
+
+Some test fixtures (e.g., `tests/fixtures/tweets.js`) are tracked with Git LFS. To download them:
+
+```bash
+git lfs install   # one-time setup
+git lfs pull      # download LFS-tracked files
+```
+
+Without this, those files will be small pointer files instead of actual data, and related tests will fail.
+
 ### Building
 
 ```bash
