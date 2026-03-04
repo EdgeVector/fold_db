@@ -37,8 +37,8 @@ pub async fn list_logs(
         .list_logs(since, Some(1000))
         .await;
     let count = logs.len();
-    let logs_json =
-        serde_json::to_value(&logs).unwrap_or_else(|_| serde_json::Value::Array(vec![]));
+    let logs_json = serde_json::to_value(&logs)
+        .map_err(|e| HandlerError::Internal(format!("Failed to serialize logs: {}", e)))?;
     Ok(ApiResponse::success_with_user(
         LogListResponse {
             logs: logs_json,
@@ -94,7 +94,7 @@ pub async fn update_log_feature_level(
     OperationProcessor::new(node.clone())
         .update_log_feature_level(feature, level)
         .await
-        .map_err(|e| HandlerError::Internal(format!("Failed to update log level: {}", e)))?;
+        .map_err(HandlerError::from)?;
     Ok(ApiResponse::success_with_user(
         SuccessResponse {
             success: true,
@@ -112,7 +112,7 @@ pub async fn reload_log_config(
     OperationProcessor::new(node.clone())
         .reload_log_config(config_path)
         .await
-        .map_err(|e| HandlerError::Internal(format!("Failed to reload configuration: {}", e)))?;
+        .map_err(HandlerError::from)?;
     Ok(ApiResponse::success_with_user(
         SuccessResponse {
             success: true,

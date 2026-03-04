@@ -10,19 +10,32 @@ Drop in files, JSON, or social media exports — FoldDB detects schemas, extract
 
 ## Quick Start
 
-### 1. Install
+### Option A: Desktop App (macOS)
+
+Download the latest `.dmg` from [GitHub Releases](https://github.com/shiba4life/fold_db/releases), open it, and drag **FoldDB.app** to Applications. Double-click to launch — no terminal needed.
+
+> **First launch:** macOS will block the unsigned app. Right-click the app → **Open** → click **Open** in the dialog, or go to **System Settings → Privacy & Security → Open Anyway**.
+
+### Option B: Install via Homebrew
+
+```bash
+brew tap shiba4life/fold_db
+brew install folddb
+```
+
+### Option C: Install from Source
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/shiba4life/fold_db/master/install.sh | sh
 ```
 
-### 2. Run
+### Run
 
 ```bash
 ./run.sh --local
 ```
 
-### 3. Open your browser
+### Open your browser
 
 Visit [http://localhost:5173](http://localhost:5173) — that's it. No API key required if you use [Ollama](https://ollama.com) (free, runs locally).
 

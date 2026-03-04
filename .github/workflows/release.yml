@@ -385,7 +385,10 @@ jobs:
 
             **Usage:**
             ```bash
-            # Start the HTTP server
+            # If you cloned the repo, use run.sh (starts backend + frontend):
+            ./run.sh --local
+
+            # Or run the standalone server binary:
             folddb_server --port 9001
 
             # Visit http://localhost:9001 for the web interface
@@ -417,11 +420,10 @@ jobs:
 
             ### Documentation
 
-            - [Quick Start Guide](https://github.com/shiba4life/fold_db/blob/mainline/QUICK_START.md)
-            - [Native App Guide](https://github.com/shiba4life/fold_db/blob/mainline/TAURI_NATIVE_APP.md)
-            - [Full Documentation](https://github.com/shiba4life/fold_db/blob/mainline/README.md)
-            - [Changelog](https://github.com/shiba4life/fold_db/blob/mainline/CHANGELOG.md)
+            - [README & Full Documentation](https://github.com/shiba4life/fold_db/blob/master/README.md)
 
             ---
 
-            **First time using the native app?** On first launch, macOS may show a security warning. Go to **System Preferences > Security & Privacy** and click "Open Anyway".
+            **First time opening the native app?** Since the app is not code-signed, macOS will block it by default. To open it:
+            1. **Right-click** (or Control-click) on `FoldDB.app` and select **Open**, then click **Open** in the dialog.
+            2. Or go to **System Settings → Privacy & Security**, scroll down, and click **Open Anyway** next to the FoldDB message.

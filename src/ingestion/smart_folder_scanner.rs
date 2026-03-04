@@ -207,22 +207,26 @@ pub fn compute_file_hash(file_path: &Path) -> IngestionResult<String> {
     Ok(format!("{:x}", Sha256::digest(&raw_bytes)))
 }
 
-/// Extensions for files that can be ingested as structured data or code metadata.
-///
-/// Only files matching these extensions are collected during directory scanning.
-/// This prevents binary, media, and other non-ingestible files from consuming
-/// the `max_files` budget (e.g. a Twitter export's `assets/images/` would
-/// otherwise exhaust the quota before data files are reached).
-const INGESTIBLE_EXTS: &[&str] = &[
-    // Data
-    "json", "csv", "txt", "md",
-    // Code
+/// Data file extensions (JSON, CSV, plain text, markdown).
+pub const DATA_EXTS: &[&str] = &["json", "csv", "txt", "md"];
+
+/// Document file extensions (personal data — handled by LLM classifier).
+pub const DOC_EXTS: &[&str] = &[
+    "pdf", "doc", "docx", "rtf", "odt", "pages",
+    "xls", "xlsx", "ods", "numbers",
+    "pptx", "ppt", "odp", "key",
+    "eml", "mbox", "vcf",
+];
+
+/// Code file extensions handled by `extract_code_metadata`.
+pub const CODE_EXTS: &[&str] = &[
     "js", "jsx", "ts", "tsx", "py", "rs", "go", "java", "kt", "rb",
     "c", "cpp", "h", "hpp", "cs", "swift", "scala", "lua", "r", "pl",
     "sh", "bash", "zsh",
-    // Config
-    "yaml", "yml", "toml", "xml",
 ];
+
+/// Config file extensions wrapped as text content.
+pub const CONFIG_EXTS: &[&str] = &["yaml", "yml", "toml", "xml"];
 
 /// Returns true if the file has an extension we can ingest (data, code, or config).
 pub fn is_ingestible_file(path: &str) -> bool {
@@ -231,7 +235,8 @@ pub fn is_ingestible_file(path: &str) -> bool {
         .and_then(|e| e.to_str())
         .unwrap_or("")
         .to_lowercase();
-    INGESTIBLE_EXTS.contains(&ext.as_str())
+    let e = ext.as_str();
+    DATA_EXTS.contains(&e) || DOC_EXTS.contains(&e) || CODE_EXTS.contains(&e) || CONFIG_EXTS.contains(&e)
 }
 
 #[cfg(test)]
@@ -282,6 +287,15 @@ mod tests {
         assert!(is_ingestible_file("records.csv"));
         assert!(is_ingestible_file("notes.txt"));
         assert!(is_ingestible_file("readme.md"));
+    }
+
+    #[test]
+    fn test_document_files_are_ingestible() {
+        assert!(is_ingestible_file("report.pdf"));
+        assert!(is_ingestible_file("letter.docx"));
+        assert!(is_ingestible_file("budget.xlsx"));
+        assert!(is_ingestible_file("contacts.vcf"));
+        assert!(is_ingestible_file("mail.eml"));
     }
 
     #[test]
