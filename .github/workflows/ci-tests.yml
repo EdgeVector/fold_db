@@ -2,6 +2,7 @@ name: Test Suite
 
 on:
   push:
+    branches: [mainline]
   pull_request:
 
 jobs:
@@ -9,8 +10,6 @@ jobs:
     name: Rust Tests
     runs-on: ubuntu-latest
 
-    # Environment variables for AI query test (optional)
-    # If not set, AI query test will fail but other tests will pass
     env:
       AI_PROVIDER: ${{ secrets.AI_PROVIDER }}
       FOLD_OPENROUTER_API_KEY: ${{ secrets.FOLD_OPENROUTER_API_KEY }}
@@ -22,50 +21,32 @@ jobs:
         with:
           lfs: true
 
-      - name: Setup Node.js (for actions/cache)
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Cache Rust artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "20"
-
-      - name: Free up disk space
-        run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
-          df -h
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Install clippy component
-        run: rustup component add clippy
-
-      - name: Cache cargo registry
-        uses: actions/cache@v3
-        with:
-          path: ~/.cargo/registry
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-
-      - name: Cache cargo index
-        uses: actions/cache@v3
-        with:
-          path: ~/.cargo/git
-          key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
-
-      - name: Cache cargo build
-        uses: actions/cache@v3
-        with:
-          path: target
-          key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
+          cache: "npm"
+          cache-dependency-path: src/server/static-react/package-lock.json
 
       - name: Build frontend (required for rust_embed)
-        run: |
-          cd src/server/static-react
-          npm ci
-          npm run build
+        run: cd src/server/static-react && npm ci && npm run build
 
       - name: Run clippy
         id: clippy
         continue-on-error: true
-        run: cargo clippy --all-targets --workspace -- -D warnings
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Check AWS backend compiles
+        id: check-aws
+        run: cargo check --workspace --features aws-backend
 
       - name: Run cargo test
         id: cargo-test
@@ -86,55 +67,28 @@ jobs:
         run: cargo test --test twitter_export_scan_test -- --ignored --nocapture
         timeout-minutes: 10
 
-      - name: Check AWS Backend
-        id: check-aws
-        run: cargo check --workspace --features aws-backend
-
       - name: Rust test summary
         if: always()
         run: |
-          clippy_status="${{ steps.clippy.outcome }}"
-          test_status="${{ steps.cargo-test.outcome }}"
-          ingestion_status="${{ steps.ingestion-test.outcome }}"
-
-          if [ "$clippy_status" = "success" ]; then
-            echo "✅ **Rust Clippy**" >> $GITHUB_STEP_SUMMARY
-            echo "Clippy checks passed successfully." >> $GITHUB_STEP_SUMMARY
-          else
-            echo "❌ **Rust Clippy**" >> $GITHUB_STEP_SUMMARY
-            echo "Clippy checks failed. Check the job logs for details." >> $GITHUB_STEP_SUMMARY
-          fi
-
-          if [ "$test_status" = "success" ]; then
-            echo "✅ **Rust Tests**" >> $GITHUB_STEP_SUMMARY
-            echo "All cargo tests passed successfully." >> $GITHUB_STEP_SUMMARY
-          else
-            echo "❌ **Rust Tests**" >> $GITHUB_STEP_SUMMARY
-            echo "Cargo tests failed. Check the job logs for details." >> $GITHUB_STEP_SUMMARY
-          fi
-
-          if [ "$ingestion_status" = "success" ]; then
-            echo "✅ **Tweets Ingestion Test**" >> $GITHUB_STEP_SUMMARY
-            echo "Integration test passed (356 tweets ingested)." >> $GITHUB_STEP_SUMMARY
-          elif [ "$ingestion_status" = "skipped" ]; then
-            echo "⏭️ **Tweets Ingestion Test**" >> $GITHUB_STEP_SUMMARY
-            echo "Skipped (FOLD_OPENROUTER_API_KEY not configured)." >> $GITHUB_STEP_SUMMARY
-          else
-            echo "❌ **Tweets Ingestion Test**" >> $GITHUB_STEP_SUMMARY
-            echo "Integration test failed. Check the job logs for details." >> $GITHUB_STEP_SUMMARY
-          fi
-
-          twitter_scan_status="${{ steps.twitter-scan-test.outcome }}"
-          if [ "$twitter_scan_status" = "success" ]; then
-            echo "✅ **Twitter Export Scan Test**" >> $GITHUB_STEP_SUMMARY
-            echo "All 83 .js files found and recommended for ingestion." >> $GITHUB_STEP_SUMMARY
-          elif [ "$twitter_scan_status" = "skipped" ]; then
-            echo "⏭️ **Twitter Export Scan Test**" >> $GITHUB_STEP_SUMMARY
-            echo "Skipped (FOLD_OPENROUTER_API_KEY not configured)." >> $GITHUB_STEP_SUMMARY
-          else
-            echo "❌ **Twitter Export Scan Test**" >> $GITHUB_STEP_SUMMARY
-            echo "Integration test failed. Check the job logs for details." >> $GITHUB_STEP_SUMMARY
-          fi
+          for step_name in clippy cargo-test ingestion-test twitter-scan-test; do
+            case "$step_name" in
+              clippy)         label="Rust Clippy" ;;
+              cargo-test)     label="Rust Tests" ;;
+              ingestion-test) label="Tweets Ingestion Test" ;;
+              twitter-scan-test) label="Twitter Export Scan Test" ;;
+            esac
+            case "$step_name" in
+              clippy)         status="${{ steps.clippy.outcome }}" ;;
+              cargo-test)     status="${{ steps.cargo-test.outcome }}" ;;
+              ingestion-test) status="${{ steps.ingestion-test.outcome }}" ;;
+              twitter-scan-test) status="${{ steps.twitter-scan-test.outcome }}" ;;
+            esac
+            case "$status" in
+              success) echo "✅ **$label** — passed" >> $GITHUB_STEP_SUMMARY ;;
+              skipped) echo "⏭️ **$label** — skipped" >> $GITHUB_STEP_SUMMARY ;;
+              *)       echo "❌ **$label** — failed" >> $GITHUB_STEP_SUMMARY ;;
+            esac
+          done
 
       - name: Fail if clippy or tests failed
         if: |
@@ -166,9 +120,6 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # Skip generate:endpoints - endpoints.ts is committed to git
-      # Only regenerate locally when OpenAPI spec changes
-
       - name: Run npm test
         id: npm-test
         continue-on-error: true
@@ -179,11 +130,9 @@ jobs:
         run: |
           status="${{ steps.npm-test.outcome }}"
           if [ "$status" = "success" ]; then
-            echo "✅ **Frontend Tests**" >> $GITHUB_STEP_SUMMARY
-            echo "All npm tests passed successfully." >> $GITHUB_STEP_SUMMARY
+            echo "✅ **Frontend Tests** — passed" >> $GITHUB_STEP_SUMMARY
           else
-            echo "❌ **Frontend Tests**" >> $GITHUB_STEP_SUMMARY
-            echo "npm tests failed. Check the job logs for details." >> $GITHUB_STEP_SUMMARY
+            echo "❌ **Frontend Tests** — failed" >> $GITHUB_STEP_SUMMARY
           fi
 
       - name: Fail if npm tests failed
