@@ -26,9 +26,6 @@ pub async fn hydrate_index_results(
         return results;
     }
 
-    // Deduplicate stale entries from append-only index
-    results = IndexResult::keep_highest_molecule_version(results);
-
     // Limit the number of results to hydrate for performance
     let hydrate_count = results.len().min(MAX_HYDRATE_RESULTS);
 

@@ -138,3 +138,4 @@ transform_*.json
 mutation_*.json
 query_*.json
 sample_*.json
+.fastembed_cache/

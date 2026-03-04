@@ -55,11 +55,7 @@ pub async fn create_fold_db(
             );
             let store = Arc::new(enc_store) as Arc<dyn crate::storage::traits::NamespacedStore>;
 
-            // Build DbOperations with E2E index key for keyword blinding
-            let db_ops = DbOperations::from_namespaced_store(
-                store,
-                Some(e2e_keys.index_key()),
-            )
+            let db_ops = DbOperations::from_namespaced_store(store)
             .await
             .map_err(|e| FoldDbError::Config(e.to_string()))?;
 
@@ -191,7 +187,7 @@ pub async fn create_fold_db(
                 Arc::new(e2e_store) as Arc<dyn crate::storage::traits::NamespacedStore>;
 
             let db_ops = Arc::new(
-                DbOperations::from_namespaced_store(final_store, Some(e2e_keys.index_key()))
+                DbOperations::from_namespaced_store(final_store)
                     .await
                     .map_err(|e| {
                         FoldDbError::Config(format!("Failed to initialize DynamoDB backend: {}", e))
@@ -234,7 +230,7 @@ pub async fn create_fold_db_from_store(
     let final_store = Arc::new(enc_store) as Arc<dyn crate::storage::traits::NamespacedStore>;
 
     let db_ops = Arc::new(
-        DbOperations::from_namespaced_store(final_store, Some(e2e_keys.index_key()))
+        DbOperations::from_namespaced_store(final_store)
             .await
             .map_err(|e| FoldDbError::Config(e.to_string()))?,
     );

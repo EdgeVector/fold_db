@@ -8,6 +8,7 @@ publish = false
 default = []
 ts-bindings = ["ts-rs"]  # Generate TypeScript bindings when enabled
 aws-backend = ["aws-config", "aws-sdk-dynamodb", "aws-sdk-s3", "aws-sdk-sns", "aws-sdk-sqs", "aws-sdk-kms", "serde_dynamo"]  # AWS backends (DynamoDB, S3, SNS, SQS, KMS)
+test-utils = []  # Expose test helpers (MockEmbeddingModel, etc.) for integration tests
 
 [dependencies]
 # Utilities
@@ -85,9 +86,8 @@ colored = "3.1.1"
 ratatui = "0.29"
 crossterm = "0.28"
 
-# Text processing for rules-based keyword extraction
-rust-stemmers = "1.2"
-stop-words = "0.9"
+# Vector embedding model for semantic search (lazy-loads all-MiniLM-L6-v2 on first use)
+fastembed = "4"
 
 [dev-dependencies]
 tokio = { version = "1.0", features = ["macros", "rt-multi-thread", "full"] }

@@ -289,9 +289,7 @@ impl FoldDB {
             SchemaError::InvalidData("Native index manager not available".to_string())
         })?;
 
-        let entries = manager.search_all(term).await?;
-        let results = manager.entries_to_results(entries);
-        Ok(IndexResult::keep_highest_molecule_version(results))
+        manager.search_all_classifications(term).await
     }
 
     /// Get the mutation manager for testing mutation functionality

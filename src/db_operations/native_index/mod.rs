@@ -1,53 +1,81 @@
-mod indexing;
-mod search;
+mod embedding_index;
+mod embedding_model;
 mod types;
 
 #[cfg(test)]
 mod tests;
 
-pub use types::{IndexClassification, IndexEntry, IndexResult};
+pub use types::IndexResult;
 
-use crate::crypto::E2eKeys;
+use crate::schema::types::key_value::KeyValue;
+use crate::schema::SchemaError;
 use crate::storage::traits::KvStore;
+use embedding_index::{fields_to_text, EmbeddingIndex};
+use embedding_model::{Embedder, FastEmbedModel};
+use std::collections::HashMap;
 use std::sync::Arc;
-
-use types::EXCLUDED_FIELDS;
 
 #[derive(Clone)]
 pub struct NativeIndexManager {
     store: Arc<dyn KvStore>,
-    e2e_index_key: Option<[u8; 32]>,
+    embedding_model: Arc<dyn Embedder>,
+    embedding_index: Arc<EmbeddingIndex>,
 }
 
 impl NativeIndexManager {
-    /// Create with KvStore (works with any backend)
-    pub fn new(store: Arc<dyn KvStore>, e2e_index_key: Option<[u8; 32]>) -> Self {
+    pub fn new(store: Arc<dyn KvStore>) -> Self {
         Self {
             store,
-            e2e_index_key,
+            embedding_model: Arc::new(FastEmbedModel::new()),
+            embedding_index: Arc::new(EmbeddingIndex::new(Vec::new())),
         }
     }
 
-    /// Blind a search/index term using HMAC if an E2E index key is configured.
-    /// Returns the term unchanged when no key is present (backward compat).
-    fn blind_token(&self, term: &str) -> String {
-        match &self.e2e_index_key {
-            Some(key) => E2eKeys::blind_token(key, term),
-            None => term.to_string(),
+    /// Load persisted embeddings from the store. Call this once after `new()` during node startup.
+    pub async fn restore_from_store(&self) {
+        let entries = EmbeddingIndex::load_from_store(&*self.store).await;
+        *self.embedding_index.entries.write().unwrap() = entries;
+    }
+
+    #[cfg(any(test, feature = "test-utils"))]
+    pub(crate) fn with_model(store: Arc<dyn KvStore>, model: Arc<dyn Embedder>) -> Self {
+        Self {
+            store,
+            embedding_model: model,
+            embedding_index: Arc::new(EmbeddingIndex::new(Vec::new())),
         }
     }
 
-    pub fn should_index_field(field_name: &str) -> bool {
-        !EXCLUDED_FIELDS
-            .iter()
-            .any(|excluded| excluded.eq_ignore_ascii_case(field_name))
+    /// Index all fields of a record as a single document embedding.
+    pub async fn index_record(
+        &self,
+        schema: &str,
+        key: &KeyValue,
+        fields_and_values: &HashMap<String, serde_json::Value>,
+    ) -> Result<(), SchemaError> {
+        let text = fields_to_text(fields_and_values);
+        if text.trim().is_empty() {
+            return Ok(());
+        }
+
+        let embedding = self.embedding_model.embed_text(&text)?;
+        let field_names: Vec<String> = fields_and_values.keys().cloned().collect();
+
+        self.embedding_index
+            .insert(&*self.store, schema, key, field_names, embedding)
+            .await
     }
 
-    /// Convert IndexEntry results to IndexResult for backward compatibility
-    pub fn entries_to_results(&self, entries: Vec<IndexEntry>) -> Vec<IndexResult> {
-        entries
-            .into_iter()
-            .map(|e| e.to_index_result(None))
-            .collect()
+    /// Semantic search: embed the query then return top-50 results by cosine similarity.
+    pub async fn search_all_classifications(
+        &self,
+        query: &str,
+    ) -> Result<Vec<IndexResult>, SchemaError> {
+        if query.trim().is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let query_vec = self.embedding_model.embed_text(query)?;
+        Ok(self.embedding_index.search(&query_vec, 50))
     }
 }

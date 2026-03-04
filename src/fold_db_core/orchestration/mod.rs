@@ -4,6 +4,5 @@
 //! complex operations across multiple system components.
 
 pub mod index_status;
-pub mod keyword_extractor;
 
 pub use index_status::{IndexStatusTracker, IndexingState, IndexingStatus};

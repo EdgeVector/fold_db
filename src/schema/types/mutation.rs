@@ -16,10 +16,6 @@ pub struct Mutation {
     pub synchronous: Option<bool>,
     /// Optional source filename for atoms created from file uploads
     pub source_file_name: Option<String>,
-    /// Pre-extracted index terms (field_name → keywords), attached during ingestion
-    /// to enable inline indexing without a separate async LLM call.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub index_terms: Option<HashMap<String, Vec<String>>>,
     /// General-purpose metadata (e.g., file_hash, provenance info).
     /// Excluded from content_hash — metadata doesn't affect deduplication.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -44,7 +40,6 @@ impl Mutation {
             mutation_type,
             synchronous: None,
             source_file_name: None,
-            index_terms: None,
             metadata: None,
         }
     }
@@ -52,12 +47,6 @@ impl Mutation {
     #[must_use]
     pub fn with_source_file_name(mut self, file_name: String) -> Self {
         self.source_file_name = Some(file_name);
-        self
-    }
-
-    #[must_use]
-    pub fn with_index_terms(mut self, terms: HashMap<String, Vec<String>>) -> Self {
-        self.index_terms = Some(terms);
         self
     }
 
@@ -252,29 +241,4 @@ mod tests {
         assert_eq!(m1.content_hash(), m2.content_hash());
     }
 
-    #[test]
-    fn test_content_hash_excludes_index_terms() {
-        let fields = HashMap::new();
-
-        let m1 = Mutation::new(
-            "Schema".to_string(),
-            fields.clone(),
-            KeyValue::new(None, None),
-            "key".to_string(),
-            MutationType::Update,
-        );
-
-        let m2 = Mutation::new(
-            "Schema".to_string(),
-            fields,
-            KeyValue::new(None, None),
-            "key".to_string(),
-            MutationType::Update,
-        )
-        .with_index_terms(HashMap::from([
-            ("name".to_string(), vec!["alice".to_string(), "johnson".to_string()]),
-        ]));
-
-        assert_eq!(m1.content_hash(), m2.content_hash());
-    }
 }
