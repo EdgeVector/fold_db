@@ -66,6 +66,7 @@ impl OpenRouterBackend {
         config.validate()?;
         let client = Client::builder()
             .timeout(Duration::from_secs(timeout_seconds))
+            .no_proxy()
             .build()
             .map_err(|e| IngestionError::openrouter_error(format!("Failed to create HTTP client: {}", e)))?;
         Ok(Self { client, config, max_retries })
@@ -150,6 +151,7 @@ impl OllamaBackend {
         config.validate()?;
         let client = Client::builder()
             .timeout(Duration::from_secs(timeout_seconds))
+            .no_proxy()
             .build()
             .map_err(|e| IngestionError::ollama_error(format!("Failed to create HTTP client: {}", e)))?;
         Ok(Self { client, config, max_retries })
