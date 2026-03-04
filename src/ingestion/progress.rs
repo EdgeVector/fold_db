@@ -63,7 +63,6 @@ pub struct IngestionProgress {
 
 impl From<Job> for IngestionProgress {
     fn from(job: Job) -> Self {
-        // Parse current step from metadata if possible, otherwise derive from status
         let current_step: IngestionStep = if let Some(step_val) = job.metadata.get("step") {
             serde_json::from_value(step_val.clone()).unwrap_or(IngestionStep::ValidatingConfig)
         } else {
@@ -74,8 +73,7 @@ impl From<Job> for IngestionProgress {
             }
         };
 
-        // Convert JobType to string for API response
-        let job_type_str = match &job.job_type {
+        let job_type = match &job.job_type {
             JobType::Ingestion => "ingestion".to_string(),
             JobType::Indexing => "indexing".to_string(),
             JobType::Backfill => "backfill".to_string(),
@@ -84,7 +82,7 @@ impl From<Job> for IngestionProgress {
 
         IngestionProgress {
             id: job.id,
-            job_type: job_type_str,
+            job_type,
             current_step,
             progress_percentage: job.progress_percentage,
             status_message: job.message,
@@ -110,20 +108,10 @@ impl ProgressService {
     }
 
     pub async fn start_progress(&self, id: String, user_id: String) -> IngestionProgress {
-        let mut job = Job::new(id, JobType::Ingestion);
-
-        job = job.with_user(user_id);
-
-        // Initial metadata
-        job.metadata = serde_json::json!({
-            "step": IngestionStep::ValidatingConfig
-        });
-        job.progress_percentage = 5;
-        job.message = "Starting ingestion process...".to_string();
-
-        if let Err(e) = self.tracker.save(&job).await {
-            log::warn!("Failed to save progress: {}", e);
-        }
+        let mut job = Job::new(id, JobType::Ingestion).with_user(user_id);
+        job.update_progress(5, "Starting ingestion process...".to_string());
+        Self::set_job_step(&mut job, &IngestionStep::ValidatingConfig);
+        self.save_job(&job).await;
         job.into()
     }
 
@@ -133,25 +121,8 @@ impl ProgressService {
         step: IngestionStep,
         message: String,
     ) -> Option<IngestionProgress> {
-        if let Ok(Some(mut job)) = self.tracker.load(id).await {
-            job.update_progress(Self::step_to_percentage(&step), message);
-
-            // Update metadata with step
-            if let Ok(step_json) = serde_json::to_value(&step) {
-                if let serde_json::Value::Object(ref mut map) = job.metadata {
-                    map.insert("step".to_string(), step_json);
-                } else {
-                    job.metadata = serde_json::json!({ "step": step_json });
-                }
-            }
-
-            if let Err(e) = self.tracker.save(&job).await {
-            log::warn!("Failed to save progress: {}", e);
-        }
-            Some(job.into())
-        } else {
-            None
-        }
+        let pct = Self::step_to_percentage(&step);
+        self.update_progress_with_percentage(id, step, message, pct).await
     }
 
     pub async fn update_progress_with_percentage(
@@ -161,25 +132,11 @@ impl ProgressService {
         message: String,
         percentage: u8,
     ) -> Option<IngestionProgress> {
-        if let Ok(Some(mut job)) = self.tracker.load(id).await {
-            job.update_progress(percentage, message);
-
-            // Update metadata with step
-            if let Ok(step_json) = serde_json::to_value(&step) {
-                if let serde_json::Value::Object(ref mut map) = job.metadata {
-                    map.insert("step".to_string(), step_json);
-                } else {
-                    job.metadata = serde_json::json!({ "step": step_json });
-                }
-            }
-
-            if let Err(e) = self.tracker.save(&job).await {
-            log::warn!("Failed to save progress: {}", e);
-        }
-            Some(job.into())
-        } else {
-            None
-        }
+        let Ok(Some(mut job)) = self.tracker.load(id).await else { return None };
+        job.update_progress(percentage, message);
+        Self::set_job_step(&mut job, &step);
+        self.save_job(&job).await;
+        Some(job.into())
     }
 
     pub async fn complete_progress(
@@ -187,27 +144,11 @@ impl ProgressService {
         id: &str,
         results: IngestionResults,
     ) -> Option<IngestionProgress> {
-        if let Ok(Some(mut job)) = self.tracker.load(id).await {
-            let result_json = serde_json::to_value(results).ok();
-            job.complete(result_json);
-
-            // Update metadata with step
-            let step = IngestionStep::Completed;
-            if let Ok(step_json) = serde_json::to_value(&step) {
-                if let serde_json::Value::Object(ref mut map) = job.metadata {
-                    map.insert("step".to_string(), step_json);
-                } else {
-                    job.metadata = serde_json::json!({ "step": step_json });
-                }
-            }
-
-            if let Err(e) = self.tracker.save(&job).await {
-            log::warn!("Failed to save progress: {}", e);
-        }
-            Some(job.into())
-        } else {
-            None
-        }
+        let Ok(Some(mut job)) = self.tracker.load(id).await else { return None };
+        job.complete(serde_json::to_value(results).ok());
+        Self::set_job_step(&mut job, &IngestionStep::Completed);
+        self.save_job(&job).await;
+        Some(job.into())
     }
 
     pub async fn fail_progress(
@@ -215,41 +156,20 @@ impl ProgressService {
         id: &str,
         error_message: String,
     ) -> Option<IngestionProgress> {
-        if let Ok(Some(mut job)) = self.tracker.load(id).await {
-            job.fail(error_message);
-
-            // Update metadata with step
-            let step = IngestionStep::Failed;
-            if let Ok(step_json) = serde_json::to_value(&step) {
-                if let serde_json::Value::Object(ref mut map) = job.metadata {
-                    map.insert("step".to_string(), step_json);
-                } else {
-                    job.metadata = serde_json::json!({ "step": step_json });
-                }
-            }
-
-            if let Err(e) = self.tracker.save(&job).await {
-            log::warn!("Failed to save progress: {}", e);
-        }
-            Some(job.into())
-        } else {
-            None
-        }
+        let Ok(Some(mut job)) = self.tracker.load(id).await else { return None };
+        job.fail(error_message);
+        Self::set_job_step(&mut job, &IngestionStep::Failed);
+        self.save_job(&job).await;
+        Some(job.into())
     }
 
     pub async fn get_progress(&self, id: &str) -> Option<IngestionProgress> {
-        self.tracker
-            .load(id)
-            .await
-            .unwrap_or(None)
-            .map(|j| j.into())
+        self.tracker.load(id).await.unwrap_or(None).map(|j| j.into())
     }
 
     pub async fn get_all_progress(&self) -> Vec<IngestionProgress> {
-        // Require user context - no default fallback
-        let user_id = match crate::logging::core::get_current_user_id() {
-            Some(uid) => uid,
-            None => return vec![], // No user context = no jobs to return
+        let Some(user_id) = crate::logging::core::get_current_user_id() else {
+            return vec![]; // No user context = no jobs to return
         };
 
         self.tracker
@@ -257,13 +177,28 @@ impl ProgressService {
             .await
             .unwrap_or_default()
             .into_iter()
-            // Include Ingestion, Indexing, and database_reset jobs
             .filter(|j| {
                 matches!(j.job_type, JobType::Ingestion | JobType::Indexing)
                     || matches!(&j.job_type, JobType::Other(s) if s == "database_reset")
             })
             .map(|j| j.into())
             .collect()
+    }
+
+    fn set_job_step(job: &mut Job, step: &IngestionStep) {
+        let step_json = serde_json::to_value(step).unwrap_or_default();
+        match job.metadata {
+            serde_json::Value::Object(ref mut map) => {
+                map.insert("step".to_string(), step_json);
+            }
+            _ => job.metadata = serde_json::json!({ "step": step_json }),
+        }
+    }
+
+    async fn save_job(&self, job: &Job) {
+        if let Err(e) = self.tracker.save(job).await {
+            log::warn!("Failed to save progress: {}", e);
+        }
     }
 
     fn step_to_percentage(step: &IngestionStep) -> u8 {
