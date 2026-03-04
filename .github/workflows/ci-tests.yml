@@ -5,6 +5,10 @@ on:
     branches: [mainline]
   pull_request:
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   rust-tests:
     name: Rust Tests
@@ -46,6 +50,7 @@ jobs:
 
       - name: Check AWS backend compiles
         id: check-aws
+        continue-on-error: true
         run: cargo check --workspace --features aws-backend
 
       - name: Run cargo test
@@ -70,15 +75,17 @@ jobs:
       - name: Rust test summary
         if: always()
         run: |
-          for step_name in clippy cargo-test ingestion-test twitter-scan-test; do
+          for step_name in clippy check-aws cargo-test ingestion-test twitter-scan-test; do
             case "$step_name" in
               clippy)         label="Rust Clippy" ;;
+              check-aws)      label="AWS Backend Check" ;;
               cargo-test)     label="Rust Tests" ;;
               ingestion-test) label="Tweets Ingestion Test" ;;
               twitter-scan-test) label="Twitter Export Scan Test" ;;
             esac
             case "$step_name" in
               clippy)         status="${{ steps.clippy.outcome }}" ;;
+              check-aws)      status="${{ steps.check-aws.outcome }}" ;;
               cargo-test)     status="${{ steps.cargo-test.outcome }}" ;;
               ingestion-test) status="${{ steps.ingestion-test.outcome }}" ;;
               twitter-scan-test) status="${{ steps.twitter-scan-test.outcome }}" ;;
@@ -93,6 +100,7 @@ jobs:
       - name: Fail if clippy or tests failed
         if: |
           steps.clippy.outcome == 'failure' ||
+          steps.check-aws.outcome == 'failure' ||
           steps.cargo-test.outcome == 'failure' ||
           steps.ingestion-test.outcome == 'failure' ||
           steps.twitter-scan-test.outcome == 'failure'
