@@ -3,6 +3,8 @@ name: Auto-update PR branches
 on:
   push:
     branches: [mainline]
+  pull_request:
+    types: [opened]
   workflow_dispatch:
 
 permissions:
