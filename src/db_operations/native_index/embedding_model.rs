@@ -3,7 +3,7 @@ use fastembed::{EmbeddingModel, InitOptions, TextEmbedding};
 use once_cell::sync::OnceCell;
 
 /// Trait for embedding text into a fixed-dimension float vector.
-pub(super) trait Embedder: Send + Sync {
+pub(crate) trait Embedder: Send + Sync {
     fn embed_text(&self, text: &str) -> Result<Vec<f32>, SchemaError>;
 }
 
