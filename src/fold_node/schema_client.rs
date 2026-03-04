@@ -32,6 +32,7 @@ impl SchemaServiceClient {
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(30))
             .connect_timeout(std::time::Duration::from_secs(10))
+            .no_proxy()
             .build()
             .unwrap_or_else(|_| reqwest::Client::new());
 
