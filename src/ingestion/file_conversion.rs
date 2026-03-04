@@ -1,6 +1,7 @@
 //! File conversion utilities — CSV, Twitter JS, code metadata extraction, and unified file reading.
 
 use crate::ingestion::error::IngestionError;
+use crate::ingestion::smart_folder_scanner::{CODE_EXTS, CONFIG_EXTS};
 use crate::ingestion::IngestionResult;
 use regex::Regex;
 use serde_json::Value;
@@ -71,41 +72,29 @@ pub fn twitter_js_to_json(content: &str) -> IngestionResult<String> {
     }
 }
 
-/// Code file extensions handled by `extract_code_metadata`.
-const CODE_EXTS: &[&str] = &[
-    "js", "jsx", "ts", "tsx", "py", "rs", "go", "java", "kt", "rb",
-    "c", "cpp", "h", "hpp", "cs", "swift", "scala", "lua", "r", "pl",
-    "sh", "bash", "zsh",
-];
-
-/// Config file extensions wrapped as text content.
-const CONFIG_EXTS: &[&str] = &["yaml", "yml", "toml", "xml"];
-
-/// Returns true if `ext` (lowercase, no dot) is a code file extension.
 fn is_code_ext(ext: &str) -> bool {
     CODE_EXTS.contains(&ext)
 }
 
-/// Returns true if `ext` (lowercase, no dot) is a config file extension.
 fn is_config_ext(ext: &str) -> bool {
     CONFIG_EXTS.contains(&ext)
 }
 
 /// Extract structural metadata from a source code file using regex.
 ///
-/// Returns a JSON string with function/method declarations, class/struct
+/// Returns a `Value` with function/method declarations, class/struct
 /// declarations, and comments found in the source.
-pub fn extract_code_metadata(content: &str, file_name: &str, ext: &str) -> IngestionResult<String> {
+pub fn extract_code_metadata(content: &str, file_name: &str, ext: &str) -> Value {
     let fn_re = Regex::new(
-        r"(?m)^\s*(?:pub\s+)?(?:async\s+)?(?:fn|def|function|func|sub)\s+\w+",
+        r"(?m)^\s*(?:pub\s+)?(?:async\s+)?(?:fn|def|function|func|sub)\s+(?:\([^)]*\)\s*)?\w+",
     )
     .unwrap();
     let class_re = Regex::new(
-        r"(?m)^\s*(?:pub\s+)?(?:class|struct|trait|enum|interface)\s+\w+",
+        r"(?m)^\s*(?:pub\s+)?(?:class|struct|trait|enum|interface|type)\s+\w+",
     )
     .unwrap();
     let comment_re = Regex::new(
-        r"(?m)^\s*(?://[/!]?.*|#[^!].*|#$)",
+        r"(?m)^\s*(?://[/!]?.*|#(?:$|[^!\[].*))",
     )
     .unwrap();
 
@@ -124,32 +113,60 @@ pub fn extract_code_metadata(content: &str, file_name: &str, ext: &str) -> Inges
         .map(|m| m.as_str().trim().to_string())
         .collect();
 
-    serde_json::to_string(&serde_json::json!({
+    serde_json::json!({
         "source_file": file_name,
         "file_type": ext,
         "functions": functions,
         "classes": classes,
         "comments": comments,
-    }))
-    .map_err(|e| IngestionError::InvalidInput(format!("Failed to serialize code metadata: {}", e)))
+    })
 }
 
-/// Wrap plain-text content (`.txt`, `.md`, config files) as JSON.
-fn wrap_text_content(content: &str, file_name: &str, ext: &str) -> IngestionResult<String> {
-    serde_json::to_string(&serde_json::json!({
+/// Wrap plain-text content (`.txt`, `.md`, config files) as a `Value`.
+fn wrap_text_content(content: &str, file_name: &str, ext: &str) -> Value {
+    serde_json::json!({
         "content": content,
         "source_file": file_name,
         "file_type": ext
-    }))
-    .map_err(|e| IngestionError::InvalidInput(format!("Failed to wrap text content: {}", e)))
+    })
 }
 
-/// Convert a `.js` file to JSON — tries Twitter export format first,
-/// falls back to code metadata extraction.
-fn js_to_json(content: &str, file_name: &str) -> IngestionResult<String> {
-    match twitter_js_to_json(content) {
-        Ok(json) => Ok(json),
-        Err(_) => extract_code_metadata(content, file_name, "js"),
+/// Returns true if the content looks like a Twitter data export JS file.
+fn is_twitter_export_js(content: &str) -> bool {
+    let s = content.trim_start();
+    s.starts_with("window.YTD.") || s.starts_with("window.__THAR_CONFIG")
+}
+
+/// Convert a `.js` file — routes to Twitter export parser or code metadata
+/// based on content prefix.
+fn js_to_json(content: &str, file_name: &str) -> IngestionResult<Value> {
+    if is_twitter_export_js(content) {
+        let json_string = twitter_js_to_json(content)?;
+        serde_json::from_str(&json_string)
+            .map_err(|e| IngestionError::InvalidInput(format!("Failed to parse JSON: {}", e)))
+    } else {
+        Ok(extract_code_metadata(content, file_name, "js"))
+    }
+}
+
+/// Parse file content into a JSON `Value` based on the file extension.
+fn parse_content_by_ext(content: &str, file_name: &str, ext: &str) -> IngestionResult<Value> {
+    match ext {
+        "json" => serde_json::from_str(content)
+            .map_err(|e| IngestionError::InvalidInput(format!("Failed to parse JSON: {}", e))),
+        "js" => js_to_json(content, file_name),
+        "csv" => {
+            let json_string = csv_to_json(content)?;
+            serde_json::from_str(&json_string)
+                .map_err(|e| IngestionError::InvalidInput(format!("Failed to parse JSON: {}", e)))
+        }
+        "txt" | "md" => Ok(wrap_text_content(content, file_name, ext)),
+        e if is_code_ext(e) => Ok(extract_code_metadata(content, file_name, e)),
+        e if is_config_ext(e) => Ok(wrap_text_content(content, file_name, e)),
+        _ => Err(IngestionError::InvalidInput(format!(
+            "Unsupported file type: {}",
+            ext
+        ))),
     }
 }
 
@@ -170,25 +187,14 @@ pub fn read_file_as_json(file_path: &Path) -> IngestionResult<Value> {
     let file_name = file_path
         .file_name()
         .and_then(|n| n.to_str())
-        .unwrap_or("unknown");
+        .ok_or_else(|| {
+            IngestionError::InvalidInput(format!(
+                "Failed to derive file name from path: {}",
+                file_path.display()
+            ))
+        })?;
 
-    let json_string = match ext.as_str() {
-        "json" => content,
-        "js" => js_to_json(&content, file_name)?,
-        "csv" => csv_to_json(&content)?,
-        "txt" | "md" => wrap_text_content(&content, file_name, &ext)?,
-        e if is_code_ext(e) => extract_code_metadata(&content, file_name, e)?,
-        e if is_config_ext(e) => wrap_text_content(&content, file_name, e)?,
-        _ => {
-            return Err(IngestionError::InvalidInput(format!(
-                "Unsupported file type: {}",
-                ext
-            )))
-        }
-    };
-
-    serde_json::from_str(&json_string)
-        .map_err(|e| IngestionError::InvalidInput(format!("Failed to parse JSON: {}", e)))
+    parse_content_by_ext(&content, file_name, &ext)
 }
 
 /// Read a file, compute its SHA256 hash, and convert to JSON.
@@ -213,29 +219,14 @@ pub fn read_file_with_hash(file_path: &Path) -> IngestionResult<(Value, String, 
     let file_name = file_path
         .file_name()
         .and_then(|n| n.to_str())
-        .unwrap_or("unknown");
+        .ok_or_else(|| {
+            IngestionError::InvalidInput(format!(
+                "Failed to derive file name from path: {}",
+                file_path.display()
+            ))
+        })?;
 
-    let json_string: std::borrow::Cow<'_, str> = match ext.as_str() {
-        "json" => std::borrow::Cow::Borrowed(content),
-        "js" => std::borrow::Cow::Owned(js_to_json(content, file_name)?),
-        "csv" => std::borrow::Cow::Owned(csv_to_json(content)?),
-        "txt" | "md" => std::borrow::Cow::Owned(wrap_text_content(content, file_name, &ext)?),
-        e if is_code_ext(e) => {
-            std::borrow::Cow::Owned(extract_code_metadata(content, file_name, e)?)
-        }
-        e if is_config_ext(e) => {
-            std::borrow::Cow::Owned(wrap_text_content(content, file_name, e)?)
-        }
-        _ => {
-            return Err(IngestionError::InvalidInput(format!(
-                "Unsupported file type: {}",
-                ext
-            )))
-        }
-    };
-
-    let value = serde_json::from_str(&json_string)
-        .map_err(|e| IngestionError::InvalidInput(format!("Failed to parse JSON: {}", e)))?;
+    let value = parse_content_by_ext(content, file_name, &ext)?;
 
     Ok((value, hash_hex, raw_bytes))
 }
@@ -374,8 +365,7 @@ def foo(x, y):
 async def bar():
     pass
 "#;
-        let json = extract_code_metadata(content, "example.py", "py").unwrap();
-        let val: Value = serde_json::from_str(&json).unwrap();
+        let val = extract_code_metadata(content, "example.py", "py");
         assert_eq!(val["source_file"], "example.py");
         assert_eq!(val["file_type"], "py");
 
@@ -397,7 +387,8 @@ async def bar():
 
     #[test]
     fn test_extract_code_metadata_rust() {
-        let content = r#"/// A greeter struct
+        let content = r#"#[derive(Debug)]
+/// A greeter struct
 pub struct Greeter {
     name: String,
 }
@@ -416,8 +407,7 @@ enum Color {
     Blue,
 }
 "#;
-        let json = extract_code_metadata(content, "lib.rs", "rs").unwrap();
-        let val: Value = serde_json::from_str(&json).unwrap();
+        let val = extract_code_metadata(content, "lib.rs", "rs");
 
         let functions: Vec<&str> = val["functions"].as_array().unwrap()
             .iter().map(|v| v.as_str().unwrap()).collect();
@@ -433,6 +423,8 @@ enum Color {
             .iter().map(|v| v.as_str().unwrap()).collect();
         assert!(comments.iter().any(|c| c.contains("A greeter struct")));
         assert!(comments.iter().any(|c| c.contains("private helper")));
+        // Rust attributes must NOT be captured as comments
+        assert!(!comments.iter().any(|c| c.contains("#[derive")));
     }
 
     #[test]
@@ -446,8 +438,7 @@ class App {
     constructor() {}
 }
 "#;
-        let json = extract_code_metadata(content, "app.js", "js").unwrap();
-        let val: Value = serde_json::from_str(&json).unwrap();
+        let val = extract_code_metadata(content, "app.js", "js");
 
         let functions: Vec<&str> = val["functions"].as_array().unwrap()
             .iter().map(|v| v.as_str().unwrap()).collect();
@@ -474,12 +465,16 @@ func main() {
 func (s *Server) Start() {
 }
 "#;
-        let json = extract_code_metadata(content, "main.go", "go").unwrap();
-        let val: Value = serde_json::from_str(&json).unwrap();
+        let val = extract_code_metadata(content, "main.go", "go");
 
         let functions: Vec<&str> = val["functions"].as_array().unwrap()
             .iter().map(|v| v.as_str().unwrap()).collect();
         assert!(functions.iter().any(|f| f.contains("func main")));
+        assert!(functions.iter().any(|f| f.contains("func (s *Server) Start")));
+
+        let classes: Vec<&str> = val["classes"].as_array().unwrap()
+            .iter().map(|v| v.as_str().unwrap()).collect();
+        assert!(classes.iter().any(|c| c.contains("type Server")));
 
         let comments: Vec<&str> = val["comments"].as_array().unwrap()
             .iter().map(|v| v.as_str().unwrap()).collect();
@@ -487,25 +482,32 @@ func (s *Server) Start() {
     }
 
     #[test]
-    fn test_js_twitter_format_takes_priority() {
+    fn test_js_twitter_format_detected_by_prefix() {
         let content = r#"window.YTD.tweet.part0 = [{"id": "1"}]"#;
-        let json = js_to_json(content, "tweets.js").unwrap();
-        let val: Value = serde_json::from_str(&json).unwrap();
+        let val = js_to_json(content, "tweets.js").unwrap();
         // Twitter format returns an array
         assert!(val.is_array());
         assert_eq!(val[0]["id"], "1");
     }
 
     #[test]
-    fn test_js_non_twitter_falls_back_to_code() {
+    fn test_js_non_twitter_gets_code_metadata() {
         let content = "function hello() { return 42; }\n";
-        let json = js_to_json(content, "app.js").unwrap();
-        let val: Value = serde_json::from_str(&json).unwrap();
-        // Falls back to code metadata
+        let val = js_to_json(content, "app.js").unwrap();
+        // Non-Twitter JS gets code metadata
         assert_eq!(val["source_file"], "app.js");
         assert_eq!(val["file_type"], "js");
         let functions = val["functions"].as_array().unwrap();
         assert!(functions.iter().any(|f| f.as_str().unwrap().contains("function hello")));
+    }
+
+    #[test]
+    fn test_js_with_equals_not_twitter_gets_code_metadata() {
+        // Has '=' but no Twitter prefix — must NOT be misclassified as Twitter export
+        let content = "const data = [1, 2, 3];\nfunction process() {}\n";
+        let val = js_to_json(content, "utils.js").unwrap();
+        assert_eq!(val["source_file"], "utils.js");
+        assert_eq!(val["file_type"], "js");
     }
 
     #[test]
@@ -568,8 +570,7 @@ func (s *Server) Start() {
 
     #[test]
     fn test_extract_code_metadata_empty_file() {
-        let json = extract_code_metadata("", "empty.py", "py").unwrap();
-        let val: Value = serde_json::from_str(&json).unwrap();
+        let val = extract_code_metadata("", "empty.py", "py");
         assert_eq!(val["source_file"], "empty.py");
         assert_eq!(val["file_type"], "py");
         assert!(val["functions"].as_array().unwrap().is_empty());
@@ -580,13 +581,12 @@ func (s *Server) Start() {
     #[test]
     fn test_extract_code_metadata_shell_comments() {
         let content = "#!/bin/bash\n# Setup env\necho hello\n# Done\n";
-        let json = extract_code_metadata(content, "setup.sh", "sh").unwrap();
-        let val: Value = serde_json::from_str(&json).unwrap();
+        let val = extract_code_metadata(content, "setup.sh", "sh");
         let comments: Vec<&str> = val["comments"].as_array().unwrap()
             .iter().map(|v| v.as_str().unwrap()).collect();
         assert!(comments.iter().any(|c| c.contains("Setup env")));
         assert!(comments.iter().any(|c| c.contains("Done")));
-        // Shebangs start with #! which is excluded by the #[^!] pattern
+        // Shebangs start with #! which is excluded by the pattern
         assert!(!comments.iter().any(|c| c.contains("#!/bin/bash")));
     }
 
