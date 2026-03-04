@@ -12,7 +12,7 @@ use crate::transform::iterator_stack_typed::types::IterationItem;
 /// Result type for iterator function execution
 pub type IteratorResult = Vec<IterationItem>;
 
-/// Result type for reducer function execution  
+/// Result type for reducer function execution
 pub type ReducerResult = String;
 
 /// Metadata about a registered function
@@ -41,20 +41,31 @@ pub enum IteratorExecutionResult {
 
 /// Trait for iterator functions that expand items into multiple items
 pub trait IteratorFunction: Send + Sync {
-    /// Execute the iterator function on a single item
     fn execute(&self, item: &IterationItem) -> IteratorExecutionResult;
-
-    /// Get metadata about this function
     fn metadata(&self) -> FunctionMetadata;
 }
 
 /// Trait for reducer functions that aggregate multiple items into one
 pub trait ReducerFunction: Send + Sync {
-    /// Execute the reducer function on a collection of items
     fn execute(&self, items: &[IterationItem]) -> ReducerResult;
-
-    /// Get metadata about this function
     fn metadata(&self) -> FunctionMetadata;
+}
+
+/// Generates a reducer struct with ReducerFunction impl from a name, description, and body.
+macro_rules! define_reducer {
+    ($struct_name:ident, $name:expr, $desc:expr, |$items:ident| $body:expr) => {
+        struct $struct_name;
+        impl ReducerFunction for $struct_name {
+            fn execute(&self, $items: &[IterationItem]) -> ReducerResult { $body }
+            fn metadata(&self) -> FunctionMetadata {
+                FunctionMetadata {
+                    name: $name.to_string(),
+                    function_type: FunctionType::Reducer,
+                    description: $desc.to_string(),
+                }
+            }
+        }
+    };
 }
 
 /// Global function registry
@@ -73,13 +84,9 @@ impl FunctionRegistry {
         registry
     }
 
-    /// Register all built-in functions
     fn register_builtins(&mut self) {
-        // Register iterator functions
         self.register_iterator(Box::new(SplitByWordFunction));
         self.register_iterator(Box::new(SplitArrayFunction));
-
-        // Register reducer functions
         self.register_reducer(Box::new(FirstReducer));
         self.register_reducer(Box::new(LastReducer));
         self.register_reducer(Box::new(CountReducer));
@@ -90,44 +97,36 @@ impl FunctionRegistry {
         self.register_reducer(Box::new(MinReducer));
     }
 
-    /// Register an iterator function
     pub fn register_iterator(&mut self, func: Box<dyn IteratorFunction>) {
         let name = func.metadata().name.clone();
         self.iterators.insert(name, func);
     }
 
-    /// Register a reducer function
     pub fn register_reducer(&mut self, func: Box<dyn ReducerFunction>) {
         let name = func.metadata().name.clone();
         self.reducers.insert(name, func);
     }
 
-    /// Get an iterator function by name
     pub fn get_iterator(&self, name: &str) -> Option<&dyn IteratorFunction> {
         self.iterators.get(name).map(|b| b.as_ref())
     }
 
-    /// Get a reducer function by name
     pub fn get_reducer(&self, name: &str) -> Option<&dyn ReducerFunction> {
         self.reducers.get(name).map(|b| b.as_ref())
     }
 
-    /// Check if a function name is registered as an iterator
     pub fn is_iterator(&self, name: &str) -> bool {
         self.iterators.contains_key(name)
     }
 
-    /// Check if a function name is registered as a reducer
     pub fn is_reducer(&self, name: &str) -> bool {
         self.reducers.contains_key(name)
     }
 
-    /// Check if a function name is registered (either type)
     pub fn is_registered(&self, name: &str) -> bool {
         self.is_iterator(name) || self.is_reducer(name)
     }
 
-    /// Get the type of a registered function
     pub fn get_function_type(&self, name: &str) -> Option<FunctionType> {
         if self.is_iterator(name) {
             Some(FunctionType::Iterator)
@@ -138,12 +137,10 @@ impl FunctionRegistry {
         }
     }
 
-    /// Get all registered iterator names
     pub fn iterator_names(&self) -> Vec<String> {
         self.iterators.keys().cloned().collect()
     }
 
-    /// Get all registered reducer names
     pub fn reducer_names(&self) -> Vec<String> {
         self.reducers.keys().cloned().collect()
     }
@@ -161,13 +158,14 @@ pub fn registry() -> &'static FunctionRegistry {
 // Built-in Iterator Functions
 // ============================================================================
 
-/// Split a text value into words
 struct SplitByWordFunction;
 
 impl IteratorFunction for SplitByWordFunction {
     fn execute(&self, item: &IterationItem) -> IteratorExecutionResult {
-        let text = extract_text_value(&item.value);
-        let words = split_words(&text);
+        let words: Vec<String> = extract_text_value(&item.value)
+            .split_whitespace()
+            .map(|s| s.to_string())
+            .collect();
         IteratorExecutionResult::TextTokens(words)
     }
 
@@ -180,7 +178,6 @@ impl IteratorFunction for SplitByWordFunction {
     }
 }
 
-/// Split an array into elements
 struct SplitArrayFunction;
 
 impl IteratorFunction for SplitArrayFunction {
@@ -214,247 +211,97 @@ impl IteratorFunction for SplitArrayFunction {
 // Built-in Reducer Functions
 // ============================================================================
 
-struct FirstReducer;
+define_reducer!(FirstReducer, "first", "Return the first item", |items| {
+    sorted_items(items).first().map(|item| extract_text_value(&item.value)).unwrap_or_default()
+});
 
-impl ReducerFunction for FirstReducer {
-    fn execute(&self, items: &[IterationItem]) -> ReducerResult {
-        sorted_items(items)
-            .first()
-            .map(|item| extract_text_value(&item.value))
-            .unwrap_or_default()
-    }
+define_reducer!(LastReducer, "last", "Return the last item", |items| {
+    sorted_items(items).last().map(|item| extract_text_value(&item.value)).unwrap_or_default()
+});
 
-    fn metadata(&self) -> FunctionMetadata {
-        FunctionMetadata {
-            name: "first".to_string(),
-            function_type: FunctionType::Reducer,
-            description: "Return the first item".to_string(),
-        }
-    }
-}
+define_reducer!(CountReducer, "count", "Count the number of items", |items| {
+    items.len().to_string()
+});
 
-struct LastReducer;
+define_reducer!(JoinReducer, "join", "Join items into a comma-separated string", |items| {
+    sorted_items(items).into_iter().map(|item| extract_text_value(&item.value)).collect::<Vec<_>>().join(", ")
+});
 
-impl ReducerFunction for LastReducer {
-    fn execute(&self, items: &[IterationItem]) -> ReducerResult {
-        sorted_items(items)
-            .last()
-            .map(|item| extract_text_value(&item.value))
-            .unwrap_or_default()
-    }
+define_reducer!(SumReducer, "sum", "Sum numeric values", |items| {
+    format_number(extract_numbers(items).sum())
+});
 
-    fn metadata(&self) -> FunctionMetadata {
-        FunctionMetadata {
-            name: "last".to_string(),
-            function_type: FunctionType::Reducer,
-            description: "Return the last item".to_string(),
-        }
-    }
-}
+define_reducer!(AverageReducer, "average", "Calculate average of numeric values", |items| {
+    let nums: Vec<f64> = extract_numbers(items).collect();
+    if nums.is_empty() { return "0".to_string(); }
+    format_number(nums.iter().sum::<f64>() / nums.len() as f64)
+});
 
-struct CountReducer;
+define_reducer!(MaxReducer, "max", "Find maximum numeric value", |items| {
+    extract_numbers(items)
+        .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+        .map(|v| v.to_string())
+        .unwrap_or_default()
+});
 
-impl ReducerFunction for CountReducer {
-    fn execute(&self, items: &[IterationItem]) -> ReducerResult {
-        items.len().to_string()
-    }
-
-    fn metadata(&self) -> FunctionMetadata {
-        FunctionMetadata {
-            name: "count".to_string(),
-            function_type: FunctionType::Reducer,
-            description: "Count the number of items".to_string(),
-        }
-    }
-}
-
-struct JoinReducer;
-
-impl ReducerFunction for JoinReducer {
-    fn execute(&self, items: &[IterationItem]) -> ReducerResult {
-        sorted_items(items)
-            .into_iter()
-            .map(|item| extract_text_value(&item.value))
-            .collect::<Vec<_>>()
-            .join(", ")
-    }
-
-    fn metadata(&self) -> FunctionMetadata {
-        FunctionMetadata {
-            name: "join".to_string(),
-            function_type: FunctionType::Reducer,
-            description: "Join items into a comma-separated string".to_string(),
-        }
-    }
-}
-
-struct SumReducer;
-
-impl ReducerFunction for SumReducer {
-    fn execute(&self, items: &[IterationItem]) -> ReducerResult {
-        let sum: f64 = items
-            .iter()
-            .filter_map(|item| match &item.value.value {
-                serde_json::Value::Number(n) => n.as_f64(),
-                _ => None,
-            })
-            .sum();
-        if sum.abs() < f64::EPSILON {
-            "0".to_string()
-        } else {
-            let mut value = sum.to_string();
-            if value.ends_with(".0") {
-                value.truncate(value.len() - 2);
-            }
-            value
-        }
-    }
-
-    fn metadata(&self) -> FunctionMetadata {
-        FunctionMetadata {
-            name: "sum".to_string(),
-            function_type: FunctionType::Reducer,
-            description: "Sum numeric values".to_string(),
-        }
-    }
-}
-
-struct AverageReducer;
-
-impl ReducerFunction for AverageReducer {
-    fn execute(&self, items: &[IterationItem]) -> ReducerResult {
-        let numeric_values: Vec<f64> = items
-            .iter()
-            .filter_map(|item| match &item.value.value {
-                serde_json::Value::Number(n) => n.as_f64(),
-                _ => None,
-            })
-            .collect();
-
-        let count = numeric_values.len();
-        if count == 0 {
-            return "0".to_string();
-        }
-
-        let sum: f64 = numeric_values.into_iter().sum();
-        let avg = sum / count as f64;
-
-        if avg.abs() < f64::EPSILON {
-            "0".to_string()
-        } else {
-            let mut value = avg.to_string();
-            if value.ends_with(".0") {
-                value.truncate(value.len() - 2);
-            }
-            value
-        }
-    }
-
-    fn metadata(&self) -> FunctionMetadata {
-        FunctionMetadata {
-            name: "average".to_string(),
-            function_type: FunctionType::Reducer,
-            description: "Calculate average of numeric values".to_string(),
-        }
-    }
-}
-
-struct MaxReducer;
-
-impl ReducerFunction for MaxReducer {
-    fn execute(&self, items: &[IterationItem]) -> ReducerResult {
-        items
-            .iter()
-            .filter_map(|item| match &item.value.value {
-                serde_json::Value::Number(n) => n.as_f64(),
-                _ => None,
-            })
-            .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
-            .map(|v| v.to_string())
-            .unwrap_or_default()
-    }
-
-    fn metadata(&self) -> FunctionMetadata {
-        FunctionMetadata {
-            name: "max".to_string(),
-            function_type: FunctionType::Reducer,
-            description: "Find maximum numeric value".to_string(),
-        }
-    }
-}
-
-struct MinReducer;
-
-impl ReducerFunction for MinReducer {
-    fn execute(&self, items: &[IterationItem]) -> ReducerResult {
-        items
-            .iter()
-            .filter_map(|item| match &item.value.value {
-                serde_json::Value::Number(n) => n.as_f64(),
-                _ => None,
-            })
-            .min_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
-            .map(|v| v.to_string())
-            .unwrap_or_default()
-    }
-
-    fn metadata(&self) -> FunctionMetadata {
-        FunctionMetadata {
-            name: "min".to_string(),
-            function_type: FunctionType::Reducer,
-            description: "Find minimum numeric value".to_string(),
-        }
-    }
-}
+define_reducer!(MinReducer, "min", "Find minimum numeric value", |items| {
+    extract_numbers(items)
+        .min_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+        .map(|v| v.to_string())
+        .unwrap_or_default()
+});
 
 // ============================================================================
 // Helper Functions
 // ============================================================================
 
-fn extract_text_value(field_value: &FieldValue) -> String {
-    match &field_value.value {
+fn json_scalar_to_string(v: &serde_json::Value) -> String {
+    match v {
         serde_json::Value::String(s) => s.clone(),
         serde_json::Value::Number(n) => n.to_string(),
         serde_json::Value::Bool(b) => b.to_string(),
-        serde_json::Value::Object(map) => map
-            .get("value")
-            .map(|v| match v {
-                serde_json::Value::String(s) => s.to_string(),
-                serde_json::Value::Number(n) => n.to_string(),
-                serde_json::Value::Bool(b) => b.to_string(),
-                _ => String::new(),
-            })
-            .unwrap_or_default(),
-        serde_json::Value::Array(arr) => arr
-            .first()
-            .and_then(|v| v.get("value"))
-            .map(|v| match v {
-                serde_json::Value::String(s) => s.to_string(),
-                serde_json::Value::Number(n) => n.to_string(),
-                serde_json::Value::Bool(b) => b.to_string(),
-                _ => String::new(),
-            })
-            .unwrap_or_default(),
-        serde_json::Value::Null => String::new(),
+        _ => String::new(),
     }
 }
 
-fn split_words(text: &str) -> Vec<String> {
-    text.split_whitespace().map(|s| s.to_string()).collect()
+fn extract_text_value(field_value: &FieldValue) -> String {
+    match &field_value.value {
+        serde_json::Value::Object(map) => {
+            map.get("value").map(json_scalar_to_string).unwrap_or_default()
+        }
+        serde_json::Value::Array(arr) => arr
+            .first()
+            .and_then(|v| v.get("value"))
+            .map(json_scalar_to_string)
+            .unwrap_or_default(),
+        serde_json::Value::Null => String::new(),
+        other => json_scalar_to_string(other),
+    }
+}
+
+fn extract_numbers(items: &[IterationItem]) -> impl Iterator<Item = f64> + '_ {
+    items.iter().filter_map(|item| match &item.value.value {
+        serde_json::Value::Number(n) => n.as_f64(),
+        _ => None,
+    })
+}
+
+fn format_number(v: f64) -> String {
+    if v.abs() < f64::EPSILON {
+        return "0".to_string();
+    }
+    let s = v.to_string();
+    if s.ends_with(".0") { s[..s.len() - 2].to_string() } else { s }
 }
 
 fn sorted_items(items: &[IterationItem]) -> Vec<&IterationItem> {
     let mut sorted: Vec<&IterationItem> = items.iter().collect();
     sorted.sort_by(|a, b| {
-        let a_key = (
-            a.key.hash.as_deref().unwrap_or(""),
-            a.key.range.as_deref().unwrap_or(""),
+        let key = |item: &IterationItem| (
+            item.key.hash.as_deref().unwrap_or("").to_string(),
+            item.key.range.as_deref().unwrap_or("").to_string(),
         );
-        let b_key = (
-            b.key.hash.as_deref().unwrap_or(""),
-            b.key.range.as_deref().unwrap_or(""),
-        );
-        a_key.cmp(&b_key)
+        key(a).cmp(&key(b))
     });
     sorted
 }
@@ -464,180 +311,86 @@ mod tests {
     use super::*;
     use crate::schema::types::key_value::KeyValue;
 
+    fn make_item(value: serde_json::Value) -> IterationItem {
+        IterationItem {
+            key: KeyValue::new(Some("test".to_string()), None),
+            value: FieldValue {
+                value,
+                atom_uuid: "test-uuid".to_string(),
+                source_file_name: None,
+                metadata: None,
+                molecule_uuid: None,
+                molecule_version: None,
+            },
+            is_text_token: false,
+        }
+    }
+
+    fn text_item(s: &str) -> IterationItem {
+        make_item(serde_json::Value::String(s.to_string()))
+    }
+
+    fn num_item(n: f64) -> IterationItem {
+        make_item(serde_json::Value::Number(
+            serde_json::Number::from_f64(n).expect("finite number"),
+        ))
+    }
+
     #[test]
     fn test_average_reducer() {
-        let reg = registry();
-        let reducer = reg
-            .get_reducer("average")
-            .expect("average reducer should exist");
-
-        // Test normal average
-        let items = vec![
-            create_test_number_item(10.0),
-            create_test_number_item(20.0),
-            create_test_number_item(30.0),
-        ];
-        let result = reducer.execute(&items);
-        assert_eq!(result, "20");
-
-        // Test with decimal
-        let items_decimal = vec![create_test_number_item(10.5), create_test_number_item(20.5)];
-        let result_decimal = reducer.execute(&items_decimal);
-        assert_eq!(result_decimal, "15.5");
-
-        // Test empty
-        let empty_items: Vec<IterationItem> = vec![];
-        let result_empty = reducer.execute(&empty_items);
-        assert_eq!(result_empty, "0");
-    }
-
-    fn create_test_number_item(num: f64) -> IterationItem {
-        IterationItem {
-            key: KeyValue::new(Some("test".to_string()), None),
-            value: FieldValue {
-                value: serde_json::Value::Number(
-                    serde_json::Number::from_f64(num)
-                        .expect("Test number must be finite (not NaN or infinity)"),
-                ),
-                atom_uuid: "test-uuid".to_string(),
-                source_file_name: None,
-                metadata: None,
-                molecule_uuid: None,
-                molecule_version: None,
-            },
-            is_text_token: false,
-        }
-    }
-
-    fn create_test_item(text: &str) -> IterationItem {
-        IterationItem {
-            key: KeyValue::new(Some("test".to_string()), None),
-            value: FieldValue {
-                value: serde_json::Value::String(text.to_string()),
-                atom_uuid: "test-uuid".to_string(),
-                source_file_name: None,
-                metadata: None,
-                molecule_uuid: None,
-                molecule_version: None,
-            },
-            is_text_token: false,
-        }
+        let reducer = registry().get_reducer("average").unwrap();
+        assert_eq!(reducer.execute(&[num_item(10.0), num_item(20.0), num_item(30.0)]), "20");
+        assert_eq!(reducer.execute(&[num_item(10.5), num_item(20.5)]), "15.5");
+        assert_eq!(reducer.execute(&[]), "0");
     }
 
     #[test]
     fn test_registry_initialization() {
         let reg = registry();
-
-        // Check iterator functions
         assert!(reg.is_iterator("split_by_word"));
         assert!(reg.is_iterator("split_array"));
-
-        // Check reducer functions
-        assert!(reg.is_reducer("first"));
-        assert!(reg.is_reducer("last"));
-        assert!(reg.is_reducer("count"));
-        assert!(reg.is_reducer("join"));
-        assert!(reg.is_reducer("sum"));
-        assert!(reg.is_reducer("max"));
-        assert!(reg.is_reducer("min"));
-
-        // Check unregistered
+        for name in ["first", "last", "count", "join", "sum", "max", "min"] {
+            assert!(reg.is_reducer(name));
+        }
         assert!(!reg.is_registered("unknown_function"));
     }
 
     #[test]
     fn test_function_type_detection() {
         let reg = registry();
-
-        assert_eq!(
-            reg.get_function_type("split_by_word"),
-            Some(FunctionType::Iterator)
-        );
+        assert_eq!(reg.get_function_type("split_by_word"), Some(FunctionType::Iterator));
         assert_eq!(reg.get_function_type("first"), Some(FunctionType::Reducer));
         assert_eq!(reg.get_function_type("unknown"), None);
     }
 
     #[test]
     fn test_count_reducer() {
-        let reg = registry();
-        let reducer = reg
-            .get_reducer("count")
-            .expect("count reducer should exist");
-
-        let items = vec![
-            create_test_item("one"),
-            create_test_item("two"),
-            create_test_item("three"),
-        ];
-
-        let result = reducer.execute(&items);
-        assert_eq!(result, "3");
+        let reducer = registry().get_reducer("count").unwrap();
+        assert_eq!(reducer.execute(&[text_item("one"), text_item("two"), text_item("three")]), "3");
     }
 
     #[test]
     fn test_join_reducer() {
-        let reg = registry();
-        let reducer = reg.get_reducer("join").expect("join reducer should exist");
-
-        let items = vec![create_test_item("hello"), create_test_item("world")];
-
-        let result = reducer.execute(&items);
-        assert_eq!(result, "hello, world");
+        let reducer = registry().get_reducer("join").unwrap();
+        assert_eq!(reducer.execute(&[text_item("hello"), text_item("world")]), "hello, world");
     }
 
     #[test]
     fn test_sum_reducer() {
-        let reg = registry();
-        let reducer = reg.get_reducer("sum").expect("sum reducer should exist");
-
-        let items = vec![
-            IterationItem {
-                key: KeyValue::new(Some("test".to_string()), None),
-                value: FieldValue {
-                    value: serde_json::Value::Number(serde_json::Number::from(10)),
-                    atom_uuid: "test-uuid".to_string(),
-                    source_file_name: None,
-                    metadata: None,
-                    molecule_uuid: None,
-                    molecule_version: None,
-                },
-                is_text_token: false,
-            },
-            IterationItem {
-                key: KeyValue::new(Some("test".to_string()), None),
-                value: FieldValue {
-                    value: serde_json::Value::Number(serde_json::Number::from(20)),
-                    atom_uuid: "test-uuid".to_string(),
-                    source_file_name: None,
-                    metadata: None,
-                    molecule_uuid: None,
-                    molecule_version: None,
-                },
-                is_text_token: false,
-            },
-        ];
-
-        let result = reducer.execute(&items);
-        assert_eq!(result, "30");
+        let reducer = registry().get_reducer("sum").unwrap();
+        assert_eq!(reducer.execute(&[num_item(10.0), num_item(20.0)]), "30");
     }
 
     #[test]
     fn test_split_by_word_execution() {
-        let reg = registry();
-        let func = reg
-            .get_iterator("split_by_word")
-            .expect("split_by_word should exist");
-
-        let item = create_test_item("hello world test");
-        let result = func.execute(&item);
-
+        let func = registry().get_iterator("split_by_word").unwrap();
+        let result = func.execute(&text_item("hello world test"));
         match result {
             IteratorExecutionResult::TextTokens(tokens) => {
                 assert_eq!(tokens, vec!["hello", "world", "test"]);
             }
             _ => panic!("Expected TextTokens result"),
         }
-
         let meta = func.metadata();
         assert_eq!(meta.name, "split_by_word");
         assert_eq!(meta.function_type, FunctionType::Iterator);
