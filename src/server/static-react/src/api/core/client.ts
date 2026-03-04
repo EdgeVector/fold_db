@@ -23,6 +23,8 @@ import {
   isRetryableError,
 } from "./errors";
 
+import { createSignatureInterceptor } from "../interceptors/signatureInterceptor";
+
 import type {
   ApiClientConfig,
   RequestOptions,
@@ -660,6 +662,8 @@ export function getSharedClient(): ApiClient {
       enableLogging: true,
       enableMetrics: true,
     });
+    // Register signature interceptor to sign write requests
+    sharedClient.addRequestInterceptor(createSignatureInterceptor());
   }
   return sharedClient;
 }

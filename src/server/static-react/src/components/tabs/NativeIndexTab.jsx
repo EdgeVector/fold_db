@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useApprovedSchemas } from '../../hooks/useApprovedSchemas.js'
 import { nativeIndexClient, mutationClient } from '../../api/clients'
 import { FieldsTable } from '../StructuredResults'
@@ -7,36 +7,97 @@ import {
   createHashKeyFilter,
   createRangeKeyFilter,
 } from '../../utils/filterUtils'
-import { getSchemaDisplayName, getFieldNames, toggleSetItem, toErrorMessage } from '../../utils/schemaUtils'
-
-function ResultRow({ r, schemaByName }) {
-  const schema = schemaByName?.get(r.schema_name)
-  const displayName = getSchemaDisplayName(schema) || r.schema_name
-  return (
-    <tr className="border-t">
-      <td className="px-2 py-1 text-xs text-secondary">
-        {r.key_value?.hash ?? ''}
-      </td>
-      <td className="px-2 py-1 text-xs text-secondary">
-        {r.key_value?.range ?? ''}
-      </td>
-      <td className="px-2 py-1 text-xs font-mono text-primary" title={r.schema_name}>
-        {displayName}
-      </td>
-      <td className="px-2 py-1 text-xs text-primary">
-        {r.field}
-      </td>
-      <td className="px-2 py-1 text-xs text-primary whitespace-pre-wrap break-words">
-        {formatValue(r.value)}
-      </td>
-    </tr>
-  )
-}
+import { getSchemaDisplayName, getFieldNames, toErrorMessage } from '../../utils/schemaUtils'
 
 function formatValue(v) {
   if (v == null) return ''
   if (typeof v === 'string') return v
   try { return JSON.stringify(v) } catch { return String(v) }
+}
+
+function RecordRow({ result, schemaByName, fetchRecordFor }) {
+  const [expanded, setExpanded] = useState(false)
+  const [details, setDetails] = useState(null)
+  const [loading, setLoading] = useState(false)
+
+  const schema = schemaByName?.get(result.schema_name)
+  const displayName = getSchemaDisplayName(schema) || result.schema_name
+  const hash = result.key_value?.hash ?? ''
+  const range = result.key_value?.range ?? ''
+  const truncatedHash = hash.length > 10 ? hash.slice(0, 10) + '...' : hash
+
+  const handleShowRecord = useCallback(async () => {
+    if (expanded) {
+      setExpanded(false)
+      return
+    }
+    setExpanded(true)
+    if (details) return
+    setLoading(true)
+    try {
+      const fields = await fetchRecordFor(result.schema_name, result.key_value)
+      setDetails(fields)
+    } catch {
+      setDetails({})
+    } finally {
+      setLoading(false)
+    }
+  }, [expanded, details, fetchRecordFor, result.schema_name, result.key_value])
+
+  return (
+    <div className="ml-4 border-l-2 border-border pl-3 py-1">
+      <div className="flex items-center gap-2 text-xs">
+        <span className="font-mono text-primary" title={result.schema_name}>{displayName}</span>
+        <span className="text-secondary" title={hash}>{truncatedHash}</span>
+        {range && <span className="text-secondary">{range}</span>}
+        <span className="text-secondary">field:{result.field}</span>
+        <button
+          type="button"
+          className="btn-secondary btn-sm ml-auto"
+          onClick={handleShowRecord}
+          disabled={loading}
+        >
+          {loading ? 'Loading...' : expanded ? 'Hide Record' : 'Show Record'}
+        </button>
+      </div>
+      {expanded && details && (
+        <div className="mt-1 ml-2 bg-surface-secondary p-2 rounded">
+          <FieldsTable fields={details} />
+        </div>
+      )}
+    </div>
+  )
+}
+
+function WordGroup({ value, records, schemaByName, fetchRecordFor, buildKeyId, isOpen, onToggle }) {
+  return (
+    <div className="border border-border rounded mb-2">
+      <button
+        type="button"
+        className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-surface-secondary transition-colors"
+        onClick={onToggle}
+      >
+        <span className="text-xs text-secondary">{isOpen ? '▼' : '▶'}</span>
+        <span className="font-mono text-sm text-primary font-semibold">{formatValue(value)}</span>
+        <span className="text-xs text-secondary">({records.length} record{records.length !== 1 ? 's' : ''})</span>
+      </button>
+      {isOpen && (
+        <div className="px-2 pb-2">
+          {records.map((r) => {
+            const id = buildKeyId(r.schema_name, r.key_value)
+            return (
+              <RecordRow
+                key={`${id}|${r.field}`}
+                result={r}
+                schemaByName={schemaByName}
+                fetchRecordFor={fetchRecordFor}
+              />
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
 }
 
 export default function NativeIndexTab({ onResult }) {
@@ -45,9 +106,9 @@ export default function NativeIndexTab({ onResult }) {
   const [isSearching, setIsSearching] = useState(false)
   const [results, setResults] = useState([])
   const [error, setError] = useState(null)
-  const [expanded, setExpanded] = useState(() => new Set())
-  const [recordDetails, setRecordDetails] = useState(() => new Map())
-  
+  const [expandedWords, setExpandedWords] = useState(() => new Set())
+  const [visibleCount, setVisibleCount] = useState(10)
+  const sentinelRef = useRef(null)
 
   useEffect(() => { refetchSchemas() }, [refetchSchemas])
 
@@ -57,9 +118,10 @@ export default function NativeIndexTab({ onResult }) {
     try {
       const res = await nativeIndexClient.search(term)
       if (res.success) {
-        // API returns { ok: true, results: [...] } in data, extract results array
         const resultsArray = res.data?.results || []
         setResults(resultsArray)
+        setExpandedWords(new Set())
+        setVisibleCount(10)
         onResult({ success: true, data: resultsArray })
       } else {
         setError(res.error || 'Search failed')
@@ -73,7 +135,6 @@ export default function NativeIndexTab({ onResult }) {
       setIsSearching(false)
     }
   }, [term, onResult])
-
 
   const schemaByName = useMemo(() => {
     const map = new Map()
@@ -106,9 +167,7 @@ export default function NativeIndexTab({ onResult }) {
     if (!res.success) {
       throw new Error(res.error || 'Query failed')
     }
-    // Server returns { ok, results, user_hash } in data - extract results array
     const arr = Array.isArray(res.data?.results) ? res.data.results : []
-    // Prefer exact key match if present
     const match = arr.find(x => {
       return String(x?.key?.hash || '') === String(kv?.hash || '') &&
              String(x?.key?.range || '') === String(kv?.range || '')
@@ -116,33 +175,51 @@ export default function NativeIndexTab({ onResult }) {
     return match?.fields || (match && typeof match === 'object' ? match : {})
   }, [schemaByName, buildFilterForKey])
 
-  const fetchAllDetails = useCallback(async () => {
-    const unique = new Map()
+  const groupedResults = useMemo(() => {
+    const map = new Map()
     for (const r of results) {
-      const id = buildKeyId(r.schema_name, r.key_value)
-      if (!unique.has(id)) unique.set(id, r)
-    }
-    const entries = Array.from(unique.values())
-    const updates = new Map(recordDetails)
-    await Promise.all(entries.map(async (r) => {
-      const id = buildKeyId(r.schema_name, r.key_value)
-      if (updates.has(id)) return
-      try {
-        const fields = await fetchRecordFor(r.schema_name, r.key_value)
-        updates.set(id, fields)
-      } catch {
-        // store empty to avoid refetch loop
-        updates.set(id, {})
+      const key = formatValue(r.value)
+      if (!map.has(key)) {
+        map.set(key, { value: r.value, records: [] })
       }
-    }))
-    setRecordDetails(updates)
-  }, [results, recordDetails, buildKeyId, fetchRecordFor])
-
-  useEffect(() => {
-    if (results.length > 0) {
-      fetchAllDetails().catch(() => { /* detail fetch is best-effort */ })
+      map.get(key).records.push(r)
     }
-  }, [results, fetchAllDetails])
+    return Array.from(map.values())
+  }, [results])
+
+  const visibleGroups = useMemo(
+    () => groupedResults.slice(0, visibleCount),
+    [groupedResults, visibleCount],
+  )
+
+  // IntersectionObserver for scroll-to-load-more
+  useEffect(() => {
+    const sentinel = sentinelRef.current
+    if (!sentinel) return
+    // eslint-disable-next-line no-undef
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          setVisibleCount(prev => prev + 10)
+        }
+      },
+      { threshold: 0.1 },
+    )
+    observer.observe(sentinel)
+    return () => observer.disconnect()
+  }, [groupedResults.length])
+
+  const toggleWord = useCallback((value) => {
+    setExpandedWords(prev => {
+      const next = new Set(prev)
+      if (next.has(value)) {
+        next.delete(value)
+      } else {
+        next.add(value)
+      }
+      return next
+    })
+  }, [])
 
   return (
     <div className="space-y-4">
@@ -159,78 +236,39 @@ export default function NativeIndexTab({ onResult }) {
         </button>
       </div>
 
-      <div className="flex items-center justify-between text-sm">
-        <span className="text-secondary">{results.length} matches</span>
-        {results.length > 0 && (
-          <button type="button" className="btn-secondary btn-sm" onClick={() => fetchAllDetails()}>
-            Refresh
-          </button>
-        )}
+      <div className="text-sm text-secondary">
+        {results.length} matches across {groupedResults.length} terms
       </div>
 
       {error && (
         <div className="text-sm text-gruvbox-red">{error}</div>
       )}
 
-      <div className="overflow-auto max-h-[450px] border border-border">
-          <table className="min-w-full text-left text-xs">
-            <thead>
-              <tr className="bg-surface-secondary">
-                <th className="px-2 py-2 text-left text-xs font-semibold text-secondary uppercase tracking-wide border-b-2 border-border">Hash</th>
-                <th className="px-2 py-2 text-left text-xs font-semibold text-secondary uppercase tracking-wide border-b-2 border-border">Range</th>
-                <th className="px-2 py-2 text-left text-xs font-semibold text-secondary uppercase tracking-wide border-b-2 border-border">Schema</th>
-                <th className="px-2 py-2 text-left text-xs font-semibold text-secondary uppercase tracking-wide border-b-2 border-border">Field</th>
-                <th className="px-2 py-2 text-left text-xs font-semibold text-secondary uppercase tracking-wide border-b-2 border-border">Value</th>
-                <th className="px-2 py-2 border-b-2 border-border"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {results.map((r) => {
-                const id = buildKeyId(r.schema_name, r.key_value)
-                const isOpen = expanded.has(id)
-                const details = recordDetails.get(id)
-                return (
-                  <Fragment key={id}>
-                    <ResultRow r={r} schemaByName={schemaByName} />
-                    <tr className="border-b">
-                      <td colSpan={5}></td>
-                      <td className="px-2 py-1 text-right">
-                        <button
-                          type="button"
-                          className="btn-secondary btn-sm"
-                          onClick={async () => {
-                            setExpanded(prev => toggleSetItem(prev, id))
-                            if (!recordDetails.has(id)) {
-                              try {
-                                const fields = await fetchRecordFor(r.schema_name, r.key_value)
-                                setRecordDetails(prev => new Map(prev).set(id, fields))
-                              } catch { /* ignore */ }
-                            }
-                          }}
-                        >
-                          {isOpen ? 'Hide Data' : 'Show Data'}
-                        </button>
-                      </td>
-                    </tr>
-                    {isOpen && (
-                      <tr>
-                        <td colSpan={6} className="px-2 pb-3 bg-surface-secondary">
-                          <FieldsTable fields={details || {}} />
-                        </td>
-                      </tr>
-                    )}
-                  </Fragment>
-                )
-              })}
-              {results.length === 0 && (
-                <tr>
-                  <td colSpan={5} className="px-2 py-3 text-center text-secondary">No results</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+      <div className="overflow-auto max-h-[500px]">
+        {visibleGroups.map((group) => {
+          const key = formatValue(group.value)
+          return (
+            <WordGroup
+              key={key}
+              value={group.value}
+              records={group.records}
+              schemaByName={schemaByName}
+              fetchRecordFor={fetchRecordFor}
+              buildKeyId={buildKeyId}
+              isOpen={expandedWords.has(key)}
+              onToggle={() => toggleWord(key)}
+            />
+          )
+        })}
+        {results.length === 0 && (
+          <div className="px-2 py-3 text-center text-secondary text-sm">No results</div>
+        )}
+        {visibleCount < groupedResults.length && (
+          <div ref={sentinelRef} className="py-2 text-center text-xs text-secondary">
+            Loading more...
+          </div>
+        )}
+      </div>
     </div>
   )
 }
-

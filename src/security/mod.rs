@@ -71,13 +71,13 @@ pub enum SecurityError {
 
 pub type SecurityResult<T> = Result<T, SecurityError>;
 
-/// Security module configuration
+/// Security module configuration.
+///
+/// Ed25519 signatures are always required on write endpoints — there is no opt-out.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SecurityConfig {
     /// Whether to require TLS for all connections
     pub require_tls: bool,
-    /// Whether to require signatures on all messages
-    pub require_signatures: bool,
     /// Whether to encrypt sensitive data at rest (optional fallback).
     /// Not needed when E2E encryption is active — E2E encrypts content before
     /// it reaches the storage layer. Enable this only if E2E is disabled.
@@ -92,7 +92,6 @@ impl Default for SecurityConfig {
     fn default() -> Self {
         Self {
             require_tls: true,
-            require_signatures: true,
             encrypt_at_rest: false, // Not needed when E2E encryption is active (default)
             master_key: None,
         }
@@ -107,10 +106,6 @@ impl SecurityConfig {
         // Load from environment variables
         if let Ok(value) = std::env::var("FOLD_REQUIRE_TLS") {
             config.require_tls = value.parse().unwrap_or(true);
-        }
-
-        if let Ok(value) = std::env::var("FOLD_REQUIRE_SIGNATURES") {
-            config.require_signatures = value.parse().unwrap_or(true);
         }
 
         if let Ok(value) = std::env::var("FOLD_ENCRYPT_AT_REST") {

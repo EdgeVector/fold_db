@@ -15,6 +15,7 @@ jobs:
   update-branches:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - name: Update all open PR branches
         run: |
           prs=$(gh pr list --base mainline --state open --json number,headRefName --jq '.[].number')

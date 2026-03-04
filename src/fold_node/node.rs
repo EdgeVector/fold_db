@@ -8,7 +8,8 @@ use tokio::sync::Mutex;
 use crate::fold_node::config::NodeConfig;
 use crate::error::{FoldDbError, FoldDbResult};
 use crate::fold_db_core::FoldDB;
-use crate::security::{EncryptionManager, SecurityConfig, SecurityManager};
+use crate::constants::SINGLE_PUBLIC_KEY_ID;
+use crate::security::{EncryptionManager, PublicKeyInfo, SecurityConfig, SecurityManager};
 
 /// A node in the Fold distributed database system.
 ///
@@ -106,6 +107,9 @@ impl FoldNode {
     ) -> FoldDbResult<Self> {
         let (node_id, security_manager, security_config) =
             Self::init_internals(&config, &db).await?;
+
+        // Register the node's public key with the verifier for signature verification
+        Self::register_node_public_key(&security_manager, &public_key).await?;
 
         let node = Self {
             db,
@@ -267,6 +271,31 @@ impl FoldNode {
         };
 
         Ok((node_id, security_manager, security_config))
+    }
+
+    /// Register the node's public key with the security manager's verifier
+    /// so that incoming signed messages can be verified.
+    async fn register_node_public_key(
+        security_manager: &Arc<SecurityManager>,
+        public_key_base64: &str,
+    ) -> FoldDbResult<()> {
+        let key_info = PublicKeyInfo::new(
+            SINGLE_PUBLIC_KEY_ID.to_string(),
+            public_key_base64.to_string(),
+            "system".to_string(),
+            vec!["read".to_string(), "write".to_string()],
+        );
+        security_manager
+            .verifier
+            .register_system_public_key(key_info)
+            .await
+            .map_err(|e| FoldDbError::SecurityError(e.to_string()))?;
+        log_feature!(
+            LogFeature::Permissions,
+            info,
+            "Registered node public key for signature verification"
+        );
+        Ok(())
     }
 }
 
