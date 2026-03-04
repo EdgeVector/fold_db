@@ -116,71 +116,28 @@ pub fn analyze_and_build_prompt(sample_json: &Value) -> IngestionResult<String> 
     let superset_structure = StructureAnalyzer::extract_structure_skeleton(sample_json);
     let stats = StructureAnalyzer::get_analysis_stats(sample_json);
 
-    log_feature!(
-        LogFeature::Ingestion,
-        info,
-        "Analyzed JSON structure: {} elements, {} unique fields",
-        stats.total_elements,
-        stats.unique_fields
-    );
-
     if let Some(array) = sample_json.as_array() {
         if array.is_empty() {
             return Err(IngestionError::ai_response_validation_error(
                 "Cannot determine schema from empty JSON array".to_string(),
             ));
         }
-
-        log_feature!(
-            LogFeature::Ingestion,
-            info,
-            "JSON data is an array with {} elements, created superset structure with {} fields",
-            array.len(),
-            stats.unique_fields
-        );
-
-        let common_fields = stats.get_common_fields();
-        let partial_fields = stats.get_partial_fields();
-
-        if !common_fields.is_empty() {
-            log_feature!(
-                LogFeature::Ingestion,
-                info,
-                "Common fields (100% coverage): {:?}",
-                common_fields
-            );
-        }
-
-        if !partial_fields.is_empty() {
-            log_feature!(
-                LogFeature::Ingestion,
-                info,
-                "Partial fields (not in all elements): {:?}",
-                partial_fields
-            );
-        }
     }
 
     log_feature!(
-        LogFeature::Ingestion,
-        info,
-        "Superset structure: {}",
-        pretty_json(&superset_structure)
+        LogFeature::Ingestion, info,
+        "Analyzing JSON: {} elements, {} unique fields, is_array={}",
+        stats.total_elements, stats.unique_fields, sample_json.is_array()
     );
 
     let is_array_input = sample_json.is_array();
     let prompt = create_prompt(&superset_structure, is_array_input);
 
     log_feature!(
-        LogFeature::Ingestion,
-        info,
-        "AI Request Prompt (length: {} chars): {}",
+        LogFeature::Ingestion, debug,
+        "AI prompt ({} chars): {}...",
         prompt.len(),
-        if prompt.len() > 1000 {
-            format!("{}...[truncated]", &prompt[..1000])
-        } else {
-            prompt.clone()
-        }
+        &prompt[..prompt.len().min(500)]
     );
 
     Ok(prompt)
@@ -341,12 +298,6 @@ pub fn validate_and_convert_response(parsed: Value) -> IngestionResult<AISchemaR
 /// Parse the raw AI response text into an AISchemaResponse.
 pub fn parse_ai_response(response_text: &str) -> IngestionResult<AISchemaResponse> {
     let json_str = extract_json_from_response(response_text)?;
-    log_feature!(
-        LogFeature::Ingestion,
-        info,
-        "Extracted JSON string: {}",
-        json_str
-    );
 
     let parsed: Value = serde_json::from_str(&json_str).map_err(|e| {
         IngestionError::ai_response_validation_error(format!(
@@ -355,40 +306,12 @@ pub fn parse_ai_response(response_text: &str) -> IngestionResult<AISchemaRespons
         ))
     })?;
 
-    log_feature!(
-        LogFeature::Ingestion,
-        info,
-        "Parsed JSON value: {}",
-        pretty_json(&parsed)
-    );
-
     let result = validate_and_convert_response(parsed)?;
 
     log_feature!(
-        LogFeature::Ingestion,
-        info,
-        "=== FINAL PARSED AI RESPONSE ==="
-    );
-    log_feature!(
-        LogFeature::Ingestion,
-        info,
-        "New schemas: {}",
-        result
-            .new_schemas
-            .as_ref()
-            .map(pretty_json)
-            .unwrap_or_else(|| "None".to_string())
-    );
-    log_feature!(
-        LogFeature::Ingestion,
-        info,
-        "Mutation mappers: {:?}",
-        result.mutation_mappers
-    );
-    log_feature!(
-        LogFeature::Ingestion,
-        info,
-        "=== END PARSED AI RESPONSE ==="
+        LogFeature::Ingestion, debug,
+        "Parsed AI response: {} mappers, new_schema={}",
+        result.mutation_mappers.len(), result.new_schemas.is_some()
     );
 
     Ok(result)

@@ -6,54 +6,26 @@ mod prompts;
 
 use super::types::{FollowupAnalysis, Message, QueryPlan};
 use crate::ingestion::{
-    config::{AIProvider, IngestionConfig},
-    ollama_service::OllamaService,
-    openrouter_service::OpenRouterService,
+    ai_client::{build_backend, AiBackend},
+    config::IngestionConfig,
 };
 use crate::schema::SchemaWithState;
 use serde_json::Value;
+use std::sync::Arc;
 
 /// Service for LLM-based query analysis and summarization
 pub struct LlmQueryService {
-    provider: AIProvider,
-    openrouter_service: Option<OpenRouterService>,
-    ollama_service: Option<OllamaService>,
+    backend: Arc<dyn AiBackend>,
 }
 
 impl LlmQueryService {
     /// Create a new LLM query service
     pub fn new(config: IngestionConfig) -> Result<Self, String> {
-        let openrouter_service = if config.provider == AIProvider::OpenRouter {
-            Some(
-                OpenRouterService::new(
-                    config.openrouter.clone(),
-                    config.timeout_seconds,
-                    config.max_retries,
-                )
-                .map_err(|e| format!("Failed to create OpenRouter service: {}", e))?,
-            )
-        } else {
-            None
-        };
-
-        let ollama_service = if config.provider == AIProvider::Ollama {
-            Some(
-                OllamaService::new(
-                    config.ollama.clone(),
-                    config.timeout_seconds,
-                    config.max_retries,
-                )
-                .map_err(|e| format!("Failed to create Ollama service: {}", e))?,
-            )
-        } else {
-            None
-        };
-
-        Ok(Self {
-            provider: config.provider,
-            openrouter_service,
-            ollama_service,
-        })
+        let (backend, init_error) = build_backend(&config);
+        let backend = backend.ok_or_else(|| {
+            init_error.unwrap_or_else(|| "AI backend initialization failed".to_string())
+        })?;
+        Ok(Self { backend })
     }
 
     /// Analyze a natural language query and create an execution plan
@@ -228,28 +200,7 @@ impl LlmQueryService {
 
     /// Call the LLM service
     pub(super) async fn call_llm(&self, prompt: &str) -> Result<String, String> {
-        match self.provider {
-            AIProvider::OpenRouter => {
-                if let Some(ref service) = self.openrouter_service {
-                    service
-                        .call_openrouter_api(prompt)
-                        .await
-                        .map_err(|e| format!("OpenRouter API error: {}", e))
-                } else {
-                    Err("OpenRouter service not initialized".to_string())
-                }
-            }
-            AIProvider::Ollama => {
-                if let Some(ref service) = self.ollama_service {
-                    service
-                        .call_ollama_api(prompt)
-                        .await
-                        .map_err(|e| format!("Ollama API error: {}", e))
-                } else {
-                    Err("Ollama service not initialized".to_string())
-                }
-            }
-        }
+        self.backend.call(prompt).await.map_err(|e| format!("AI backend error: {}", e))
     }
 }
 

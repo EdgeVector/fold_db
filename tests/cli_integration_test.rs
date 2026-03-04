@@ -37,7 +37,6 @@ fn setup() -> (TempDir, PathBuf) {
         "network_listen_address": "/ip4/0.0.0.0/tcp/0",
         "security_config": {
             "require_tls": false,
-            "require_signatures": false,
             "encrypt_at_rest": false
         },
         "schema_service_url": "mock://test",
