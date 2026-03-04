@@ -24,10 +24,9 @@ pub async fn run(
             }
         }
         SchemaCommand::Approve { name } => {
-            let backfill_hash = processor.approve_schema(name).await?;
+            processor.approve_schema(name).await?;
             Ok(CommandOutput::SchemaApproved {
                 name: name.clone(),
-                backfill_hash,
             })
         }
         SchemaCommand::Block { name } => {

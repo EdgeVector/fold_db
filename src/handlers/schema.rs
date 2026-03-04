@@ -41,7 +41,7 @@ pub struct SchemaLoadResponse {
 #[cfg_attr(feature = "ts-bindings", derive(TS))]
 #[cfg_attr(feature = "ts-bindings", ts(export, export_to = "src/fold_node/static-react/src/types/"))]
 pub struct SchemaApproveResponse {
-    pub backfill_hash: Option<String>,
+    pub approved: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -50,13 +50,6 @@ pub struct SchemaApproveResponse {
 pub struct SchemaKeysResponse {
     pub keys: Vec<crate::schema::types::KeyValue>,
     pub total_count: usize,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-bindings", derive(TS))]
-#[cfg_attr(feature = "ts-bindings", ts(export, export_to = "src/fold_node/static-react/src/types/"))]
-pub struct BackfillStatusResponse {
-    pub backfill: serde_json::Value,
 }
 
 pub async fn list_schemas(user_hash: &str, node: &FoldNode) -> HandlerResult<SchemaListResponse> {
@@ -92,11 +85,11 @@ pub async fn approve_schema(
     user_hash: &str,
     node: &FoldNode,
 ) -> HandlerResult<SchemaApproveResponse> {
-    let backfill_hash = OperationProcessor::new(node.clone())
+    OperationProcessor::new(node.clone())
         .approve_schema(schema_name)
         .await
         .handler_err("approve schema")?;
-    Ok(ApiResponse::success_with_user(SchemaApproveResponse { backfill_hash }, user_hash))
+    Ok(ApiResponse::success_with_user(SchemaApproveResponse { approved: true }, user_hash))
 }
 
 pub async fn block_schema(
@@ -138,20 +131,6 @@ pub async fn list_schema_keys(
         .await
         .handler_err("list keys")?;
     Ok(ApiResponse::success_with_user(SchemaKeysResponse { keys, total_count }, user_hash))
-}
-
-pub async fn get_backfill_status(
-    backfill_hash: &str,
-    user_hash: &str,
-    node: &FoldNode,
-) -> HandlerResult<BackfillStatusResponse> {
-    let info = OperationProcessor::new(node.clone())
-        .get_backfill(backfill_hash)
-        .await
-        .handler_err("get backfill status")?
-        .ok_or_else(|| HandlerError::NotFound(format!("Backfill not found: {}", backfill_hash)))?;
-    let backfill = serde_json::to_value(&info).unwrap_or(serde_json::Value::Null);
-    Ok(ApiResponse::success_with_user(BackfillStatusResponse { backfill }, user_hash))
 }
 
 #[cfg(test)]

@@ -24,8 +24,6 @@ pub struct MutationContext {
     pub mutation_hash: Option<String>,
     /// Whether this mutation should trigger incremental processing
     pub incremental: bool,
-    /// Optional backfill hash for tracking backfill completion
-    pub backfill_hash: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

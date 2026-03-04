@@ -7,22 +7,17 @@ pub mod schema;
 pub mod search;
 pub mod setup;
 pub mod system;
-pub mod transform;
 
 use crate::cli::{Command, ConfigCommand};
 use crate::error::CliError;
 use crate::output::OutputMode;
 use fold_db::db_operations::native_index::IndexResult;
-use fold_db::fold_db_core::infrastructure::backfill_tracker::BackfillStatistics;
-use fold_db::fold_db_core::infrastructure::event_statistics::EventStatistics;
 use fold_db::fold_db_core::orchestration::index_status::IndexingStatus;
 use fold_db::fold_node::OperationProcessor;
 use fold_db::ingestion::smart_folder::SmartFolderScanResponse;
 use fold_db::schema::schema_types::SchemaWithState;
-use fold_db::schema::types::transform::Transform;
 use fold_db::storage::DatabaseConfig;
 use serde_json::Value;
-use std::collections::HashMap;
 
 #[derive(Debug)]
 pub enum CommandOutput {
@@ -30,7 +25,6 @@ pub enum CommandOutput {
     SchemaGet(Box<SchemaWithState>),
     SchemaApproved {
         name: String,
-        backfill_hash: Option<String>,
     },
     SchemaBlocked {
         name: String,
@@ -73,13 +67,6 @@ pub enum CommandOutput {
     ConfigPath(String),
     ResetComplete,
     MigrateComplete,
-    TransformList(HashMap<String, Transform>),
-    TransformQueue {
-        length: usize,
-        queued: Vec<String>,
-    },
-    TransformStats(EventStatistics),
-    BackfillStats(BackfillStatistics),
     Completions(String),
 }
 
@@ -119,8 +106,6 @@ pub async fn dispatch(
         Command::MigrateToCloud { api_url, api_key } => {
             system::migrate_to_cloud(api_url, api_key, processor).await
         }
-        Command::Transform { action } => transform::run(action, processor).await,
-        Command::Backfill { action } => transform::run_backfill(action, processor).await,
         Command::Completions { shell } => completions::run(*shell, verbose),
     }
 }

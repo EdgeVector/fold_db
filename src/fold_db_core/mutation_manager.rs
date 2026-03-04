@@ -610,7 +610,6 @@ impl MutationManager {
 
         for (idx, mutation) in schema_mutations.iter().enumerate() {
             let mutation_id = mutation.uuid.clone();
-            let backfill_hash = mutation.backfill_hash.clone();
             let key_value = mutation_key_values[idx].clone();
             let data = mutation.fields_and_values.clone();
             let metadata = mutation.metadata.clone();
@@ -619,7 +618,6 @@ impl MutationManager {
                 key_value: Some(key_value),
                 mutation_hash: Some(mutation_id.clone()),
                 incremental: true,
-                backfill_hash,
             });
 
             let mol_versions_opt = if mol_versions.is_empty() { None } else { Some(mol_versions.clone()) };
@@ -744,9 +742,6 @@ impl MutationManager {
                 if let Some(event) = consumer.recv().await {
                     match event {
                         Event::MutationRequest(mutation_request) => {
-                            let backfill_hash = mutation_request.mutation.backfill_hash.clone();
-
-                            // Inline async handling instead of blocking call
                             let mut temp_manager = Self::new(
                                 Arc::clone(&db_ops),
                                 Arc::clone(&schema_manager),
@@ -761,17 +756,6 @@ impl MutationManager {
                                 .await
                             {
                                 error!("MutationManager failed to handle mutation request: {}", e);
-
-                                // If this was part of a backfill, publish a failure event
-                                if let Some(hash) = backfill_hash {
-                                    let fail_event = crate::fold_db_core::infrastructure::message_bus::request_events::BackfillMutationFailed {
-                                        backfill_hash: hash,
-                                        error: e.to_string(),
-                                    };
-                                    let _ = message_bus
-                                        .publish_event(Event::BackfillMutationFailed(fail_event))
-                                        .await;
-                                }
                             }
                         }
                         _ => {

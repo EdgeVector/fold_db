@@ -10,34 +10,14 @@ pub struct EventStatistics {
     pub field_value_sets: u64,
     pub atom_creations: u64,
     pub molecule_creations: u64,
-    pub transform_triggers: u64,
-    pub transform_executions: u64,
-    pub transform_successes: u64,
-    pub transform_failures: u64,
-    pub transform_registrations: u64,
     pub query_executions: u64,
     pub mutation_executions: u64,
     pub total_events: u64,
     pub monitoring_start_time: u64,
-    /// Track execution times for performance monitoring
-    pub transform_execution_times: Vec<(String, u64)>, // (transform_id, execution_time_ms)
-    /// Track success/failure rates per transform
-    pub transform_stats: std::collections::HashMap<String, TransformStats>,
     /// Track query performance by schema and type
     pub query_stats: std::collections::HashMap<String, QueryStats>,
     /// Track mutation performance by schema and operation
     pub mutation_stats: std::collections::HashMap<String, MutationStats>,
-}
-
-/// Statistics for individual transforms
-#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
-pub struct TransformStats {
-    pub executions: u64,
-    pub successes: u64,
-    pub failures: u64,
-    pub total_execution_time_ms: u64,
-    pub avg_execution_time_ms: f64,
-    pub last_execution_time: u64,
 }
 
 /// Statistics for query operations
@@ -76,55 +56,6 @@ impl EventStatistics {
     pub fn increment_molecule_creations(&mut self) {
         self.molecule_creations += 1;
         self.total_events += 1;
-    }
-
-    pub fn increment_transform_triggers(&mut self) {
-        self.transform_triggers += 1;
-        self.total_events += 1;
-    }
-
-    pub fn increment_transform_registrations(&mut self) {
-        self.transform_registrations += 1;
-        self.total_events += 1;
-    }
-
-    pub fn increment_transform_executions(
-        &mut self,
-        transform_id: &str,
-        success: bool,
-        execution_time_ms: u64,
-    ) {
-        self.transform_executions += 1;
-        self.total_events += 1;
-
-        if success {
-            self.transform_successes += 1;
-        } else {
-            self.transform_failures += 1;
-        }
-
-        // Track execution time
-        self.transform_execution_times
-            .push((transform_id.to_string(), execution_time_ms));
-
-        // Update per-transform statistics
-        let stats = self
-            .transform_stats
-            .entry(transform_id.to_string())
-            .or_default();
-        stats.executions += 1;
-        if success {
-            stats.successes += 1;
-        } else {
-            stats.failures += 1;
-        }
-        stats.total_execution_time_ms += execution_time_ms;
-        stats.avg_execution_time_ms =
-            stats.total_execution_time_ms as f64 / stats.executions as f64;
-        stats.last_execution_time = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
     }
 
     pub fn increment_query_executions(
@@ -175,32 +106,5 @@ impl EventStatistics {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_secs();
-    }
-
-    /// Get overall transform performance metrics
-    pub fn get_transform_performance_summary(&self) -> (f64, f64, u64, u64) {
-        let overall_success_rate = if self.transform_executions > 0 {
-            self.transform_successes as f64 / self.transform_executions as f64
-        } else {
-            0.0
-        };
-
-        let overall_avg_time = if !self.transform_execution_times.is_empty() {
-            let total_time: u64 = self
-                .transform_execution_times
-                .iter()
-                .map(|(_, time)| *time)
-                .sum();
-            total_time as f64 / self.transform_execution_times.len() as f64
-        } else {
-            0.0
-        };
-
-        (
-            overall_success_rate,
-            overall_avg_time,
-            self.transform_successes,
-            self.transform_failures,
-        )
     }
 }

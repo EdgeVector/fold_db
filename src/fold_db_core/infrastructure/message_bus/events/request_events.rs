@@ -17,16 +17,6 @@ pub struct MutationRequest {
     pub mutation: Mutation,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct BackfillExpectedMutations {
-    /// The transform/schema id producing mutations (e.g., BlogPostWordIndex)
-    pub transform_id: String,
-    /// Unique backfill hash for this run
-    pub backfill_hash: String,
-    /// Total number of mutations expected to be emitted for this backfill
-    pub count: u64,
-}
-
 /// Request to index a field value (for background/async indexing)
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct IndexRequest {
@@ -40,12 +30,4 @@ pub struct IndexRequest {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct BatchIndexRequest {
     pub operations: Vec<IndexRequest>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct BackfillMutationFailed {
-    /// Unique backfill hash for this run
-    pub backfill_hash: String,
-    /// Error message
-    pub error: String,
 }

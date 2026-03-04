@@ -19,7 +19,6 @@ export { default as IngestionTab } from "./components/tabs/IngestionTab";
 export { default as FileUploadTab } from "./components/tabs/FileUploadTab";
 export { default as NativeIndexTab } from "./components/tabs/NativeIndexTab";
 export { default as KeyManagementTab } from "./components/tabs/KeyManagementTab";
-export { default as TransformsTab } from "./components/tabs/TransformsTab";
 
 // Schema Components
 export { default as SchemaStatusBadge } from "./components/schema/SchemaStatusBadge";

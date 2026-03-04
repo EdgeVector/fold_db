@@ -165,53 +165,6 @@ pub async fn analyze_followup(
     ))
 }
 
-/// Get backfill status for a transform
-///
-/// # Arguments
-/// * `hash` - The backfill hash
-/// * `user_hash` - User identifier for isolation
-/// * `node` - FoldDB node instance
-///
-/// # Returns
-/// * `HandlerResult<BackfillStatusHandlerResponse>` - Backfill status
-pub async fn get_backfill_status(
-    hash: &str,
-    user_hash: &str,
-    node: &FoldNode,
-) -> HandlerResult<BackfillStatusHandlerResponse> {
-    log::info!(
-        "LLM Query Backfill Status: hash={}, user: {}",
-        hash,
-        user_hash
-    );
-
-    let db_guard = get_db_guard(node).await?;
-
-    let backfill_info = db_guard.get_backfill_tracker().get_backfill_by_hash(hash);
-
-    match backfill_info {
-        Some(info) => {
-            let progress = if info.mutations_expected > 0 {
-                info.mutations_completed as f64 / info.mutations_expected as f64
-            } else {
-                0.0
-            };
-
-            Ok(ApiResponse::success_with_user(
-                BackfillStatusHandlerResponse {
-                    status: format!("{:?}", info.status),
-                    progress,
-                    total_records: info.mutations_expected,
-                    processed_records: info.mutations_completed,
-                    estimated_completion: None,
-                },
-                user_hash,
-            ))
-        }
-        None => Err(HandlerError::NotFound("Backfill not found".to_string())),
-    }
-}
-
 /// Execute an AI-native index query workflow
 ///
 /// This handler implements a three-step process:

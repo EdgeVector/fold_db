@@ -16,9 +16,6 @@ pub struct AnalyzeFollowupHandlerResponse {
     pub reasoning: String,
 }
 
-/// Response for backfill status (re-exported from canonical definition)
-pub type BackfillStatusHandlerResponse = crate::fold_node::llm_query::types::BackfillStatusResponse;
-
 /// Response for AI native index query
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AiNativeIndexHandlerResponse {

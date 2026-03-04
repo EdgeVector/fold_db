@@ -1,23 +1,9 @@
 //! Orchestration components for coordinating system operations
 //!
 //! This module contains orchestration components that coordinate
-//! complex operations across multiple system components:
-//! - Transform orchestration and coordination
-//! - Event-driven FoldDB orchestration
-//! - Event-driven database operations
+//! complex operations across multiple system components.
 
-pub mod transform_orchestrator;
-
-// New decomposed orchestration components
-pub mod backfill_manager;
-pub mod execution_coordinator;
 pub mod index_status;
 pub mod keyword_extractor;
-pub mod persistence_manager;
-pub mod queue_manager;
 
-pub use execution_coordinator::ExecutionCoordinator;
 pub use index_status::{IndexStatusTracker, IndexingState, IndexingStatus};
-pub use persistence_manager::PersistenceManager;
-pub use queue_manager::{QueueItem, QueueManager, QueueState};
-pub use transform_orchestrator::{TransformOrchestrator, TransformQueue};

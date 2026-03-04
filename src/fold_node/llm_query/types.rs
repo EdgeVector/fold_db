@@ -1,6 +1,5 @@
 //! Type definitions for LLM query workflow.
 
-use crate::schema::types::DeclarativeSchemaDefinition;
 use crate::schema::types::Query;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -10,7 +9,6 @@ use std::time::SystemTime;
 #[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct QueryPlan {
     pub query: Query,
-    pub index_schema: Option<DeclarativeSchemaDefinition>,
     pub reasoning: String,
 }
 
@@ -26,16 +24,6 @@ pub struct ChatRequest {
 pub struct ChatResponse {
     pub answer: String,
     pub context_used: bool,
-}
-
-/// Backfill status response
-#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
-pub struct BackfillStatusResponse {
-    pub status: String,
-    pub progress: f64,
-    pub total_records: u64,
-    pub processed_records: u64,
-    pub estimated_completion: Option<String>,
 }
 
 /// Conversation message
