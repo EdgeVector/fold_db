@@ -1,6 +1,7 @@
 //! File conversion utilities — CSV, Twitter JS, code metadata extraction, and unified file reading.
 
 use crate::ingestion::error::IngestionError;
+use crate::ingestion::smart_folder_scanner::{CODE_EXTS, CONFIG_EXTS};
 use crate::ingestion::IngestionResult;
 use regex::Regex;
 use serde_json::Value;
@@ -71,22 +72,10 @@ pub fn twitter_js_to_json(content: &str) -> IngestionResult<String> {
     }
 }
 
-/// Code file extensions handled by `extract_code_metadata`.
-const CODE_EXTS: &[&str] = &[
-    "js", "jsx", "ts", "tsx", "py", "rs", "go", "java", "kt", "rb",
-    "c", "cpp", "h", "hpp", "cs", "swift", "scala", "lua", "r", "pl",
-    "sh", "bash", "zsh",
-];
-
-/// Config file extensions wrapped as text content.
-const CONFIG_EXTS: &[&str] = &["yaml", "yml", "toml", "xml"];
-
-/// Returns true if `ext` (lowercase, no dot) is a code file extension.
 fn is_code_ext(ext: &str) -> bool {
     CODE_EXTS.contains(&ext)
 }
 
-/// Returns true if `ext` (lowercase, no dot) is a config file extension.
 fn is_config_ext(ext: &str) -> bool {
     CONFIG_EXTS.contains(&ext)
 }
@@ -160,6 +149,27 @@ fn js_to_json(content: &str, file_name: &str) -> IngestionResult<Value> {
     }
 }
 
+/// Parse file content into a JSON `Value` based on the file extension.
+fn parse_content_by_ext(content: &str, file_name: &str, ext: &str) -> IngestionResult<Value> {
+    match ext {
+        "json" => serde_json::from_str(content)
+            .map_err(|e| IngestionError::InvalidInput(format!("Failed to parse JSON: {}", e))),
+        "js" => js_to_json(content, file_name),
+        "csv" => {
+            let json_string = csv_to_json(content)?;
+            serde_json::from_str(&json_string)
+                .map_err(|e| IngestionError::InvalidInput(format!("Failed to parse JSON: {}", e)))
+        }
+        "txt" | "md" => Ok(wrap_text_content(content, file_name, ext)),
+        e if is_code_ext(e) => Ok(extract_code_metadata(content, file_name, e)),
+        e if is_config_ext(e) => Ok(wrap_text_content(content, file_name, e)),
+        _ => Err(IngestionError::InvalidInput(format!(
+            "Unsupported file type: {}",
+            ext
+        ))),
+    }
+}
+
 /// Read a file and convert it to a JSON Value regardless of format.
 ///
 /// Supported extensions: `.json`, `.js` (Twitter export or code), `.csv`,
@@ -184,23 +194,7 @@ pub fn read_file_as_json(file_path: &Path) -> IngestionResult<Value> {
             ))
         })?;
 
-    match ext.as_str() {
-        "json" => serde_json::from_str(&content)
-            .map_err(|e| IngestionError::InvalidInput(format!("Failed to parse JSON: {}", e))),
-        "js" => js_to_json(&content, file_name),
-        "csv" => {
-            let json_string = csv_to_json(&content)?;
-            serde_json::from_str(&json_string)
-                .map_err(|e| IngestionError::InvalidInput(format!("Failed to parse JSON: {}", e)))
-        }
-        "txt" | "md" => Ok(wrap_text_content(&content, file_name, &ext)),
-        e if is_code_ext(e) => Ok(extract_code_metadata(&content, file_name, e)),
-        e if is_config_ext(e) => Ok(wrap_text_content(&content, file_name, e)),
-        _ => Err(IngestionError::InvalidInput(format!(
-            "Unsupported file type: {}",
-            ext
-        ))),
-    }
+    parse_content_by_ext(&content, file_name, &ext)
 }
 
 /// Read a file, compute its SHA256 hash, and convert to JSON.
@@ -232,25 +226,7 @@ pub fn read_file_with_hash(file_path: &Path) -> IngestionResult<(Value, String, 
             ))
         })?;
 
-    let value = match ext.as_str() {
-        "json" => serde_json::from_str(content)
-            .map_err(|e| IngestionError::InvalidInput(format!("Failed to parse JSON: {}", e)))?,
-        "js" => js_to_json(content, file_name)?,
-        "csv" => {
-            let json_string = csv_to_json(content)?;
-            serde_json::from_str(&json_string)
-                .map_err(|e| IngestionError::InvalidInput(format!("Failed to parse JSON: {}", e)))?
-        }
-        "txt" | "md" => wrap_text_content(content, file_name, &ext),
-        e if is_code_ext(e) => extract_code_metadata(content, file_name, e),
-        e if is_config_ext(e) => wrap_text_content(content, file_name, e),
-        _ => {
-            return Err(IngestionError::InvalidInput(format!(
-                "Unsupported file type: {}",
-                ext
-            )))
-        }
-    };
+    let value = parse_content_by_ext(content, file_name, &ext)?;
 
     Ok((value, hash_hex, raw_bytes))
 }

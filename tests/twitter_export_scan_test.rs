@@ -20,7 +20,7 @@
 
 use fold_db::ingestion::ingestion_service::IngestionService;
 use fold_db::ingestion::smart_folder::{perform_smart_folder_scan, read_file_with_hash};
-use fold_db::ingestion::smart_folder_scanner::scan_directory_tree_with_context;
+use fold_db::ingestion::smart_folder_scanner::{is_ingestible_file, scan_directory_tree_with_context};
 
 use std::path::Path;
 use tempfile::TempDir;
@@ -138,28 +138,12 @@ fn test_twitter_export_scanner_excludes_media() {
     }
 
     // All results must have whitelisted (ingestible) extensions.
-    let allowed_exts = [
-        "json", "csv", "txt", "md",
-        "pdf", "doc", "docx", "rtf", "odt", "pages",
-        "xls", "xlsx", "ods", "numbers",
-        "pptx", "ppt", "odp", "key",
-        "eml", "mbox", "vcf",
-        "js", "jsx", "ts", "tsx", "py", "rs", "go", "java", "kt", "rb",
-        "c", "cpp", "h", "hpp", "cs", "swift", "scala", "lua", "r", "pl",
-        "sh", "bash", "zsh",
-        "yaml", "yml", "toml", "xml",
-    ];
     for path in &result.file_paths {
-        let ext = Path::new(path)
-            .extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or("")
-            .to_lowercase();
         assert!(
-            allowed_exts.contains(&ext.as_str()),
-            "File '{}' with extension '{}' is not in the ingestible whitelist — \
+            is_ingestible_file(path),
+            "File '{}' is not in the ingestible whitelist — \
              only whitelisted extensions should appear in scan results.",
-            path, ext
+            path
         );
     }
 
@@ -246,35 +230,12 @@ async fn test_twitter_export_llm_scan() {
 
     // ── All results must have whitelisted (ingestible) extensions ──────────────
 
-    let allowed_exts = [
-        "json", "csv", "txt", "md",
-        "pdf", "doc", "docx", "rtf", "odt", "pages",
-        "xls", "xlsx", "ods", "numbers",
-        "pptx", "ppt", "odp", "key",
-        "eml", "mbox", "vcf",
-        "js", "jsx", "ts", "tsx", "py", "rs", "go", "java", "kt", "rb",
-        "c", "cpp", "h", "hpp", "cs", "swift", "scala", "lua", "r", "pl",
-        "sh", "bash", "zsh",
-        "yaml", "yml", "toml", "xml",
-    ];
-
-    let all_paths: Vec<&str> = scan.recommended_files
-        .iter()
-        .chain(scan.skipped_files.iter())
-        .map(|f| f.path.as_str())
-        .collect();
-
-    for path in &all_paths {
-        let ext = Path::new(path)
-            .extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or("")
-            .to_lowercase();
+    for rec in scan.recommended_files.iter().chain(scan.skipped_files.iter()) {
         assert!(
-            allowed_exts.contains(&ext.as_str()),
-            "File '{}' with extension '{}' is not in the ingestible whitelist — \
+            is_ingestible_file(&rec.path),
+            "File '{}' is not in the ingestible whitelist — \
              only whitelisted extensions should appear in scan results.",
-            path, ext
+            rec.path
         );
     }
 

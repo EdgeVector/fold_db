@@ -680,12 +680,12 @@ mod tests {
 
         // Should find personal files AND coding project files with ingestible extensions
         assert!(files.contains(&"notes.txt".to_string()));
-        assert!(files.iter().any(|f| f.contains("index.js")));
-        assert!(files.iter().any(|f| f.contains("main.rs")));
-        assert!(files.iter().any(|f| f.contains("analysis.py")));
-        assert!(files.iter().any(|f| f.contains("package.json")));
-        assert!(files.iter().any(|f| f.contains("Cargo.toml")));
-        assert!(files.iter().any(|f| f.contains("pyproject.toml")));
+        assert!(files.contains(&"my_website/index.js".to_string()));
+        assert!(files.contains(&"rust_cli/src/main.rs".to_string()));
+        assert!(files.contains(&"data_analysis/analysis.py".to_string()));
+        assert!(files.contains(&"my_website/package.json".to_string()));
+        assert!(files.contains(&"rust_cli/Cargo.toml".to_string()));
+        assert!(files.contains(&"data_analysis/pyproject.toml".to_string()));
     }
 
     #[test]
