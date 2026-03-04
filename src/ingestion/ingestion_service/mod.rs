@@ -33,6 +33,8 @@ pub struct IngestionService {
     config: IngestionConfig,
     openrouter_service: Option<OpenRouterService>,
     ollama_service: Option<OllamaService>,
+    /// Stores the reason if the configured provider failed to initialise.
+    init_error: Option<String>,
 }
 
 impl IngestionService {
@@ -48,6 +50,8 @@ impl IngestionService {
     /// `get_status()` can report the correct provider/model — actual
     /// ingestion calls will fail at runtime with a clear error.
     pub fn new(config: IngestionConfig) -> IngestionResult<Self> {
+        let mut init_error: Option<String> = None;
+
         let openrouter_service = if config.provider == AIProvider::OpenRouter {
             match OpenRouterService::new(
                 config.openrouter.clone(),
@@ -56,7 +60,9 @@ impl IngestionService {
             ) {
                 Ok(svc) => Some(svc),
                 Err(e) => {
-                    log::warn!("OpenRouter service init skipped: {}", e);
+                    let msg = format!("OpenRouter init failed: {}", e);
+                    log::warn!("{}", msg);
+                    init_error = Some(msg);
                     None
                 }
             }
@@ -72,7 +78,9 @@ impl IngestionService {
             ) {
                 Ok(svc) => Some(svc),
                 Err(e) => {
-                    log::warn!("Ollama service init skipped: {}", e);
+                    let msg = format!("Ollama init failed: {}", e);
+                    log::warn!("{}", msg);
+                    init_error = Some(msg);
                     None
                 }
             }
@@ -84,6 +92,7 @@ impl IngestionService {
             config,
             openrouter_service,
             ollama_service,
+            init_error,
         })
     }
 
@@ -530,7 +539,10 @@ impl IngestionService {
                 self.openrouter_service
                     .as_ref()
                     .ok_or_else(|| {
-                        IngestionError::configuration_error("OpenRouter service not initialized")
+                        let detail = self.init_error.as_deref().unwrap_or("unknown reason");
+                        IngestionError::configuration_error(
+                            format!("OpenRouter service not initialized ({})", detail),
+                        )
                     })?
                     .call_openrouter_api(prompt)
                     .await
@@ -539,7 +551,10 @@ impl IngestionService {
                 self.ollama_service
                     .as_ref()
                     .ok_or_else(|| {
-                        IngestionError::configuration_error("Ollama service not initialized")
+                        let detail = self.init_error.as_deref().unwrap_or("unknown reason");
+                        IngestionError::configuration_error(
+                            format!("Ollama service not initialized ({})", detail),
+                        )
                     })?
                     .call_ollama_api(prompt)
                     .await

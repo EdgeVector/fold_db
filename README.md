@@ -6,7 +6,13 @@
 
 Drop in files, JSON, or social media exports — FoldDB detects schemas, extracts searchable keywords, and lets you query with natural language. Runs locally on your machine. Your data stays yours.
 
-<!-- TODO: Add demo GIF showing: drag-and-drop file ingestion → automatic schema detection → natural language query → results -->
+**Try it now** — install with one command and have a working database in under a minute:
+
+```bash
+brew tap shiba4life/fold_db && brew install folddb
+folddb_server --port 9001
+# Open http://localhost:9001 — drag in a JSON file, ask a question
+```
 
 ## Quick Start
 
@@ -119,7 +125,13 @@ Start with `./run.sh --local` and visit `http://localhost:5173`. The UI provides
 - Word graph visualization
 - System status and configuration
 
-<!-- TODO: Add screenshot of main UI -->
+The main UI has tabs for:
+- **Schemas** — browse, approve, and inspect schemas
+- **Ingestion** — upload files, configure smart folders, import Twitter/social data
+- **Query** — natural language questions, structured field queries, full-text search
+- **Native Index** — keyword-based search across all ingested data
+- **Word Graph** — visual exploration of how your data connects
+- **Settings** — AI provider configuration, system status, database management
 
 ## CLI Reference
 
@@ -151,7 +163,8 @@ Run `folddb --help` for the full command reference.
 ### Prerequisites
 
 - Rust 1.70+ with Cargo
-- Node.js 16+ (for web UI)
+- Node.js 18+ (for web UI)
+- Git LFS (for test fixtures — run `git lfs install && git lfs pull`)
 
 ### Building from Source
 
@@ -222,6 +235,101 @@ This creates 11 DynamoDB tables with automatic multi-tenant isolation via `user_
 | `FOLD_UPLOAD_STORAGE_MODE` | Upload storage backend (`s3` for cloud) |
 
 See [Lambda Multitenancy](docs/LAMBDA_MULTITENANCY.md) for architecture details.
+
+</details>
+
+## Troubleshooting
+
+<details>
+<summary><strong>Port 9001 or 5173 already in use</strong></summary>
+
+Another process is occupying the port. Kill it or pick a different one:
+
+```bash
+# Find what's using port 9001
+lsof -i :9001
+# Kill it
+kill -9 <PID>
+# Or use a different port
+folddb_server --port 9002
+```
+
+`./run.sh --local` automatically kills existing FoldDB processes before starting.
+
+</details>
+
+<details>
+<summary><strong>Ollama not detected</strong></summary>
+
+FoldDB auto-detects Ollama at `http://127.0.0.1:11434`. If it's not found:
+
+1. Make sure Ollama is installed and running: `ollama serve`
+2. Verify it's reachable: `curl http://127.0.0.1:11434/api/tags`
+3. Pull a model if you haven't: `ollama pull llama3.1`
+4. If Ollama is on a different host/port, set it in Settings > AI Provider
+
+</details>
+
+<details>
+<summary><strong>OpenRouter API key errors</strong></summary>
+
+- **"API key invalid or expired"** — Check your key at [openrouter.ai/keys](https://openrouter.ai/keys)
+- **"insufficient credits"** — Add funds at [openrouter.ai/credits](https://openrouter.ai/credits)
+- **"model not found"** — The configured model may have been removed; switch to a different one in Settings
+
+Set your key: `export FOLD_OPENROUTER_API_KEY="sk-or-v1-..."` or configure in the Settings tab.
+
+</details>
+
+<details>
+<summary><strong>macOS: "FoldDB.app is damaged" or Gatekeeper blocks</strong></summary>
+
+The app is not code-signed. To open it:
+
+1. Right-click `FoldDB.app` > **Open** > click **Open** in the dialog
+2. Or: **System Settings > Privacy & Security**, scroll down, click **Open Anyway**
+3. If that fails: `xattr -cr /Applications/FoldDB.app`
+
+</details>
+
+<details>
+<summary><strong>Build errors</strong></summary>
+
+- **"can't find crate"** — Run `cargo clean && cargo build`
+- **Frontend embed error** — The React frontend must be built first: `cd src/server/static-react && npm ci && npm run build`
+- **Git LFS pointer files** — Run `git lfs install && git lfs pull` to download test fixtures
+
+</details>
+
+## FAQ
+
+<details>
+<summary><strong>How much disk space does FoldDB use?</strong></summary>
+
+Data is stored in `~/.datafold/data`. Space depends on what you ingest. A typical Twitter archive with 10k tweets uses ~50 MB including indexes. Uploaded files are encrypted and stored separately.
+
+</details>
+
+<details>
+<summary><strong>How do I back up my data?</strong></summary>
+
+Copy the `~/.datafold/data` directory. It contains the Sled database, encrypted uploads, and configuration. To restore, copy it back.
+
+</details>
+
+<details>
+<summary><strong>Can I use FoldDB fully offline?</strong></summary>
+
+Yes. Use `./run.sh --local --local-schema` with Ollama as your AI provider. No internet connection is needed.
+
+</details>
+
+<details>
+<summary><strong>How does deduplication work?</strong></summary>
+
+FoldDB deduplicates at two levels:
+- **Schema-level**: Schemas are content-addressed by their field structure (identity hash). Ingesting data with the same shape reuses the existing schema.
+- **File-level**: Each file is SHA256-hashed. Re-ingesting the same file for the same user is skipped automatically.
 
 </details>
 

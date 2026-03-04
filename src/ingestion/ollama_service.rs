@@ -77,18 +77,16 @@ impl OllamaService {
             .header("Content-Type", "application/json")
             .json(request)
             .send()
-            .await?;
+            .await
+            .map_err(|e| crate::ingestion::error::classify_transport_error("Ollama", &e))?;
 
         if !response.status().is_success() {
-            let status = response.status();
+            let status = response.status().as_u16();
             let error_text = response
                 .text()
                 .await
                 .unwrap_or_else(|_| "Unknown error".to_string());
-            return Err(IngestionError::ollama_error(format!(
-                "API request failed with status {}: {}",
-                status, error_text
-            )));
+            return Err(crate::ingestion::error::classify_llm_error("Ollama", status, &error_text));
         }
 
         let ollama_response: OllamaResponse = response.json().await?;

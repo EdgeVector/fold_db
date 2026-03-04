@@ -100,6 +100,125 @@ The script automatically kills any existing processes before starting.
 - Use TypeScript strict mode
 - Follow existing patterns for Redux slices and API clients
 
+## Architecture Overview
+
+```
+src/
+├── fold_node/           # FoldNode — top-level orchestrator (DB + security + config)
+│   └── node.rs          # FoldNode struct, clone-friendly Arc wrapper
+├── fold_db_core/        # Core database logic (FoldDb, schema manager)
+│   └── fold_db.rs
+├── schema/              # Schema system
+│   ├── core.rs          # SchemaManager — load, approve, query schemas
+│   └── types/           # Schema, Field, Query, Mutation, Transform, KeyConfig
+├── storage/             # Storage backends
+│   ├── traits.rs        # KvStore trait — unified async interface
+│   ├── sled_store.rs    # Local embedded storage
+│   └── dynamo_store.rs  # AWS DynamoDB backend (behind `aws-backend` feature)
+├── handlers/            # Framework-agnostic request handlers
+│   ├── mod.rs           # Shared handler layer (used by HTTP server AND Lambda)
+│   └── ingestion.rs     # Ingestion-specific handlers
+├── ingestion/           # AI-powered data ingestion pipeline
+│   ├── ingestion_service/  # Main service (schema recommendation, mutation generation)
+│   ├── openrouter_service.rs
+│   ├── ollama_service.rs
+│   ├── error.rs         # IngestionError with LLM error classifiers
+│   └── routes.rs        # HTTP routes (Actix-web)
+├── server/
+│   ├── http_server.rs   # Actix-web server setup and route registration
+│   └── static-react/    # React frontend (Vite + TypeScript + Redux)
+└── error.rs             # Top-level FoldDbError
+```
+
+### Key Patterns
+
+- **Handler pattern**: Handlers in `src/handlers/` take typed requests and return typed responses. They're shared between the HTTP server (`http_server.rs`) and AWS Lambda (`exemem-infra/lambdas/`). Keep handlers framework-agnostic — no `actix_web` or `lambda_http` types.
+
+- **KvStore trait**: All storage operations go through the `KvStore` trait (`src/storage/traits.rs`). Local mode uses `SledStore`; cloud mode uses `DynamoStore`. Never call storage backends directly.
+
+- **Schema lifecycle**: Schemas flow through `Pending` -> `Approved` states. New schemas are created via the schema service, loaded into the local `SchemaManager`, then approved. Mutations can only write to approved schemas.
+
+## Writing Tests
+
+### Rust unit tests
+
+Place tests in the same file using `#[cfg(test)] mod tests`. Run with:
+
+```bash
+cargo test --lib                          # All unit tests
+cargo test --lib ingestion::error::tests  # Specific module
+cargo test test_name -- --nocapture       # Single test with output
+```
+
+### Integration tests
+
+Integration tests live in `tests/`. Use `test://mock` as the `schema_service_url` to avoid hitting the real schema service:
+
+```rust
+let config = FoldNodeConfig {
+    schema_service_url: "test://mock".to_string(),
+    // ...
+};
+```
+
+### Git LFS fixtures
+
+Test fixtures like `tests/fixtures/tweets.js` are stored in Git LFS. Run `git lfs pull` after cloning. Without this, fixture files will be pointer stubs and related tests will fail.
+
+### Frontend tests
+
+```bash
+cd src/server/static-react
+npm test            # Run vitest once
+npm run test:watch  # Watch mode
+npm run lint        # ESLint
+```
+
+Frontend tests use Vitest. Follow existing patterns in `src/__tests__/` for component and Redux slice tests.
+
+## Debugging Tips
+
+### Log levels
+
+FoldDB uses feature-scoped logging. Set the log level with:
+
+```bash
+FOLD_LOG_LEVEL=debug ./run.sh --local
+```
+
+Available levels: `trace`, `debug`, `info` (default), `warn`, `error`.
+
+Logs are tagged by feature (e.g., `[Ingestion]`, `[HttpServer]`, `[Schema]`). To filter:
+
+```bash
+FOLD_LOG_LEVEL=debug ./run.sh --local 2>&1 | grep '\[Ingestion\]'
+```
+
+### Common issues
+
+| Symptom | Likely cause | Fix |
+|---------|-------------|-----|
+| "Schema not found" on mutation | Schema not approved | Call `schema_manager.approve("name")` |
+| "OpenRouter service not initialized" | Missing API key | Set `FOLD_OPENROUTER_API_KEY` or configure in Settings |
+| Frontend embed error at build | Missing `dist/` | `cd src/server/static-react && npm ci && npm run build` |
+| Test fixture is 130 bytes | Git LFS pointer | `git lfs pull` |
+
+### Useful commands
+
+```bash
+# Check all schemas in the database
+curl http://localhost:9001/api/schema/list | jq
+
+# Inspect a specific schema
+curl http://localhost:9001/api/schema/get/SCHEMA_NAME | jq
+
+# Check ingestion service status
+curl http://localhost:9001/api/ingestion/status | jq
+
+# Watch ingestion progress
+curl http://localhost:9001/api/ingestion/progress | jq
+```
+
 ## Pull Request Process
 
 1. Ensure all tests pass locally

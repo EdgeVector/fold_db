@@ -77,17 +77,56 @@ fi
 
 TMP_DIR="$(mktemp -d)"
 
+# Download SHA256SUMS.txt (best-effort — older releases may not have it)
+CHECKSUMS_URL="https://github.com/$REPO/releases/download/$TAG/SHA256SUMS.txt"
+CHECKSUMS_FILE="$TMP_DIR/SHA256SUMS.txt"
+HAS_CHECKSUMS=false
+echo "Downloading checksums..."
+if command -v curl >/dev/null 2>&1; then
+  curl -fsSL -o "$CHECKSUMS_FILE" "$CHECKSUMS_URL" 2>/dev/null && HAS_CHECKSUMS=true
+elif command -v wget >/dev/null 2>&1; then
+  wget -q -O "$CHECKSUMS_FILE" "$CHECKSUMS_URL" 2>/dev/null && HAS_CHECKSUMS=true
+fi
+
+if [ "$HAS_CHECKSUMS" = false ]; then
+  echo "Warning: SHA256SUMS.txt not found for this release — skipping verification."
+fi
+
 # Download and install each binary
 for BINARY_NAME in $BINARIES; do
   ARTIFACT="${BINARY_NAME}-${OS_LABEL}-${ARCH_LABEL}"
   DOWNLOAD_URL="https://github.com/$REPO/releases/download/$TAG/$ARTIFACT"
-  TMP_FILE="$TMP_DIR/$BINARY_NAME"
+  TMP_FILE="$TMP_DIR/$ARTIFACT"
 
   echo "Downloading $ARTIFACT..."
   if command -v curl >/dev/null 2>&1; then
     curl -fSL --progress-bar -o "$TMP_FILE" "$DOWNLOAD_URL"
   elif command -v wget >/dev/null 2>&1; then
     wget -q --show-progress -O "$TMP_FILE" "$DOWNLOAD_URL"
+  fi
+
+  # Verify checksum if available
+  if [ "$HAS_CHECKSUMS" = true ]; then
+    EXPECTED_SHA="$(grep "  ${ARTIFACT}\$" "$CHECKSUMS_FILE" | cut -d' ' -f1 || true)"
+    if [ -n "$EXPECTED_SHA" ]; then
+      if command -v sha256sum >/dev/null 2>&1; then
+        ACTUAL_SHA="$(sha256sum "$TMP_FILE" | cut -d' ' -f1)"
+      elif command -v shasum >/dev/null 2>&1; then
+        ACTUAL_SHA="$(shasum -a 256 "$TMP_FILE" | cut -d' ' -f1)"
+      else
+        ACTUAL_SHA=""
+        echo "Warning: No sha256sum or shasum found — skipping verification for $ARTIFACT."
+      fi
+      if [ -n "$ACTUAL_SHA" ] && [ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]; then
+        echo "Error: Checksum mismatch for $ARTIFACT!"
+        echo "  Expected: $EXPECTED_SHA"
+        echo "  Actual:   $ACTUAL_SHA"
+        rm -rf "$TMP_DIR"
+        exit 1
+      elif [ -n "$ACTUAL_SHA" ]; then
+        echo "Checksum verified for $ARTIFACT."
+      fi
+    fi
   fi
 
   chmod +x "$TMP_FILE"
