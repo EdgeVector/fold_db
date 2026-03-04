@@ -10,14 +10,6 @@ use utoipa::OpenApi;
         crate::server::routes::schema::block_schema,
         crate::server::routes::query::execute_query,
         crate::server::routes::query::execute_mutation,
-        crate::server::routes::query::list_transforms,
-        crate::server::routes::query::get_transform_queue,
-        crate::server::routes::query::add_to_transform_queue,
-        crate::server::routes::query::get_all_backfills,
-        crate::server::routes::query::get_active_backfills,
-        crate::server::routes::query::get_backfill,
-        crate::server::routes::query::get_transform_statistics,
-        crate::server::routes::query::get_backfill_statistics,
         crate::server::routes::query::native_index_search,
         crate::server::routes::query::get_indexing_status,
         crate::server::routes::security::get_system_public_key,
@@ -39,8 +31,7 @@ use utoipa::OpenApi;
         crate::ingestion::routes::validate_json,
         crate::ingestion::routes::get_ingestion_config,
         crate::ingestion::routes::save_ingestion_config,
-        crate::fold_node::llm_query::routes::chat,
-        crate::fold_node::llm_query::routes::get_backfill_status
+        crate::fold_node::llm_query::routes::chat
     ),
     components(
         schemas(
@@ -53,7 +44,6 @@ use utoipa::OpenApi;
             crate::schema::types::field::range_field::RangeField,
             crate::schema::types::field::hash_range_field::HashRangeField,
             crate::schema::types::field::common::FieldCommon,
-            crate::schema::types::transform::Transform,
             crate::schema::types::declarative_schemas::DeclarativeSchemaDefinition,
             crate::schema::types::declarative_schemas::FieldDefinition,
             crate::atom::Molecule,
@@ -79,7 +69,6 @@ use utoipa::OpenApi;
             crate::fold_node::llm_query::types::QueryPlan,
             crate::fold_node::llm_query::types::ChatRequest,
             crate::fold_node::llm_query::types::ChatResponse,
-            crate::fold_node::llm_query::types::BackfillStatusResponse,
             crate::db_operations::IndexResult,
             crate::fold_db_core::orchestration::IndexingStatus,
             crate::fold_db_core::orchestration::IndexingState,

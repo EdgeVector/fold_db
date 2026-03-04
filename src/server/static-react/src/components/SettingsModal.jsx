@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import TransformsTab from './tabs/TransformsTab'
 import KeyManagementTab from './tabs/KeyManagementTab'
 import useAiConfig from './settings/AiConfigSettings'
 import SchemaServiceSettings from './settings/SchemaServiceSettings'
@@ -60,7 +59,6 @@ function SettingsModal({ isOpen, onClose, initialTab }) {
 
   const tabs = [
     { id: 'ai', label: 'AI Configuration' },
-    { id: 'transforms', label: 'Transforms' },
     { id: 'keys', label: 'Key Management' },
     { id: 'schema-service', label: 'Schema Service' },
     { id: 'database', label: 'Database' },
@@ -98,7 +96,6 @@ function SettingsModal({ isOpen, onClose, initialTab }) {
 
         <div className="modal-body">
           {activeTab === 'ai' && aiConfig.content}
-          {activeTab === 'transforms' && <TransformsTab onResult={NOOP} />}
           {activeTab === 'keys' && <KeyManagementTab onResult={NOOP} />}
           {activeTab === 'schema-service' && <SchemaServiceSettings />}
           {activeTab === 'database' && dbConfig.content}

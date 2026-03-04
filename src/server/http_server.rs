@@ -321,33 +321,12 @@ impl FoldHttpServer {
             .route(
                 "/schema/{name}/block",
                 web::post().to(schema_routes::block_schema),
-            )
-            .route(
-                "/backfill/{hash}",
-                web::get().to(schema_routes::get_backfill_status),
             );
     }
 
     fn configure_query_routes(cfg: &mut web::ServiceConfig) {
         cfg.route("/query", web::post().to(query_routes::execute_query))
             .route("/mutation", web::post().to(query_routes::execute_mutation))
-            .route("/transforms", web::get().to(query_routes::list_transforms))
-            .route(
-                "/transforms/queue",
-                web::get().to(query_routes::get_transform_queue),
-            )
-            .route(
-                "/transforms/queue/{id}",
-                web::post().to(query_routes::add_to_transform_queue),
-            )
-            .route(
-                "/transforms/backfills",
-                web::get().to(query_routes::get_all_backfills),
-            )
-            .route(
-                "/transforms/backfills/{id}",
-                web::get().to(query_routes::get_backfill),
-            )
             .route(
                 "/native-index/search",
                 web::get().to(query_routes::native_index_search),
@@ -499,10 +478,6 @@ impl FoldHttpServer {
         .route(
             "/llm-query/analyze-followup",
             web::post().to(llm_query::analyze_followup),
-        )
-        .route(
-            "/llm-query/backfill/{hash}",
-            web::get().to(llm_query::get_backfill_status),
         )
         .route("/llm-query/agent", web::post().to(llm_query::agent_query));
     }

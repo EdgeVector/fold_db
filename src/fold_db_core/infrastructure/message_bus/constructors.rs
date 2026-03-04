@@ -79,37 +79,6 @@ impl MoleculeCreated {
     }
 }
 
-impl TransformExecuted {
-    /// Create a new TransformExecuted event
-    pub fn new(transform_id: impl Into<String>, result: impl Into<String>) -> Self {
-        Self {
-            transform_id: transform_id.into(),
-            result: result.into(),
-        }
-    }
-}
-
-impl TransformTriggered {
-    /// Create a new TransformTriggered event
-    pub fn new(transform_id: impl Into<String>) -> Self {
-        Self {
-            transform_id: transform_id.into(),
-            mutation_context: None,
-        }
-    }
-
-    /// Create a new TransformTriggered event with mutation context
-    pub fn with_context(
-        transform_id: impl Into<String>,
-        mutation_context: atom_events::MutationContext,
-    ) -> Self {
-        Self {
-            transform_id: transform_id.into(),
-            mutation_context: Some(mutation_context),
-        }
-    }
-}
-
 impl MutationExecuted {
     /// Create a new MutationExecuted event
     pub fn new(

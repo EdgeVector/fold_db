@@ -18,20 +18,13 @@ pub struct DbOperations {
     /// Named namespaces (like sled trees)
     metadata_store: Arc<TypedKvStore<dyn KvStore>>,
     permissions_store: Arc<TypedKvStore<dyn KvStore>>,
-    transforms_store: Arc<TypedKvStore<dyn KvStore>>,
-    orchestrator_store: Arc<TypedKvStore<dyn KvStore>>,
     schema_states_store: Arc<TypedKvStore<dyn KvStore>>,
     schemas_store: Arc<TypedKvStore<dyn KvStore>>,
     public_keys_store: Arc<TypedKvStore<dyn KvStore>>,
-    transform_queue_store: Arc<TypedKvStore<dyn KvStore>>,
     idempotency_store: Arc<TypedKvStore<dyn KvStore>>,
     process_results_store: Arc<TypedKvStore<dyn KvStore>>,
 
     native_index_manager: Option<NativeIndexManager>,
-
-    /// Optional reference to underlying orchestrator tree for TransformOrchestrator
-    /// This is a temporary bridge until TransformOrchestrator is abstracted
-    pub orchestrator_tree: Option<sled::Tree>,
 }
 
 impl DbOperations {
@@ -44,12 +37,9 @@ impl DbOperations {
         let main_kv = store.open_namespace("main").await?;
         let metadata_kv = store.open_namespace("metadata").await?;
         let permissions_kv = store.open_namespace("node_id_schema_permissions").await?;
-        let transforms_kv = store.open_namespace("transforms").await?;
-        let orchestrator_kv = store.open_namespace("orchestrator_state").await?;
         let schema_states_kv = store.open_namespace("schema_states").await?;
         let schemas_kv = store.open_namespace("schemas").await?;
         let public_keys_kv = store.open_namespace("public_keys").await?;
-        let transform_queue_kv = store.open_namespace("transform_queue_tree").await?;
         let idempotency_kv = store.open_namespace("idempotency").await?;
         let process_results_kv = store.open_namespace("process_results").await?;
         let native_index_kv = store.open_namespace("native_index").await?;
@@ -58,12 +48,9 @@ impl DbOperations {
         let main_store = Arc::new(TypedKvStore::new(main_kv));
         let metadata_store = Arc::new(TypedKvStore::new(metadata_kv));
         let permissions_store = Arc::new(TypedKvStore::new(permissions_kv));
-        let transforms_store = Arc::new(TypedKvStore::new(transforms_kv));
-        let orchestrator_store = Arc::new(TypedKvStore::new(orchestrator_kv));
         let schema_states_store = Arc::new(TypedKvStore::new(schema_states_kv));
         let schemas_store = Arc::new(TypedKvStore::new(schemas_kv));
         let public_keys_store = Arc::new(TypedKvStore::new(public_keys_kv));
-        let transform_queue_store = Arc::new(TypedKvStore::new(transform_queue_kv));
         let idempotency_store = Arc::new(TypedKvStore::new(idempotency_kv));
         let process_results_store = Arc::new(TypedKvStore::new(process_results_kv));
 
@@ -74,30 +61,19 @@ impl DbOperations {
             main_store,
             metadata_store,
             permissions_store,
-            transforms_store,
-            orchestrator_store,
             schema_states_store,
             schemas_store,
             public_keys_store,
-            transform_queue_store,
             idempotency_store,
             process_results_store,
             native_index_manager: Some(native_index_manager),
-            orchestrator_tree: None,
         })
     }
 
     /// Convenience constructor for Sled backend (backward compatible, no E2E)
     pub async fn from_sled(db: sled::Db) -> Result<Self, crate::storage::StorageError> {
-        let orchestrator_tree = db
-            .open_tree("orchestrator_state")
-            .map_err(|e| crate::storage::StorageError::SledError(e.to_string()))?;
-
         let store = Arc::new(SledNamespacedStore::new(db)) as Arc<dyn NamespacedStore>;
-        let mut db_ops = Self::from_namespaced_store(store, None).await?;
-        db_ops.orchestrator_tree = Some(orchestrator_tree);
-
-        Ok(db_ops)
+        Self::from_namespaced_store(store, None).await
     }
 
     /// Convenience constructor for Cloud backend with simplified config
@@ -107,7 +83,6 @@ impl DbOperations {
         table_name: String,
         user_id: String,
     ) -> Result<Self, crate::storage::StorageError> {
-        // Note: user_id is no longer passed to the store - it's obtained from request context
         let _ = user_id; // Suppress unused warning - user_id will be obtained from request context
         let store = DynamoDbNamespacedStore::new_with_prefix(client, table_name);
         Self::from_namespaced_store(Arc::new(store), None).await
@@ -121,7 +96,6 @@ impl DbOperations {
         auto_create: bool,
         user_id: String,
     ) -> Result<Self, crate::storage::StorageError> {
-        // Note: user_id is no longer passed to the store - it's obtained from request context
         let _ = user_id; // Suppress unused warning - user_id will be obtained from request context
         let store = DynamoDbNamespacedStore::new(client, resolver, auto_create);
         Self::from_namespaced_store(Arc::new(store), None).await
@@ -137,14 +111,6 @@ impl DbOperations {
         &self.permissions_store
     }
 
-    pub fn transforms_store(&self) -> &Arc<TypedKvStore<dyn KvStore>> {
-        &self.transforms_store
-    }
-
-    pub fn orchestrator_store(&self) -> &Arc<TypedKvStore<dyn KvStore>> {
-        &self.orchestrator_store
-    }
-
     pub fn schema_states_store(&self) -> &Arc<TypedKvStore<dyn KvStore>> {
         &self.schema_states_store
     }
@@ -155,10 +121,6 @@ impl DbOperations {
 
     pub fn public_keys_store(&self) -> &Arc<TypedKvStore<dyn KvStore>> {
         &self.public_keys_store
-    }
-
-    pub fn transform_queue_store(&self) -> &Arc<TypedKvStore<dyn KvStore>> {
-        &self.transform_queue_store
     }
 
     pub fn idempotency_store(&self) -> &Arc<TypedKvStore<dyn KvStore>> {
@@ -184,10 +146,7 @@ impl DbOperations {
     }
 
     /// Flush all pending writes to durable storage
-    /// For Sled backends, this ensures data is written to disk
-    /// For cloud backends like DynamoDB, this is typically a no-op (auto-flushed)
     pub async fn flush(&self) -> Result<(), SchemaError> {
         Ok(self.main_store.inner().flush().await?)
     }
-
 }

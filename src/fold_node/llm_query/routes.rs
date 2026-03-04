@@ -175,48 +175,6 @@ pub async fn chat(
     }
 }
 
-/// Get backfill status for a transform
-#[utoipa::path(
-    get,
-    path = "/api/llm-query/backfill/{hash}",
-    tag = "llm-query",
-    params(
-        ("hash" = String, Path, description = "Backfill hash")
-    ),
-    responses(
-        (status = 200, description = "Backfill status", body = BackfillStatusResponse),
-        (status = 404, description = "Backfill not found"),
-        (status = 500, description = "Server error")
-    )
-)]
-pub async fn get_backfill_status(
-    path: web::Path<String>,
-    app_state: web::Data<AppState>,
-) -> impl Responder {
-    let backfill_hash = path.into_inner();
-    let (user_hash, node_arc) = match require_node(&app_state).await {
-        Ok(res) => res,
-        Err(response) => return response,
-    };
-    let node = node_arc.read().await;
-
-    match shared_handlers::get_backfill_status(&backfill_hash, &user_hash, &node).await {
-        Ok(response) => {
-            if let Some(data) = response.data {
-                HttpResponse::Ok().json(BackfillStatusResponse {
-                    status: data.status,
-                    progress: data.progress,
-                    total_records: data.total_records,
-                    processed_records: data.processed_records,
-                    estimated_completion: data.estimated_completion,
-                })
-            } else {
-                HttpResponse::InternalServerError().json(json!({"error": "Missing response data"}))
-            }
-        }
-        Err(e) => handler_error_to_response(e),
-    }
-}
 
 /// Execute an AI-native index query workflow
 #[utoipa::path(

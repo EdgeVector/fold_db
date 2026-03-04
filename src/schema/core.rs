@@ -3,8 +3,7 @@ use std::sync::{Arc, Mutex};
 
 use serde_json;
 
-use crate::fold_db_core::infrastructure::message_bus::events::schema_events::SchemaApproved;
-use crate::fold_db_core::infrastructure::message_bus::{AsyncMessageBus, Event};
+use crate::fold_db_core::infrastructure::message_bus::AsyncMessageBus;
 use crate::schema::types::field::Field;
 use crate::schema::types::{DeclarativeSchemaDefinition, Schema, SchemaError};
 use crate::schema::{SchemaState, SchemaWithState};
@@ -60,21 +59,11 @@ impl SchemaCore {
         let schema_states = db_ops.get_all_schema_states().await?;
 
         let schema_core = Self {
-            schemas: Arc::new(Mutex::new(schemas.clone())),
+            schemas: Arc::new(Mutex::new(schemas)),
             schema_states: Arc::new(Mutex::new(schema_states)),
             db_ops,
             message_bus,
         };
-
-        // Register transforms for all schemas that have transform_fields
-        // This ensures transforms are available when schemas are loaded from database
-        for (_, schema) in schemas {
-            if let Some(transform_fields) = &schema.transform_fields {
-                schema_core
-                    .register_declarative_transforms(&schema, transform_fields)
-                    .await?;
-            }
-        }
 
         Ok(schema_core)
     }
@@ -109,44 +98,6 @@ impl SchemaCore {
         schema_name: &str,
         schema_state: SchemaState,
     ) -> Result<(), SchemaError> {
-        self.set_schema_state_with_backfill(schema_name, schema_state, None)
-            .await
-    }
-
-    /// Approve a schema if it's not already approved (idempotent operation)
-    /// This is a convenience method that checks the current state before approving
-    pub async fn approve(&self, schema_name: &str) -> Result<(), SchemaError> {
-        self.approve_with_backfill(schema_name, None).await
-    }
-
-    /// Approve a schema with optional backfill hash if it's not already approved
-    pub async fn approve_with_backfill(
-        &self,
-        schema_name: &str,
-        backfill_hash: Option<String>,
-    ) -> Result<(), SchemaError> {
-        // Check current state
-        let current_state = self
-            .get_schema_states()?
-            .get(schema_name)
-            .copied()
-            .unwrap_or_default();
-
-        // Only approve if not already approved
-        if current_state != SchemaState::Approved {
-            self.set_schema_state_with_backfill(schema_name, SchemaState::Approved, backfill_hash)
-                .await?;
-        }
-
-        Ok(())
-    }
-
-    pub async fn set_schema_state_with_backfill(
-        &self,
-        schema_name: &str,
-        schema_state: SchemaState,
-        backfill_hash: Option<String>,
-    ) -> Result<(), SchemaError> {
         if schema_state == SchemaState::Approved {
             self.apply_field_mappers(schema_name).await?;
         }
@@ -164,21 +115,20 @@ impl SchemaCore {
             })?
             .insert(schema_name.to_string(), schema_state);
 
-        // If schema is being approved, publish SchemaApproved event to trigger backfill
-        if schema_state == SchemaState::Approved {
-            let event = SchemaApproved {
-                schema_name: schema_name.to_string(),
-                backfill_hash,
-            };
-            self.message_bus
-                .publish_event(Event::SchemaApproved(event))
-                .await
-                .map_err(|e| {
-                    SchemaError::InvalidData(format!(
-                        "Failed to publish SchemaApproved event: {}",
-                        e
-                    ))
-                })?;
+        Ok(())
+    }
+
+    /// Approve a schema if it's not already approved (idempotent operation)
+    pub async fn approve(&self, schema_name: &str) -> Result<(), SchemaError> {
+        let current_state = self
+            .get_schema_states()?
+            .get(schema_name)
+            .copied()
+            .unwrap_or_default();
+
+        if current_state != SchemaState::Approved {
+            self.set_schema_state(schema_name, SchemaState::Approved)
+                .await?;
         }
 
         Ok(())

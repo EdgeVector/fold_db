@@ -5,7 +5,6 @@ use crate::server::http_server::AppState;
 use crate::server::routes::{handler_error_to_response, require_node_read};
 use actix_web::{web, HttpResponse, Responder};
 use serde::Deserialize;
-use serde_json::json;
 
 #[utoipa::path(
     get,
@@ -66,7 +65,7 @@ pub async fn get_schema(path: web::Path<String>, state: web::Data<AppState>) -> 
         ("name" = String, Path, description = "Schema name")
     ),
     responses(
-        (status = 200, description = "Backfill hash if transform, null otherwise"),
+        (status = 200, description = "Schema approved successfully"),
         (status = 500, description = "Server error")
     )
 )]
@@ -152,39 +151,6 @@ pub async fn list_schema_keys(
     match schema_handlers::list_schema_keys(&name, offset, limit, &user_hash, &node).await {
         Ok(response) => HttpResponse::Ok().json(response),
         Err(e) => handler_error_to_response(e),
-    }
-}
-
-/// Get backfill status by hash
-#[utoipa::path(
-    get,
-    path = "/api/backfill/{hash}",
-    tag = "backfill",
-    params(
-        ("hash" = String, Path, description = "Backfill hash")
-    ),
-    responses(
-        (status = 200, description = "Backfill information object"),
-        (status = 404, description = "Backfill not found"),
-        (status = 500, description = "Server error")
-    )
-)]
-pub async fn get_backfill_status(
-    path: web::Path<String>,
-    state: web::Data<AppState>,
-) -> impl Responder {
-    let backfill_hash = path.into_inner();
-    let (_user_hash, node) = match require_node_read(&state).await {
-        Ok(res) => res,
-        Err(response) => return response,
-    };
-    let processor = crate::fold_node::OperationProcessor::new((*node).clone());
-
-    match processor.get_backfill(&backfill_hash).await {
-        Ok(Some(info)) => HttpResponse::Ok().json(info),
-        Ok(None) => HttpResponse::NotFound().json(json!({"error": "Backfill not found"})),
-        Err(e) => HttpResponse::InternalServerError()
-            .json(json!({"error": format!("Failed to get backfill status: {}", e)})),
     }
 }
 

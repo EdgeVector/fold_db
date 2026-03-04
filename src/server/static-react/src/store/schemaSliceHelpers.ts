@@ -88,13 +88,11 @@ export const createSuccessPayload = (
   schemaName: string,
   newState: SchemaStateType,
   updatedSchema?: Schema,
-  backfillHash?: string
 ): SchemaOperationSuccessPayload => ({
   schemaName,
   newState,
   timestamp: Date.now(),
   updatedSchema,
-  backfillHash
 });
 
 /**
@@ -120,11 +118,7 @@ export const createSchemaOperationThunk = <T extends keyof typeof SCHEMA_OPERATI
           throw new Error(response.error || errorMessage);
         }
         
-        // Extract backfill_hash if present in response data
-        const responseData = response.data as Record<string, unknown> | undefined;
-        const backfillHash = responseData?.backfill_hash as string | undefined;
-        
-        return createSuccessPayload(schemaName, successState, undefined, backfillHash);
+        return createSuccessPayload(schemaName, successState);
         
       } catch (error) {
         return rejectWithValue(

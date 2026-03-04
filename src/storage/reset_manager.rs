@@ -56,11 +56,8 @@ impl DynamoDbResetManager {
 
         // 5. Delete from all other tables (these use PK/SK schema)
         let tables_to_clean = vec![
-            &self.tables.orchestrator,
             &self.tables.metadata,
             &self.tables.schema_states,
-            &self.tables.transforms,
-            &self.tables.transform_queue,
             &self.tables.public_keys,
             &self.tables.permissions,
             &self.tables.main,

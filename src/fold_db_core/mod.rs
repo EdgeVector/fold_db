@@ -7,7 +7,6 @@
 //! - **services/**: Service layer components for operations
 //! - **infrastructure/**: Foundation components (message bus, initialization, etc.)
 //! - **orchestration/**: Coordination and orchestration components
-//! - **transform_manager/**: Transform system (already well-organized)
 
 // Organized module declarations
 pub mod factory;
@@ -20,9 +19,8 @@ pub mod query;
 
 pub mod mutation_manager;
 
-// Re-export key components for backwards compatibility
+// Re-export key components
 pub use infrastructure::EventMonitor;
-pub use orchestration::TransformOrchestrator;
 pub use query::QueryExecutor;
 
 // Re-export core components

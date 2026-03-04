@@ -175,8 +175,7 @@ async fn mutations_work_after_simulated_restart() {
         .await
         .expect("load schema");
     fold_db
-        .transform_manager()
-        .db_ops
+        .get_db_ops()
         .store_schema_state("FileRecords", &SchemaState::Approved)
         .await
         .expect("approve");
@@ -218,7 +217,7 @@ async fn mutations_work_after_simulated_restart() {
         // Reload schema from DB (which calls populate_runtime_fields internally)
         // This creates fresh runtime_fields with molecule_uuid set but molecule=None
         let reloaded: fold_db::schema::types::Schema =
-            fold_db.transform_manager().db_ops
+            fold_db.get_db_ops()
                 .get_schema("FileRecords")
                 .await
                 .unwrap()
@@ -308,7 +307,7 @@ async fn molecule_uuid_stays_consistent_across_batches() {
 
     let mol_uuid_first = {
         let fold_db = node.get_fold_db().await.expect("get fold_db");
-        let db_ops = &fold_db.transform_manager().db_ops;
+        let db_ops = &fold_db.get_db_ops();
         let schema = db_ops.get_schema("FileRecords").await.unwrap().expect("schema");
         schema
             .field_molecule_uuids
@@ -324,7 +323,7 @@ async fn molecule_uuid_stays_consistent_across_batches() {
 
     let mol_uuid_second = {
         let fold_db = node.get_fold_db().await.expect("get fold_db");
-        let db_ops = &fold_db.transform_manager().db_ops;
+        let db_ops = &fold_db.get_db_ops();
         let schema = db_ops.get_schema("FileRecords").await.unwrap().expect("schema");
         schema
             .field_molecule_uuids
