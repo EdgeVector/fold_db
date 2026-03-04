@@ -25,6 +25,11 @@ impl MessageSigner {
         Self { keypair }
     }
 
+    /// Get the base64-encoded public key from the underlying keypair.
+    pub fn keypair_public_key_base64(&self) -> String {
+        self.keypair.public_key_base64()
+    }
+
     /// Sign a message payload
     pub fn sign_message(&self, payload: Value) -> SecurityResult<SignedMessage> {
         // Serialize the payload to canonical JSON
