@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import ForceGraph2D from 'react-force-graph-2d'
 import { useApprovedSchemas } from '../../hooks/useApprovedSchemas.js'
 import { nativeIndexClient, mutationClient, schemaClient } from '../../api/clients'
-import { getFieldNames, toErrorMessage } from '../../utils/schemaUtils'
+import { getFieldNames, getSchemaDisplayName, toErrorMessage } from '../../utils/schemaUtils'
 
 // Gruvbox-inspired palette
 const COLORS = {
@@ -99,7 +99,7 @@ async function searchBatch(words, onBatchResult, onWordComplete) {
   }
 }
 
-function NodeDetail({ node, links }) {
+function NodeDetail({ node, links, nodes }) {
   if (!node) return null
   const connected = links.filter(l => {
     const src = typeof l.source === 'object' ? l.source?.id : l.source
@@ -124,7 +124,8 @@ function NodeDetail({ node, links }) {
               const src = typeof l.source === 'object' ? l.source?.id : l.source
               const tgt = typeof l.target === 'object' ? l.target?.id : l.target
               const other = src === node.id ? tgt : src
-              const otherLabel = String(other ?? '').replace(/^(schema:|word:)/, '')
+              const otherNode = nodes.find(n => n.id === other)
+              const otherLabel = otherNode?.label ?? String(other ?? '').replace(/^(schema:|word:)/, '')
               return (
                 <div key={i} className="text-xs bg-surface-secondary border border-border p-2 space-y-0.5">
                   <div className="text-primary font-mono truncate">{otherLabel}</div>
@@ -169,7 +170,7 @@ export default function WordGraphTab() {
   // Seed schema nodes whenever approved schemas change
   useEffect(() => {
     if (!approvedSchemas?.length) return
-    const schemaNodes = approvedSchemas.map(s => ({ id: makeSchemaId(s.name), label: s.name, type: 'schema' }))
+    const schemaNodes = approvedSchemas.map(s => ({ id: makeSchemaId(s.name), label: getSchemaDisplayName(s), type: 'schema' }))
     setGraphData(prev => mergeGraphData(prev, schemaNodes, []))
   }, [approvedSchemas])
 
@@ -191,7 +192,7 @@ export default function WordGraphTab() {
       setLoadStatus({ phase: 'Reading records…', progress: 0, total: schemas.length })
       for (let i = 0; i < schemas.length; i++) {
         const schema = schemas[i]
-        setLoadStatus({ phase: `Reading ${schema.name}…`, progress: i, total: schemas.length })
+        setLoadStatus({ phase: `Reading ${getSchemaDisplayName(schema)}…`, progress: i, total: schemas.length })
         try {
           const fields = getFieldNames(schema)
           const res = await mutationClient.executeQuery({ schema_name: schema.name, fields })
@@ -334,7 +335,7 @@ export default function WordGraphTab() {
   }, [highlightLinks])
 
   const handleClear = () => {
-    const schemaNodes = (approvedSchemas ?? []).map(s => ({ id: makeSchemaId(s.name), label: s.name, type: 'schema' }))
+    const schemaNodes = (approvedSchemas ?? []).map(s => ({ id: makeSchemaId(s.name), label: getSchemaDisplayName(s), type: 'schema' }))
     setGraphData({ nodes: schemaNodes, links: [] })
     setSelectedNode(null)
     setHighlightNodes(new Set())
@@ -425,7 +426,7 @@ export default function WordGraphTab() {
         {selectedNode && (
           <div className="border border-border p-2">
             <div className="text-xs uppercase tracking-widest text-tertiary mb-2">Selected</div>
-            <NodeDetail node={selectedNode} links={graphData.links} />
+            <NodeDetail node={selectedNode} links={graphData.links} nodes={graphData.nodes} />
           </div>
         )}
       </div>
