@@ -2,7 +2,7 @@
 name = "fold-app"
 version = "0.1.14"
 description = "Fold - Personal Database for Data Sovereignty"
-authors = ["Tom Tang <tom@datafold.ai>"]
+authors = ["Tom Tang <tom@folddb.com>"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/shiba4life/fold_db"
 edition = "2021"
