@@ -28,6 +28,11 @@ use std::sync::Arc;
 
 use decomposition::CachedSchema;
 
+/// Shorthand to wrap any `Display` error as a `SchemaCreationError`.
+pub(super) fn schema_err(e: impl std::fmt::Display) -> IngestionError {
+    IngestionError::SchemaCreationError(e.to_string())
+}
+
 /// AI-powered ingestion service that works with FoldNode
 pub struct IngestionService {
     config: IngestionConfig,
@@ -334,7 +339,7 @@ impl IngestionService {
             let db_guard = node
                 .get_fold_db()
                 .await
-                .map_err(|error| IngestionError::SchemaCreationError(error.to_string()))?;
+                .map_err(schema_err)?;
             let manager = db_guard.schema_manager.clone();
             drop(db_guard);
             manager
@@ -668,7 +673,7 @@ impl IngestionService {
             let db_guard = node
                 .get_fold_db()
                 .await
-                .map_err(|error| IngestionError::SchemaCreationError(error.to_string()))?;
+                .map_err(schema_err)?;
             let manager = db_guard.schema_manager.clone();
             drop(db_guard);
             manager
@@ -686,7 +691,7 @@ impl IngestionService {
         if !already_loaded {
             match schema_manager.load_schema_from_json(&json_str).await {
                 Ok(_) => {}
-                Err(error) => return Err(IngestionError::SchemaCreationError(error.to_string())),
+                Err(error) => return Err(schema_err(error)),
             };
         }
 
@@ -694,7 +699,7 @@ impl IngestionService {
         schema_manager
             .approve(&schema_response.name)
             .await
-            .map_err(|error| IngestionError::SchemaCreationError(error.to_string()))?;
+            .map_err(schema_err)?;
 
         Ok(schema_response.name)
     }

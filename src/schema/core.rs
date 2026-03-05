@@ -29,23 +29,28 @@ pub struct SchemaCore {
     message_bus: Arc<AsyncMessageBus>,
 }
 
+/// Acquire a `Mutex<HashMap<String, T>>` lock, mapping poison errors to `SchemaError`.
+fn lock_map<'a, T>(
+    map: &'a Mutex<HashMap<String, T>>,
+    name: &str,
+) -> Result<std::sync::MutexGuard<'a, HashMap<String, T>>, SchemaError> {
+    map.lock()
+        .map_err(|_| SchemaError::InvalidData(format!("Failed to acquire {} lock", name)))
+}
+
 impl SchemaCore {
     /// Acquire the schemas lock, mapping poison errors.
     fn lock_schemas(
         &self,
     ) -> Result<std::sync::MutexGuard<'_, HashMap<String, Schema>>, SchemaError> {
-        self.schemas
-            .lock()
-            .map_err(|_| SchemaError::InvalidData("Failed to acquire schemas lock".to_string()))
+        lock_map(&self.schemas, "schemas")
     }
 
     /// Acquire the schema_states lock, mapping poison errors.
     fn lock_states(
         &self,
     ) -> Result<std::sync::MutexGuard<'_, HashMap<String, SchemaState>>, SchemaError> {
-        self.schema_states
-            .lock()
-            .map_err(|_| SchemaError::InvalidData("Failed to acquire schema_states lock".to_string()))
+        lock_map(&self.schema_states, "schema_states")
     }
 
     /// Creates a new SchemaCore with DbOperations (storage abstraction)
