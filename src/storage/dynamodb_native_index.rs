@@ -27,10 +27,6 @@ impl DynamoDbNativeIndexStore {
         Self { client, table_name }
     }
 
-    fn get_current_user_id(&self) -> StorageResult<String> {
-        super::dynamodb_utils::require_user_context()
-    }
-
     /// Parse key to extract feature and term
     /// Keys are in format: "feature:term" (e.g., "word:hello", "email:test@example.com")
     fn parse_key(&self, key: &[u8]) -> StorageResult<(String, String)> {
@@ -50,7 +46,7 @@ impl DynamoDbNativeIndexStore {
     /// Get partition key (feature) for native index
     /// Format: user_id:feature
     fn get_partition_key(&self, feature: &str) -> StorageResult<String> {
-        Ok(format!("{}:{}", self.get_current_user_id()?, feature))
+        Ok(format!("{}:{}", super::dynamodb_utils::require_user_context()?, feature))
     }
 }
 
