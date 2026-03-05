@@ -28,4 +28,8 @@ jobs:
               2>&1 && echo "  Updated." || echo "  Skipped (already up to date or conflict)"
           done
         env:
-          GH_TOKEN: ${{ github.token }}
+          # Must use a PAT (not github.token) so that the resulting push
+          # triggers the pull_request: synchronize event and CI runs.
+          # Create a fine-grained PAT with Contents: read/write and
+          # Pull requests: read/write, then store it as secret GH_PAT.
+          GH_TOKEN: ${{ secrets.GH_PAT }}
