@@ -129,6 +129,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             config.schema_service_url = Some(url);
         }
 
+        // Ensure FOLD_CONFIG_DIR is set so ingestion config can be saved
+        let config_path = default_config_dir(demo);
+        std::fs::create_dir_all(&config_path)?;
+        std::env::set_var("FOLD_CONFIG_DIR", &config_path);
+
         println!("FoldDB Server (config file detected)");
         println!("  Data:   {}", config.get_storage_path().display());
         if let Some(ref url) = config.schema_service_url {
