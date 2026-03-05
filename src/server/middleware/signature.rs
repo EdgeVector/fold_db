@@ -53,12 +53,16 @@ const PREFIX_RULES: &[(&str, bool)] = &[
 pub fn is_protected_write(method: &actix_web::http::Method, path: &str) -> bool {
     use actix_web::http::Method;
 
-    // Signature enforcement is currently disabled while the frontend signing
-    // pipeline is being stabilised. The interceptor silently drops signatures
-    // when the private key has not yet been loaded into the Redux store,
-    // causing every protected write to fail with 401.
-    // TODO: Re-enable once frontend reliably signs all protected requests.
-    let _ = (method, path);
+    if method == Method::GET {
+        return false;
+    }
+
+    for (prefix, is_protected) in PREFIX_RULES {
+        if path.starts_with(prefix) {
+            return *is_protected;
+        }
+    }
+
     false
 }
 
