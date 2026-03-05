@@ -10,6 +10,9 @@ import { useCallback, useRef, useEffect, useState } from 'react';
 import { llmQueryClient } from '../../api/clients/llmQueryClient';
 import { mutationClient } from '../../api/clients/mutationClient';
 import { createHashKeyFilter } from '../../utils/filterUtils';
+import { extractImagesFromToolCalls } from '../../utils/imageUtils';
+import { STARTER_SUGGESTIONS } from '../../constants/suggestions';
+import ImageThumbnail from './llm-query/ImageThumbnail';
 import { useAppSelector, useAppDispatch } from '../../store/hooks';
 import ConversationList from './ConversationList';
 import {
@@ -29,85 +32,6 @@ import {
   selectCanAskFollowup,
   selectViewMode,
 } from '../../store/aiQuerySlice';
-
-const IMAGE_EXTENSIONS = /\.(jpe?g|png|gif|webp|svg)$/i
-
-/** Try to extract fileHash+sourceFile from a metadata-like object */
-function extractImageFromMeta(meta, seen, images) {
-  if (!meta || typeof meta !== 'object') return
-  // Per-field metadata: { field: { source_file_name, metadata: { file_hash } } }
-  const sourceFile = meta.source_file_name
-  const fileHash = meta.metadata?.file_hash || meta.file_hash
-  if (sourceFile && fileHash && IMAGE_EXTENSIONS.test(sourceFile) && !seen.has(fileHash)) {
-    seen.add(fileHash)
-    images.push({ fileHash, sourceFile })
-  }
-}
-
-/** Extract unique image references from tool call results */
-function extractImagesFromToolCalls(toolCalls) {
-  const images = []
-  const seen = new Set()
-  if (!Array.isArray(toolCalls)) return images
-  for (const tc of toolCalls) {
-    const results = Array.isArray(tc.result) ? tc.result : []
-    for (const record of results) {
-      // query tool: { key, fields, metadata: { fieldName: { source_file_name, metadata: { file_hash } } } }
-      const metadata = record?.metadata
-      if (metadata && typeof metadata === 'object') {
-        // Check if metadata itself is a per-field map (query results)
-        for (const val of Object.values(metadata)) {
-          extractImageFromMeta(val, seen, images)
-        }
-        // Also check metadata directly (search/IndexResult: { metadata: { source_file_name, ... } })
-        extractImageFromMeta(metadata, seen, images)
-      }
-    }
-  }
-  return images
-}
-
-/** Fetches and displays an image from the file API */
-function ImageThumbnail({ fileHash, sourceFile }) {
-  const [blobUrl, setBlobUrl] = useState(null)
-
-  useEffect(() => {
-    const url = `/api/file/${fileHash}?name=${encodeURIComponent(sourceFile || '')}`
-    let revoked = false
-    const userHash = localStorage.getItem('fold_user_hash')
-    const headers = {}
-    if (userHash) {
-      headers['x-user-hash'] = userHash
-      headers['x-user-id'] = userHash
-    }
-    fetch(url, { headers })
-      .then((res) => { if (!res.ok) throw new Error(res.statusText); return res.blob() })
-      .then((blob) => { if (!revoked) setBlobUrl(URL.createObjectURL(blob)) })
-      .catch(() => {})
-    return () => {
-      revoked = true
-      setBlobUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return null })
-    }
-  }, [fileHash, sourceFile])
-
-  if (!blobUrl) return null
-  return (
-    <img
-      src={blobUrl}
-      alt={sourceFile}
-      className="max-w-xs max-h-64 rounded border border-border object-contain bg-surface-secondary"
-    />
-  )
-}
-
-const STARTER_SUGGESTIONS = [
-  'What data do I have?',
-  'What taxes did I pay?',
-  'Show my upcoming travel plans',
-  'What medications am I taking?',
-  'Search for recent expenses',
-  'Summarize my contacts',
-];
 
 function LlmQueryTab({ onResult }) {
   // Redux state and dispatch
@@ -129,16 +53,11 @@ function LlmQueryTab({ onResult }) {
     conversationEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [conversationLog]);
 
-  /**
-   * Add a message to the conversation log
-   */
   const addToLog = useCallback((type, content, data = null) => {
     dispatch(addMessage({ type, content, data }));
   }, [dispatch]);
 
-  /**
-   * Process an AI agent response — shared by follow-up and new-query paths
-   */
+  /** Process an AI agent response — shared by follow-up and new-query paths */
   const processAgentResponse = useCallback((agentResponse) => {
     if (!agentResponse.success) {
       addToLog('system', `❌ Error: ${agentResponse.error || 'Failed to run AI agent query'}`);
@@ -147,21 +66,17 @@ function LlmQueryTab({ onResult }) {
 
     const result = agentResponse.data;
 
-    // Update session ID if returned from the server
     if (result.session_id) {
       dispatch(setSessionId(result.session_id));
     }
 
-    // Show tool calls if any were made
     if (result.tool_calls && result.tool_calls.length > 0) {
       addToLog('system', `🔧 Made ${result.tool_calls.length} tool call(s)`);
       addToLog('results', 'Tool execution trace', result.tool_calls);
     }
 
-    // Display the AI's final answer
     addToLog('system', result.answer);
 
-    // Show images from query results inline in the conversation
     if (result.tool_calls) {
       const images = extractImagesFromToolCalls(result.tool_calls);
       if (images.length > 0) {
@@ -169,15 +84,12 @@ function LlmQueryTab({ onResult }) {
       }
     }
 
-    // Show results section if user has expanded details
     if (showResults && result.tool_calls) {
       onResult({ success: true, data: result.tool_calls });
     }
   }, [addToLog, dispatch, showResults, onResult]);
 
-  /**
-   * Submit a query — core logic shared by form submit and suggestion clicks
-   */
+  /** Submit a query — core logic shared by form submit and suggestion clicks */
   const submitQuery = useCallback(async (text) => {
     const userInput = text.trim();
     if (!userInput || isProcessing) {
@@ -187,10 +99,8 @@ function LlmQueryTab({ onResult }) {
     dispatch(setInputText(''));
     dispatch(setIsProcessing(true));
 
-    // Add user message to log
     addToLog('user', userInput);
 
-    // Helper: run a fresh agent query (used for new queries and as fallback)
     const runAgentQuery = async () => {
       const agentResponse = await llmQueryClient.agentQuery({
         query: userInput,
@@ -201,9 +111,7 @@ function LlmQueryTab({ onResult }) {
     };
 
     try {
-      // If this is a follow-up question (session exists and we have results)
       if (canAskFollowup) {
-        // Try the follow-up path; if the backend session is stale/missing, fall back to agent
         let analysisResponse;
         try {
           addToLog('system', '🤔 Analyzing if question can be answered from existing context...');
@@ -212,7 +120,6 @@ function LlmQueryTab({ onResult }) {
             question: userInput
           });
         } catch {
-          // Session not found or no results — fall back to agent path
           await runAgentQuery();
           return;
         }
@@ -225,7 +132,6 @@ function LlmQueryTab({ onResult }) {
         const analysis = analysisResponse.data;
 
         if (!analysis.needs_query) {
-          // Can answer from existing context
           addToLog('system', `✅ Answering from existing context: ${analysis.reasoning}`);
 
           const chatResponse = await llmQueryClient.chat({
@@ -240,7 +146,6 @@ function LlmQueryTab({ onResult }) {
 
           addToLog('system', chatResponse.data.answer);
         } else {
-          // Needs new query - use AI agent with tool calling
           addToLog('system', `🔍 Need new data: ${analysis.reasoning}`);
           await runAgentQuery();
         }
@@ -257,17 +162,12 @@ function LlmQueryTab({ onResult }) {
     }
   }, [sessionId, canAskFollowup, isProcessing, processAgentResponse, addToLog, onResult, dispatch]);
 
-  /**
-   * Handle form submit
-   */
   const handleSubmit = useCallback(async (e) => {
     e?.preventDefault();
     await submitQuery(inputText);
   }, [inputText, submitQuery]);
 
-  /**
-   * Load a past conversation by session ID
-   */
+  /** Load a past conversation by session ID */
   const handleSelectConversation = useCallback(async (selectedSessionId) => {
     setIsLoadingConversation(true);
     try {
@@ -289,25 +189,21 @@ function LlmQueryTab({ onResult }) {
         return;
       }
 
-      // Sort by timestamp ascending
       const sorted = [...records].sort((a, b) => {
         const fa = a.fields || a;
         const fb = b.fields || b;
         return (fa.timestamp || '').localeCompare(fb.timestamp || '');
       });
 
-      // Build conversation messages from each turn
       const messages = [];
       for (const record of sorted) {
         const fields = record.fields || record;
         const timestamp = fields.timestamp || new Date().toISOString();
 
-        // User message
         if (fields.query) {
           messages.push({ type: 'user', content: fields.query, timestamp });
         }
 
-        // Tool calls if present
         if (fields.tool_calls_json) {
           try {
             const toolCalls = JSON.parse(fields.tool_calls_json);
@@ -329,12 +225,10 @@ function LlmQueryTab({ onResult }) {
           }
         }
 
-        // AI answer
         if (fields.answer) {
           messages.push({ type: 'system', content: fields.answer, timestamp });
         }
 
-        // Extract images from tool calls for this turn
         if (fields.tool_calls_json) {
           try {
             const toolCalls = JSON.parse(fields.tool_calls_json);
@@ -355,16 +249,10 @@ function LlmQueryTab({ onResult }) {
     }
   }, [dispatch, addToLog]);
 
-  /**
-   * Navigate back to conversation list
-   */
   const handleBackToList = useCallback(() => {
     dispatch(setViewMode('list'));
   }, [dispatch]);
 
-  /**
-   * Start a new conversation
-   */
   const handleNewConversation = useCallback(() => {
     dispatch(startNewConversation());
   }, [dispatch]);

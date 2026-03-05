@@ -3,6 +3,8 @@ import ForceGraph2D from 'react-force-graph-2d'
 import { useApprovedSchemas } from '../../hooks/useApprovedSchemas.js'
 import { nativeIndexClient, mutationClient, schemaClient } from '../../api/clients'
 import { getFieldNames, getSchemaDisplayName, toErrorMessage } from '../../utils/schemaUtils'
+import { makeSchemaId, mergeGraphData, extractWordsFromRecord, buildFromResults, searchBatch } from '../../utils/graphUtils'
+import NodeDetail from './graph/NodeDetail'
 
 // Gruvbox-inspired palette
 const COLORS = {
@@ -15,131 +17,8 @@ const COLORS = {
   text:      '#ebdbb2',
 }
 
-const STOPWORDS = new Set([
-  'the','and','for','are','but','not','you','all','can','her','was','one',
-  'our','out','get','has','him','his','how','new','now','old','see','two',
-  'way','who','did','its','let','put','say','she','too','use','that','this',
-  'with','from','they','been','have','will','more','also','than','then',
-  'when','just','over','into','some','what','your','would','could','which',
-])
-
 const MAX_WORDS     = 300  // cap on unique words to search
 const MAX_RECORDS   = 20   // records to query per schema
-const SEARCH_BATCH  = 8    // concurrent searches at a time
-
-function makeSchemaId(name) { return `schema:${name}` }
-function makeWordId(term)   { return `word:${term}` }
-
-function formatKey(kv) {
-  const parts = []
-  if (kv?.hash)  parts.push(kv.hash.slice(0, 12))
-  if (kv?.range) parts.push(kv.range.slice(0, 12))
-  return parts.join(' / ') || '—'
-}
-
-function mergeGraphData(prev, newNodes, newLinks) {
-  const nodeMap = new Map(prev.nodes.map(n => [n.id, n]))
-  const linkMap = new Map(prev.links.map(l => [l.id, l]))
-  for (const n of newNodes) if (!nodeMap.has(n.id)) nodeMap.set(n.id, n)
-  for (const l of newLinks) if (!linkMap.has(l.id)) linkMap.set(l.id, l)
-  return { nodes: Array.from(nodeMap.values()), links: Array.from(linkMap.values()) }
-}
-
-function extractWordsFromRecord(record) {
-  const words = new Set()
-  const fields = record?.fields ?? (typeof record === 'object' ? record : {})
-  for (const value of Object.values(fields ?? {})) {
-    if (typeof value !== 'string') continue
-    for (const w of value.toLowerCase().split(/[^a-z0-9]+/)) {
-      if (w.length >= 3 && !STOPWORDS.has(w)) words.add(w)
-    }
-  }
-  return words
-}
-
-function buildFromResults(results) {
-  const nodes = []
-  const links = []
-  const seenWords = new Set()
-  for (const r of results) {
-    const schemaId = makeSchemaId(r.schema_name)
-    const wordLabel = String(r.value ?? r.field ?? '')
-    if (!wordLabel) continue
-    const wordId = makeWordId(wordLabel)
-    const linkId = `${wordId}-->${schemaId}:${r.key_value?.hash}:${r.key_value?.range}:${r.field}`
-    if (!seenWords.has(wordId)) {
-      seenWords.add(wordId)
-      nodes.push({ id: wordId, label: wordLabel, type: 'word', field: r.field })
-    }
-    links.push({
-      id: linkId,
-      source: wordId,
-      target: schemaId,
-      keyLabel: formatKey(r.key_value),
-      field: r.field,
-      hash: r.key_value?.hash ?? '',
-      range: r.key_value?.range ?? '',
-    })
-  }
-  return { nodes, links }
-}
-
-async function searchBatch(words, onBatchResult, onWordComplete) {
-  const pending = [...words]
-  while (pending.length > 0) {
-    const batch = pending.splice(0, SEARCH_BATCH)
-    await Promise.all(batch.map(async (word) => {
-      const res = await nativeIndexClient.search(word)
-      if (res.success) {
-        const results = res.data?.results ?? []
-        if (results.length) onBatchResult(results)
-      }
-      onWordComplete()
-    }))
-  }
-}
-
-function NodeDetail({ node, links, nodes }) {
-  if (!node) return null
-  const connected = links.filter(l => {
-    const src = typeof l.source === 'object' ? l.source?.id : l.source
-    const tgt = typeof l.target === 'object' ? l.target?.id : l.target
-    return src === node.id || tgt === node.id
-  })
-  return (
-    <div className="space-y-3">
-      <div>
-        <span className={`text-xs uppercase font-bold tracking-widest ${node.type === 'schema' ? 'text-[#83a598]' : 'text-[#b8bb26]'}`}>
-          {node.type}
-        </span>
-        <div className="text-primary font-mono mt-1 text-sm break-all">{node.label}</div>
-      </div>
-      {connected.length > 0 && (
-        <div>
-          <div className="text-xs uppercase tracking-widest text-tertiary mb-2">
-            Connections ({connected.length})
-          </div>
-          <div className="space-y-1 max-h-56 overflow-y-auto pr-1">
-            {connected.map((l, i) => {
-              const src = typeof l.source === 'object' ? l.source?.id : l.source
-              const tgt = typeof l.target === 'object' ? l.target?.id : l.target
-              const other = src === node.id ? tgt : src
-              const otherNode = nodes.find(n => n.id === other)
-              const otherLabel = otherNode?.label ?? String(other ?? '').replace(/^(schema:|word:)/, '')
-              return (
-                <div key={i} className="text-xs bg-surface-secondary border border-border p-2 space-y-0.5">
-                  <div className="text-primary font-mono truncate">{otherLabel}</div>
-                  <div className="text-tertiary">field: <span className="text-secondary">{l.field}</span></div>
-                  <div className="text-tertiary">key: <span className="text-secondary font-mono">{l.keyLabel}</span></div>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
 
 export default function WordGraphTab() {
   const { approvedSchemas } = useApprovedSchemas()
@@ -229,6 +108,7 @@ export default function WordGraphTab() {
       setLoadStatus({ phase: 'Indexing words…', progress: 0, total: wordList.length })
       await searchBatch(
         wordList,
+        nativeIndexClient,
         (results) => { addResults(results) },
         () => {
           done += 1
