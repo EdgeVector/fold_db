@@ -153,10 +153,10 @@ impl DynamoDbSchemaStore {
         Ok(Self { client, table_name })
     }
 
-    /// Get the current user_id from request context.
+    /// Get the partition key (hash key) for schemas.
     /// Falls back to "__system__" with a warning — this store is also used by the
     /// standalone schema_service binary which may not have per-user context.
-    fn get_current_user_id(&self) -> FoldDbResult<String> {
+    fn get_partition_key(&self) -> FoldDbResult<String> {
         match crate::logging::core::get_current_user_id() {
             Some(id) => Ok(id),
             None => {
@@ -167,13 +167,6 @@ impl DynamoDbSchemaStore {
                 Ok("__system__".to_string())
             }
         }
-    }
-
-    /// Get the partition key (hash key) for schemas
-    /// Format: user_id
-    /// The schema_name goes in the sort key (SK)
-    fn get_partition_key(&self) -> FoldDbResult<String> {
-        self.get_current_user_id()
     }
 
     /// Get a schema by its identity hash

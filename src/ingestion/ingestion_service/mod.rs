@@ -22,6 +22,7 @@ use crate::ingestion::{
 use crate::log_feature;
 use crate::logging::features::LogFeature;
 use crate::schema::types::{KeyValue, Mutation};
+use crate::schema::SchemaCore;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -31,6 +32,14 @@ use decomposition::CachedSchema;
 /// Shorthand to wrap any `Display` error as a `SchemaCreationError`.
 pub(super) fn schema_err(e: impl std::fmt::Display) -> IngestionError {
     IngestionError::SchemaCreationError(e.to_string())
+}
+
+/// Acquire a clone of the SchemaCore from the node without holding the DB lock.
+async fn get_schema_manager(node: &FoldNode) -> IngestionResult<Arc<SchemaCore>> {
+    let db_guard = node.get_fold_db().await.map_err(schema_err)?;
+    let manager = db_guard.schema_manager.clone();
+    drop(db_guard);
+    Ok(manager)
 }
 
 /// AI-powered ingestion service that works with FoldNode
@@ -335,15 +344,7 @@ impl IngestionService {
         progress_id: &str,
     ) -> IngestionResult<(Vec<Mutation>, Vec<SchemaWriteRecord>)> {
         // Get schema manager for key extraction
-        let schema_manager = {
-            let db_guard = node
-                .get_fold_db()
-                .await
-                .map_err(schema_err)?;
-            let manager = db_guard.schema_manager.clone();
-            drop(db_guard);
-            manager
-        };
+        let schema_manager = get_schema_manager(node).await?;
 
         let metadata = Self::build_ingestion_metadata(&request.file_hash, progress_id);
 
@@ -669,15 +670,7 @@ impl IngestionService {
             ))
         })?;
 
-        let schema_manager = {
-            let db_guard = node
-                .get_fold_db()
-                .await
-                .map_err(schema_err)?;
-            let manager = db_guard.schema_manager.clone();
-            drop(db_guard);
-            manager
-        };
+        let schema_manager = get_schema_manager(node).await?;
 
         // Only load the schema if it doesn't already exist locally.
         // Re-loading from the schema service JSON would overwrite the cached schema's
