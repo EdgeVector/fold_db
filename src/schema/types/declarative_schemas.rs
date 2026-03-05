@@ -370,11 +370,17 @@ impl DeclarativeSchemaDefinition {
 
         // Regenerate transform metadata that isn't persisted (marked with #[serde(skip)])
         // This is needed when schemas are loaded from the database
+        self.regenerate_metadata();
+
+        Ok(())
+    }
+
+    /// Regenerate all derived transform metadata (hash mappings, inputs, source schemas).
+    /// Called after construction and after deserialization from database.
+    fn regenerate_metadata(&mut self) {
         self.generate_hash_to_code_mappings();
         self.generate_inputs();
         self.fetch_source_schemas();
-
-        Ok(())
     }
 
     /// Syncs molecule UUIDs from runtime_fields to the persisted field_molecule_uuids
@@ -431,10 +437,7 @@ impl DeclarativeSchemaDefinition {
             hash_to_code: HashMap::new(),
         };
 
-        // Generate all mappings after creation
-        schema.generate_hash_to_code_mappings();
-        schema.generate_inputs();
-        schema.fetch_source_schemas();
+        schema.regenerate_metadata();
         schema
     }
 
@@ -466,27 +469,29 @@ impl DeclarativeSchemaDefinition {
         self.identity_hash.as_ref()
     }
 
-    fn generate_inputs(&mut self) {
-        let mut inputs_schema_fields = Vec::new();
-        for code_def in self.hash_to_code.keys() {
-            let expression = self.hash_to_code.get(code_def).unwrap();
+    /// Parse a single transform expression into a "Schema.field" input reference.
+    fn parse_expression_input(expression: &str) -> Option<String> {
+        // Split by "." and filter out method calls containing "(" or ")"
+        let parts: Vec<&str> = expression
+            .split(".")
+            .filter(|part| !part.contains("(") && !part.contains(")"))
+            .collect();
 
-            // Split expression by "." and filter out elements containing "(" or ")"
-            // This handles .map(), .filter(), .reduce(), etc.
-            let parts: Vec<&str> = expression
-                .split(".")
-                .filter(|part| !part.contains("(") && !part.contains(")"))
-                .collect();
-
-            // Take the first two valid parts to form the field reference
-            if parts.len() >= 2 {
-                inputs_schema_fields.push(format!("{}.{}", parts[0], parts[1]));
-            } else if parts.len() == 1 {
-                // Fallback: if only one part, use it as-is
-                inputs_schema_fields.push(parts[0].to_string());
-            }
+        if parts.len() >= 2 {
+            Some(format!("{}.{}", parts[0], parts[1]))
+        } else if parts.len() == 1 {
+            Some(parts[0].to_string())
+        } else {
+            None
         }
-        // Remove duplicates and sort
+    }
+
+    fn generate_inputs(&mut self) {
+        let mut inputs_schema_fields: Vec<String> = self
+            .hash_to_code
+            .values()
+            .filter_map(|expr| Self::parse_expression_input(expr))
+            .collect();
         inputs_schema_fields.sort();
         inputs_schema_fields.dedup();
         self.inputs_schema_fields = inputs_schema_fields;
@@ -564,28 +569,7 @@ impl DeclarativeSchemaDefinition {
     /// Extract input fields from a single transform expression.
     /// Example: "BlogPost.content.split_by_word()" -> ["BlogPost.content"]
     pub fn extract_inputs_from_expression(expression: &str) -> Vec<String> {
-        let mut inputs = Vec::new();
-
-        // Split expression by "." and filter out elements containing "(" or ")"
-        // This handles .map(), .filter(), .reduce(), etc.
-        let parts: Vec<&str> = expression
-            .split(".")
-            .filter(|part| !part.contains("(") && !part.contains(")"))
-            .collect();
-
-        // Take the first two valid parts to form the field reference
-        if parts.len() >= 2 {
-            inputs.push(format!("{}.{}", parts[0], parts[1]));
-        } else if parts.len() == 1 {
-            // Fallback: if only one part, use it as-is
-            inputs.push(parts[0].to_string());
-        }
-
-        // Remove duplicates and sort
-        inputs.sort();
-        inputs.dedup();
-
-        inputs
+        Self::parse_expression_input(expression).into_iter().collect()
     }
 }
 

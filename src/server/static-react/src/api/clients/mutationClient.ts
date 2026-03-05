@@ -1,10 +1,4 @@
-/**
- * Mutation API Client - Unified Implementation
- * Replaces existing mutationClient.ts with standardized approach
- * Implements SCHEMA-002 compliance for mutation operations
- *
- * Uses generated TypeScript types from Rust backend for type safety.
- */
+// Mutation API Client — SCHEMA-002 compliant, uses generated TS types from Rust backend
 
 import { ApiClient, createApiClient } from "../core/client";
 import { API_ENDPOINTS } from "../endpoints";
@@ -46,9 +40,7 @@ export interface QueryResponse {
   metadata?: Record<string, unknown>;
 }
 
-/**
- * Unified Mutation API Client Implementation
- */
+// Unified Mutation API Client Implementation
 export class UnifiedMutationClient implements MutationApiClient {
   private readonly client: ApiClient;
 
@@ -62,13 +54,7 @@ export class UnifiedMutationClient implements MutationApiClient {
       });
   }
 
-  /**
-   * Execute a mutation against an approved schema
-   * PROTECTED - Requires authentication and SCHEMA-002 compliance
-   *
-   * @param mutation The mutation object to execute
-   * @returns Promise resolving to mutation result
-   */
+  // Execute a mutation against an approved schema (requires auth, SCHEMA-002)
   async executeMutation(
     _mutation: Record<string, unknown>,
   ): Promise<EnhancedApiResponse<Record<string, unknown>>> {
@@ -83,13 +69,7 @@ export class UnifiedMutationClient implements MutationApiClient {
     );
   }
 
-  /**
-   * Execute a query against an approved schema
-   * UNPROTECTED - No authentication required
-   *
-   * @param query The query object to execute
-   * @returns Promise resolving to query results
-   */
+  // Execute a query against an approved schema (no auth required)
   async executeQuery(
     query: Record<string, unknown>,
   ): Promise<EnhancedApiResponse<Record<string, unknown>>> {
@@ -101,13 +81,7 @@ export class UnifiedMutationClient implements MutationApiClient {
     });
   }
 
-  /**
-   * Execute a parameterized query with filters and pagination
-   * Provides enhanced query capabilities beyond basic executeQuery
-   *
-   * @param queryParams Query parameters including schema, filters, pagination
-   * @returns Promise resolving to enhanced query results
-   */
+  // Execute a parameterized query with filters and pagination
   async executeParameterizedQuery(queryParams: {
     schema: string;
     filters?: Record<string, unknown>;
@@ -129,12 +103,7 @@ export class UnifiedMutationClient implements MutationApiClient {
     );
   }
 
-  /**
-   * Check if a schema is available for mutations (SCHEMA-002 compliance)
-   *
-   * @param schemaName The name of the schema to check
-   * @returns Promise resolving to schema availability info
-   */
+  // Check if a schema is available for mutations (SCHEMA-002 compliance)
   async validateSchemaForMutation(schemaName: string): Promise<{
     isValid: boolean;
     schemaState: string;
@@ -191,12 +160,7 @@ export class UnifiedMutationClient implements MutationApiClient {
     }
   }
 
-  /**
-   * Get mutation history for a molecule by its UUID
-   *
-   * @param moleculeUuid The molecule UUID to get history for
-   * @returns Promise resolving to molecule history events
-   */
+  // Get mutation history for a molecule by its UUID
   async getMoleculeHistory(
     moleculeUuid: string,
   ): Promise<EnhancedApiResponse<Record<string, unknown>>> {
@@ -211,12 +175,7 @@ export class UnifiedMutationClient implements MutationApiClient {
     );
   }
 
-  /**
-   * Get content of a specific atom by its UUID
-   *
-   * @param atomUuid The atom UUID to get content for
-   * @returns Promise resolving to atom content
-   */
+  // Get content of a specific atom by its UUID
   async getAtomContent(
     atomUuid: string,
   ): Promise<EnhancedApiResponse<Record<string, unknown>>> {
@@ -231,9 +190,7 @@ export class UnifiedMutationClient implements MutationApiClient {
     );
   }
 
-  /**
-   * Get API metrics for mutation operations
-   */
+  // Get API metrics for mutation operations
   getMetrics() {
     return this.client
       .getMetrics()
@@ -243,9 +200,7 @@ export class UnifiedMutationClient implements MutationApiClient {
       );
   }
 
-  /**
-   * Clear any cached query results
-   */
+  // Clear any cached query results
   clearCache(): void {
     this.client.clearCache();
   }

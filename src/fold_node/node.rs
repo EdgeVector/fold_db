@@ -72,6 +72,15 @@ impl FoldNode {
             .map_err(|e| FoldDbError::Config(format!("Failed to load E2E keys: {}", e)))
     }
 
+    /// Resolve identity and load E2E keys — shared init for both constructors.
+    async fn resolve_identity_and_keys(
+        config: &NodeConfig,
+    ) -> FoldDbResult<(String, String, crate::crypto::E2eKeys)> {
+        let (private_key, public_key) = Self::resolve_identity(config)?;
+        let e2e_keys = Self::load_e2e_keys().await?;
+        Ok((private_key, public_key, e2e_keys))
+    }
+
     /// Log schema service configuration status.
     fn log_schema_service(config: &NodeConfig) {
         if let Some(schema_service_url) = &config.schema_service_url {
@@ -130,7 +139,8 @@ impl FoldNode {
 
     /// Creates a new FoldNode with the specified configuration.
     pub async fn new(#[allow(unused_mut)] mut config: NodeConfig) -> FoldDbResult<Self> {
-        let (private_key, public_key) = Self::resolve_identity(&config)?;
+        let (private_key, public_key, e2e_keys) =
+            Self::resolve_identity_and_keys(&config).await?;
 
         // Update config with public key as user_id if not set (for DynamoDB)
         #[cfg(feature = "aws-backend")]
@@ -140,9 +150,7 @@ impl FoldNode {
             }
         }
 
-        let e2e_keys = Self::load_e2e_keys().await?;
         let db = crate::fold_db_core::factory::create_fold_db(&config.database, &e2e_keys).await?;
-
         let node = Self::assemble(config, db, private_key, public_key, e2e_keys).await?;
         log_feature!(
             LogFeature::Database,
@@ -154,9 +162,8 @@ impl FoldNode {
 
     /// Creates a new FoldNode with a pre-created FoldDB instance.
     pub async fn new_with_db(config: NodeConfig, db: Arc<Mutex<FoldDB>>) -> FoldDbResult<Self> {
-        let (private_key, public_key) = Self::resolve_identity(&config)?;
-        let e2e_keys = Self::load_e2e_keys().await?;
-
+        let (private_key, public_key, e2e_keys) =
+            Self::resolve_identity_and_keys(&config).await?;
         let node = Self::assemble(config, db, private_key, public_key, e2e_keys).await?;
         log_feature!(
             LogFeature::Database,

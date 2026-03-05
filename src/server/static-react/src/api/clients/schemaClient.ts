@@ -1,8 +1,4 @@
-/**
- * Schema API Client - Unified Implementation
- * Replaces existing schemaClient.ts with standardized approach
- * Implements SCHEMA-002 compliance at the API layer
- */
+// Schema API Client — SCHEMA-002 compliant, standardized approach
 
 import { ApiClient, getSharedClient } from '../core/client';
 import { API_ENDPOINTS } from '../endpoints';
@@ -73,9 +69,7 @@ export interface SchemaStatusResponse {
   total: number;
 }
 
-/**
- * Unified Schema API Client Implementation
- */
+// Unified Schema API Client Implementation
 export class UnifiedSchemaClient {
   private readonly client: ApiClient;
 
@@ -83,10 +77,7 @@ export class UnifiedSchemaClient {
     this.client = client || getSharedClient();
   }
 
-  /**
-   * Get all schemas with their current states
-   * UNPROTECTED - No authentication required
-   */
+  // Get all schemas with their current states (no auth required)
   async getSchemas(): Promise<EnhancedApiResponse<Schema[]>> {
     const response = await this.client.get<unknown>(API_ENDPOINTS.LIST_SCHEMAS, {
       cacheable: true,
@@ -129,10 +120,7 @@ export class UnifiedSchemaClient {
     return { ...response, data: list } as EnhancedApiResponse<Schema[]>;
   }
 
-  /**
-   * Get a specific schema by name
-   * UNPROTECTED - No authentication required
-   */
+  // Get a specific schema by name (no auth required)
   async getSchema(name: string): Promise<EnhancedApiResponse<Schema>> {
     return this.client.get<Schema>(API_ENDPOINTS.GET_SCHEMA(name), {
       cacheable: true,
@@ -141,10 +129,7 @@ export class UnifiedSchemaClient {
     });
   }
 
-  /**
-   * Get schemas filtered by state (computed client-side)
-   * UNPROTECTED - No authentication required
-   */
+  // Get schemas filtered by state (computed client-side, no auth required)
   async getSchemasByState(state: string): Promise<EnhancedApiResponse<SchemasByStateResponse>> {
     if (!(Object.values(SCHEMA_STATES) as string[]).includes(state)) {
       throw new Error(`Invalid schema state: ${state}. Must be one of: ${Object.values(SCHEMA_STATES).join(', ')}`);
@@ -164,10 +149,7 @@ export class UnifiedSchemaClient {
     };
   }
 
-  /**
-   * Get all schemas with their state mappings (computed client-side)
-   * UNPROTECTED - No authentication required
-   */
+  // Get all schemas with their state mappings (computed client-side, no auth required)
   async getAllSchemasWithState(): Promise<EnhancedApiResponse<SchemasWithStateResponse>> {
     const all = await this.getSchemas();
     if (!all.success || !all.data) {
@@ -229,10 +211,7 @@ export class UnifiedSchemaClient {
     };
   }
 
-  /**
-   * Get schema status summary (computed client-side)
-   * UNPROTECTED - No authentication required
-   */
+  // Get schema status summary (computed client-side, no auth required)
   async getSchemaStatus(): Promise<EnhancedApiResponse<SchemaStatusResponse>> {
     const all = await this.getSchemas();
     if (!all.success || !all.data) {
@@ -248,11 +227,7 @@ export class UnifiedSchemaClient {
     return { success: true, data: counts, status: 200, meta: { timestamp: Date.now(), cached: all.meta?.cached || false } };
   }
 
-  /**
-   * Approve a schema (transition to approved state)
-   * UNPROTECTED - No authentication required
-   * SCHEMA-002 Compliance: Only available schemas can be approved
-   */
+  // Approve a schema — only available schemas can be approved (SCHEMA-002)
   async approveSchema(name: string): Promise<EnhancedApiResponse<{ approved: boolean }>> {
     const result = await this.client.post<{ approved: boolean }>(
       API_ENDPOINTS.APPROVE_SCHEMA(name),
@@ -266,11 +241,7 @@ export class UnifiedSchemaClient {
     return result;
   }
 
-  /**
-   * Block a schema (transition to blocked state)
-   * UNPROTECTED - No authentication required
-   * SCHEMA-002 Compliance: Only approved schemas can be blocked
-   */
+  // Block a schema — only approved schemas can be blocked (SCHEMA-002)
   async blockSchema(name: string): Promise<EnhancedApiResponse<void>> {
     const result = await this.client.post<void>(
       API_ENDPOINTS.BLOCK_SCHEMA(name),
@@ -284,10 +255,7 @@ export class UnifiedSchemaClient {
     return result;
   }
 
-  /**
-   * Get approved schemas only (SCHEMA-002 compliant)
-   * This is a convenience method for components that need only approved schemas
-   */
+  // Get approved schemas only (SCHEMA-002 compliant)
   async getApprovedSchemas(): Promise<EnhancedApiResponse<Schema[]>> {
     try {
       const response = await this.getSchemas();
@@ -303,45 +271,32 @@ export class UnifiedSchemaClient {
     }
   }
 
-  /**
-   * Load a schema into memory (no-op client-side; server has no endpoint)
-   */
+  // Load a schema into memory (no-op client-side; server has no endpoint)
   async loadSchema(_name: string): Promise<EnhancedApiResponse<void>> {
     return { success: true, status: 200 } as EnhancedApiResponse<void>;
   }
 
-  /**
-   * Unload a schema from memory (no-op client-side; server has no endpoint)
-   */
+  // Unload a schema from memory (no-op client-side; server has no endpoint)
   async unloadSchema(_name: string): Promise<EnhancedApiResponse<void>> {
     return { success: true, status: 200 } as EnhancedApiResponse<void>;
   }
 
-  /**
-   * Clear schema cache
-   */
+  // Clear schema cache
   clearCache(): void {
     this.client.clearCache();
   }
 
-  /**
-   * Get cache statistics
-   */
+  // Get cache statistics
   getCacheStats(): { size: number; hitRate: number } {
     return this.client.getCacheStats();
   }
 
-  /**
-   * Get API metrics
-   */
+  // Get API metrics
   getMetrics() {
     return this.client.getMetrics();
   }
 
-  /**
-   * List keys for a schema with pagination
-   * UNPROTECTED - No authentication required
-   */
+  // List keys for a schema with pagination (no auth required)
   async listSchemaKeys(
     schemaName: string,
     offset = 0,

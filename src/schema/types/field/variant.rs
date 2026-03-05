@@ -118,6 +118,27 @@ impl Field for FieldVariant {
 }
 
 impl FieldVariant {
+    /// Returns whether a molecule is present in this field.
+    #[must_use]
+    pub fn has_molecule(&self) -> bool {
+        match self {
+            Self::Single(f) => f.base.molecule.is_some(),
+            Self::Range(f) => f.base.molecule.is_some(),
+            Self::HashRange(f) => f.base.molecule.is_some(),
+        }
+    }
+
+    /// Clone the molecule data for persistence, if present.
+    #[must_use]
+    pub fn clone_molecule_data(&self) -> Option<crate::db_operations::MoleculeData> {
+        use crate::db_operations::MoleculeData;
+        match self {
+            Self::Single(f) => f.base.molecule.clone().map(MoleculeData::Single),
+            Self::Range(f) => f.base.molecule.clone().map(MoleculeData::Range),
+            Self::HashRange(f) => f.base.molecule.clone().map(MoleculeData::HashRange),
+        }
+    }
+
     /// Returns all keys present in this field's molecule.
     pub fn get_all_keys(&self) -> Vec<KeyValue> {
         match self {

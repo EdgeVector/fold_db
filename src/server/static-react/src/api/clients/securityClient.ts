@@ -1,8 +1,4 @@
-/**
- * Security API Client - Unified Implementation
- * Replaces existing securityClient.ts with standardized approach
- * Handles authentication, key management, and cryptographic operations
- */
+// Security API Client — authentication, key management, and cryptographic operations
 
 import { ApiClient, getSharedClient } from "../core/client";
 import { API_ENDPOINTS } from "../endpoints";
@@ -42,9 +38,7 @@ export interface SecurityStatus {
   lastKeyRotation?: string;
 }
 
-/**
- * Unified Security API Client Implementation
- */
+// Unified Security API Client Implementation
 export class UnifiedSecurityClient implements SecurityApiClient {
   private readonly client: ApiClient;
 
@@ -52,10 +46,7 @@ export class UnifiedSecurityClient implements SecurityApiClient {
     this.client = client || getSharedClient();
   }
 
-  /**
-   * Verify a signed message
-   * UNPROTECTED - No authentication required
-   */
+  // Verify a signed message (no auth required)
   async verifyMessage(
     message: SignedMessage,
   ): Promise<EnhancedApiResponse<VerificationResponse>> {
@@ -85,12 +76,7 @@ export class UnifiedSecurityClient implements SecurityApiClient {
     };
   }
 
-  /**
-   * Get the system's public key
-   * UNPROTECTED - UI never uses authentication
-   *
-   * @returns Promise resolving to system public key
-   */
+  // Get the system's public key (no auth required)
   async getSystemPublicKey(): Promise<EnhancedApiResponse<SystemKeyResponse>> {
     return this.client.get<SystemKeyResponse>(
       API_ENDPOINTS.GET_SYSTEM_PUBLIC_KEY,
@@ -105,13 +91,7 @@ export class UnifiedSecurityClient implements SecurityApiClient {
     );
   }
 
-  /**
-   * Validate a public key's format and cryptographic properties
-   * This is a client-side validation helper
-   *
-   * @param publicKey The public key to validate (base64 encoded)
-   * @returns Validation result with details
-   */
+  // Validate a public key's format and cryptographic properties (client-side)
   validatePublicKeyFormat(publicKey: string): {
     isValid: boolean;
     format?: string;
@@ -163,12 +143,7 @@ export class UnifiedSecurityClient implements SecurityApiClient {
     }
   }
 
-  /**
-   * Get security status and configuration
-   * UNPROTECTED - UI never uses authentication
-   *
-   * @returns Promise resolving to security status
-   */
+  // Get security status and configuration (no auth required)
   async getSecurityStatus(): Promise<EnhancedApiResponse<SecurityStatus>> {
     return this.client.get<SecurityStatus>(API_ENDPOINTS.GET_SYSTEM_STATUS, {
       timeout: API_TIMEOUTS.QUICK,
@@ -179,13 +154,7 @@ export class UnifiedSecurityClient implements SecurityApiClient {
     });
   }
 
-  /**
-   * Validate a signed message's structure before sending for verification
-   * This is a client-side validation helper
-   *
-   * @param signedMessage The signed message to validate
-   * @returns Validation result
-   */
+  // Validate a signed message's structure before sending for verification (client-side)
   validateSignedMessage(signedMessage: SignedMessage): {
     isValid: boolean;
     errors: string[];
@@ -250,18 +219,14 @@ export class UnifiedSecurityClient implements SecurityApiClient {
     };
   }
 
-  /**
-   * Get API metrics for security operations
-   */
+  // Get API metrics for security operations
   getMetrics() {
     return this.client
       .getMetrics()
       .filter((metric) => metric.url.includes("/security"));
   }
 
-  /**
-   * Clear security-related cache
-   */
+  // Clear security-related cache
   clearCache(): void {
     this.client.clearCache();
   }

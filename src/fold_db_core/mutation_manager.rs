@@ -245,30 +245,32 @@ impl MutationManager {
             total_time.as_millis()
         );
 
-        // Log timing breakdown
+        Self::log_timing_breakdown(&timing_breakdown, total_time);
+
+        Ok(all_ids)
+    }
+
+    /// Log a sorted timing breakdown for batch mutation phases.
+    fn log_timing_breakdown(
+        timing_breakdown: &HashMap<&str, std::time::Duration>,
+        total_time: std::time::Duration,
+    ) {
         log::debug!(
             "Batch mutation timing breakdown (total: {:.2}ms):",
             total_time.as_millis()
         );
         let mut sorted_timings: Vec<_> = timing_breakdown.iter().collect();
         sorted_timings.sort_by(|a, b| b.1.cmp(a.1));
+        let total_ms = total_time.as_millis() as f64;
         for (operation, duration) in sorted_timings {
-            let percentage = (duration.as_millis() as f64 / total_time.as_millis() as f64) * 100.0;
+            let percentage = (duration.as_millis() as f64 / total_ms) * 100.0;
             debug!(
                 "  - {}: {:.2}ms ({:.1}%)",
                 operation,
                 duration.as_millis(),
                 percentage
             );
-            log::debug!(
-                "DEBUG: Step '{}': {:.2}ms ({:.1}%)",
-                operation,
-                duration.as_millis(),
-                percentage
-            );
         }
-
-        Ok(all_ids)
     }
 
     // --- Helpers for write_mutations_batch_async ---
@@ -383,15 +385,7 @@ impl MutationManager {
         let fields_needing_refresh: Vec<String> = schema
             .runtime_fields
             .iter()
-            .filter(|(_, field)| {
-                let has_uuid = field.common().molecule_uuid().is_some();
-                let has_molecule = match field {
-                    FieldVariant::Single(f) => f.base.molecule.is_some(),
-                    FieldVariant::Range(f) => f.base.molecule.is_some(),
-                    FieldVariant::HashRange(f) => f.base.molecule.is_some(),
-                };
-                has_uuid && !has_molecule
-            })
+            .filter(|(_, field)| field.common().molecule_uuid().is_some() && !field.has_molecule())
             .map(|(name, _)| name.clone())
             .collect();
 
@@ -494,22 +488,8 @@ impl MutationManager {
                 .expect("field_name came from modified_fields which was populated from runtime_fields keys");
             let molecule_uuid = schema_field.common().molecule_uuid().unwrap().to_string(); // verified is_some above
 
-            match schema_field {
-                FieldVariant::Single(f) => {
-                    if let Some(molecule) = f.base.molecule.clone() {
-                        molecules_to_store.push((molecule_uuid, MoleculeData::Single(molecule)));
-                    }
-                }
-                FieldVariant::Range(f) => {
-                    if let Some(molecule) = f.base.molecule.clone() {
-                        molecules_to_store.push((molecule_uuid, MoleculeData::Range(molecule)));
-                    }
-                }
-                FieldVariant::HashRange(f) => {
-                    if let Some(molecule) = f.base.molecule.clone() {
-                        molecules_to_store.push((molecule_uuid, MoleculeData::HashRange(molecule)));
-                    }
-                }
+            if let Some(mol_data) = schema_field.clone_molecule_data() {
+                molecules_to_store.push((molecule_uuid, mol_data));
             }
         }
 

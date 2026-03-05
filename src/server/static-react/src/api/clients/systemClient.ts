@@ -1,8 +1,4 @@
-/**
- * System API Client - Unified Implementation
- * Handles system operations like logs, database reset, and status
- * Part of API-STD-1 TASK-002 implementation
- */
+// System API Client — handles logs, database reset, and status
 
 import { ApiClient, createApiClient } from "../core/client";
 import { API_ENDPOINTS } from "../endpoints";
@@ -52,7 +48,7 @@ export interface SystemStatusResponse {
   status: string;
   uptime: number;
   version?: string;
-  /** Schema service URL configured on the backend (undefined = local/embedded) */
+  // Schema service URL configured on the backend (undefined = local/embedded)
   schema_service_url?: string;
 }
 
@@ -110,9 +106,7 @@ export interface DatabaseStatusResponse {
   has_saved_config: boolean;
 }
 
-/**
- * Unified System API Client Implementation
- */
+// Unified System API Client Implementation
 export class UnifiedSystemClient {
   private readonly client: ApiClient;
 
@@ -126,13 +120,7 @@ export class UnifiedSystemClient {
       });
   }
 
-  /**
-   * Get system logs
-   * UNPROTECTED - No authentication required
-   * Replaces LogSidebar direct fetch('/api/logs')
-   *
-   * @returns Promise resolving to logs array
-   */
+  // Get system logs (no auth required)
   async getLogs(since?: number): Promise<EnhancedApiResponse<LogsResponse>> {
     const url = since
       ? `${API_ENDPOINTS.LIST_LOGS}?since=${since}`
@@ -146,14 +134,7 @@ export class UnifiedSystemClient {
     });
   }
 
-  /**
-   * Reset the database (destructive operation)
-   * PROTECTED - Requires authentication for security
-   * Replaces StatusSection direct fetch('/api/system/reset-database')
-   *
-   * @param confirm - Confirmation flag (must be true)
-   * @returns Promise resolving to reset result
-   */
+  // Reset the database (destructive, requires auth)
   async resetDatabase(
     confirm: boolean = false,
   ): Promise<EnhancedApiResponse<ResetDatabaseResponse>> {
@@ -174,13 +155,7 @@ export class UnifiedSystemClient {
     );
   }
 
-  /**
-   * Get system status and health information
-   * UNPROTECTED - No authentication required for status monitoring
-   * Future endpoint for system monitoring
-   *
-   * @returns Promise resolving to system status
-   */
+  // Get system status and health information (no auth required)
   async getSystemStatus(): Promise<EnhancedApiResponse<SystemStatusResponse>> {
     return this.client.get<SystemStatusResponse>(
       API_ENDPOINTS.GET_SYSTEM_STATUS,
@@ -195,12 +170,7 @@ export class UnifiedSystemClient {
     );
   }
 
-  /**
-   * Get the auto-identity (default user) for local dev
-   * UNPROTECTED - No authentication required
-   *
-   * @returns Promise resolving to auto identity (user_id, user_hash, public_key)
-   */
+  // Get the auto-identity (default user) for local dev (no auth required)
   async getAutoIdentity(): Promise<EnhancedApiResponse<AutoIdentityResponse>> {
     return this.client.get<AutoIdentityResponse>(API_ENDPOINTS.AUTO_IDENTITY, {
       requiresAuth: false,
@@ -210,12 +180,7 @@ export class UnifiedSystemClient {
     });
   }
 
-  /**
-   * Get the node's private key
-   * UNPROTECTED - No authentication required for UI access
-   *
-   * @returns Promise resolving to private key response
-   */
+  // Get the node's private key (no auth required)
   async getNodePrivateKey(): Promise<EnhancedApiResponse<NodeKeyResponse>> {
     return this.client.get<NodeKeyResponse>(
       API_ENDPOINTS.GET_NODE_PRIVATE_KEY,
@@ -228,12 +193,7 @@ export class UnifiedSystemClient {
     );
   }
 
-  /**
-   * Get the node's public key
-   * UNPROTECTED - Public key can be shared
-   *
-   * @returns Promise resolving to public key response
-   */
+  // Get the node's public key (public, can be shared)
   async getNodePublicKey(): Promise<EnhancedApiResponse<NodeKeyResponse>> {
     return this.client.get<NodeKeyResponse>(API_ENDPOINTS.GET_NODE_PUBLIC_KEY, {
       requiresAuth: false, // Public key is safe to share
@@ -245,15 +205,7 @@ export class UnifiedSystemClient {
     });
   }
 
-  /**
-   * Create EventSource for log streaming
-   * Helper method for components that need real-time log updates
-   * Manually builds URL to match API client's URL construction logic
-   *
-   * @param onMessage - Callback for new log messages
-   * @param onError - Callback for connection errors
-   * @returns EventSource instance (caller must close it)
-   */
+  // Create EventSource for log streaming (real-time log updates)
   createLogStream(
     onMessage: (message: string) => void,
     onError?: (error: Event) => void,
@@ -277,13 +229,7 @@ export class UnifiedSystemClient {
     return eventSource;
   }
 
-  /**
-   * Validate reset database request
-   * Client-side validation helper
-   *
-   * @param request - Reset request to validate
-   * @returns Validation result
-   */
+  // Validate reset database request (client-side validation helper)
   validateResetRequest(request: ResetDatabaseRequest): {
     isValid: boolean;
     errors: string[];
@@ -307,9 +253,7 @@ export class UnifiedSystemClient {
     };
   }
 
-  /**
-   * Get API metrics for system operations
-   */
+  // Get API metrics for system operations
   getMetrics() {
     return this.client
       .getMetrics()
@@ -319,12 +263,7 @@ export class UnifiedSystemClient {
       );
   }
 
-  /**
-   * Get database configuration
-   * UNPROTECTED - No authentication required
-   *
-   * @returns Promise resolving to database configuration
-   */
+  // Get database configuration (no auth required)
   async getDatabaseConfig(): Promise<EnhancedApiResponse<DatabaseConfigDto>> {
     return this.client.get<DatabaseConfigDto>(
       API_ENDPOINTS.GET_DATABASE_CONFIG,
@@ -339,13 +278,7 @@ export class UnifiedSystemClient {
     );
   }
 
-  /**
-   * Update database configuration
-   * UNPROTECTED - No authentication required
-   *
-   * @param config - Database configuration to apply
-   * @returns Promise resolving to update result
-   */
+  // Update database configuration (no auth required)
   async updateDatabaseConfig(
     config: DatabaseConfigDto,
   ): Promise<EnhancedApiResponse<DatabaseConfigResponse>> {
@@ -362,13 +295,7 @@ export class UnifiedSystemClient {
     );
   }
 
-  /**
-   * Apply setup configuration (storage and/or schema service URL)
-   * Matches CLI setup wizard capabilities
-   *
-   * @param setup - Setup configuration to apply
-   * @returns Promise resolving to setup result
-   */
+  // Apply setup configuration (storage and/or schema service URL)
   async applySetup(
     setup: SetupRequest,
   ): Promise<EnhancedApiResponse<SetupResponse>> {
@@ -379,14 +306,7 @@ export class UnifiedSystemClient {
     });
   }
 
-  /**
-   * Migrate local database to the cloud
-   * PROTECTED - Destructive operation
-   *
-   * @param apiUrl - Cloud API URL
-   * @param apiKey - Cloud API Key
-   * @returns Promise resolving to migration result
-   */
+  // Migrate local database to the cloud (destructive)
   async migrateToCloud(
     apiUrl: string,
     apiKey: string,
@@ -402,12 +322,7 @@ export class UnifiedSystemClient {
     );
   }
 
-  /**
-   * Get database initialization status
-   * UNPROTECTED - No authentication required
-   *
-   * @returns Promise resolving to database status (initialized, has_saved_config)
-   */
+  // Get database initialization status (no auth required)
   async getDatabaseStatus(): Promise<EnhancedApiResponse<DatabaseStatusResponse>> {
     return this.client.get<DatabaseStatusResponse>(API_ENDPOINTS.GET_DATABASE_STATUS, {
       requiresAuth: false,
@@ -417,9 +332,7 @@ export class UnifiedSystemClient {
     });
   }
 
-  /**
-   * Clear system-related cache
-   */
+  // Clear system-related cache
   clearCache(): void {
     this.client.clearCache();
   }
