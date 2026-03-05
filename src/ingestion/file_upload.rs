@@ -82,18 +82,18 @@ pub async fn parse_multipart(
             }
             #[cfg(feature = "aws-backend")]
             Some("s3FilePath") => {
-                s3_file_path = parse_field_as_string(&mut field).await;
+                s3_file_path = read_field_text(&mut field).await;
             }
             Some("autoExecute") => {
-                auto_execute = parse_field_as_bool(&mut field).await.unwrap_or(true);
+                auto_execute = read_field_text(&mut field).await.and_then(|s| s.parse().ok()).unwrap_or(true);
             }
             Some("pubKey") => {
-                pub_key = parse_field_as_string(&mut field)
+                pub_key = read_field_text(&mut field)
                     .await
                     .unwrap_or_else(|| "default".to_string());
             }
             Some("progressId") | Some("progress_id") => {
-                progress_id = parse_field_as_string(&mut field).await;
+                progress_id = read_field_text(&mut field).await;
             }
             _ => {}
         }
@@ -269,19 +269,8 @@ async fn write_unencrypted_for_processing(
     Ok(temp_path)
 }
 
-/// Parse multipart field as boolean
-async fn parse_field_as_bool(field: &mut actix_multipart::Field) -> Option<bool> {
-    let mut bytes = Vec::new();
-    while let Some(chunk) = field.next().await {
-        if let Ok(data) = chunk {
-            bytes.extend_from_slice(&data);
-        }
-    }
-    String::from_utf8(bytes).ok()?.parse().ok()
-}
-
-/// Parse multipart field as string
-async fn parse_field_as_string(field: &mut actix_multipart::Field) -> Option<String> {
+/// Read a multipart field's bytes into a UTF-8 string.
+async fn read_field_text(field: &mut actix_multipart::Field) -> Option<String> {
     let mut bytes = Vec::new();
     while let Some(chunk) = field.next().await {
         if let Ok(data) = chunk {
@@ -514,7 +503,16 @@ pub async fn upload_file(
     );
 
     // Save JSON to a temporary file for testing/debugging
-    let temp_json_path = save_json_debug_file(&json_value);
+    let temp_json_path = match save_json_to_temp_file(&json_value) {
+        Ok(path) => {
+            log_feature!(LogFeature::Ingestion, info, "Converted JSON saved to temporary file for testing: {}", path);
+            Some(path)
+        }
+        Err(e) => {
+            log_feature!(LogFeature::Ingestion, warn, "Failed to save JSON to temp file (non-critical): {}", e);
+            None
+        }
+    };
 
     log_feature!(
         LogFeature::Ingestion,
@@ -544,11 +542,7 @@ pub async fn upload_file(
     // Extract ingestion service
     let service = match get_ingestion_service(&ingestion_service).await {
         Some(s) => s,
-        None => {
-            return HttpResponse::ServiceUnavailable().json(json!({
-                "error": "Ingestion service not available"
-            }));
-        }
+        None => return super::routes::ingestion_unavailable(),
     };
 
     // Lock briefly — the handler clones the node and spawns a background task
@@ -577,7 +571,19 @@ pub async fn upload_file(
                 progress_id
             );
 
-            build_upload_response(progress_id, &form_data.file_path, temp_json_path)
+            {
+                let mut response = json!({
+                    "success": true,
+                    "progress_id": progress_id,
+                    "message": "File upload and ingestion started. Use progress_id to track status.",
+                    "file_path": form_data.file_path.to_string_lossy().to_string(),
+                    "duplicate": false
+                });
+                if let Some(json_path) = temp_json_path {
+                    response["converted_json_path"] = json!(json_path);
+                }
+                HttpResponse::Accepted().json(response)
+            }
         }
         Err(e) => {
             let status_code = match e.status_code() {
@@ -668,51 +674,6 @@ pub async fn serve_file(
     HttpResponse::Ok()
         .content_type(content_type)
         .body(decrypted)
-}
-
-/// Save JSON to debug file and return path
-fn save_json_debug_file(json: &serde_json::Value) -> Option<String> {
-    match save_json_to_temp_file(json) {
-        Ok(path) => {
-            log_feature!(
-                LogFeature::Ingestion,
-                info,
-                "Converted JSON saved to temporary file for testing: {}",
-                path
-            );
-            Some(path)
-        }
-        Err(e) => {
-            log_feature!(
-                LogFeature::Ingestion,
-                warn,
-                "Failed to save JSON to temp file (non-critical): {}",
-                e
-            );
-            None
-        }
-    }
-}
-
-/// Build the HTTP response for file upload
-fn build_upload_response(
-    progress_id: String,
-    file_path: &std::path::Path,
-    temp_json_path: Option<String>,
-) -> HttpResponse {
-    let mut response = json!({
-        "success": true,
-        "progress_id": progress_id,
-        "message": "File upload and ingestion started. Use progress_id to track status.",
-        "file_path": file_path.to_string_lossy().to_string(),
-        "duplicate": false
-    });
-
-    if let Some(json_path) = temp_json_path {
-        response["converted_json_path"] = json!(json_path);
-    }
-
-    HttpResponse::Accepted().json(response)
 }
 
 #[cfg(test)]

@@ -1,80 +1,58 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { ingestionClient } from '../api/clients'
+import { usePolling } from './usePolling'
 
 /**
  * Polls batch status and aggregates process results when a batch reaches
  * a terminal state (Completed / Cancelled / Failed).
- *
- * @param {Object} opts
- * @param {string|null} opts.batchId - Batch to monitor (null = idle)
- * @param {Array} opts.fileProgressIds - Progress IDs for individual files
- * @param {Function} opts.onBatchLost - Called when batch can't be found (2 consecutive failures)
- * @param {Function} opts.onTerminal - Called when batch reaches terminal state
  */
 export function useBatchMonitor({ batchId, fileProgressIds, onBatchLost, onTerminal }) {
   const [batchStatus, setBatchStatus] = useState(null)
   const [batchReport, setBatchReport] = useState(null)
-  const onBatchLostRef = useRef(onBatchLost)
   const onTerminalRef = useRef(onTerminal)
-  useEffect(() => { onBatchLostRef.current = onBatchLost })
   useEffect(() => { onTerminalRef.current = onTerminal })
 
-  // Poll batch status while running or paused
-  useEffect(() => {
-    if (!batchId) {
-      setBatchStatus(null)
-      setBatchReport(null)
-      return
+  const pollFn = useCallback(async () => {
+    const resp = await ingestionClient.getBatchStatus(batchId)
+    if (!resp.success || !resp.data) throw new Error('poll failed')
+    setBatchStatus(resp.data)
+    localStorage.setItem('activeBatchId', batchId)
+    localStorage.setItem('activeBatchStatus', JSON.stringify(resp.data))
+    const s = resp.data.status
+    if (s === 'Completed' || s === 'Cancelled' || s === 'Failed') {
+      localStorage.removeItem('activeBatchId')
+      localStorage.removeItem('activeBatchStatus')
+      onTerminalRef.current()
+      return { stop: true }
     }
-    let cancelled = false
-    let failCount = 0
-    let pollTimer = null
+  }, [batchId])
 
-    const poll = async () => {
-      try {
-        const resp = await ingestionClient.getBatchStatus(batchId)
-        if (cancelled) return
-        if (resp.success && resp.data) {
-          failCount = 0
-          setBatchStatus(resp.data)
-          // Store for HeaderProgress coordination
-          localStorage.setItem('activeBatchId', batchId)
-          localStorage.setItem('activeBatchStatus', JSON.stringify(resp.data))
-          const s = resp.data.status
-          if (s === 'Completed' || s === 'Cancelled' || s === 'Failed') {
-            localStorage.removeItem('activeBatchId')
-            localStorage.removeItem('activeBatchStatus')
-            onTerminalRef.current()
-            if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
-          }
-        } else {
-          failCount++
-          if (failCount >= 2) {
-            if (!cancelled) {
-              setBatchStatus(null)
-              localStorage.removeItem('activeBatchId')
-              localStorage.removeItem('activeBatchStatus')
-              onBatchLostRef.current()
-            }
-            if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
-          }
-        }
-      } catch {
-        failCount++
-        if (failCount >= 2) {
-          if (!cancelled) {
-            setBatchStatus(null)
-            localStorage.removeItem('activeBatchId')
-            localStorage.removeItem('activeBatchStatus')
-            onBatchLostRef.current()
-          }
-          if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
-        }
-      }
-    }
-    poll()
-    pollTimer = setInterval(poll, 2000)
-    return () => { cancelled = true; clearInterval(pollTimer); pollTimer = null }
+  const onMaxFailures = useCallback(() => {
+    setBatchStatus(null)
+    localStorage.removeItem('activeBatchId')
+    localStorage.removeItem('activeBatchStatus')
+    // onBatchLost is stable via usePolling's ref pattern
+  }, [])
+
+  const onBatchLostRef = useRef(onBatchLost)
+  useEffect(() => { onBatchLostRef.current = onBatchLost })
+
+  const handleMaxFailures = useCallback(() => {
+    onMaxFailures()
+    onBatchLostRef.current()
+  }, [onMaxFailures])
+
+  usePolling({
+    key: batchId,
+    pollFn,
+    intervalMs: 2000,
+    maxFailures: 2,
+    onMaxFailures: handleMaxFailures,
+  })
+
+  // Reset when batchId is cleared
+  useEffect(() => {
+    if (!batchId) { setBatchStatus(null); setBatchReport(null) }
   }, [batchId])
 
   // Aggregate process results when batch completes
@@ -97,7 +75,6 @@ export function useBatchMonitor({ batchId, fileProgressIds, onBatchLost, onTermi
         let totalExec = 0
         let anyNew = false
 
-        // Fetch progress jobs for mutation counts
         const progressResp = await ingestionClient.getAllProgress()
         const progressList = Array.isArray(progressResp.data?.progress) ? progressResp.data.progress
           : Array.isArray(progressResp.data) ? progressResp.data : []
@@ -111,7 +88,6 @@ export function useBatchMonitor({ batchId, fileProgressIds, onBatchLost, onTermi
           if (r.new_schema_created) anyNew = true
         }
 
-        // Fetch process results (actual stored keys) for each file
         for (const file of fileProgressIds) {
           if (cancelled) return
           try {
@@ -152,7 +128,6 @@ export function useBatchMonitor({ batchId, fileProgressIds, onBatchLost, onTermi
       }
     }
 
-    // Small initial delay to let results propagate
     const timer = setTimeout(attempt, 1000)
     return () => { cancelled = true; clearTimeout(timer) }
   }, [batchId, batchStatus, batchReport, fileProgressIds])

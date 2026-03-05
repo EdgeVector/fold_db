@@ -268,9 +268,9 @@ pub async fn smart_folder_ingest(
 
     let folder_path = resolve_folder_path(&request.folder_path);
 
-    // Get user context
-    let user_id = match require_user_context() {
-        Ok(hash) => hash,
+    // Extract user, node, and ingestion service up front
+    let (user_id, node_arc, service) = match super::routes::require_ingestion_context(&state, &ingestion_service).await {
+        Ok(ctx) => ctx,
         Err(response) => return response,
     };
 
@@ -305,17 +305,6 @@ pub async fn smart_folder_ingest(
         }));
     }
 
-    // Validate ingestion service is available
-    let service = match get_ingestion_service(&ingestion_service).await {
-        Some(s) => s,
-        None => {
-            return HttpResponse::ServiceUnavailable().json(json!({
-                "success": false,
-                "error": "Ingestion service not available"
-            }));
-        }
-    };
-
     // Generate batch ID
     let batch_id = uuid::Uuid::new_v4().to_string();
 
@@ -323,12 +312,6 @@ pub async fn smart_folder_ingest(
     let progress_service = ProgressService::new(progress_tracker.get_ref().clone());
     let file_progress_ids =
         start_file_progress(&files_to_process, &user_id, &progress_service).await;
-
-    // Get node for processing
-    let (user_id_task, node_arc) = match require_node(&state).await {
-        Ok(res) => res,
-        Err(response) => return response,
-    };
 
     let auto_execute = request.auto_execute.unwrap_or(true);
     let force_reingest = request.force_reingest;
@@ -369,7 +352,7 @@ pub async fn smart_folder_ingest(
         batch_controller_map,
         progress_tracker.get_ref(),
         &node_arc,
-        &user_id_task,
+        &user_id,
         auto_execute,
         service,
         upload_storage.get_ref().clone(),

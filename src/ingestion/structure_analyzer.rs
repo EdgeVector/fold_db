@@ -11,18 +11,6 @@ use std::collections::HashMap;
 pub struct StructureAnalyzer;
 
 impl StructureAnalyzer {
-    /// Get the JSON type of a value
-    fn get_value_type(value: &Value) -> String {
-        match value {
-            Value::Null => "null".to_string(),
-            Value::Bool(_) => "boolean".to_string(),
-            Value::Number(_) => "number".to_string(),
-            Value::String(_) => "string".to_string(),
-            Value::Array(_) => "array".to_string(),
-            Value::Object(_) => "object".to_string(),
-        }
-    }
-
     /// Extract a minimal structure skeleton from JSON data.
     ///
     /// Produces flattened dot-separated paths with all values replaced by `"..."`.
@@ -162,7 +150,7 @@ impl StructureAnalyzer {
                 for item in array {
                     if let Some(obj) = item.as_object() {
                         for (key, value) in obj {
-                            let type_name = Self::get_value_type(value);
+                            let type_name = Self::json_type_name(value).to_string();
 
                             // Count field occurrences
                             *field_counts.entry(key.clone()).or_insert(0) += 1;
@@ -190,7 +178,7 @@ impl StructureAnalyzer {
                 let mut type_variations: HashMap<String, HashMap<String, usize>> = HashMap::new();
 
                 for (key, value) in obj {
-                    let type_name = Self::get_value_type(value);
+                    let type_name = Self::json_type_name(value).to_string();
                     field_counts.insert(key.clone(), 1);
                     type_variations.insert(key.clone(), {
                         let mut map = HashMap::new();
@@ -218,7 +206,7 @@ impl StructureAnalyzer {
                     let mut map = HashMap::new();
                     map.insert("value".to_string(), {
                         let mut type_map = HashMap::new();
-                        type_map.insert(Self::get_value_type(json_data), 1);
+                        type_map.insert(Self::json_type_name(json_data).to_string(), 1);
                         type_map
                     });
                     map

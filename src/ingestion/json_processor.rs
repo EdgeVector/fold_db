@@ -12,8 +12,8 @@ use crate::ingestion::IngestionError;
 use crate::log_feature;
 use crate::logging::features::LogFeature;
 
-/// Convert a file to JSON using file_to_json library (core implementation)
-async fn convert_file_to_json_core(file_path: &PathBuf) -> Result<Value, IngestionError> {
+/// Convert a file to JSON using file_to_json library (public API for ingestion)
+pub async fn convert_file_to_json(file_path: &PathBuf) -> Result<Value, IngestionError> {
     log_feature!(
         LogFeature::Ingestion,
         info,
@@ -80,18 +80,13 @@ async fn convert_file_to_json_core(file_path: &PathBuf) -> Result<Value, Ingesti
     })?
 }
 
-/// Convert a file to JSON using file_to_json library (public API for ingestion)
-pub async fn convert_file_to_json(file_path: &PathBuf) -> Result<Value, IngestionError> {
-    convert_file_to_json_core(file_path).await
-}
-
 /// Convert a file to JSON using file_to_json library (actix-web wrapper)
 pub async fn convert_file_to_json_http(
     file_path: &PathBuf,
 ) -> Result<Value, actix_web::HttpResponse> {
     use actix_web::HttpResponse;
 
-    match convert_file_to_json_core(file_path).await {
+    match convert_file_to_json(file_path).await {
         Ok(value) => Ok(value),
         Err(e) => {
             log_feature!(
