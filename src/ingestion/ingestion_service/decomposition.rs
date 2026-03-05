@@ -98,15 +98,7 @@ impl IngestionService {
         // Children are resolved depth-first above, so their schema names are already in the cache.
         // Only do this when we actually resolved children (not at depth limit).
         if !rep_decomp.children.is_empty() && depth < MAX_DECOMPOSITION_DEPTH {
-            let schema_manager = {
-                let db_guard = node
-                    .get_fold_db()
-                    .await
-                    .map_err(|error| IngestionError::SchemaCreationError(error.to_string()))?;
-                let manager = db_guard.schema_manager.clone();
-                drop(db_guard);
-                manager
-            };
+            let schema_manager = super::get_schema_manager(node).await?;
 
             match schema_manager.get_schema_metadata(&schema_name) {
                 Ok(Some(mut schema)) => {
@@ -323,15 +315,7 @@ impl IngestionService {
                 .collect();
 
             // Get schema manager for key extraction
-            let schema_manager = {
-                let db_guard = node
-                    .get_fold_db()
-                    .await
-                    .map_err(|error| IngestionError::SchemaCreationError(error.to_string()))?;
-                let manager = db_guard.schema_manager.clone();
-                drop(db_guard);
-                manager
-            };
+            let schema_manager = super::get_schema_manager(node).await?;
 
             let keys_and_values =
                 extract_key_values_from_data(&fields_and_values, &schema_name, &schema_manager)

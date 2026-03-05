@@ -35,19 +35,15 @@ impl DynamoDbKvStore {
         Self { client, table_name }
     }
 
-    fn get_current_user_id(&self) -> StorageResult<String> {
-        super::dynamodb_utils::require_user_context()
-    }
-
     fn get_partition_key_impl(&self) -> StorageResult<String> {
-        self.get_current_user_id()
+        super::dynamodb_utils::require_user_context()
     }
 
     /// Get partition key (user_id)
     /// Note: This is a change from previous implementation where PK was user_id:key
     /// This change enables Query operations with SK prefix
     fn get_partition_key_with_key(&self, _key: &[u8]) -> StorageResult<String> {
-        self.get_current_user_id()
+        super::dynamodb_utils::require_user_context()
     }
 
     /// Convert a byte key to a string for the sort key (no user_id prefixing)

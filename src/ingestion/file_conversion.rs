@@ -72,14 +72,6 @@ pub fn twitter_js_to_json(content: &str) -> IngestionResult<String> {
     }
 }
 
-fn is_code_ext(ext: &str) -> bool {
-    CODE_EXTS.contains(&ext)
-}
-
-fn is_config_ext(ext: &str) -> bool {
-    CONFIG_EXTS.contains(&ext)
-}
-
 /// Extract structural metadata from a source code file using regex.
 ///
 /// Returns a `Value` with function/method declarations, class/struct
@@ -161,8 +153,8 @@ fn parse_content_by_ext(content: &str, file_name: &str, ext: &str) -> IngestionR
                 .map_err(|e| IngestionError::InvalidInput(format!("Failed to parse JSON: {}", e)))
         }
         "txt" | "md" => Ok(wrap_text_content(content, file_name, ext)),
-        e if is_code_ext(e) => Ok(extract_code_metadata(content, file_name, e)),
-        e if is_config_ext(e) => Ok(wrap_text_content(content, file_name, e)),
+        e if CODE_EXTS.contains(&e) => Ok(extract_code_metadata(content, file_name, e)),
+        e if CONFIG_EXTS.contains(&e) => Ok(wrap_text_content(content, file_name, e)),
         _ => Err(IngestionError::InvalidInput(format!(
             "Unsupported file type: {}",
             ext
