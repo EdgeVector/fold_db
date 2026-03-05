@@ -167,26 +167,8 @@ fn parse_content_by_ext(content: &str, file_name: &str, ext: &str) -> IngestionR
 /// Supported extensions: `.json`, `.js` (Twitter export or code), `.csv`,
 /// `.txt`, `.md`, code files, and config files (`.yaml`, `.yml`, `.toml`, `.xml`).
 pub fn read_file_as_json(file_path: &Path) -> IngestionResult<Value> {
-    let content = std::fs::read_to_string(file_path)
-        .map_err(|e| IngestionError::InvalidInput(format!("Failed to read file: {}", e)))?;
-
-    let ext = file_path
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("")
-        .to_lowercase();
-
-    let file_name = file_path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .ok_or_else(|| {
-            IngestionError::InvalidInput(format!(
-                "Failed to derive file name from path: {}",
-                file_path.display()
-            ))
-        })?;
-
-    parse_content_by_ext(&content, file_name, &ext)
+    let (value, _, _) = read_file_with_hash(file_path)?;
+    Ok(value)
 }
 
 /// Read a file, compute its SHA256 hash, and convert to JSON.

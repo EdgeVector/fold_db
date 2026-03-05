@@ -1,9 +1,3 @@
-/**
- * Ingestion API Client - Unified Implementation
- * Handles AI-powered data ingestion, schema generation, and AI provider configuration
- * Part of API-STD-1 standardization initiative
- */
-
 import { ApiClient, createApiClient } from "../core/client";
 import { API_ENDPOINTS, API_BASE_URLS } from "../endpoints";
 import { API_TIMEOUTS, API_RETRIES, CONTENT_TYPES } from "../../constants/api";
@@ -166,9 +160,6 @@ export interface OllamaModelsResponse {
   error?: string;
 }
 
-/**
- * Unified Ingestion API Client Implementation
- */
 export class UnifiedIngestionClient {
   private readonly client: ApiClient;
 
@@ -183,12 +174,7 @@ export class UnifiedIngestionClient {
       });
   }
 
-  /**
-   * Get ingestion service status and configuration
-   * UNPROTECTED - Status endpoint is public for health monitoring
-   *
-   * @returns Promise resolving to ingestion service status
-   */
+  /** Get ingestion service status */
   async getStatus(): Promise<EnhancedApiResponse<IngestionStatus>> {
     return this.client.get<IngestionStatus>(API_ENDPOINTS.GET_STATUS, {
       requiresAuth: false, // Status endpoint is public
@@ -198,12 +184,7 @@ export class UnifiedIngestionClient {
     });
   }
 
-  /**
-   * Get all active ingestion progress
-   * UNPROTECTED - Progress status is public for monitoring
-   *
-   * @returns Promise resolving to array of ingestion progress items
-   */
+  /** Get all active ingestion progress */
   async getAllProgress(): Promise<EnhancedApiResponse<IngestionProgress[]>> {
     return this.client.get<IngestionProgress[]>("/ingestion/progress", {
       requiresAuth: false,
@@ -213,13 +194,7 @@ export class UnifiedIngestionClient {
     });
   }
 
-  /**
-   * Get progress for a specific job by ID
-   * UNPROTECTED - Progress status is public for monitoring
-   *
-   * @param jobId The job ID to get progress for
-   * @returns Promise resolving to the job progress
-   */
+  /** Get progress for a specific job by ID */
   async getJobProgress(jobId: string): Promise<
     EnhancedApiResponse<{
       id: string;
@@ -243,12 +218,7 @@ export class UnifiedIngestionClient {
     });
   }
 
-  /**
-   * Get ingestion configuration
-   * UNPROTECTED - No authentication required
-   *
-   * @returns Promise resolving to general ingestion configuration
-   */
+  /** Get ingestion configuration */
   async getConfig(): Promise<EnhancedApiResponse<IngestionConfig>> {
     return this.client.get<IngestionConfig>(
       API_ENDPOINTS.GET_INGESTION_CONFIG,
@@ -260,13 +230,7 @@ export class UnifiedIngestionClient {
     );
   }
 
-  /**
-   * Save AI provider configuration
-   * UNPROTECTED - No authentication required
-   *
-   * @param config The Ingestion configuration to save
-   * @returns Promise resolving to save operation result
-   */
+  /** Save AI provider configuration */
   async saveConfig(
     config: IngestionConfig,
   ): Promise<EnhancedApiResponse<{ success: boolean; message: string }>> {
@@ -281,13 +245,7 @@ export class UnifiedIngestionClient {
     );
   }
 
-  /**
-   * Validate JSON data structure for ingestion
-   * UNPROTECTED - Validation is a utility operation
-   *
-   * @param data The JSON data to validate
-   * @returns Promise resolving to validation result
-   */
+  /** Validate JSON data structure for ingestion */
   async validateData(
     data: ValidationRequest,
   ): Promise<EnhancedApiResponse<ValidationResponse>> {
@@ -303,14 +261,7 @@ export class UnifiedIngestionClient {
     );
   }
 
-  /**
-   * Process data ingestion with AI analysis
-   * UNPROTECTED - UI does not require authentication per project preference
-   *
-   * @param data The data to process
-   * @param options Processing options
-   * @returns Promise resolving to processing result
-   */
+  /** Process data ingestion with AI analysis */
   async processIngestion(
     data: Record<string, unknown>,
     options: {
@@ -347,13 +298,7 @@ export class UnifiedIngestionClient {
     );
   }
 
-  /**
-   * Validate ingestion request before sending
-   * Client-side validation helper
-   *
-   * @param request The ingestion request to validate
-   * @returns Validation result
-   */
+  /** Validate ingestion request before sending */
   validateIngestionRequest(request: ProcessIngestionRequest): {
     isValid: boolean;
     errors: string[];
@@ -386,33 +331,7 @@ export class UnifiedIngestionClient {
     };
   }
 
-  /**
-   * Create a properly structured ingestion request
-   * Helper function for creating valid processing requests
-   *
-   * @param data The data to process
-   * @param options Processing configuration
-   * @returns Ingestion request object
-   */
-  createIngestionRequest(
-    data: Record<string, unknown>,
-    options: {
-      autoExecute?: boolean;
-      pubKey?: string;
-      progressId?: string;
-    } = {},
-  ): ProcessIngestionRequest {
-    return {
-      data: { ...data }, // Create a copy
-      auto_execute: options.autoExecute ?? true,
-      pub_key: options.pubKey ?? "default",
-      progress_id: options.progressId ?? crypto.randomUUID(),
-    };
-  }
-
-  /**
-   * Scan a folder for files to ingest
-   */
+  /** Scan a folder for files to ingest */
   async smartFolderScan(
     folderPath: string,
     maxDepth = 10,
@@ -433,9 +352,7 @@ export class UnifiedIngestionClient {
     );
   }
 
-  /**
-   * Get the completed scan result by progress ID
-   */
+  /** Get the completed scan result by progress ID */
   async getScanResult(
     progressId: string,
   ): Promise<EnhancedApiResponse<SmartFolderScanResponse>> {
@@ -449,9 +366,7 @@ export class UnifiedIngestionClient {
     );
   }
 
-  /**
-   * Ingest selected files from a smart folder scan
-   */
+  /** Ingest selected files from a smart folder scan */
   async smartFolderIngest(
     folderPath: string,
     files: string[],
@@ -478,9 +393,7 @@ export class UnifiedIngestionClient {
     );
   }
 
-  /**
-   * Get batch status (cost, progress, pause state)
-   */
+  /** Get batch status (cost, progress, pause state) */
   async getBatchStatus(
     batchId: string,
   ): Promise<EnhancedApiResponse<BatchStatusResponse>> {
@@ -494,9 +407,7 @@ export class UnifiedIngestionClient {
     );
   }
 
-  /**
-   * Resume a paused batch with a new spend limit
-   */
+  /** Resume a paused batch with a new spend limit */
   async resumeBatch(
     batchId: string,
     newSpendLimit: number,
@@ -512,9 +423,7 @@ export class UnifiedIngestionClient {
     );
   }
 
-  /**
-   * Cancel a running or paused batch
-   */
+  /** Cancel a running or paused batch */
   async cancelBatch(
     batchId: string,
   ): Promise<EnhancedApiResponse<BatchStatusResponse>> {
@@ -529,9 +438,7 @@ export class UnifiedIngestionClient {
     );
   }
 
-  /**
-   * Complete a partial filesystem path with matching directories
-   */
+  /** Complete a partial filesystem path with matching directories */
   async completePath(
     partialPath: string,
   ): Promise<EnhancedApiResponse<{ completions: string[] }>> {
@@ -546,9 +453,7 @@ export class UnifiedIngestionClient {
     );
   }
 
-  /**
-   * List subdirectories inside a given directory path
-   */
+  /** List subdirectories inside a given directory path */
   async listDirectory(
     path: string,
   ): Promise<EnhancedApiResponse<{ path: string; directories: string[]; error?: string }>> {
@@ -563,14 +468,7 @@ export class UnifiedIngestionClient {
     );
   }
 
-  /**
-   * Upload a file for AI-powered ingestion
-   * UNPROTECTED - No authentication required per project preference
-   *
-   * @param file The file to upload
-   * @param options Upload options (progressId, autoExecute, trustDistance, pubKey)
-   * @returns Promise resolving to upload/processing result
-   */
+  /** Upload a file for AI-powered ingestion */
   async uploadFile(
     file: File,
     options: {
@@ -597,13 +495,7 @@ export class UnifiedIngestionClient {
     );
   }
 
-  /**
-   * List models available on a remote Ollama instance.
-   * Proxies through the backend to avoid CORS issues.
-   *
-   * @param baseUrl The Ollama server URL (e.g. http://localhost:11434)
-   * @returns Promise resolving to the list of available models
-   */
+  /** List models available on a remote Ollama instance */
   async listOllamaModels(
     baseUrl: string,
   ): Promise<EnhancedApiResponse<OllamaModelsResponse>> {
@@ -618,9 +510,7 @@ export class UnifiedIngestionClient {
     );
   }
 
-  /**
-   * Get process results (stored keys) for a completed file ingestion job
-   */
+  /** Get process results (stored keys) for a completed file ingestion job */
   async getProcessResults(
     progressId: string,
   ): Promise<EnhancedApiResponse<{ results: { schema_name: string; key_value: { hash?: string; range?: string } }[] }>> {
@@ -631,18 +521,14 @@ export class UnifiedIngestionClient {
     });
   }
 
-  /**
-   * Get API metrics for ingestion operations
-   */
+  /** Get API metrics for ingestion operations */
   getMetrics() {
     return this.client
       .getMetrics()
       .filter((metric) => metric.url.includes("/ingestion"));
   }
 
-  /**
-   * Clear ingestion-related cache (though ingestion operations should not be cached)
-   */
+  /** Clear ingestion-related cache */
   clearCache(): void {
     this.client.clearCache();
   }

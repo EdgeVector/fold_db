@@ -70,12 +70,10 @@ function SmartFolderTab({ onResult: onResultProp }) {
 
   // --- Handlers ---
 
-  const handleScan = useCallback(async (maxFiles) => {
+  const startScan = useCallback(async (maxFiles) => {
     if (!folderPath.trim()) return
     setIsScanning(true)
     setScanResult(null)
-    setBatchId(null)
-    setIncludeAlreadyIngested(false)
     onResult(null)
     try {
       const response = await ingestionClient.smartFolderScan(folderPath.trim(), 10, maxFiles)
@@ -90,6 +88,12 @@ function SmartFolderTab({ onResult: onResultProp }) {
       setIsScanning(false)
     }
   }, [folderPath, onResult])
+
+  const handleScan = useCallback(async (maxFiles) => {
+    setBatchId(null)
+    setIncludeAlreadyIngested(false)
+    await startScan(maxFiles)
+  }, [startScan])
 
   const handleScanComplete = useCallback((result) => {
     setScanResult(result)
@@ -120,26 +124,12 @@ function SmartFolderTab({ onResult: onResultProp }) {
   }, [])
 
   const handleLoadMore = useCallback(async () => {
-    if (!folderPath.trim() || !scanResult) return
+    if (!scanResult) return
     const nextLimit = (scanResult.max_files_used || 100) + 400
     setIsLoadingMore(true)
-    setIsScanning(true)
-    setScanResult(null)
-    try {
-      const response = await ingestionClient.smartFolderScan(folderPath.trim(), 10, nextLimit)
-      if (response.success && response.data?.progress_id) {
-        setScanProgressId(response.data.progress_id)
-      } else {
-        onResult({ success: false, error: 'Failed to start scan' })
-        setIsScanning(false)
-      }
-    } catch (error) {
-      onResult({ success: false, error: toErrorMessage(error) || 'Failed to load more files' })
-      setIsScanning(false)
-    } finally {
-      setIsLoadingMore(false)
-    }
-  }, [folderPath, scanResult, onResult])
+    await startScan(nextLimit)
+    setIsLoadingMore(false)
+  }, [scanResult, startScan])
 
   const handleIngest = useCallback(async () => {
     if (!scanResult) return

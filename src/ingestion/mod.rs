@@ -6,7 +6,6 @@
 pub mod ai_client;
 pub mod ai_helpers;
 pub mod batch_controller;
-pub mod batch_routes;
 pub mod config;
 pub mod decomposer;
 pub mod error;
@@ -20,7 +19,6 @@ pub mod progress;
 pub mod prompts;
 pub mod routes;
 pub mod smart_folder;
-pub mod smart_folder_classifier;
 pub mod smart_folder_routes;
 pub mod smart_folder_scanner;
 pub mod structure_analyzer;
