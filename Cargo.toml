@@ -5,8 +5,9 @@ edition = "2021"
 publish = false
 
 [features]
-default = []
+default = ["cli"]
 ts-bindings = ["ts-rs"]  # Generate TypeScript bindings when enabled
+cli = ["dep:clap", "dep:clap_complete"]  # CLI tooling (clap derives)
 aws-backend = ["aws-config", "aws-sdk-dynamodb", "aws-sdk-s3", "aws-sdk-sns", "aws-sdk-sqs", "aws-sdk-kms", "serde_dynamo"]  # AWS backends (DynamoDB, S3, SNS, SQS, KMS)
 test-utils = []  # Expose test helpers (MockEmbeddingModel, etc.) for integration tests
 
@@ -37,8 +38,8 @@ tokio-stream = { version = "0.1", features = ["sync"] }
 rand = "0.8"
 tempfile = "3.8"
 seahash = "4.1"
-clap = { version = "4.4", features = ["derive", "string"] }
-clap_complete = "4.4"
+clap = { version = "4.4", features = ["derive", "string"], optional = true }
+clap_complete = { version = "4.4", optional = true }
 indicatif = "0.17"
 comfy-table = "7.1"
 dialoguer = "0.11"

@@ -1,5 +1,6 @@
 use crate::schema::types::field::HashRangeFilter;
 use chrono::{DateTime, Utc};
+#[cfg(feature = "cli")]
 use clap::ValueEnum;
 use serde::{Deserialize, Serialize};
 
@@ -82,7 +83,8 @@ impl Query {
     }
 }
 
-#[derive(Debug, Clone, Serialize, ValueEnum, PartialEq)]
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[cfg_attr(feature = "cli", derive(ValueEnum))]
 pub enum MutationType {
     Create,
     Update,
