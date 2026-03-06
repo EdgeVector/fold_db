@@ -31,6 +31,8 @@ const PREFIX_RULES: &[(&str, bool)] = &[
     ("/api/system/status", false),
     ("/api/system/database-status", false),
     ("/api/system/complete-path", false),
+    ("/api/system/list-directory", false),
+    ("/api/ingestion/smart-folder/", false),
     ("/api/security/", false),
     ("/api/openapi.json", false),
     // Protected (require signature)
@@ -41,7 +43,6 @@ const PREFIX_RULES: &[(&str, bool)] = &[
     ("/api/ingestion/upload", true),
     ("/api/ingestion/config", true),
     ("/api/ingestion/batch-folder", true),
-    ("/api/ingestion/smart-folder/", true),
     ("/api/system/reset-database", true),
     ("/api/system/setup", true),
     ("/api/system/database-config", true),
@@ -52,15 +53,17 @@ const PREFIX_RULES: &[(&str, bool)] = &[
 pub fn is_protected_write(method: &actix_web::http::Method, path: &str) -> bool {
     use actix_web::http::Method;
 
-    // Only POST/PUT/PATCH can be write operations
-    if method != Method::POST && method != Method::PUT && method != Method::PATCH {
+    if method == Method::GET {
         return false;
     }
 
-    PREFIX_RULES
-        .iter()
-        .find(|(prefix, _)| path.starts_with(prefix))
-        .is_some_and(|(_, protected)| *protected)
+    for (prefix, is_protected) in PREFIX_RULES {
+        if path.starts_with(prefix) {
+            return *is_protected;
+        }
+    }
+
+    false
 }
 
 /// Middleware that verifies Ed25519 signatures on write endpoints.

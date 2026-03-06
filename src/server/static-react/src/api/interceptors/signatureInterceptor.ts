@@ -21,6 +21,8 @@ const EXEMPT_PATHS = [
   "/api/system/public-key",
   "/api/system/status",
   "/api/system/database-status",
+  "/api/system/list-directory",
+  "/api/system/complete-path",
   "/api/security/",
   "/api/openapi.json",
 ];
@@ -65,8 +67,13 @@ export function createSignatureInterceptor(): (
     const state = store.getState();
     const privateKey = state.auth.privateKey;
 
-    // If no private key available, pass through unsigned
+    // If no private key available, pass through unsigned.
+    // The backend will reject protected endpoints that require signatures,
+    // but non-protected endpoints will still work.
     if (!privateKey) {
+      console.warn(
+        `[SignatureInterceptor] No private key available for ${config.method} ${config.url}. Request will be sent unsigned.`,
+      );
       return config;
     }
 
