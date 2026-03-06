@@ -5,15 +5,13 @@ edition = "2021"
 publish = false
 
 [features]
-default = ["cli"]
+default = []
 ts-bindings = ["ts-rs"]  # Generate TypeScript bindings when enabled
 cli = ["dep:clap", "dep:clap_complete"]  # CLI tooling (clap derives)
 aws-backend = ["aws-config", "aws-sdk-dynamodb", "aws-sdk-s3", "aws-sdk-sns", "aws-sdk-sqs", "aws-sdk-kms", "serde_dynamo"]  # AWS backends (DynamoDB, S3, SNS, SQS, KMS)
 test-utils = []  # Expose test helpers (MockEmbeddingModel, etc.) for integration tests
 
 [dependencies]
-# Utilities
-
 # Cryptography
 ring = "0.17.14"
 base64 = "0.21.0"
@@ -21,71 +19,59 @@ ed25519-dalek = { version = "2.0", features = ["rand_core", "serde"] }
 aes-gcm = "0.10"
 hkdf = "0.12"
 hmac = "0.12"
+sha2 = "0.10"
+
+# Serialization
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+toml = "0.8"
 ts-rs = { version = "10", optional = true, features = ["serde-compat", "serde-json-impl"] }
+
+# Storage
 sled = "0.34"
+
+# Core utilities
 uuid = { version = "1.0", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 regex = "1"
-sha2 = "0.10"
-tokio = { version = "1.0", features = ["macros", "rt-multi-thread", "sync", "time", "fs", "signal", "io-util"] }
-thiserror = "1.0"
-futures-util = "0.3"
-futures = "0.3"
-once_cell = "1"
-tokio-stream = { version = "0.1", features = ["sync"] }
 rand = "0.8"
 tempfile = "3.8"
 seahash = "4.1"
+once_cell = "1"
+colored = "3.1.1"
+log = { version = "0.4", features = ["std"] }
+
+# Async runtime
+tokio = { version = "1.0", features = ["macros", "rt-multi-thread", "sync", "time", "fs", "signal", "io-util"] }
+tokio-stream = { version = "0.1", features = ["sync"] }
+futures-util = "0.3"
+futures = "0.3"
+async-trait = "0.1"
+
+# Error handling
+thiserror = "1.0"
+
+# Optional CLI support
 clap = { version = "4.4", features = ["derive", "string"], optional = true }
 clap_complete = { version = "4.4", optional = true }
-indicatif = "0.17"
-comfy-table = "7.1"
-dialoguer = "0.11"
-console = "0.15"
-log = { version = "0.4", features = ["std"] }
-# Enhanced logging dependencies
-# log is already defined above
-toml = "0.8"
 
-# HTTP Server
-actix-web = "4.3"
-actix-http = "3"
-actix-cors = "0.6"
-actix-multipart = "0.6"
-
-# OpenAPI generation
+# OpenAPI schema derives (used by core types)
 utoipa = { version = "4", features = ["actix_extras"] }
 
-# HTTP Client for OpenRouter API
+# HTTP client (used by schema_client in fold_db_core)
 reqwest = { version = "0.11", features = ["json", "multipart"] }
 
-# File to JSON conversion
-file_to_json = "0.3.0"
-csv = "1.3"
-mime_guess = "2.0"
-kamadak-exif = "0.5"
-rust-embed = "8.0"
-dirs = "5"
+# Vector embedding model for semantic search
+fastembed = "4"
 
-
-
-# AWS SDK for S3 storage and DynamoDB
+# AWS SDK
 aws-config = { version = "1.0", optional = true }
-
 aws-sdk-dynamodb = { version = "1.0", optional = true }
 aws-sdk-s3 = { version = "1.0", optional = true }
 aws-sdk-sns = { version = "1.0", optional = true }
 aws-sdk-sqs = { version = "1.0", optional = true }
 aws-sdk-kms = { version = "1.0", optional = true }
-
-async-trait = "0.1"
 serde_dynamo = { version = "4.3.0", features = ["aws-sdk-dynamodb+1"], optional = true }
-colored = "3.1.1"
-
-# Vector embedding model for semantic search (lazy-loads all-MiniLM-L6-v2 on first use)
-fastembed = "4"
 
 [dev-dependencies]
 tokio = { version = "1.0", features = ["macros", "rt-multi-thread", "full"] }
@@ -93,8 +79,6 @@ reqwest = { version = "0.11", features = ["json"] }
 aws-smithy-runtime-api = "1.9.2"
 aws-smithy-types = "1.3.4"
 http = "1.4.0"
-assert_cmd = "2"
-predicates = "3"
 
 tracing-subscriber = "0.3"
 tracing = "0.1"
@@ -103,29 +87,6 @@ tracing = "0.1"
 name = "fold_db"
 path = "src/lib.rs"
 
-# Note: Binary paths based on actual file structure
-# These binaries will be available when installing the package
-[[bin]]
-name = "folddb_server"
-path = "src/bin/folddb_server.rs"
-
-[[bin]]
-name = "ensure_identity"
-path = "src/bin/ensure_identity.rs"
-
-[[bin]]
-name = "schema_service"
-path = "src/bin/schema_service.rs"
-
-[[bin]]
-name = "openapi_dump"
-path = "src/bin/openapi_dump.rs"
-
-[[bin]]
-name = "folddb"
-path = "src/bin/folddb/main.rs"
-
-
 [profile.dev-release]
 inherits = "release"
 opt-level = 3
@@ -133,4 +94,3 @@ lto = "off"
 codegen-units = 16
 debug = false
 panic = "abort"
-

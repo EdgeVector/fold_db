@@ -1,18 +1,17 @@
-//! # Fold Node Library
+//! # FoldDB Core Library
 //!
-//! This library implements the core functionality of the Fold distributed data platform.
-//! It provides a schema-based data storage and query system with distributed networking capabilities.
+//! This library implements the core database functionality of the Fold distributed data platform.
+//! It provides schema-based data storage and query with distributed networking capabilities.
 //!
 //! ## Core Components
 //!
 //! * `atom` - Atomic data storage units that form the foundation of the database
-//! * `fold_node` - Node implementation with TCP server and configuration
 //! * `db_operations` - Database operation handlers
 //! * `error` - Error types and handling
-//! * `fees` - Payment and fee calculation system
 //! * `fold_db_core` - Core database functionality
-//! * `permissions` - Access control and permission management
 //! * `schema` - Schema definition, validation, and execution
+//! * `security` - Cryptographic key management and signing
+//! * `storage` - Storage backend abstraction (Sled, DynamoDB)
 //!
 //! ## Architecture
 //!
@@ -27,35 +26,23 @@
 pub mod atom;
 pub mod constants;
 pub mod crypto;
-pub mod fold_node;
 pub mod db_operations;
 pub mod error;
 pub mod fold_db_core;
-pub mod handlers;
-pub mod ingestion;
 pub mod logging;
 pub mod progress;
 pub mod schema;
-pub mod schema_service;
 pub mod security;
-pub mod server;
 pub mod storage;
 pub mod testing_utils;
-pub mod utils;
 
 // Re-export main types for convenience
-pub use fold_node::config::load_node_config;
-pub use fold_node::config::NodeConfig;
-pub use fold_node::FoldNode;
 pub use error::{FoldDbError, FoldDbResult};
 pub use fold_db_core::FoldDB;
 
-// Re-export schema types needed for CLI
+// Re-export schema types
 pub use schema::types::operations::MutationType;
 pub use schema::SchemaState;
-
-// Re-export ingestion types
-pub use ingestion::IngestionConfig;
 
 // Re-export storage types
 pub use storage::DatabaseConfig;
