@@ -25,22 +25,22 @@ use crate::progress::ProgressTracker;
 
 /// The main database coordinator that manages schemas, permissions, and data storage.
 pub struct FoldDB {
-    pub(crate) schema_manager: Arc<SchemaCore>,
+    pub schema_manager: Arc<SchemaCore>,
     /// Shared database operations with storage abstraction
-    pub(crate) db_ops: Arc<DbOperations>,
+    pub db_ops: Arc<DbOperations>,
     /// Query executor for handling all query operations
-    pub(crate) query_executor: QueryExecutor,
+    pub query_executor: QueryExecutor,
     /// Message bus for event-driven communication (held for Arc lifetime)
-    pub(crate) message_bus: Arc<AsyncMessageBus>,
+    pub message_bus: Arc<AsyncMessageBus>,
     /// Event monitor for system-wide observability
-    pub(crate) event_monitor: Arc<EventMonitor>,
+    pub event_monitor: Arc<EventMonitor>,
     /// Mutation manager for handling all mutation operations
-    pub(crate) mutation_manager: MutationManager,
+    pub mutation_manager: MutationManager,
     /// Tracker for pending background tasks
-    pub(crate) pending_tasks: Arc<super::infrastructure::pending_task_tracker::PendingTaskTracker>,
+    pub pending_tasks: Arc<super::infrastructure::pending_task_tracker::PendingTaskTracker>,
     /// Unified progress tracker for all job types (ingestion, indexing, etc.)
     /// This is the single source of truth for progress - local uses Sled, cloud uses DynamoDB
-    pub(crate) progress_tracker: ProgressTracker,
+    pub progress_tracker: ProgressTracker,
 }
 
 impl FoldDB {
@@ -120,7 +120,7 @@ impl FoldDB {
     }
 
     /// Common initialization logic that creates all FoldDB components from DbOperations
-    pub(crate) async fn initialize_from_db_ops(
+    pub async fn initialize_from_db_ops(
         db_ops: Arc<DbOperations>,
         _db_path: &str,
         job_store: Option<Arc<dyn JobStore>>,
