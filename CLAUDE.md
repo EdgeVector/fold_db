@@ -135,6 +135,18 @@ log_feature!(LogFeature::HttpServer, info, "Server started on {}", addr);
 | `src/server/http_server.rs` | Actix-web HTTP routes |
 | `src/schema/core.rs` | Schema management |
 
+## E2E UI Tests (Playwright)
+
+Playwright E2E tests live in `src/server/static-react/e2e/`. They mock all backend API routes and test real UI workflows (form fills, submissions, result verification) without a running server.
+
+```bash
+cd src/server/static-react/
+npm run test:e2e                         # Run all E2E tests (headless)
+npm run test:e2e:headed                  # Run with visible browser
+```
+
+**IMPORTANT:** When changing the UI (adding/removing tabs, renaming buttons, changing form fields, modifying API endpoints), you must update the E2E tests and mock data in `e2e/helpers.js` and `e2e/smoke.spec.js` to match. The tests verify specific selectors, button labels, form field placeholders, and API payloads — UI changes will break them.
+
 ## Manual Testing Workflow
 
 1. Run `./run.sh --local` (or `./run.sh --local --dev` for dev schema service)
