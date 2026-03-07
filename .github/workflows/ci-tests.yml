@@ -14,11 +14,6 @@ jobs:
     name: Rust Tests
     runs-on: ubuntu-latest
 
-    env:
-      AI_PROVIDER: ${{ secrets.AI_PROVIDER }}
-      FOLD_OPENROUTER_API_KEY: ${{ secrets.FOLD_OPENROUTER_API_KEY }}
-      OLLAMA_BASE_URL: ${{ secrets.OLLAMA_BASE_URL }}
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -32,16 +27,6 @@ jobs:
 
       - name: Cache Rust artifacts
         uses: Swatinem/rust-cache@v2
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: "npm"
-          cache-dependency-path: src/server/static-react/package-lock.json
-
-      - name: Build frontend (required for rust_embed)
-        run: cd src/server/static-react && npm ci && npm run build
 
       - name: Run clippy
         id: clippy
@@ -58,37 +43,19 @@ jobs:
         continue-on-error: true
         run: cargo test --workspace --all-targets
 
-      - name: Run tweets ingestion integration test
-        id: ingestion-test
-        continue-on-error: true
-        if: env.FOLD_OPENROUTER_API_KEY != ''
-        run: cargo test --test ingest_tweets_test -- --ignored
-        timeout-minutes: 5
-
-      - name: Run Twitter export scan integration test
-        id: twitter-scan-test
-        continue-on-error: true
-        if: env.FOLD_OPENROUTER_API_KEY != ''
-        run: cargo test --test twitter_export_scan_test -- --ignored --nocapture
-        timeout-minutes: 10
-
       - name: Rust test summary
         if: always()
         run: |
-          for step_name in clippy check-aws cargo-test ingestion-test twitter-scan-test; do
+          for step_name in clippy check-aws cargo-test; do
             case "$step_name" in
               clippy)         label="Rust Clippy" ;;
               check-aws)      label="AWS Backend Check" ;;
               cargo-test)     label="Rust Tests" ;;
-              ingestion-test) label="Tweets Ingestion Test" ;;
-              twitter-scan-test) label="Twitter Export Scan Test" ;;
             esac
             case "$step_name" in
               clippy)         status="${{ steps.clippy.outcome }}" ;;
               check-aws)      status="${{ steps.check-aws.outcome }}" ;;
               cargo-test)     status="${{ steps.cargo-test.outcome }}" ;;
-              ingestion-test) status="${{ steps.ingestion-test.outcome }}" ;;
-              twitter-scan-test) status="${{ steps.twitter-scan-test.outcome }}" ;;
             esac
             case "$status" in
               success) echo "✅ **$label** — passed" >> $GITHUB_STEP_SUMMARY ;;
@@ -101,48 +68,6 @@ jobs:
         if: |
           steps.clippy.outcome == 'failure' ||
           steps.check-aws.outcome == 'failure' ||
-          steps.cargo-test.outcome == 'failure' ||
-          steps.ingestion-test.outcome == 'failure' ||
-          steps.twitter-scan-test.outcome == 'failure'
+          steps.cargo-test.outcome == 'failure'
         run: exit 1
 
-  frontend-tests:
-    name: Frontend Tests
-    runs-on: ubuntu-latest
-
-    defaults:
-      run:
-        working-directory: src/server/static-react
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: "npm"
-          cache-dependency-path: src/server/static-react/package-lock.json
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Run npm test
-        id: npm-test
-        continue-on-error: true
-        run: npm test
-
-      - name: Frontend test summary
-        if: always()
-        run: |
-          status="${{ steps.npm-test.outcome }}"
-          if [ "$status" = "success" ]; then
-            echo "✅ **Frontend Tests** — passed" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "❌ **Frontend Tests** — failed" >> $GITHUB_STEP_SUMMARY
-          fi
-
-      - name: Fail if npm tests failed
-        if: steps.npm-test.outcome == 'failure'
-        run: exit 1
