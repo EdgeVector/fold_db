@@ -21,8 +21,6 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      AI_PROVIDER: ${{ secrets.AI_PROVIDER }}
-      FOLD_OPENROUTER_API_KEY: ${{ secrets.FOLD_OPENROUTER_API_KEY }}
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 
     steps:
@@ -51,12 +49,6 @@ jobs:
       - name: Cache Rust artifacts
         uses: Swatinem/rust-cache@v2
 
-      - name: Build frontend (required for rust_embed)
-        run: |
-          cd src/server/static-react
-          npm ci
-          npm run build
-
       - name: Install Claude Code
         run: npm install -g @anthropic-ai/claude-code
 
@@ -68,9 +60,8 @@ jobs:
 
           1. Run cargo clippy --all-targets --workspace -- -D warnings to check for clippy failures
           2. Run cargo test --workspace --all-targets to find test failures
-          3. Run 'cd src/server/static-react && npm ci && npm test' for frontend failures
-          4. Read the error output carefully and fix the source code
-          5. Re-run the failing command to verify your fix works
+          3. Read the error output carefully and fix the source code
+          4. Re-run the failing command to verify your fix works
 
           Rules:
           - Fix the source code, not the tests (unless the test itself is wrong)

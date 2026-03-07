@@ -30,20 +30,6 @@ impl TestDatabaseFactory {
         Ok((db_ops, message_bus))
     }
 
-    /// Create test node config (consolidates create_test_config functions)
-    pub fn create_test_node_config() -> crate::fold_node::config::NodeConfig {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().to_path_buf();
-        crate::fold_node::config::NodeConfig {
-            database: crate::fold_node::config::DatabaseConfig::Local { path: path.clone() },
-            network_listen_address: "/ip4/127.0.0.1/tcp/0".to_string(),
-            security_config: crate::security::SecurityConfig::default(),
-            schema_service_url: None,
-            public_key: None,
-            private_key: None,
-        }
-    }
-
     /// Create named test tree (consolidates multiple create_test_tree functions)
     pub fn create_named_test_tree(tree_name: &str) -> Tree {
         let db = Self::create_temp_sled_db().expect("Failed to create test database");
