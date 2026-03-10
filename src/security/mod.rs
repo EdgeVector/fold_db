@@ -2,33 +2,25 @@
 //!
 //! ## Encryption Architecture
 //!
-//! FoldDB uses **end-to-end (E2E) encryption** as its primary encryption mechanism.
+//! FoldDB uses **end-to-end (E2E) encryption** as its sole encryption mechanism.
 //! E2E keys are derived from a local secret (`~/.fold_db/e2e.key`) via HKDF-SHA256,
 //! producing an AES-256-GCM content key and an HMAC-SHA256 index key. This ensures
 //! atom content and index tokens are encrypted before they ever reach storage.
-//!
-//! **Encrypt-at-rest** (`SecurityConfig::encrypt_at_rest`) is an optional, separate
-//! layer that can be enabled when E2E encryption is not in use (e.g., legacy setups
-//! or specific deployment scenarios). It is disabled by default.
 //!
 //! This module provides:
 //! - Ed25519 key pair generation and management
 //! - Message signing and verification
 //! - Integration with network and permissions layers
 
-use base64::{engine::general_purpose, Engine as _};
-
-pub mod encryption;
 pub mod keys;
 pub mod signing;
 pub mod types;
 pub mod utils;
 
-pub use encryption::*;
 pub use keys::*;
 pub use signing::*;
 pub use types::{
-    EncryptedData, KeyRegistrationRequest, KeyRegistrationResponse, PublicKeyInfo,
+    KeyRegistrationRequest, KeyRegistrationResponse, PublicKeyInfo,
     SignedMessage, VerificationResult,
 };
 pub use utils::*;
@@ -74,26 +66,17 @@ pub type SecurityResult<T> = Result<T, SecurityError>;
 /// Security module configuration.
 ///
 /// Ed25519 signatures are always required on write endpoints — there is no opt-out.
+/// E2E encryption is always active — there is no opt-out.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SecurityConfig {
     /// Whether to require TLS for all connections
     pub require_tls: bool,
-    /// Whether to encrypt sensitive data at rest (optional fallback).
-    /// Not needed when E2E encryption is active — E2E encrypts content before
-    /// it reaches the storage layer. Enable this only if E2E is disabled.
-    pub encrypt_at_rest: bool,
-    /// Master key for at-rest encryption (only used when encrypt_at_rest is true).
-    /// Not needed when E2E encryption handles content encryption.
-    #[serde(skip)]
-    pub master_key: Option<[u8; 32]>,
 }
 
 impl Default for SecurityConfig {
     fn default() -> Self {
         Self {
             require_tls: true,
-            encrypt_at_rest: false, // Not needed when E2E encryption is active (default)
-            master_key: None,
         }
     }
 }
@@ -103,24 +86,8 @@ impl SecurityConfig {
     pub fn from_env() -> Self {
         let mut config = Self::default();
 
-        // Load from environment variables
         if let Ok(value) = std::env::var("FOLD_REQUIRE_TLS") {
             config.require_tls = value.parse().unwrap_or(true);
-        }
-
-        if let Ok(value) = std::env::var("FOLD_ENCRYPT_AT_REST") {
-            config.encrypt_at_rest = value.parse().unwrap_or(true);
-        }
-
-        // Load master key from environment (base64 encoded)
-        if let Ok(key_base64) = std::env::var("FOLD_MASTER_KEY") {
-            if let Ok(key_bytes) = general_purpose::STANDARD.decode(&key_base64) {
-                if key_bytes.len() == 32 {
-                    let mut key = [0u8; 32];
-                    key.copy_from_slice(&key_bytes);
-                    config.master_key = Some(key);
-                }
-            }
         }
 
         config

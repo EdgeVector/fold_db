@@ -85,34 +85,6 @@ impl PublicKeyInfo {
     }
 }
 
-/// Encrypted data container for at-rest storage
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct EncryptedData {
-    /// Base64-encoded encrypted data
-    pub data: String,
-    /// Base64-encoded nonce/IV used for encryption
-    pub nonce: String,
-    /// Tag for authentication (AES-GCM)
-    pub tag: String,
-    /// Encryption algorithm used
-    pub algorithm: String,
-    /// Timestamp when data was encrypted
-    pub encrypted_at: i64,
-}
-
-impl EncryptedData {
-    /// Create a new encrypted data container
-    pub fn new(data: String, nonce: String, tag: String) -> Self {
-        Self {
-            data,
-            nonce,
-            tag,
-            algorithm: "AES-256-GCM".to_string(),
-            encrypted_at: chrono::Utc::now().timestamp(),
-        }
-    }
-}
-
 /// Key registration request from client
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KeyRegistrationRequest {
