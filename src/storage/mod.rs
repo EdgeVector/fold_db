@@ -18,6 +18,8 @@ pub mod inmemory_backend;
 #[cfg(feature = "aws-backend")]
 pub mod reset_manager;
 pub mod sled_backend;
+pub mod syncing_namespaced_store;
+pub mod syncing_store;
 pub mod traits;
 pub mod upload_storage;
 
@@ -44,5 +46,7 @@ pub use encrypting_store::EncryptingKvStore;
 pub use exemem_api_store::{ExememApiStore, ExememAuth};
 pub use exemem_namespaced_store::ExememNamespacedStore;
 pub use sled_backend::SledNamespacedStore;
+pub use syncing_namespaced_store::SyncingNamespacedStore;
+pub use syncing_store::SyncingKvStore;
 pub use traits::{NamespacedStore, TypedKvStore};
 pub use upload_storage::UploadStorage;

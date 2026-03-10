@@ -41,6 +41,11 @@ pub struct FoldDB {
     /// Unified progress tracker for all job types (ingestion, indexing, etc.)
     /// This is the single source of truth for progress - local uses Sled, cloud uses DynamoDB
     pub progress_tracker: ProgressTracker,
+    /// Optional sync engine for S3 replication.
+    /// Present when sync is configured (local mode only).
+    sync_engine: Option<Arc<crate::sync::SyncEngine>>,
+    /// Handle for the background sync timer task.
+    sync_task: Option<tokio::task::JoinHandle<()>>,
 }
 
 impl FoldDB {
@@ -67,6 +72,69 @@ impl FoldDB {
         );
 
         Ok(())
+    }
+
+    /// Graceful async shutdown: flush pending sync, stop background timer, then close.
+    pub async fn shutdown(&mut self) -> Result<(), StorageError> {
+        if let Err(e) = self.stop_sync().await {
+            log::warn!("sync flush on shutdown failed: {e}");
+        }
+        self.flush().await?;
+        self.close().map_err(|e| StorageError::IoError(std::io::Error::other(e.to_string())))
+    }
+
+    /// Set the sync engine (called by the factory when sync is configured).
+    pub fn set_sync_engine(&mut self, engine: Arc<crate::sync::SyncEngine>) {
+        self.sync_engine = Some(engine);
+    }
+
+    /// Start the background sync timer.
+    ///
+    /// Spawns a tokio task that calls `sync()` every `interval_ms` when the
+    /// engine is dirty. Does nothing if no sync engine is configured.
+    pub fn start_sync(&mut self, interval_ms: u64) {
+        let engine = match &self.sync_engine {
+            Some(e) => Arc::clone(e),
+            None => return,
+        };
+
+        let handle = tokio::spawn(async move {
+            let interval = tokio::time::Duration::from_millis(interval_ms);
+            loop {
+                tokio::time::sleep(interval).await;
+                if engine.state().await == crate::sync::SyncState::Dirty {
+                    if let Err(e) = engine.sync().await {
+                        log::warn!("sync cycle failed: {e}");
+                    }
+                }
+            }
+        });
+
+        self.sync_task = Some(handle);
+    }
+
+    /// Force an immediate sync (e.g. on shutdown).
+    pub async fn force_sync(&self) -> Result<(), crate::sync::SyncError> {
+        if let Some(engine) = &self.sync_engine {
+            engine.sync().await?;
+        }
+        Ok(())
+    }
+
+    /// Stop the background sync timer and run a final sync.
+    pub async fn stop_sync(&mut self) -> Result<(), crate::sync::SyncError> {
+        if let Some(handle) = self.sync_task.take() {
+            handle.abort();
+        }
+        self.force_sync().await
+    }
+
+    /// Get the sync engine state, if sync is configured.
+    pub async fn sync_state(&self) -> Option<crate::sync::SyncState> {
+        match &self.sync_engine {
+            Some(engine) => Some(engine.state().await),
+            None => None,
+        }
     }
 
     /// Creates a new FoldDB instance with the specified storage path.
@@ -202,6 +270,8 @@ impl FoldDB {
             mutation_manager,
             pending_tasks,
             progress_tracker,
+            sync_engine: None,
+            sync_task: None,
         })
     }
 
