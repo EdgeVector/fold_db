@@ -21,7 +21,6 @@ use crate::log_feature;
 /// - Storage operations (DbOperations)
 /// - Progress tracking (ProgressStore)
 /// - Connection pooling and configuration
-/// - Encryption at rest (via EncryptingNamespacedStore decorator)
 /// - E2E encryption (atom content via EncryptingNamespacedStore, index keywords via HMAC)
 pub async fn create_fold_db(
     config: &DatabaseConfig,
@@ -140,48 +139,14 @@ pub async fn create_fold_db(
                     cloud_config.auto_create,
                 ));
 
-            // Wrap with encryption if KMS is configured
-            let namespaced_store = if let Ok(kms_key_id) = std::env::var("KMS_KEY_ID") {
-                log_feature!(
-                    LogFeature::Database,
-                    info,
-                    "Encryption at rest enabled (KMS key: {}...)",
-                    &kms_key_id[..kms_key_id.len().min(8)]
-                );
-
-                let kms_client = aws_sdk_kms::Client::new(&aws_config);
-                let crypto = Arc::new(
-                    crate::crypto::KmsCryptoProvider::from_env(
-                        kms_client,
-                        client.clone(),
-                        user_id.clone(),
-                    )
-                    .map_err(|e| {
-                        FoldDbError::Config(format!("Failed to init KMS crypto: {}", e))
-                    })?,
-                );
-
-                let enc_store = crate::storage::EncryptingNamespacedStore::new(
-                    base_store, crypto, true, // migration_mode: tolerate plaintext reads
-                );
-                Arc::new(enc_store) as Arc<dyn crate::storage::traits::NamespacedStore>
-            } else {
-                log_feature!(
-                    LogFeature::Database,
-                    info,
-                    "Encryption at rest disabled (KMS_KEY_ID not set)"
-                );
-                base_store
-            };
-
-            // Layer E2E encryption on top (works with or without KMS)
+            // Wrap with E2E encryption (atom content via AES-256-GCM)
             let e2e_crypto = Arc::new(
                 crate::crypto::LocalCryptoProvider::from_key(e2e_keys.encryption_key()),
             );
             let e2e_store = crate::storage::EncryptingNamespacedStore::new(
-                namespaced_store,
+                base_store,
                 e2e_crypto,
-                true, // migration_mode: tolerate existing plaintext/KMS-only data
+                true, // migration_mode: tolerate existing plaintext data
             );
             let final_store =
                 Arc::new(e2e_store) as Arc<dyn crate::storage::traits::NamespacedStore>;
