@@ -34,6 +34,7 @@ pub mod progress;
 pub mod schema;
 pub mod security;
 pub mod storage;
+pub mod sync;
 pub mod testing_utils;
 
 // Re-export main types for convenience

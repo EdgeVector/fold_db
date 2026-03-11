@@ -141,10 +141,10 @@ pub enum DatabaseConfig {
     #[cfg(feature = "aws-backend")]
     #[serde(rename = "cloud")]
     Cloud(Box<CloudConfig>),
-    /// Exemem Cloud storage (remote API-backed)
+    /// Exemem Cloud storage (local Sled + encrypted S3 sync)
     #[serde(rename = "exemem")]
     Exemem {
-        /// Exemem Storage API URL
+        /// Exemem API URL (sync routes at /api/sync/*)
         api_url: String,
         /// API key for authentication
         api_key: String,
