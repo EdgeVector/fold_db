@@ -8,7 +8,7 @@ mod tests;
 pub use embedding_index::cosine_similarity;
 pub use embedding_model::{Embedder, FastEmbedModel};
 #[cfg(any(test, feature = "test-utils"))]
-pub use embedding_model::MockEmbeddingModel;
+pub use embedding_model::{MockEmbeddingModel, ScriptedEmbeddingModel};
 pub use types::IndexResult;
 
 use crate::schema::types::key_value::KeyValue;
