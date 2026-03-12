@@ -84,6 +84,13 @@ impl SchemaCore {
         Ok(with_states)
     }
 
+    /// Returns only active (non-Blocked) schemas for UI listings.
+    /// Blocked schemas have been superseded and should not appear in the Data Browser.
+    pub fn get_active_schemas_with_states(&self) -> Result<Vec<SchemaWithState>, SchemaError> {
+        let all = self.get_schemas_with_states()?;
+        Ok(all.into_iter().filter(|s| s.state != SchemaState::Blocked).collect())
+    }
+
     pub async fn set_schema_state(
         &self,
         schema_name: &str,
@@ -652,5 +659,61 @@ mod tests {
             Some(&"mol-uuid-title".to_string()),
             "molecule UUID for title should survive schema reload"
         );
+    }
+
+    #[tokio::test]
+    async fn get_active_schemas_excludes_blocked() {
+        let core = SchemaCore::new_for_testing().await.expect("init core");
+        core.load_schema_from_json(&blogpost_schema_json())
+            .await
+            .expect("load blogpost");
+        core.load_schema_from_json(&wordindex_schema_json())
+            .await
+            .expect("load wordindex");
+
+        // Approve both, then block one
+        core.set_schema_state("BlogPost", SchemaState::Approved)
+            .await
+            .expect("approve blogpost");
+        core.set_schema_state("BlogPostWordIndex", SchemaState::Approved)
+            .await
+            .expect("approve wordindex");
+        core.block_schema("BlogPost").await.expect("block blogpost");
+
+        // get_schemas_with_states returns all (including blocked)
+        let all = core.get_schemas_with_states().expect("all schemas");
+        assert_eq!(all.len(), 2);
+
+        // get_active_schemas_with_states excludes blocked
+        let active = core.get_active_schemas_with_states().expect("active schemas");
+        assert_eq!(active.len(), 1);
+        assert_eq!(active[0].name(), "BlogPostWordIndex");
+    }
+
+    #[tokio::test]
+    async fn block_and_supersede_redirects_get_schema() {
+        let core = SchemaCore::new_for_testing().await.expect("init core");
+        core.load_schema_from_json(&blogpost_schema_json())
+            .await
+            .expect("load blogpost");
+        core.load_schema_from_json(&wordindex_schema_json())
+            .await
+            .expect("load wordindex");
+
+        core.set_schema_state("BlogPost", SchemaState::Approved)
+            .await
+            .expect("approve");
+        core.set_schema_state("BlogPostWordIndex", SchemaState::Approved)
+            .await
+            .expect("approve");
+
+        // Supersede BlogPost → BlogPostWordIndex
+        core.block_and_supersede("BlogPost", "BlogPostWordIndex")
+            .await
+            .expect("supersede");
+
+        // get_schema("BlogPost") should redirect to BlogPostWordIndex
+        let schema = core.get_schema("BlogPost").await.expect("get").expect("some");
+        assert_eq!(schema.name, "BlogPostWordIndex");
     }
 }
