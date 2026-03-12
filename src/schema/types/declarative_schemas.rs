@@ -246,6 +246,10 @@ pub struct DeclarativeSchemaDefinition {
     /// Maps field_name -> list of classification strings
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub field_classifications: HashMap<String, Vec<String>>,
+    /// Natural language descriptions for each field (e.g. "the person who created the artwork")
+    /// Maps field_name -> description string. Used for semantic field matching in the canonical registry.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub field_descriptions: HashMap<String, String>,
     /// Reference fields that point to child schemas
     /// Maps field_name -> child_schema_name
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
@@ -423,6 +427,7 @@ impl DeclarativeSchemaDefinition {
             hash: None,
             field_molecule_uuids: None,
             field_classifications: HashMap::new(),
+            field_descriptions: HashMap::new(),
             ref_fields: HashMap::new(),
             identity_hash: None,
             runtime_fields: HashMap::new(),
