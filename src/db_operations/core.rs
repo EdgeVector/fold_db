@@ -23,6 +23,7 @@ pub struct DbOperations {
     public_keys_store: Arc<TypedKvStore<dyn KvStore>>,
     idempotency_store: Arc<TypedKvStore<dyn KvStore>>,
     process_results_store: Arc<TypedKvStore<dyn KvStore>>,
+    superseded_by_store: Arc<TypedKvStore<dyn KvStore>>,
 
     native_index_manager: Option<NativeIndexManager>,
 }
@@ -41,6 +42,7 @@ impl DbOperations {
         let public_keys_kv = store.open_namespace("public_keys").await?;
         let idempotency_kv = store.open_namespace("idempotency").await?;
         let process_results_kv = store.open_namespace("process_results").await?;
+        let superseded_by_kv = store.open_namespace("schema_superseded_by").await?;
         let native_index_kv = store.open_namespace("native_index").await?;
 
         // Wrap KvStores in TypedKvStore adapters
@@ -52,6 +54,7 @@ impl DbOperations {
         let public_keys_store = Arc::new(TypedKvStore::new(public_keys_kv));
         let idempotency_store = Arc::new(TypedKvStore::new(idempotency_kv));
         let process_results_store = Arc::new(TypedKvStore::new(process_results_kv));
+        let superseded_by_store = Arc::new(TypedKvStore::new(superseded_by_kv));
 
         // Create native index manager and load any previously stored embeddings
         let native_index_manager = NativeIndexManager::new(native_index_kv);
@@ -66,6 +69,7 @@ impl DbOperations {
             public_keys_store,
             idempotency_store,
             process_results_store,
+            superseded_by_store,
             native_index_manager: Some(native_index_manager),
         })
     }
@@ -129,6 +133,10 @@ impl DbOperations {
 
     pub fn process_results_store(&self) -> &Arc<TypedKvStore<dyn KvStore>> {
         &self.process_results_store
+    }
+
+    pub fn superseded_by_store(&self) -> &Arc<TypedKvStore<dyn KvStore>> {
+        &self.superseded_by_store
     }
 
     pub fn native_index_manager(&self) -> Option<&NativeIndexManager> {

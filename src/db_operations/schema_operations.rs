@@ -78,6 +78,44 @@ impl DbOperations {
         Ok(schemas)
     }
 
+    /// Store a schema superseded-by mapping (old_name → new_name)
+    pub async fn store_superseded_by(
+        &self,
+        old_name: &str,
+        new_name: &str,
+    ) -> Result<(), SchemaError> {
+        use crate::storage::traits::TypedStore;
+
+        self.superseded_by_store()
+            .put_item(old_name, &new_name.to_string())
+            .await?;
+        self.superseded_by_store().inner().flush().await?;
+        Ok(())
+    }
+
+    /// Get all superseded-by mappings
+    pub async fn get_all_superseded_by(&self) -> Result<HashMap<String, String>, SchemaError> {
+        use crate::storage::traits::TypedStore;
+
+        let keys = self
+            .superseded_by_store()
+            .list_keys_with_prefix("")
+            .await?;
+
+        let mut mappings = HashMap::new();
+        for key in keys {
+            if let Some(new_name) = self
+                .superseded_by_store()
+                .get_item::<String>(&key)
+                .await?
+            {
+                mappings.insert(key, new_name);
+            }
+        }
+
+        Ok(mappings)
+    }
+
     /// Get all schema states
     pub async fn get_all_schema_states(&self) -> Result<HashMap<String, SchemaState>, SchemaError> {
         use crate::storage::traits::TypedStore;

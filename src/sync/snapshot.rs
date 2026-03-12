@@ -169,6 +169,13 @@ impl Snapshot {
         for ns_data in &self.namespaces {
             let kv = store.open_namespace(&ns_data.name).await?;
 
+            // Clear existing keys in this namespace before writing snapshot data
+            let existing = kv.scan_prefix(&[]).await?;
+            if !existing.is_empty() {
+                let keys: Vec<Vec<u8>> = existing.into_iter().map(|(k, _)| k).collect();
+                kv.batch_delete(keys).await?;
+            }
+
             // Write entries in batches
             const BATCH_SIZE: usize = 25;
             for chunk in ns_data.entries.chunks(BATCH_SIZE) {

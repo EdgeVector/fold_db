@@ -49,22 +49,17 @@ impl TryFrom<String> for FieldMapper {
             return Err("FieldMapper definition cannot be empty".to_string());
         }
 
-        let mut parts = trimmed.split('.');
-        let source_schema = parts
-            .next()
-            .ok_or_else(|| "FieldMapper must include source schema".to_string())?
-            .trim();
-        let source_field = parts
-            .next()
-            .ok_or_else(|| "FieldMapper must include source field".to_string())?
-            .trim();
+        // Split on first dot only — field names may contain dots (e.g. "hash.policy.number"
+        // means schema="hash", field="policy.number")
+        let (source_schema, source_field) = trimmed
+            .split_once('.')
+            .ok_or_else(|| "FieldMapper must be in 'schema.field' format".to_string())?;
+
+        let source_schema = source_schema.trim();
+        let source_field = source_field.trim();
 
         if source_schema.is_empty() || source_field.is_empty() {
             return Err("FieldMapper must include non-empty source schema and field".to_string());
-        }
-
-        if parts.next().is_some() {
-            return Err("FieldMapper must be in 'schema.field' format".to_string());
         }
 
         Ok(Self::new(source_schema, source_field))
@@ -450,7 +445,7 @@ impl DeclarativeSchemaDefinition {
         self.field_classifications.get(field_name)
     }
 
-    /// Compute identity hash from sorted field names (SHA256)
+    /// Compute identity hash from sorted, deduplicated field names (SHA256)
     pub fn compute_identity_hash(&mut self) {
         let mut field_names: Vec<&str> = self
             .fields
@@ -458,10 +453,19 @@ impl DeclarativeSchemaDefinition {
             .map(|f| f.iter().map(|s| s.as_str()).collect())
             .unwrap_or_default();
         field_names.sort();
+        field_names.dedup();
         let combined = field_names.join(",");
         let mut hasher = Sha256::new();
         hasher.update(combined.as_bytes());
         self.identity_hash = Some(format!("{:x}", hasher.finalize()));
+    }
+
+    /// Deduplicate the fields list in-place, preserving order.
+    pub fn dedup_fields(&mut self) {
+        if let Some(ref mut fields) = self.fields {
+            let mut seen = std::collections::HashSet::new();
+            fields.retain(|f| seen.insert(f.clone()));
+        }
     }
 
     /// Get the identity hash

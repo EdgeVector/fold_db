@@ -3,19 +3,25 @@ use fastembed::{EmbeddingModel, InitOptions, TextEmbedding};
 use once_cell::sync::OnceCell;
 
 /// Trait for embedding text into a fixed-dimension float vector.
-pub(crate) trait Embedder: Send + Sync {
+pub trait Embedder: Send + Sync {
     fn embed_text(&self, text: &str) -> Result<Vec<f32>, SchemaError>;
 }
 
 /// Production embedder: all-MiniLM-L6-v2 via fastembed (ONNX).
 /// Lazily initialized — model downloads on first call to embed_text.
-pub(super) struct FastEmbedModel {
+pub struct FastEmbedModel {
     model: OnceCell<TextEmbedding>,
 }
 
-impl FastEmbedModel {
-    pub(super) fn new() -> Self {
+impl Default for FastEmbedModel {
+    fn default() -> Self {
         Self { model: OnceCell::new() }
+    }
+}
+
+impl FastEmbedModel {
+    pub fn new() -> Self {
+        Self::default()
     }
 }
 
@@ -38,7 +44,7 @@ impl Embedder for FastEmbedModel {
 
 /// Mock embedder for tests — deterministic, no download required.
 #[cfg(any(test, feature = "test-utils"))]
-pub(super) struct MockEmbeddingModel;
+pub struct MockEmbeddingModel;
 
 #[cfg(any(test, feature = "test-utils"))]
 impl Embedder for MockEmbeddingModel {
