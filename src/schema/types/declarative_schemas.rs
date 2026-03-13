@@ -122,6 +122,8 @@ impl<'de> serde::Deserialize<'de> for DeclarativeSchemaDefinition {
             #[serde(default)]
             field_classifications: HashMap<String, Vec<String>>,
             #[serde(default)]
+            field_descriptions: HashMap<String, String>,
+            #[serde(default)]
             ref_fields: HashMap<String, String>,
             #[serde(skip_serializing_if = "Option::is_none")]
             identity_hash: Option<String>,
@@ -197,7 +199,8 @@ impl<'de> serde::Deserialize<'de> for DeclarativeSchemaDefinition {
             schema.field_classifications.insert(field_name, classifications);
         }
 
-        // Preserve ref_fields and identity_hash
+        // Preserve field_descriptions, ref_fields and identity_hash
+        schema.field_descriptions = helper.field_descriptions;
         schema.ref_fields = helper.ref_fields;
         schema.identity_hash = helper.identity_hash;
 
@@ -450,7 +453,17 @@ impl DeclarativeSchemaDefinition {
         self.field_classifications.get(field_name)
     }
 
-    /// Compute identity hash from sorted, deduplicated field names (SHA256)
+    /// Compute identity hash from the readable name (descriptive_name) + sorted,
+    /// deduplicated field names (SHA256).
+    ///
+    /// Uses descriptive_name (the human-readable label) rather than schema.name
+    /// because schema.name may already be a hash from a previous expansion.
+    /// descriptive_name stays stable across expansions, so:
+    /// - Same readable name + same fields = same hash = dedup
+    /// - Same readable name + different fields = different hash = separate schemas
+    /// - Different readable name + same fields = different hash = separate schemas
+    ///
+    /// Falls back to schema.name if descriptive_name is not set.
     pub fn compute_identity_hash(&mut self) {
         let mut field_names: Vec<&str> = self
             .fields
@@ -461,6 +474,16 @@ impl DeclarativeSchemaDefinition {
         field_names.dedup();
         let combined = field_names.join(",");
         let mut hasher = Sha256::new();
+        // Use the readable name (descriptive_name preferred, falls back to name)
+        let readable_name = self
+            .descriptive_name
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .unwrap_or(&self.name);
+        if !readable_name.is_empty() {
+            hasher.update(readable_name.as_bytes());
+            hasher.update(b":");
+        }
         hasher.update(combined.as_bytes());
         self.identity_hash = Some(format!("{:x}", hasher.finalize()));
     }
