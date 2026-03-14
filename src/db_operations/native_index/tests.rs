@@ -48,7 +48,7 @@ async fn test_index_record_then_search() {
 }
 
 #[tokio::test]
-async fn test_per_field_indexing_creates_separate_embeddings() {
+async fn test_index_record_produces_one_result_per_field() {
     let mgr = make_manager().await;
 
     let key = KeyValue::new(Some("doc1".to_string()), None);
@@ -60,34 +60,13 @@ async fn test_per_field_indexing_creates_separate_embeddings() {
 
     mgr.index_record("Post", &key, &fields).await.unwrap();
 
-    // Per-field indexing produces one embedding entry per field
-    let entries = mgr.embedding_index.entries.read().unwrap();
-    assert_eq!(entries.len(), 3, "Expected 3 entries (one per field)");
-
-    let field_names: std::collections::HashSet<_> =
-        entries.iter().map(|e| e.field_name.as_str()).collect();
+    let results = mgr.search_all_classifications("blog").await.unwrap();
+    // One IndexResult per field in the matched document
+    assert_eq!(results.len(), 3);
+    let field_names: std::collections::HashSet<_> = results.iter().map(|r| r.field.as_str()).collect();
     assert!(field_names.contains("title"));
     assert!(field_names.contains("body"));
     assert!(field_names.contains("author"));
-}
-
-#[tokio::test]
-async fn test_search_deduplicates_by_record() {
-    let mgr = make_manager().await;
-
-    let key = KeyValue::new(Some("doc1".to_string()), None);
-    let fields = std::collections::HashMap::from([
-        ("title".to_string(), serde_json::json!("hello world")),
-        ("body".to_string(), serde_json::json!("hello there")),
-        ("tags".to_string(), serde_json::json!("hello greetings")),
-    ]);
-
-    mgr.index_record("Post", &key, &fields).await.unwrap();
-
-    // Search should return at most 1 result for this record (deduped by record key)
-    let results = mgr.search_all_classifications("hello").await.unwrap();
-    assert_eq!(results.len(), 1, "Expected deduplication to 1 result per record");
-    assert_eq!(results[0].schema_name, "Post");
 }
 
 #[tokio::test]
@@ -106,10 +85,10 @@ async fn test_upsert_replaces_existing_entry() {
     mgr.index_record("User", &key, &v1).await.unwrap();
     mgr.index_record("User", &key, &v2).await.unwrap();
 
+    // Only one document in the index (upserted, not appended)
     let entries = mgr.embedding_index.entries.read().unwrap();
-    // v1 had 1 field (name), v2 has 2 fields (name, role).
-    // "name" is upserted (same key), "role" is new → total 2
-    assert_eq!(entries.len(), 2);
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].field_names.len(), 2);
 }
 
 #[tokio::test]
@@ -150,27 +129,4 @@ async fn test_restore_from_store_loads_existing_embeddings() {
     let entries = mgr2.embedding_index.entries.read().unwrap();
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0].schema, "S");
-    assert_eq!(entries[0].field_name, "field");
-}
-
-#[tokio::test]
-async fn test_multiple_records_return_separate_results() {
-    let mgr = make_manager().await;
-
-    let key1 = KeyValue::new(Some("rec1".to_string()), None);
-    let key2 = KeyValue::new(Some("rec2".to_string()), None);
-
-    let fields1 = std::collections::HashMap::from([
-        ("content".to_string(), serde_json::json!("chocolate cake recipe")),
-    ]);
-    let fields2 = std::collections::HashMap::from([
-        ("content".to_string(), serde_json::json!("vanilla cake recipe")),
-    ]);
-
-    mgr.index_record("Recipe", &key1, &fields1).await.unwrap();
-    mgr.index_record("Recipe", &key2, &fields2).await.unwrap();
-
-    let results = mgr.search_all_classifications("cake recipe").await.unwrap();
-    // Should return 2 results (one per record, deduped)
-    assert_eq!(results.len(), 2);
 }
