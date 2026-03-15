@@ -70,12 +70,21 @@ impl crate::schema::types::field::Field for HashRangeField {
         }
 
         // For HashRangeField, we use both hash and range keys to store the atom
-        if let (Some(hash_key), Some(range_key)) = (&key_value.hash, &key_value.range) {
-            if let Some(molecule) = &mut self.base.molecule {
-                molecule.set_atom_uuid_from_values(
-                    hash_key.clone(),
-                    range_key.clone(),
-                    atom.uuid().to_string(),
+        match (&key_value.hash, &key_value.range) {
+            (Some(hash_key), Some(range_key)) => {
+                if let Some(molecule) = &mut self.base.molecule {
+                    molecule.set_atom_uuid_from_values(
+                        hash_key.clone(),
+                        range_key.clone(),
+                        atom.uuid().to_string(),
+                    );
+                }
+            }
+            _ => {
+                log::warn!(
+                    "HashRangeField::write_mutation: atom {} not indexed — hash={:?}, range={:?}. \
+                     Both hash and range keys are required for HashRange fields.",
+                    atom.uuid(), key_value.hash, key_value.range
                 );
             }
         }
