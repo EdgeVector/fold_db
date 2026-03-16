@@ -66,6 +66,16 @@ impl NativeIndexManager {
             .await
     }
 
+    /// Get the underlying KV store (used by discovery publisher to scan embeddings).
+    pub fn store(&self) -> &Arc<dyn KvStore> {
+        &self.store
+    }
+
+    /// Embed a text query into a vector. Used by discovery to generate search embeddings.
+    pub fn embed_text(&self, text: &str) -> Result<Vec<f32>, SchemaError> {
+        self.embedding_model.embed_text(text)
+    }
+
     /// Semantic search: embed the query then return top-50 results by cosine similarity.
     pub async fn search_all_classifications(
         &self,
