@@ -170,8 +170,9 @@ impl<'de> serde::Deserialize<'de> for DeclarativeSchemaDefinition {
                 let has_range = k.range_field.is_some();
                 if has_hash && has_range {
                     SchemaType::HashRange
-                } else if has_range || has_hash {
-                    // If either key exists (but not both), treat as Range
+                } else if has_hash {
+                    SchemaType::Hash
+                } else if has_range {
                     SchemaType::Range
                 } else {
                     SchemaType::Single
@@ -225,9 +226,9 @@ pub struct DeclarativeSchemaDefinition {
     /// Human-readable descriptive name for the schema (used in AI-generated proposals)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub descriptive_name: Option<String>,
-    /// Schema type ("Single" | "Range" | "HashRange")
+    /// Schema type ("Single" | "Hash" | "Range" | "HashRange")
     pub schema_type: SchemaType,
-    /// Key configuration (required when schema_type == "HashRange" or "Range")
+    /// Key configuration (required when schema_type == "Hash", "Range", or "HashRange")
     #[serde(skip_serializing_if = "Option::is_none")]
     pub key: Option<KeyConfig>,
     /// Field names - plain data fields without transformations
@@ -313,7 +314,9 @@ impl DeclarativeSchemaDefinition {
     /// This is called after deserializing from database to ensure runtime state is initialized
     /// Also regenerates transform metadata (hash mappings, inputs, source schemas) which are not persisted
     pub fn populate_runtime_fields(&mut self) -> Result<(), crate::schema::SchemaError> {
-        use crate::schema::types::field::{FieldVariant, HashRangeField, RangeField, SingleField};
+        use crate::schema::types::field::{
+            FieldVariant, HashField, HashRangeField, RangeField, SingleField,
+        };
         use std::collections::HashMap;
 
         let default_field_mappers = HashMap::new();
@@ -325,6 +328,10 @@ impl DeclarativeSchemaDefinition {
                 SchemaType::HashRange => {
                     let hashrange_field = HashRangeField::new(default_field_mappers.clone(), None);
                     runtime_fields.insert(field_name, FieldVariant::HashRange(hashrange_field));
+                }
+                SchemaType::Hash => {
+                    let hash_field = HashField::new(default_field_mappers.clone(), None);
+                    runtime_fields.insert(field_name, FieldVariant::Hash(hash_field));
                 }
                 SchemaType::Range => {
                     let range_field = RangeField::new(default_field_mappers.clone(), None);

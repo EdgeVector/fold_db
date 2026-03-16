@@ -354,6 +354,35 @@ impl MutationManager {
                 key_value.hash = Some(short.to_string());
             }
 
+            // Validate that the key matches the schema type.
+            // A mismatch means a bug upstream — fail loudly.
+            {
+                use crate::schema::types::schema::DeclarativeSchemaType;
+                match &schema.schema_type {
+                    DeclarativeSchemaType::Hash if key_value.hash.is_none() => {
+                        return Err(SchemaError::InvalidData(format!(
+                            "Hash schema '{}' mutation {} has no hash key",
+                            schema_name, mutation.uuid
+                        )));
+                    }
+                    DeclarativeSchemaType::Range if key_value.range.is_none() => {
+                        return Err(SchemaError::InvalidData(format!(
+                            "Range schema '{}' mutation {} has no range key",
+                            schema_name, mutation.uuid
+                        )));
+                    }
+                    DeclarativeSchemaType::HashRange => {
+                        if key_value.hash.is_none() || key_value.range.is_none() {
+                            return Err(SchemaError::InvalidData(format!(
+                                "HashRange schema '{}' mutation {} requires both hash and range keys, got hash={:?} range={:?}",
+                                schema_name, mutation.uuid, key_value.hash, key_value.range
+                            )));
+                        }
+                    }
+                    _ => {}
+                }
+            }
+
             mutation_key_values.push(key_value);
 
             // Create atoms in memory (no storage yet)
@@ -424,6 +453,11 @@ impl MutationManager {
                 FieldVariant::Single(f) => {
                     f.base.molecule.as_ref().map(|m| m.get_atom_uuid().to_string())
                 }
+                FieldVariant::Hash(f) => {
+                    key_value.hash.as_ref().and_then(|h| {
+                        f.base.molecule.as_ref().and_then(|m| m.get_atom_uuid(h).cloned())
+                    })
+                }
                 FieldVariant::Range(f) => {
                     key_value.range.as_ref().and_then(|r| {
                         f.base.molecule.as_ref().and_then(|m| m.get_atom_uuid(r).cloned())
@@ -443,6 +477,9 @@ impl MutationManager {
             if old_atom_uuid.as_deref() != Some(atom.uuid()) {
                 let field_key = match schema_field {
                     FieldVariant::Single(_) => FieldKey::Single,
+                    FieldVariant::Hash(_) => FieldKey::Hash {
+                        hash: key_value.hash.clone().unwrap_or_default(),
+                    },
                     FieldVariant::Range(_) => FieldKey::Range {
                         range: key_value.range.clone().unwrap_or_default(),
                     },

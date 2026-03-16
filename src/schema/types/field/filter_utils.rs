@@ -3,7 +3,7 @@
 //! This module provides common filter logic that can be reused by RangeField,
 //! HashRangeField, and other field types to eliminate code duplication.
 
-use crate::atom::{MoleculeHashRange, MoleculeRange};
+use crate::atom::{MoleculeHash, MoleculeHashRange, MoleculeRange};
 use crate::db_operations::DbOperations;
 use crate::schema::types::field::FieldValue;
 use crate::schema::types::field::{HashRangeFilter, HashRangeFilterResult};
@@ -121,6 +121,16 @@ pub trait RangeOperations {
     fn get_atoms_with_prefix(&self, prefix: &str) -> Vec<(String, String)>;
 }
 
+/// Helper trait for hash-based operations (single hash key, no range)
+/// Used by fields that work with hash keys (like HashField)
+pub trait HashOperations {
+    /// Get a single atom UUID by hash key
+    fn get_atom_uuid(&self, key: &str) -> Option<String>;
+
+    /// Get all atom UUIDs as key-value pairs
+    fn get_all_atoms(&self) -> Vec<(String, String)>;
+}
+
 /// Helper trait for hash-range operations
 /// Used by fields that work with hash-range combinations (like HashRangeField)
 pub trait HashRangeOperations {
@@ -152,6 +162,42 @@ pub trait HashRangeOperations {
 
     /// Get atoms in hash range
     fn get_atoms_in_hash_range(&self, start: &str, end: &str) -> Vec<(String, String, String)>;
+}
+
+fn insert_hash(m: &mut HashMap<KeyValue, String>, key: String, uuid: String) {
+    m.insert(KeyValue::new(Some(key), None), uuid);
+}
+
+fn extend_hash<I: IntoIterator<Item = (String, String)>>(m: &mut HashMap<KeyValue, String>, iter: I) {
+    for (k, v) in iter {
+        insert_hash(m, k, v);
+    }
+}
+
+/// Generic filter application for HashField (single hash key, no range)
+pub fn apply_hash_filter<T: HashOperations>(
+    operations: &T,
+    optional_filter: Option<HashRangeFilter>,
+) -> HashRangeFilterResult {
+    let filter = optional_filter.unwrap_or(HashRangeFilter::SampleN(100));
+    let mut matches = HashMap::new();
+
+    match filter {
+        HashRangeFilter::SampleN(n) => {
+            extend_hash(&mut matches, operations.get_all_atoms().into_iter().take(n));
+        }
+        HashRangeFilter::HashKey(key) => {
+            if let Some(uuid) = operations.get_atom_uuid(&key) {
+                insert_hash(&mut matches, key, uuid);
+            }
+        }
+        // For Hash fields, range filters don't apply — return all matches
+        _ => {
+            extend_hash(&mut matches, operations.get_all_atoms());
+        }
+    }
+
+    HashRangeFilterResult::new(matches)
 }
 
 fn insert_range(m: &mut HashMap<KeyValue, String>, key: String, uuid: String) {
@@ -334,6 +380,20 @@ pub fn apply_hash_range_filter<T: HashRangeOperations>(
     }
 
     HashRangeFilterResult::new(matches)
+}
+
+/// Implementation of HashOperations for MoleculeHash
+impl HashOperations for MoleculeHash {
+    fn get_atom_uuid(&self, key: &str) -> Option<String> {
+        self.get_atom_uuid(key).cloned()
+    }
+
+    fn get_all_atoms(&self) -> Vec<(String, String)> {
+        self.atom_uuids
+            .iter()
+            .map(|(key, uuid)| (key.clone(), uuid.clone()))
+            .collect()
+    }
 }
 
 /// Implementation of RangeOperations for MoleculeRange
