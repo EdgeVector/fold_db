@@ -220,15 +220,17 @@ impl SyncEngine {
     /// Returns Ok(true) if all pending entries were uploaded,
     /// Ok(false) if there was nothing to sync.
     pub async fn sync(&self) -> SyncResult<bool> {
-        let current_state = self.state().await;
-        if current_state == SyncState::Syncing {
-            return Ok(false);
+        // Atomic check-and-set: hold the lock for both the state check and transition
+        {
+            let mut state = self.state.lock().await;
+            if *state == SyncState::Syncing || *state == SyncState::Idle {
+                return Ok(false);
+            }
+            *state = SyncState::Syncing;
         }
-        if current_state == SyncState::Idle {
-            return Ok(false);
+        if let Some(cb) = &self.status_callback {
+            cb(SyncState::Syncing, Some("uploading"));
         }
-
-        self.set_state(SyncState::Syncing, Some("uploading")).await;
 
         match self.do_sync().await {
             Ok(synced) => {
@@ -320,18 +322,32 @@ impl SyncEngine {
 
         let sealed = snapshot.seal(&self.crypto).await?;
 
+        // Upload as {seq}.enc
         let snapshot_name = format!("{last_seq}.enc");
         let url = self.auth.presign_snapshot_upload(&snapshot_name).await?;
-        self.s3.upload(&url, sealed).await?;
+        self.s3.upload(&url, sealed.clone()).await?;
 
-        // Also upload as "latest.enc" for quick bootstrap
+        // Upload same sealed bytes as latest.enc
         let latest_url = self.auth.presign_snapshot_upload("latest.enc").await?;
-        let sealed_again = Snapshot::create(
-            self.store.as_ref(),
-            &self.device_id,
-            last_seq,
-        ).await?.seal(&self.crypto).await?;
-        self.s3.upload(&latest_url, sealed_again).await?;
+        self.s3.upload(&latest_url, sealed).await?;
+
+        // Delete old log entries that were compacted into this snapshot
+        let seq_numbers: Vec<u64> = (1..=last_seq).collect();
+        if !seq_numbers.is_empty() {
+            match self.auth.presign_log_delete(&seq_numbers).await {
+                Ok(delete_urls) => {
+                    for url in &delete_urls {
+                        if let Err(e) = self.s3.delete(url).await {
+                            log::warn!("failed to delete compacted log entry (non-fatal): {e}");
+                        }
+                    }
+                    log::info!("deleted {} compacted log entries", delete_urls.len());
+                }
+                Err(e) => {
+                    log::warn!("failed to get delete URLs for compacted logs (non-fatal): {e}");
+                }
+            }
+        }
 
         log::info!("compaction complete: snapshot at seq {last_seq}");
         Ok(())

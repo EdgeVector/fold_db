@@ -298,6 +298,25 @@ impl DynamoDbSchemaStore {
         Ok(())
     }
 
+    /// Delete a schema by name
+    pub async fn delete_schema(&self, schema_name: &str) -> FoldDbResult<()> {
+        let pk = self.get_partition_key()?;
+        self.client
+            .delete_item()
+            .table_name(&self.table_name)
+            .key("PK", AttributeValue::S(pk))
+            .key("SK", AttributeValue::S(schema_name.to_string()))
+            .send()
+            .await
+            .map_err(|e| {
+                FoldDbError::Database(format!(
+                    "Failed to delete schema '{}': {}",
+                    schema_name, e
+                ))
+            })?;
+        Ok(())
+    }
+
     /// List all schema names
     /// Uses Query operation for efficient retrieval
     pub async fn list_schema_names(&self) -> FoldDbResult<Vec<String>> {

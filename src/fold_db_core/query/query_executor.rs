@@ -7,7 +7,7 @@ use crate::db_operations::DbOperations;
 use crate::schema::types::field::FieldValue;
 use crate::schema::types::key_value::KeyValue;
 use crate::schema::types::Query;
-use crate::schema::SchemaCore;
+use crate::schema::{SchemaCore, SchemaState};
 use crate::schema::SchemaError;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -53,6 +53,21 @@ impl QueryExecutor {
                 )));
             }
         };
+
+        // Enforce Blocked state — blocked schemas with a successor are already redirected by get_schema()
+        let resolved_state = self
+            .schema_manager
+            .get_schema_states()?
+            .get(&schema.name)
+            .copied()
+            .unwrap_or_default();
+        if resolved_state == SchemaState::Blocked {
+            return Err(SchemaError::InvalidData(format!(
+                "Schema '{}' is blocked and cannot be queried",
+                schema.name
+            )));
+        }
+
         self.hash_range_processor
             .query_with_filter(&mut schema, &query.fields, query.filter, query.as_of)
             .await

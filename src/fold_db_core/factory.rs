@@ -33,10 +33,12 @@ pub async fn create_fold_db(
         DatabaseConfig::Exemem { api_url, api_key } => {
             // Exemem mode: local Sled + S3 sync via the Exemem platform.
             // The sync auth Lambda shares the same API URL and API key.
-            let sync_setup = SyncSetup::from_exemem(api_url, api_key);
             let path = std::path::PathBuf::from(
                 std::env::var("FOLD_STORAGE_PATH").unwrap_or_else(|_| "data".to_string()),
             );
+            let data_dir = path.to_str()
+                .ok_or_else(|| FoldDbError::Config("Invalid storage path".to_string()))?;
+            let sync_setup = SyncSetup::from_exemem(api_url, api_key, data_dir);
             create_local_fold_db(&path, e2e_keys, Some(sync_setup)).await
         }
         #[cfg(feature = "aws-backend")]

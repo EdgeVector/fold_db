@@ -23,6 +23,8 @@ pub struct SchemaCore {
     schemas: Arc<Mutex<HashMap<String, Schema>>>,
     /// Storage for all schemas known to the system and their load state
     schema_states: Arc<Mutex<HashMap<String, SchemaState>>>,
+    /// Maps blocked/superseded schema names to their replacement schema names
+    superseded_by: Arc<Mutex<HashMap<String, String>>>,
     /// Unified database operations with storage abstraction
     db_ops: std::sync::Arc<crate::db_operations::DbOperations>,
     /// Message bus for event-driven communication
@@ -48,10 +50,12 @@ impl SchemaCore {
         let schemas = db_ops.get_all_schemas().await?;
 
         let schema_states = db_ops.get_all_schema_states().await?;
+        let superseded_by = db_ops.get_all_superseded_by().await?;
 
         let schema_core = Self {
             schemas: Arc::new(Mutex::new(schemas)),
             schema_states: Arc::new(Mutex::new(schema_states)),
+            superseded_by: Arc::new(Mutex::new(superseded_by)),
             db_ops,
             message_bus,
         };
@@ -80,6 +84,13 @@ impl SchemaCore {
         Ok(with_states)
     }
 
+    /// Returns only active (non-Blocked) schemas for UI listings.
+    /// Blocked schemas have been superseded and should not appear in the Data Browser.
+    pub fn get_active_schemas_with_states(&self) -> Result<Vec<SchemaWithState>, SchemaError> {
+        let all = self.get_schemas_with_states()?;
+        Ok(all.into_iter().filter(|s| s.state != SchemaState::Blocked).collect())
+    }
+
     pub async fn set_schema_state(
         &self,
         schema_name: &str,
@@ -101,13 +112,23 @@ impl SchemaCore {
         Ok(())
     }
 
-    /// Approve a schema if it's not already approved (idempotent operation)
+    /// Approve a schema if it's not already approved (idempotent operation).
+    /// Does NOT override Blocked state — blocked schemas have been superseded
+    /// and must not be re-approved.
     pub async fn approve(&self, schema_name: &str) -> Result<(), SchemaError> {
         let current_state = self
             .get_schema_states()?
             .get(schema_name)
             .copied()
             .unwrap_or_default();
+
+        if current_state == SchemaState::Blocked {
+            log::debug!(
+                "Skipping approve for blocked schema '{}' — it has been superseded",
+                schema_name
+            );
+            return Ok(());
+        }
 
         if current_state != SchemaState::Approved {
             self.set_schema_state(schema_name, SchemaState::Approved)
@@ -138,55 +159,56 @@ impl SchemaCore {
             let source_schema = if let Some(schema) = source_cache.get(&source_schema_name) {
                 schema
             } else {
-                let fetched = self
-                    .get_schema(&source_schema_name)
-                    .await?
-                    .ok_or_else(|| {
-                        SchemaError::InvalidData(format!(
-                            "Source schema '{}' for field mapper not found",
+                // Use db_ops.get_schema directly (not self.get_schema) to bypass
+                // the superseded_by redirect chain. The source schema may already
+                // be blocked and superseded to point back to this schema, which
+                // would cause a circular redirect. We need the raw source schema
+                // with its molecule UUIDs.
+                let fetched = match self.db_ops.get_schema(&source_schema_name).await {
+                    Ok(Some(s)) => s,
+                    Ok(None) => {
+                        log::warn!(
+                            "apply_field_mappers: source schema '{}' not found, skipping its mappers",
                             source_schema_name
-                        ))
-                    })?;
+                        );
+                        continue;
+                    }
+                    Err(e) => {
+                        log::warn!(
+                            "apply_field_mappers: error loading source schema '{}': {}, skipping",
+                            source_schema_name, e
+                        );
+                        continue;
+                    }
+                };
                 source_cache.insert(source_schema_name.clone(), fetched);
                 source_cache
                     .get(&source_schema_name)
                     .expect("source schema inserted")
             };
 
-            let source_field = source_schema
-                .runtime_fields
-                .get(mapper.source_field())
-                .ok_or_else(|| {
-                    SchemaError::InvalidData(format!(
-                        "Source field '{}.{}' not found for mapper",
-                        source_schema_name,
-                        mapper.source_field()
-                    ))
-                })?;
+            let Some(source_field) = source_schema.runtime_fields.get(mapper.source_field()) else {
+                log::warn!(
+                    "apply_field_mappers: source field '{}.{}' not in runtime_fields, skipping",
+                    source_schema_name,
+                    mapper.source_field()
+                );
+                continue;
+            };
 
-            let molecule_uuid =
-                source_field
-                    .common()
-                    .molecule_uuid()
-                    .cloned()
-                    .ok_or_else(|| {
-                        SchemaError::InvalidData(format!(
-                            "Source field '{}.{}' is missing a molecule UUID",
-                            source_schema_name,
-                            mapper.source_field()
-                        ))
-                    })?;
+            // If the source field doesn't have a molecule UUID yet (no data written),
+            // skip it — the target field will get a fresh molecule on first mutation.
+            let Some(molecule_uuid) = source_field.common().molecule_uuid().cloned() else {
+                continue;
+            };
 
-            let target_runtime_field =
-                schema
-                    .runtime_fields
-                    .get_mut(&target_field)
-                    .ok_or_else(|| {
-                        SchemaError::InvalidData(format!(
-                            "Target field '{}' not found while applying field mapper",
-                            target_field
-                        ))
-                    })?;
+            let Some(target_runtime_field) = schema.runtime_fields.get_mut(&target_field) else {
+                log::warn!(
+                    "apply_field_mappers: target field '{}' not in runtime_fields, skipping",
+                    target_field
+                );
+                continue;
+            };
 
             target_runtime_field
                 .common_mut()
@@ -213,6 +235,27 @@ impl SchemaCore {
             .await
     }
 
+    /// Block a schema and record its successor for query redirection.
+    /// Used during schema expansion: the old schema is blocked locally,
+    /// and queries against it transparently redirect to the new schema.
+    pub async fn block_and_supersede(
+        &self,
+        old_name: &str,
+        new_name: &str,
+    ) -> Result<(), SchemaError> {
+        self.set_schema_state(old_name, SchemaState::Blocked)
+            .await?;
+
+        self.db_ops
+            .store_superseded_by(old_name, new_name)
+            .await?;
+
+        lock_map(&self.superseded_by, "superseded_by")?
+            .insert(old_name.to_string(), new_name.to_string());
+
+        Ok(())
+    }
+
     pub fn get_message_bus(&self) -> Arc<AsyncMessageBus> {
         Arc::clone(&self.message_bus)
     }
@@ -231,9 +274,53 @@ impl SchemaCore {
     }
 
     /// Fetches a schema by name, checking both in-memory cache and database.
-    /// This handles scenarios where the schema was added by another node (stale cache).
+    /// If the schema is `Blocked` and has a superseded-by entry, follows the chain (max 5 hops).
     /// Note: This is STRICTLY case-sensitive.
     pub async fn get_schema(&self, schema_name: &str) -> Result<Option<Schema>, SchemaError> {
+        self.get_schema_resolved(schema_name, 0).await
+    }
+
+    /// Internal helper that follows superseded-by chains with a hop counter.
+    fn get_schema_resolved(
+        &self,
+        schema_name: &str,
+        depth: usize,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Option<Schema>, SchemaError>> + Send + '_>> {
+        let schema_name = schema_name.to_string();
+        Box::pin(async move {
+        let schema_name = schema_name.as_str();
+        const MAX_REDIRECT_HOPS: usize = 5;
+
+        if depth > MAX_REDIRECT_HOPS {
+            return Err(SchemaError::InvalidData(format!(
+                "Superseded-by chain for schema '{}' exceeds maximum depth of {}",
+                schema_name, MAX_REDIRECT_HOPS
+            )));
+        }
+
+        // Check if this schema is blocked and has a successor
+        let successor = {
+            let state = lock_map(&self.schema_states, "schema_states")?
+                .get(schema_name)
+                .copied();
+            if state == Some(SchemaState::Blocked) {
+                lock_map(&self.superseded_by, "superseded_by")?
+                    .get(schema_name)
+                    .cloned()
+            } else {
+                None
+            }
+        };
+
+        if let Some(new_name) = successor {
+            log::info!(
+                "Schema '{}' is blocked with successor, redirecting to '{}'",
+                schema_name,
+                new_name
+            );
+            return self.get_schema_resolved(&new_name, depth + 1).await;
+        }
+
         // 1. Try exact match in memory
         if let Some(schema) = self.get_schema_metadata(schema_name)? {
             return Ok(Some(schema));
@@ -256,6 +343,7 @@ impl SchemaCore {
         }
 
         Ok(None)
+        }) // end Box::pin
     }
 
     pub async fn load_schema_internal(&self, schema: Schema) -> Result<(), SchemaError> {
@@ -571,5 +659,61 @@ mod tests {
             Some(&"mol-uuid-title".to_string()),
             "molecule UUID for title should survive schema reload"
         );
+    }
+
+    #[tokio::test]
+    async fn get_active_schemas_excludes_blocked() {
+        let core = SchemaCore::new_for_testing().await.expect("init core");
+        core.load_schema_from_json(&blogpost_schema_json())
+            .await
+            .expect("load blogpost");
+        core.load_schema_from_json(&wordindex_schema_json())
+            .await
+            .expect("load wordindex");
+
+        // Approve both, then block one
+        core.set_schema_state("BlogPost", SchemaState::Approved)
+            .await
+            .expect("approve blogpost");
+        core.set_schema_state("BlogPostWordIndex", SchemaState::Approved)
+            .await
+            .expect("approve wordindex");
+        core.block_schema("BlogPost").await.expect("block blogpost");
+
+        // get_schemas_with_states returns all (including blocked)
+        let all = core.get_schemas_with_states().expect("all schemas");
+        assert_eq!(all.len(), 2);
+
+        // get_active_schemas_with_states excludes blocked
+        let active = core.get_active_schemas_with_states().expect("active schemas");
+        assert_eq!(active.len(), 1);
+        assert_eq!(active[0].name(), "BlogPostWordIndex");
+    }
+
+    #[tokio::test]
+    async fn block_and_supersede_redirects_get_schema() {
+        let core = SchemaCore::new_for_testing().await.expect("init core");
+        core.load_schema_from_json(&blogpost_schema_json())
+            .await
+            .expect("load blogpost");
+        core.load_schema_from_json(&wordindex_schema_json())
+            .await
+            .expect("load wordindex");
+
+        core.set_schema_state("BlogPost", SchemaState::Approved)
+            .await
+            .expect("approve");
+        core.set_schema_state("BlogPostWordIndex", SchemaState::Approved)
+            .await
+            .expect("approve");
+
+        // Supersede BlogPost → BlogPostWordIndex
+        core.block_and_supersede("BlogPost", "BlogPostWordIndex")
+            .await
+            .expect("supersede");
+
+        // get_schema("BlogPost") should redirect to BlogPostWordIndex
+        let schema = core.get_schema("BlogPost").await.expect("get").expect("some");
+        assert_eq!(schema.name, "BlogPostWordIndex");
     }
 }

@@ -5,10 +5,19 @@ use serde::Deserialize;
 use std::sync::Arc;
 
 /// Authentication method for the sync auth Lambda.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub enum SyncAuth {
     ApiKey(String),
     BearerToken(String),
+}
+
+impl std::fmt::Debug for SyncAuth {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SyncAuth::ApiKey(_) => f.write_str("SyncAuth::ApiKey(****)"),
+            SyncAuth::BearerToken(_) => f.write_str("SyncAuth::BearerToken(****)"),
+        }
+    }
 }
 
 /// Response from the auth Lambda listing available S3 objects.
@@ -175,6 +184,25 @@ impl AuthClient {
         parsed.urls.into_iter().next().ok_or_else(|| {
             SyncError::Auth("no presigned URL returned".to_string())
         })
+    }
+
+    /// Request presigned URLs for deleting log entries.
+    pub async fn presign_log_delete(&self, seq_numbers: &[u64]) -> SyncResult<Vec<PresignedUrl>> {
+        let body = serde_json::json!({
+            "action": "presign_log_delete",
+            "seq_numbers": seq_numbers,
+        });
+
+        let resp = self.post("/api/sync/presign", body).await?;
+        let parsed: PresignedResponse = serde_json::from_value(resp)?;
+
+        if !parsed.ok {
+            return Err(SyncError::Auth(
+                parsed.error.unwrap_or_else(|| "presign failed".to_string()),
+            ));
+        }
+
+        Ok(parsed.urls)
     }
 
     /// Request presigned URLs for downloading log entries.

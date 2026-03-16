@@ -78,11 +78,14 @@ impl SyncSetup {
     /// Create SyncSetup from Exemem credentials.
     ///
     /// The sync auth Lambda is part of the Exemem platform, so the same
-    /// `api_url` and `api_key` are reused. Device ID is auto-generated
-    /// and persisted in the local database.
-    pub fn from_exemem(api_url: &str, api_key: &str) -> Self {
+    /// `api_url` and `api_key` are reused. Device ID is read from the
+    /// `FOLD_SYNC_DEVICE_ID` env var, or persisted to a `.device_id` file
+    /// in `data_dir` so it survives restarts.
+    pub fn from_exemem(api_url: &str, api_key: &str, data_dir: &str) -> Self {
         let device_id = std::env::var("FOLD_SYNC_DEVICE_ID")
-            .unwrap_or_else(|_| uuid::Uuid::new_v4().to_string());
+            .ok()
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| get_or_create_device_id(data_dir));
 
         Self {
             auth_url: api_url.to_string(),
@@ -91,4 +94,33 @@ impl SyncSetup {
             config: None,
         }
     }
+}
+
+/// Read a persisted device ID from `<data_dir>/.device_id`, or generate a new
+/// UUID and write it there so the same ID is used across restarts.
+fn get_or_create_device_id(data_dir: &str) -> String {
+    let device_id_path = std::path::Path::new(data_dir).join(".device_id");
+
+    // Try to read existing device ID
+    if let Ok(id) = std::fs::read_to_string(&device_id_path) {
+        let id = id.trim().to_string();
+        if !id.is_empty() {
+            return id;
+        }
+    }
+
+    // Generate and persist new device ID
+    let id = uuid::Uuid::new_v4().to_string();
+    if let Some(parent) = device_id_path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    if let Err(e) = std::fs::write(&device_id_path, &id) {
+        eprintln!(
+            "WARNING: Failed to persist device ID to {}: {}. \
+             A new device ID will be generated on next restart.",
+            device_id_path.display(),
+            e
+        );
+    }
+    id
 }

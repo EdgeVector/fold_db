@@ -49,22 +49,17 @@ impl TryFrom<String> for FieldMapper {
             return Err("FieldMapper definition cannot be empty".to_string());
         }
 
-        let mut parts = trimmed.split('.');
-        let source_schema = parts
-            .next()
-            .ok_or_else(|| "FieldMapper must include source schema".to_string())?
-            .trim();
-        let source_field = parts
-            .next()
-            .ok_or_else(|| "FieldMapper must include source field".to_string())?
-            .trim();
+        // Split on first dot only — field names may contain dots (e.g. "hash.policy.number"
+        // means schema="hash", field="policy.number")
+        let (source_schema, source_field) = trimmed
+            .split_once('.')
+            .ok_or_else(|| "FieldMapper must be in 'schema.field' format".to_string())?;
+
+        let source_schema = source_schema.trim();
+        let source_field = source_field.trim();
 
         if source_schema.is_empty() || source_field.is_empty() {
             return Err("FieldMapper must include non-empty source schema and field".to_string());
-        }
-
-        if parts.next().is_some() {
-            return Err("FieldMapper must be in 'schema.field' format".to_string());
         }
 
         Ok(Self::new(source_schema, source_field))
@@ -127,6 +122,8 @@ impl<'de> serde::Deserialize<'de> for DeclarativeSchemaDefinition {
             #[serde(default)]
             field_classifications: HashMap<String, Vec<String>>,
             #[serde(default)]
+            field_descriptions: HashMap<String, String>,
+            #[serde(default)]
             ref_fields: HashMap<String, String>,
             #[serde(skip_serializing_if = "Option::is_none")]
             identity_hash: Option<String>,
@@ -173,8 +170,9 @@ impl<'de> serde::Deserialize<'de> for DeclarativeSchemaDefinition {
                 let has_range = k.range_field.is_some();
                 if has_hash && has_range {
                     SchemaType::HashRange
-                } else if has_range || has_hash {
-                    // If either key exists (but not both), treat as Range
+                } else if has_hash {
+                    SchemaType::Hash
+                } else if has_range {
                     SchemaType::Range
                 } else {
                     SchemaType::Single
@@ -202,7 +200,8 @@ impl<'de> serde::Deserialize<'de> for DeclarativeSchemaDefinition {
             schema.field_classifications.insert(field_name, classifications);
         }
 
-        // Preserve ref_fields and identity_hash
+        // Preserve field_descriptions, ref_fields and identity_hash
+        schema.field_descriptions = helper.field_descriptions;
         schema.ref_fields = helper.ref_fields;
         schema.identity_hash = helper.identity_hash;
 
@@ -227,9 +226,9 @@ pub struct DeclarativeSchemaDefinition {
     /// Human-readable descriptive name for the schema (used in AI-generated proposals)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub descriptive_name: Option<String>,
-    /// Schema type ("Single" | "Range" | "HashRange")
+    /// Schema type ("Single" | "Hash" | "Range" | "HashRange")
     pub schema_type: SchemaType,
-    /// Key configuration (required when schema_type == "HashRange" or "Range")
+    /// Key configuration (required when schema_type == "Hash", "Range", or "HashRange")
     #[serde(skip_serializing_if = "Option::is_none")]
     pub key: Option<KeyConfig>,
     /// Field names - plain data fields without transformations
@@ -251,6 +250,10 @@ pub struct DeclarativeSchemaDefinition {
     /// Maps field_name -> list of classification strings
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub field_classifications: HashMap<String, Vec<String>>,
+    /// Natural language descriptions for each field (e.g. "the person who created the artwork")
+    /// Maps field_name -> description string. Used for semantic field matching in the canonical registry.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub field_descriptions: HashMap<String, String>,
     /// Reference fields that point to child schemas
     /// Maps field_name -> child_schema_name
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
@@ -311,7 +314,9 @@ impl DeclarativeSchemaDefinition {
     /// This is called after deserializing from database to ensure runtime state is initialized
     /// Also regenerates transform metadata (hash mappings, inputs, source schemas) which are not persisted
     pub fn populate_runtime_fields(&mut self) -> Result<(), crate::schema::SchemaError> {
-        use crate::schema::types::field::{FieldVariant, HashRangeField, RangeField, SingleField};
+        use crate::schema::types::field::{
+            FieldVariant, HashField, HashRangeField, RangeField, SingleField,
+        };
         use std::collections::HashMap;
 
         let default_field_mappers = HashMap::new();
@@ -323,6 +328,10 @@ impl DeclarativeSchemaDefinition {
                 SchemaType::HashRange => {
                     let hashrange_field = HashRangeField::new(default_field_mappers.clone(), None);
                     runtime_fields.insert(field_name, FieldVariant::HashRange(hashrange_field));
+                }
+                SchemaType::Hash => {
+                    let hash_field = HashField::new(default_field_mappers.clone(), None);
+                    runtime_fields.insert(field_name, FieldVariant::Hash(hash_field));
                 }
                 SchemaType::Range => {
                     let range_field = RangeField::new(default_field_mappers.clone(), None);
@@ -428,6 +437,7 @@ impl DeclarativeSchemaDefinition {
             hash: None,
             field_molecule_uuids: None,
             field_classifications: HashMap::new(),
+            field_descriptions: HashMap::new(),
             ref_fields: HashMap::new(),
             identity_hash: None,
             runtime_fields: HashMap::new(),
@@ -450,7 +460,17 @@ impl DeclarativeSchemaDefinition {
         self.field_classifications.get(field_name)
     }
 
-    /// Compute identity hash from sorted field names (SHA256)
+    /// Compute identity hash from the readable name (descriptive_name) + sorted,
+    /// deduplicated field names (SHA256).
+    ///
+    /// Uses descriptive_name (the human-readable label) rather than schema.name
+    /// because schema.name may already be a hash from a previous expansion.
+    /// descriptive_name stays stable across expansions, so:
+    /// - Same readable name + same fields = same hash = dedup
+    /// - Same readable name + different fields = different hash = separate schemas
+    /// - Different readable name + same fields = different hash = separate schemas
+    ///
+    /// Falls back to schema.name if descriptive_name is not set.
     pub fn compute_identity_hash(&mut self) {
         let mut field_names: Vec<&str> = self
             .fields
@@ -458,10 +478,29 @@ impl DeclarativeSchemaDefinition {
             .map(|f| f.iter().map(|s| s.as_str()).collect())
             .unwrap_or_default();
         field_names.sort();
+        field_names.dedup();
         let combined = field_names.join(",");
         let mut hasher = Sha256::new();
+        // Use the readable name (descriptive_name preferred, falls back to name)
+        let readable_name = self
+            .descriptive_name
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .unwrap_or(&self.name);
+        if !readable_name.is_empty() {
+            hasher.update(readable_name.as_bytes());
+            hasher.update(b":");
+        }
         hasher.update(combined.as_bytes());
         self.identity_hash = Some(format!("{:x}", hasher.finalize()));
+    }
+
+    /// Deduplicate the fields list in-place, preserving order.
+    pub fn dedup_fields(&mut self) {
+        if let Some(ref mut fields) = self.fields {
+            let mut seen = std::collections::HashSet::new();
+            fields.retain(|f| seen.insert(f.clone()));
+        }
     }
 
     /// Get the identity hash

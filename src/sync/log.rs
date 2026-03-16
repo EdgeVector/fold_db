@@ -206,7 +206,7 @@ mod tests {
         let unsealed = LogEntry::unseal(&sealed.bytes, &crypto).await.unwrap();
 
         assert_eq!(unsealed.seq, 4);
-        matches!(unsealed.op, LogOp::Delete { .. });
+        assert!(matches!(unsealed.op, LogOp::Delete { .. }));
     }
 
     #[tokio::test]
