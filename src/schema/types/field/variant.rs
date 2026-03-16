@@ -7,8 +7,8 @@ use std::sync::Arc;
 use crate::atom::{FieldKey, MutationEvent};
 use crate::db_operations::DbOperations;
 use crate::schema::types::field::{
-    fetch_atoms_for_matches_async, Field, FieldCommon, FilterApplicator, HashRangeField,
-    HashRangeFilter, RangeField, SingleField,
+    fetch_atoms_for_matches_async, Field, FieldCommon, FilterApplicator, HashField,
+    HashRangeField, HashRangeFilter, RangeField, SingleField,
 };
 use crate::schema::types::key_value::KeyValue;
 use crate::schema::types::SchemaError;
@@ -19,6 +19,8 @@ use serde_json::Value as JsonValue;
 pub enum FieldVariant {
     /// Single value field
     Single(SingleField),
+    /// Hash-keyed collection (unordered)
+    Hash(HashField),
     /// Range of values
     Range(RangeField),
     /// Hash-range field for complex indexing
@@ -43,6 +45,7 @@ macro_rules! delegate_field_method {
     ($self:ident, $method:ident) => {
         match $self {
             Self::Single(f) => f.$method(),
+            Self::Hash(f) => f.$method(),
             Self::Range(f) => f.$method(),
             Self::HashRange(f) => f.$method(),
         }
@@ -50,6 +53,7 @@ macro_rules! delegate_field_method {
     ($self:ident, $method:ident, $($args:expr),+) => {
         match $self {
             Self::Single(f) => f.$method($($args),+),
+            Self::Hash(f) => f.$method($($args),+),
             Self::Range(f) => f.$method($($args),+),
             Self::HashRange(f) => f.$method($($args),+),
         }
@@ -69,6 +73,7 @@ impl Field for FieldVariant {
     async fn refresh_from_db(&mut self, db_ops: &DbOperations) {
         match self {
             Self::Single(f) => f.refresh_from_db(db_ops).await,
+            Self::Hash(f) => f.refresh_from_db(db_ops).await,
             Self::Range(f) => f.refresh_from_db(db_ops).await,
             Self::HashRange(f) => f.refresh_from_db(db_ops).await,
         }
@@ -100,6 +105,7 @@ impl Field for FieldVariant {
         // Fetch actual atom content from database using shared helper
         let results = match self {
             FieldVariant::Single(f) => f.apply_filter(filter),
+            FieldVariant::Hash(f) => f.apply_filter(filter),
             FieldVariant::Range(f) => f.apply_filter(filter),
             FieldVariant::HashRange(f) => f.apply_filter(filter),
         };
@@ -123,6 +129,7 @@ impl FieldVariant {
     pub fn has_molecule(&self) -> bool {
         match self {
             Self::Single(f) => f.base.molecule.is_some(),
+            Self::Hash(f) => f.base.molecule.is_some(),
             Self::Range(f) => f.base.molecule.is_some(),
             Self::HashRange(f) => f.base.molecule.is_some(),
         }
@@ -134,6 +141,7 @@ impl FieldVariant {
         use crate::db_operations::MoleculeData;
         match self {
             Self::Single(f) => f.base.molecule.clone().map(MoleculeData::Single),
+            Self::Hash(f) => f.base.molecule.clone().map(MoleculeData::Hash),
             Self::Range(f) => f.base.molecule.clone().map(MoleculeData::Range),
             Self::HashRange(f) => f.base.molecule.clone().map(MoleculeData::HashRange),
         }
@@ -143,6 +151,11 @@ impl FieldVariant {
     pub fn get_all_keys(&self) -> Vec<KeyValue> {
         match self {
             Self::Single(_) => vec![KeyValue::new(None, None)],
+            Self::Hash(f) => f
+                .get_all_keys()
+                .into_iter()
+                .map(|hash| KeyValue::new(Some(hash), None))
+                .collect(),
             Self::Range(f) => f
                 .get_all_keys()
                 .into_iter()
@@ -157,6 +170,7 @@ impl FieldVariant {
     pub fn molecule_version(&self) -> Option<u64> {
         match self {
             Self::Single(f) => f.base.molecule.as_ref().map(|m| m.version()),
+            Self::Hash(f) => f.base.molecule.as_ref().map(|m| m.version()),
             Self::Range(f) => f.base.molecule.as_ref().map(|m| m.version()),
             Self::HashRange(f) => f.base.molecule.as_ref().map(|m| m.version()),
         }
@@ -197,6 +211,18 @@ impl FieldVariant {
                         None => {
                             // Field didn't exist before this mutation — clear molecule
                             f.base.molecule = None;
+                        }
+                    }
+                }
+                (FieldKey::Hash { hash }, FieldVariant::Hash(f)) => {
+                    if let Some(mol) = &mut f.base.molecule {
+                        match &event.old_atom_uuid {
+                            Some(old) => {
+                                mol.set_atom_uuid(hash.clone(), old.clone());
+                            }
+                            None => {
+                                mol.remove_atom_uuid(hash);
+                            }
                         }
                     }
                 }

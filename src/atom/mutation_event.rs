@@ -19,6 +19,7 @@ pub struct MutationEvent {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum FieldKey {
     Single,
+    Hash { hash: String },
     Range { range: String },
     HashRange { hash: String, range: String },
 }

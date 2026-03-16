@@ -1,5 +1,5 @@
 use super::core::DbOperations;
-use crate::atom::{Atom, Molecule, MoleculeHashRange, MoleculeRange, MutationEvent};
+use crate::atom::{Atom, Molecule, MoleculeHash, MoleculeHashRange, MoleculeRange, MutationEvent};
 use crate::schema::SchemaError;
 use crate::storage::traits::TypedStore;
 use serde_json::Value;
@@ -9,6 +9,7 @@ use std::collections::HashMap;
 #[derive(Clone)]
 pub enum MoleculeData {
     Single(Molecule),
+    Hash(MoleculeHash),
     Range(MoleculeRange),
     HashRange(MoleculeHashRange),
 }
@@ -91,6 +92,8 @@ impl DbOperations {
                     let value = match mol_data {
                         MoleculeData::Single(mol) => serde_json::to_value(mol)
                             .expect("Molecule is always serializable"),
+                        MoleculeData::Hash(mol) => serde_json::to_value(mol)
+                            .expect("MoleculeHash is always serializable"),
                         MoleculeData::Range(mol) => serde_json::to_value(mol)
                             .expect("MoleculeRange is always serializable"),
                         MoleculeData::HashRange(mol) => serde_json::to_value(mol)
