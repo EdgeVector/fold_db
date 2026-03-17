@@ -125,6 +125,8 @@ impl<'de> serde::Deserialize<'de> for DeclarativeSchemaDefinition {
             field_descriptions: HashMap<String, String>,
             #[serde(default)]
             ref_fields: HashMap<String, String>,
+            #[serde(default)]
+            field_types: HashMap<String, crate::schema::types::field_value_type::FieldValueType>,
             #[serde(skip_serializing_if = "Option::is_none")]
             identity_hash: Option<String>,
         }
@@ -200,9 +202,10 @@ impl<'de> serde::Deserialize<'de> for DeclarativeSchemaDefinition {
             schema.field_classifications.insert(field_name, classifications);
         }
 
-        // Preserve field_descriptions, ref_fields and identity_hash
+        // Preserve field_descriptions, ref_fields, field_types and identity_hash
         schema.field_descriptions = helper.field_descriptions;
         schema.ref_fields = helper.ref_fields;
+        schema.field_types = helper.field_types;
         schema.identity_hash = helper.identity_hash;
 
         Ok(schema)
@@ -258,6 +261,10 @@ pub struct DeclarativeSchemaDefinition {
     /// Maps field_name -> child_schema_name
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub ref_fields: HashMap<String, String>,
+    /// Strongly typed field value types from the canonical field registry.
+    /// Maps field_name -> FieldValueType. Fields not in this map default to Any.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub field_types: HashMap<String, crate::schema::types::field_value_type::FieldValueType>,
     /// SHA256 hash of sorted field names — unique fingerprint of schema structure
     #[serde(skip_serializing_if = "Option::is_none")]
     pub identity_hash: Option<String>,
@@ -303,6 +310,7 @@ impl PartialEq for DeclarativeSchemaDefinition {
             && self.field_molecule_uuids == other.field_molecule_uuids
             && self.field_classifications == other.field_classifications
             && self.ref_fields == other.ref_fields
+            && self.field_types == other.field_types
             && self.identity_hash == other.identity_hash
         // Exclude runtime_fields, inputs_schema_fields, source_schemas, and hash mappings
         // These are derived/runtime state and don't affect schema identity
@@ -439,6 +447,7 @@ impl DeclarativeSchemaDefinition {
             field_classifications: HashMap::new(),
             field_descriptions: HashMap::new(),
             ref_fields: HashMap::new(),
+            field_types: HashMap::new(),
             identity_hash: None,
             runtime_fields: HashMap::new(),
             inputs_schema_fields: Vec::new(),
@@ -449,6 +458,12 @@ impl DeclarativeSchemaDefinition {
 
         schema.regenerate_metadata();
         schema
+    }
+
+    /// Get the declared type for a field. Returns `Any` if no type is declared.
+    pub fn get_field_type(&self, field_name: &str) -> &crate::schema::types::field_value_type::FieldValueType {
+        static ANY: crate::schema::types::field_value_type::FieldValueType = crate::schema::types::field_value_type::FieldValueType::Any;
+        self.field_types.get(field_name).unwrap_or(&ANY)
     }
 
     pub fn field_mappers(&self) -> Option<&HashMap<String, FieldMapper>> {
