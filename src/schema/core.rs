@@ -457,7 +457,7 @@ impl SchemaCore {
     }
     // ========== TRANSFORM VIEW API ==========
 
-    /// Register a new transform view. Validates source references, determines write modes,
+    /// Register a new transform view. Validates source references,
     /// checks for cycles, and persists to storage.
     pub async fn register_view(&self, view: TransformView) -> Result<(), SchemaError> {
         let view_name = view.name.clone();
@@ -479,7 +479,7 @@ impl SchemaCore {
             registry.register_view(view, |name| schemas.contains_key(name))?;
         };
 
-        // Re-acquire to get the stored view (with computed write_modes)
+        // Re-acquire to get the stored view
         let view_clone = {
             let registry = self
                 .view_registry
@@ -560,7 +560,7 @@ impl SchemaCore {
         }
         self.db_ops.delete_view(name).await?;
         self.db_ops.delete_view_state(name).await?;
-        self.db_ops.clear_view_field_states(name).await?;
+        self.db_ops.clear_view_cache_state(name).await?;
         Ok(())
     }
 

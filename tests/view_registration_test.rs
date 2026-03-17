@@ -1,7 +1,9 @@
+use fold_db::schema::types::field_value_type::FieldValueType;
+use fold_db::schema::types::operations::Query;
 use fold_db::schema::types::schema::DeclarativeSchemaType as SchemaType;
 use fold_db::schema::SchemaCore;
 use fold_db::view::registry::ViewState;
-use fold_db::view::types::{FieldRef, TransformFieldDef, TransformView, TransformWriteMode};
+use fold_db::view::types::TransformView;
 use std::collections::HashMap;
 
 fn blogpost_schema_json() -> String {
@@ -30,16 +32,17 @@ fn weather_schema_json() -> String {
 }
 
 fn identity_view(name: &str, source_schema: &str, source_field: &str) -> TransformView {
-    let mut fields = HashMap::new();
-    fields.insert(
-        "out".into(),
-        TransformFieldDef {
-            source: FieldRef::new(source_schema, source_field),
-            wasm_forward: None,
-            wasm_inverse: None,
-        },
-    );
-    TransformView::new(name, SchemaType::Single, None, fields)
+    TransformView::new(
+        name,
+        SchemaType::Single,
+        None,
+        vec![Query::new(
+            source_schema.to_string(),
+            vec![source_field.to_string()],
+        )],
+        None,
+        HashMap::from([(source_field.to_string(), FieldValueType::Any)]),
+    )
 }
 
 #[tokio::test]
@@ -54,10 +57,7 @@ async fn register_view_with_valid_source() {
 
     let retrieved = core.get_view("ContentView").unwrap().unwrap();
     assert_eq!(retrieved.name, "ContentView");
-    assert_eq!(
-        *retrieved.write_modes.get("out").unwrap(),
-        TransformWriteMode::Identity
-    );
+    assert!(retrieved.is_identity());
 }
 
 #[tokio::test]
@@ -76,7 +76,6 @@ async fn register_view_fails_when_name_collides_with_schema() {
         .await
         .unwrap();
 
-    // Try to register a view with the same name as an existing schema
     let view = identity_view("BlogPost", "BlogPost", "content");
     let result = core.register_view(view).await;
     assert!(result.is_err());
@@ -184,29 +183,26 @@ async fn multi_source_view() {
         .await
         .unwrap();
 
-    // View that pulls from two different source schemas
-    let mut fields = HashMap::new();
-    fields.insert(
-        "blog_content".into(),
-        TransformFieldDef {
-            source: FieldRef::new("BlogPost", "content"),
-            wasm_forward: None,
-            wasm_inverse: None,
-        },
+    // View with input queries from two different schemas + WASM transform
+    let view = TransformView::new(
+        "Dashboard",
+        SchemaType::Single,
+        None,
+        vec![
+            Query::new("BlogPost".to_string(), vec!["content".to_string()]),
+            Query::new("Weather".to_string(), vec!["temp_celsius".to_string()]),
+        ],
+        Some(vec![0, 1, 2]), // Placeholder WASM (won't be executed in registration)
+        HashMap::from([
+            ("summary".to_string(), FieldValueType::String),
+            ("temp".to_string(), FieldValueType::Number),
+        ]),
     );
-    fields.insert(
-        "temperature".into(),
-        TransformFieldDef {
-            source: FieldRef::new("Weather", "temp_celsius"),
-            wasm_forward: None,
-            wasm_inverse: None,
-        },
-    );
-    let view = TransformView::new("Dashboard", SchemaType::Single, None, fields);
 
     core.register_view(view).await.unwrap();
     let retrieved = core.get_view("Dashboard").unwrap().unwrap();
-    assert_eq!(retrieved.fields.len(), 2);
+    assert_eq!(retrieved.input_queries.len(), 2);
+    assert_eq!(retrieved.output_fields.len(), 2);
     assert!(retrieved.source_schemas().contains(&"BlogPost".to_string()));
     assert!(retrieved.source_schemas().contains(&"Weather".to_string()));
 }
@@ -224,9 +220,15 @@ async fn view_can_reference_another_view_as_source() {
         .unwrap();
 
     // ViewB reads from ViewA (a view, not a schema)
-    core.register_view(identity_view("ViewB", "ViewA", "out"))
-        .await
-        .unwrap();
+    let view_b = TransformView::new(
+        "ViewB",
+        SchemaType::Single,
+        None,
+        vec![Query::new("ViewA".to_string(), vec!["content".to_string()])],
+        None,
+        HashMap::from([("content".to_string(), FieldValueType::Any)]),
+    );
+    core.register_view(view_b).await.unwrap();
 
     assert!(core.get_view("ViewB").unwrap().is_some());
 }
@@ -244,4 +246,38 @@ async fn name_exists_checks_both_schemas_and_views() {
     assert!(core.name_exists("BlogPost").unwrap());
     assert!(core.name_exists("MyView").unwrap());
     assert!(!core.name_exists("Unknown").unwrap());
+}
+
+#[tokio::test]
+async fn register_view_with_typed_output_fields() {
+    let core = SchemaCore::new_for_testing().await.unwrap();
+    core.load_schema_from_json(&blogpost_schema_json())
+        .await
+        .unwrap();
+
+    let view = TransformView::new(
+        "TypedView",
+        SchemaType::Single,
+        None,
+        vec![Query::new(
+            "BlogPost".to_string(),
+            vec!["title".to_string(), "content".to_string()],
+        )],
+        Some(vec![0, 1, 2]), // WASM placeholder
+        HashMap::from([
+            ("word_count".to_string(), FieldValueType::Integer),
+            ("enriched_title".to_string(), FieldValueType::String),
+        ]),
+    );
+
+    core.register_view(view).await.unwrap();
+    let retrieved = core.get_view("TypedView").unwrap().unwrap();
+    assert_eq!(
+        *retrieved.output_fields.get("word_count").unwrap(),
+        FieldValueType::Integer
+    );
+    assert_eq!(
+        *retrieved.output_fields.get("enriched_title").unwrap(),
+        FieldValueType::String
+    );
 }

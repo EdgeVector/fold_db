@@ -1,7 +1,7 @@
 use super::core::DbOperations;
 use crate::schema::SchemaError;
 use crate::view::registry::ViewState;
-use crate::view::types::{TransformFieldState, TransformView};
+use crate::view::types::{TransformView, ViewCacheState};
 use std::collections::HashMap;
 
 impl DbOperations {
@@ -91,54 +91,42 @@ impl DbOperations {
         Ok(())
     }
 
-    /// Get a transform field state for a specific view field.
-    /// Key format: "{view_name}:{field_name}"
-    pub async fn get_transform_field_state(
+    /// Get the cache state for an entire view.
+    pub async fn get_view_cache_state(
         &self,
         view_name: &str,
-        field_name: &str,
-    ) -> Result<TransformFieldState, SchemaError> {
+    ) -> Result<ViewCacheState, SchemaError> {
         use crate::storage::traits::TypedStore;
 
-        let key = format!("{}:{}", view_name, field_name);
         Ok(self
             .transform_field_states_store()
-            .get_item::<TransformFieldState>(&key)
+            .get_item::<ViewCacheState>(view_name)
             .await?
-            .unwrap_or(TransformFieldState::Empty))
+            .unwrap_or(ViewCacheState::Empty))
     }
 
-    /// Set a transform field state for a specific view field.
-    pub async fn set_transform_field_state(
+    /// Set the cache state for an entire view.
+    pub async fn set_view_cache_state(
         &self,
         view_name: &str,
-        field_name: &str,
-        state: &TransformFieldState,
+        state: &ViewCacheState,
     ) -> Result<(), SchemaError> {
         use crate::storage::traits::TypedStore;
 
-        let key = format!("{}:{}", view_name, field_name);
         self.transform_field_states_store()
-            .put_item(&key, state)
+            .put_item(view_name, state)
             .await?;
         self.transform_field_states_store().inner().flush().await?;
         Ok(())
     }
 
-    /// Clear all field states for a view (used when removing a view).
-    pub async fn clear_view_field_states(&self, view_name: &str) -> Result<(), SchemaError> {
+    /// Clear cache state for a view (used when removing a view).
+    pub async fn clear_view_cache_state(&self, view_name: &str) -> Result<(), SchemaError> {
         use crate::storage::traits::TypedStore;
 
-        let prefix = format!("{}:", view_name);
-        let keys = self
-            .transform_field_states_store()
-            .list_keys_with_prefix(&prefix)
+        self.transform_field_states_store()
+            .delete_item(view_name)
             .await?;
-        for key in keys {
-            self.transform_field_states_store()
-                .delete_item(&key)
-                .await?;
-        }
         self.transform_field_states_store().inner().flush().await?;
         Ok(())
     }

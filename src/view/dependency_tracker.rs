@@ -1,13 +1,16 @@
-use crate::view::types::{TransformFieldDef, TransformView};
+use crate::view::types::TransformView;
 use std::collections::HashMap;
 use std::collections::HashSet;
 
-/// Tracks which view fields depend on which source schema fields.
+/// Tracks which views depend on which source schema fields.
 /// Used for cache invalidation when source data changes.
+///
+/// Dependencies are derived from input_queries: for each query,
+/// (query.schema_name, field_name) for all fields in query.fields.
 #[derive(Debug, Default)]
 pub struct DependencyTracker {
-    /// (source_schema, source_field) -> [(view_name, view_field_name)]
-    deps: HashMap<(String, String), Vec<(String, String)>>,
+    /// (source_schema, source_field) -> [view_name]
+    deps: HashMap<(String, String), Vec<String>>,
 }
 
 impl DependencyTracker {
@@ -17,60 +20,65 @@ impl DependencyTracker {
         }
     }
 
-    /// Register all field dependencies for a view.
-    pub fn register(&mut self, view_name: &str, fields: &HashMap<String, TransformFieldDef>) {
-        for (field_name, field_def) in fields {
-            let key = (
-                field_def.source.schema.clone(),
-                field_def.source.field.clone(),
-            );
+    /// Register all dependencies for a view based on its input queries.
+    pub fn register(&mut self, view: &TransformView) {
+        for (schema_name, field_name) in view.source_dependencies() {
             self.deps
-                .entry(key)
+                .entry((schema_name, field_name))
                 .or_default()
-                .push((view_name.to_string(), field_name.clone()));
+                .push(view.name.clone());
         }
     }
 
     /// Remove all dependency entries for a given view.
     pub fn unregister(&mut self, view_name: &str) {
         self.deps.retain(|_key, dependents| {
-            dependents.retain(|(vn, _)| vn != view_name);
+            dependents.retain(|vn| vn != view_name);
             !dependents.is_empty()
         });
     }
 
-    /// Get all view fields that depend on a given source schema field.
-    pub fn get_dependents(&self, schema: &str, field: &str) -> &[(String, String)] {
+    /// Get all view names that depend on a given source schema field.
+    pub fn get_dependents(&self, schema: &str, field: &str) -> &[String] {
         let key = (schema.to_string(), field.to_string());
         self.deps.get(&key).map_or(&[], |v| v.as_slice())
+    }
+
+    /// Get all view names that depend on ANY field from a given source schema.
+    /// Used for cascade invalidation when a view's output changes.
+    pub fn get_all_dependents_of_schema(&self, schema: &str) -> Vec<String> {
+        let mut views = HashSet::new();
+        for ((dep_schema, _), view_names) in &self.deps {
+            if dep_schema == schema {
+                for view_name in view_names {
+                    views.insert(view_name.clone());
+                }
+            }
+        }
+        views.into_iter().collect()
     }
 
     /// Rebuild the tracker from a set of views (used on startup).
     pub fn rebuild(&mut self, views: &[TransformView]) {
         self.deps.clear();
         for view in views {
-            self.register(&view.name, &view.fields);
+            self.register(view);
         }
     }
 
-    /// Check if adding a view with the given fields would create a dependency cycle.
+    /// Check if adding a view would create a dependency cycle.
     ///
-    /// A cycle exists if the new view reads from a source that (transitively) reads
-    /// from the new view. Since views can be sources for other views, we perform DFS
-    /// through the dependency graph.
-    ///
-    /// `view_fields_map` provides all registered views' fields for traversal.
+    /// A cycle exists if the new view reads from a source that (transitively)
+    /// reads from the new view. Since views can be sources for other views,
+    /// we perform DFS through the dependency graph.
     pub fn would_create_cycle(
         &self,
         new_view_name: &str,
-        new_fields: &HashMap<String, TransformFieldDef>,
-        view_fields_map: &HashMap<String, HashMap<String, TransformFieldDef>>,
+        new_view: &TransformView,
+        existing_views: &HashMap<String, TransformView>,
     ) -> bool {
         // Collect all source schemas the new view reads from
-        let sources: HashSet<String> = new_fields
-            .values()
-            .map(|f| f.source.schema.clone())
-            .collect();
+        let sources: HashSet<String> = new_view.source_schemas().into_iter().collect();
 
         // DFS: check if any source schema transitively depends on new_view_name
         let mut visited = HashSet::new();
@@ -84,9 +92,9 @@ impl DependencyTracker {
                 continue; // Already visited
             }
             // If `current` is itself a view, check what it reads from
-            if let Some(fields) = view_fields_map.get(&current) {
-                for field_def in fields.values() {
-                    stack.push(field_def.source.schema.clone());
+            if let Some(view) = existing_views.get(&current) {
+                for schema_name in view.source_schemas() {
+                    stack.push(schema_name);
                 }
             }
         }
@@ -98,75 +106,73 @@ impl DependencyTracker {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::schema::types::operations::Query;
     use crate::schema::types::schema::DeclarativeSchemaType as SchemaType;
-    use crate::view::types::FieldRef;
 
-    fn make_field(schema: &str, field: &str) -> TransformFieldDef {
-        TransformFieldDef {
-            source: FieldRef::new(schema, field),
-            wasm_forward: None,
-            wasm_inverse: None,
-        }
+    fn make_view(name: &str, queries: Vec<(&str, Vec<&str>)>) -> TransformView {
+        let input_queries = queries
+            .into_iter()
+            .map(|(schema, fields)| {
+                Query::new(
+                    schema.to_string(),
+                    fields.into_iter().map(|f| f.to_string()).collect(),
+                )
+            })
+            .collect();
+        TransformView::new(
+            name,
+            SchemaType::Single,
+            None,
+            input_queries,
+            None,
+            HashMap::new(),
+        )
     }
 
     #[test]
     fn test_register_and_lookup() {
         let mut tracker = DependencyTracker::new();
-        let mut fields = HashMap::new();
-        fields.insert("words".into(), make_field("BlogPost", "content"));
-        fields.insert("temp_f".into(), make_field("Weather", "temp_c"));
-
-        tracker.register("Analytics", &fields);
+        let view = make_view("Analytics", vec![
+            ("BlogPost", vec!["content"]),
+            ("Weather", vec!["temp_c"]),
+        ]);
+        tracker.register(&view);
 
         let deps = tracker.get_dependents("BlogPost", "content");
         assert_eq!(deps.len(), 1);
-        assert_eq!(deps[0], ("Analytics".into(), "words".into()));
+        assert_eq!(deps[0], "Analytics");
 
         let deps = tracker.get_dependents("Weather", "temp_c");
         assert_eq!(deps.len(), 1);
-        assert_eq!(deps[0], ("Analytics".into(), "temp_f".into()));
+        assert_eq!(deps[0], "Analytics");
 
-        // No dependents for unregistered source
         assert!(tracker.get_dependents("Other", "field").is_empty());
     }
 
     #[test]
     fn test_unregister() {
         let mut tracker = DependencyTracker::new();
-        let mut fields = HashMap::new();
-        fields.insert("a".into(), make_field("S1", "f1"));
-        tracker.register("View1", &fields);
-
-        let mut fields2 = HashMap::new();
-        fields2.insert("b".into(), make_field("S1", "f1"));
-        tracker.register("View2", &fields2);
+        let view1 = make_view("View1", vec![("S1", vec!["f1"])]);
+        let view2 = make_view("View2", vec![("S1", vec!["f1"])]);
+        tracker.register(&view1);
+        tracker.register(&view2);
 
         assert_eq!(tracker.get_dependents("S1", "f1").len(), 2);
 
         tracker.unregister("View1");
         let deps = tracker.get_dependents("S1", "f1");
         assert_eq!(deps.len(), 1);
-        assert_eq!(deps[0].0, "View2");
+        assert_eq!(deps[0], "View2");
     }
 
     #[test]
     fn test_rebuild() {
         let mut tracker = DependencyTracker::new();
-        let mut fields = HashMap::new();
-        fields.insert("x".into(), make_field("S1", "f1"));
-        tracker.register("OldView", &fields);
+        let old_view = make_view("OldView", vec![("S1", vec!["f1"])]);
+        tracker.register(&old_view);
 
-        let views = vec![TransformView::new(
-            "NewView",
-            SchemaType::Single,
-            None,
-            {
-                let mut f = HashMap::new();
-                f.insert("y".into(), make_field("S2", "f2"));
-                f
-            },
-        )];
-        tracker.rebuild(&views);
+        let new_view = make_view("NewView", vec![("S2", vec!["f2"])]);
+        tracker.rebuild(&[new_view]);
 
         assert!(tracker.get_dependents("S1", "f1").is_empty());
         assert_eq!(tracker.get_dependents("S2", "f2").len(), 1);
@@ -175,74 +181,91 @@ mod tests {
     #[test]
     fn test_no_cycle_with_plain_schemas() {
         let tracker = DependencyTracker::new();
-        let mut fields = HashMap::new();
-        fields.insert("a".into(), make_field("PlainSchema", "f1"));
-
-        // PlainSchema is not a view, so no cycle possible
-        let view_fields_map = HashMap::new();
-        assert!(!tracker.would_create_cycle("MyView", &fields, &view_fields_map));
+        let view = make_view("MyView", vec![("PlainSchema", vec!["f1"])]);
+        let existing = HashMap::new();
+        assert!(!tracker.would_create_cycle("MyView", &view, &existing));
     }
 
     #[test]
     fn test_direct_cycle() {
         let tracker = DependencyTracker::new();
 
-        // ViewA reads from ViewB, and we're checking if ViewB reading from ViewA creates a cycle
-        let mut view_a_fields = HashMap::new();
-        view_a_fields.insert("a".into(), make_field("ViewB", "x"));
-
-        let mut view_fields_map = HashMap::new();
-        view_fields_map.insert("ViewA".to_string(), view_a_fields);
+        // ViewA reads from ViewB
+        let view_a = make_view("ViewA", vec![("ViewB", vec!["x"])]);
+        let mut existing = HashMap::new();
+        existing.insert("ViewA".to_string(), view_a);
 
         // ViewB wants to read from ViewA — should detect cycle
-        let mut new_fields = HashMap::new();
-        new_fields.insert("b".into(), make_field("ViewA", "y"));
-
-        assert!(tracker.would_create_cycle("ViewB", &new_fields, &view_fields_map));
+        let view_b = make_view("ViewB", vec![("ViewA", vec!["y"])]);
+        assert!(tracker.would_create_cycle("ViewB", &view_b, &existing));
     }
 
     #[test]
     fn test_transitive_cycle() {
         let tracker = DependencyTracker::new();
 
-        // ViewA reads from ViewB, ViewB reads from ViewC
-        let mut view_a_fields = HashMap::new();
-        view_a_fields.insert("a".into(), make_field("ViewB", "x"));
+        let view_a = make_view("ViewA", vec![("ViewB", vec!["x"])]);
+        let view_b = make_view("ViewB", vec![("ViewC", vec!["y"])]);
 
-        let mut view_b_fields = HashMap::new();
-        view_b_fields.insert("b".into(), make_field("ViewC", "y"));
-
-        let mut view_fields_map = HashMap::new();
-        view_fields_map.insert("ViewA".to_string(), view_a_fields);
-        view_fields_map.insert("ViewB".to_string(), view_b_fields);
+        let mut existing = HashMap::new();
+        existing.insert("ViewA".to_string(), view_a);
+        existing.insert("ViewB".to_string(), view_b);
 
         // ViewC wants to read from ViewA — transitive cycle: C -> A -> B -> C
-        let mut new_fields = HashMap::new();
-        new_fields.insert("c".into(), make_field("ViewA", "z"));
-
-        assert!(tracker.would_create_cycle("ViewC", &new_fields, &view_fields_map));
+        let view_c = make_view("ViewC", vec![("ViewA", vec!["z"])]);
+        assert!(tracker.would_create_cycle("ViewC", &view_c, &existing));
     }
 
     #[test]
     fn test_no_cycle_diamond() {
         let tracker = DependencyTracker::new();
 
-        // ViewA reads from S1, ViewB reads from S1 — diamond, no cycle
-        let mut view_a_fields = HashMap::new();
-        view_a_fields.insert("a".into(), make_field("S1", "f1"));
+        let view_a = make_view("ViewA", vec![("S1", vec!["f1"])]);
+        let view_b = make_view("ViewB", vec![("S1", vec!["f1"])]);
 
-        let mut view_b_fields = HashMap::new();
-        view_b_fields.insert("b".into(), make_field("S1", "f1"));
-
-        let mut view_fields_map = HashMap::new();
-        view_fields_map.insert("ViewA".to_string(), view_a_fields);
-        view_fields_map.insert("ViewB".to_string(), view_b_fields);
+        let mut existing = HashMap::new();
+        existing.insert("ViewA".to_string(), view_a);
+        existing.insert("ViewB".to_string(), view_b);
 
         // ViewC reads from ViewA and ViewB — no cycle
-        let mut new_fields = HashMap::new();
-        new_fields.insert("x".into(), make_field("ViewA", "a"));
-        new_fields.insert("y".into(), make_field("ViewB", "b"));
+        let view_c = make_view("ViewC", vec![
+            ("ViewA", vec!["a"]),
+            ("ViewB", vec!["b"]),
+        ]);
+        assert!(!tracker.would_create_cycle("ViewC", &view_c, &existing));
+    }
 
-        assert!(!tracker.would_create_cycle("ViewC", &new_fields, &view_fields_map));
+    #[test]
+    fn test_get_all_dependents_of_schema() {
+        let mut tracker = DependencyTracker::new();
+        let view1 = make_view("View1", vec![("S1", vec!["f1", "f2"])]);
+        let view2 = make_view("View2", vec![("S1", vec!["f3"])]);
+        let view3 = make_view("View3", vec![("S2", vec!["g1"])]);
+        tracker.register(&view1);
+        tracker.register(&view2);
+        tracker.register(&view3);
+
+        let mut deps = tracker.get_all_dependents_of_schema("S1");
+        deps.sort();
+        assert_eq!(deps, vec!["View1", "View2"]);
+
+        let deps2 = tracker.get_all_dependents_of_schema("S2");
+        assert_eq!(deps2, vec!["View3"]);
+
+        assert!(tracker.get_all_dependents_of_schema("S99").is_empty());
+    }
+
+    #[test]
+    fn test_multi_field_query_dependencies() {
+        let mut tracker = DependencyTracker::new();
+        let view = make_view("Dashboard", vec![
+            ("BlogPost", vec!["title", "content"]),
+            ("Author", vec!["name"]),
+        ]);
+        tracker.register(&view);
+
+        assert_eq!(tracker.get_dependents("BlogPost", "title").len(), 1);
+        assert_eq!(tracker.get_dependents("BlogPost", "content").len(), 1);
+        assert_eq!(tracker.get_dependents("Author", "name").len(), 1);
     }
 }

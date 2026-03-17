@@ -4,16 +4,15 @@
 //! including HashRange schemas with proper delegation to specialized processors.
 
 use crate::db_operations::DbOperations;
-use crate::schema::types::field::{FieldValue, HashRangeFilter};
+use crate::schema::types::field::FieldValue;
 use crate::schema::types::key_value::KeyValue;
 use crate::schema::types::Query;
 use crate::schema::{SchemaCore, SchemaState};
 use crate::schema::SchemaError;
 use crate::view::registry::ViewState;
-use crate::view::resolver::{SourceQueryFn, ViewFieldResolver};
-use crate::view::types::TransformFieldState;
+use crate::view::resolver::{SourceQueryFn, ViewResolver};
+use crate::view::types::ViewCacheState;
 use async_trait::async_trait;
-use chrono::{DateTime, Utc};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -24,46 +23,88 @@ pub struct QueryExecutor {
     schema_manager: Arc<SchemaCore>,
     db_ops: Arc<DbOperations>,
     hash_range_processor: HashRangeQueryProcessor,
-    view_resolver: ViewFieldResolver,
+    view_resolver: ViewResolver,
 }
 
-/// Implements SourceQueryFn by delegating back to the query executor's schema query path.
-/// This breaks the circular dependency: QueryExecutor -> ViewFieldResolver -> SourceQueryFn -> schema query.
-struct SchemaSourceQuery {
+/// Implements SourceQueryFn by delegating back to the query executor's query path.
+/// This supports recursive resolution: views can query other views or schemas.
+struct RecursiveSourceQuery {
     schema_manager: Arc<SchemaCore>,
+    db_ops: Arc<DbOperations>,
     hash_range_processor: HashRangeQueryProcessor,
+    view_resolver: ViewResolver,
 }
 
 #[async_trait]
-impl SourceQueryFn for SchemaSourceQuery {
-    async fn query_field(
+impl SourceQueryFn for RecursiveSourceQuery {
+    async fn execute_query(
         &self,
-        schema_name: &str,
-        field_name: &str,
-        filter: Option<HashRangeFilter>,
-        as_of: Option<DateTime<Utc>>,
-    ) -> Result<HashMap<KeyValue, FieldValue>, SchemaError> {
-        let mut schema = self
-            .schema_manager
-            .get_schema(schema_name)
-            .await?
-            .ok_or_else(|| {
-                SchemaError::NotFound(format!(
-                    "Source schema '{}' not found",
-                    schema_name
-                ))
-            })?;
+        query: &Query,
+    ) -> Result<HashMap<String, HashMap<KeyValue, FieldValue>>, SchemaError> {
+        // First try as schema
+        match self.schema_manager.get_schema(&query.schema_name).await? {
+            Some(mut schema) => {
+                self.hash_range_processor
+                    .query_with_filter(&mut schema, &query.fields, query.filter.clone(), query.as_of)
+                    .await
+            }
+            None => {
+                // Try as view (recursive)
+                self.try_query_view(query).await
+            }
+        }
+    }
+}
 
-        let field_results = self
-            .hash_range_processor
-            .query_with_filter(&mut schema, &[field_name.to_string()], filter, as_of)
+impl RecursiveSourceQuery {
+    async fn try_query_view(
+        &self,
+        query: &Query,
+    ) -> Result<HashMap<String, HashMap<KeyValue, FieldValue>>, SchemaError> {
+        let view = {
+            let registry = self
+                .schema_manager
+                .view_registry()
+                .lock()
+                .map_err(|_| {
+                    SchemaError::InvalidData("Failed to acquire view_registry lock".to_string())
+                })?;
+
+            registry.get_view(&query.schema_name).cloned().ok_or_else(|| {
+                SchemaError::NotFound(format!(
+                    "'{}' not found as schema or view",
+                    query.schema_name
+                ))
+            })?
+        };
+
+        // Load cache state
+        let cache_state = self
+            .db_ops
+            .get_view_cache_state(&view.name)
             .await?;
 
-        // Return the keyed results for this field directly
-        Ok(field_results
-            .get(field_name)
-            .cloned()
-            .unwrap_or_default())
+        // Create a nested source query for this view's input queries
+        let nested_source = RecursiveSourceQuery {
+            schema_manager: Arc::clone(&self.schema_manager),
+            db_ops: Arc::clone(&self.db_ops),
+            hash_range_processor: HashRangeQueryProcessor::new(Arc::clone(&self.db_ops)),
+            view_resolver: ViewResolver::new(Arc::clone(self.view_resolver.wasm_engine())),
+        };
+
+        let (results, new_cache) = self
+            .view_resolver
+            .resolve(&view, &query.fields, &cache_state, &nested_source)
+            .await?;
+
+        // Persist cache if it changed from Empty to Cached
+        if cache_state.is_empty() && matches!(new_cache, ViewCacheState::Cached { .. }) {
+            self.db_ops
+                .set_view_cache_state(&view.name, &new_cache)
+                .await?;
+        }
+
+        Ok(results)
     }
 }
 
@@ -80,7 +121,7 @@ impl QueryExecutor {
                 .expect("view_registry lock");
             Arc::clone(registry.wasm_engine())
         };
-        let view_resolver = ViewFieldResolver::new(wasm_engine);
+        let view_resolver = ViewResolver::new(wasm_engine);
 
         Self {
             schema_manager,
@@ -98,7 +139,7 @@ impl QueryExecutor {
         // First: try to resolve as a schema (existing path)
         match self.schema_manager.get_schema(&query.schema_name).await? {
             Some(mut schema) => {
-                // Enforce Blocked state — blocked schemas with a successor are already redirected by get_schema()
+                // Enforce Blocked state
                 let resolved_state = self
                     .schema_manager
                     .get_schema_states()?
@@ -146,7 +187,7 @@ impl QueryExecutor {
                     .map(|v| v.name.clone())
                     .collect();
                 log::error!(
-                    "❌ '{}' not found as schema or view. Schemas: {:?}, Views: {:?}",
+                    "'{}' not found as schema or view. Schemas: {:?}, Views: {:?}",
                     query.schema_name,
                     schema_names,
                     view_names
@@ -171,50 +212,32 @@ impl QueryExecutor {
             view.clone()
         };
 
-        // Determine which fields to resolve
-        let fields_to_resolve: Vec<String> = if query.fields.is_empty() {
-            view.fields.keys().cloned().collect()
-        } else {
-            query.fields.clone()
-        };
+        // Load cache state
+        let cache_state = self
+            .db_ops
+            .get_view_cache_state(&view.name)
+            .await?;
 
-        // Create source query implementation
-        let source_query = SchemaSourceQuery {
+        // Create source query implementation for recursive resolution
+        let source_query = RecursiveSourceQuery {
             schema_manager: Arc::clone(&self.schema_manager),
+            db_ops: Arc::clone(&self.db_ops),
             hash_range_processor: HashRangeQueryProcessor::new(Arc::clone(&self.db_ops)),
+            view_resolver: ViewResolver::new(Arc::clone(self.view_resolver.wasm_engine())),
         };
 
-        let mut result: HashMap<String, HashMap<KeyValue, FieldValue>> = HashMap::new();
+        let (results, new_cache) = self
+            .view_resolver
+            .resolve(&view, &query.fields, &cache_state, &source_query)
+            .await?;
 
-        for field_name in &fields_to_resolve {
-            // Load current field state from storage
-            let field_state = self
-                .db_ops
-                .get_transform_field_state(&view.name, field_name)
+        // Persist cache if it changed from Empty to Cached
+        if cache_state.is_empty() && matches!(new_cache, ViewCacheState::Cached { .. }) {
+            self.db_ops
+                .set_view_cache_state(&view.name, &new_cache)
                 .await?;
-
-            let (field_results, new_state) = self
-                .view_resolver
-                .resolve_field(
-                    &view,
-                    field_name,
-                    &field_state,
-                    &source_query,
-                    query.filter.clone(),
-                    query.as_of,
-                )
-                .await?;
-
-            // Persist updated state if it changed from Empty to Cached
-            if field_state.is_empty() && matches!(new_state, TransformFieldState::Cached { .. }) {
-                self.db_ops
-                    .set_transform_field_state(&view.name, field_name, &new_state)
-                    .await?;
-            }
-
-            result.insert(field_name.clone(), field_results);
         }
 
-        Ok(result)
+        Ok(results)
     }
 }
