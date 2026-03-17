@@ -168,7 +168,7 @@ async fn query_view_with_empty_fields_returns_all() {
 }
 
 #[tokio::test]
-async fn mutation_targeting_view_is_rejected() {
+async fn identity_view_write_redirects_to_source() {
     let mut db = setup_db().await;
 
     db.load_schema_from_json(blogpost_schema_json())
@@ -182,11 +182,122 @@ async fn mutation_targeting_view_is_rejected() {
     let view = identity_view("MyView", "BlogPost", "content");
     db.schema_manager.register_view(view).await.unwrap();
 
-    // Try to mutate the view directly — should be rejected
+    // Write through the view — should redirect to BlogPost.content
     let mut mutation_fields = HashMap::new();
-    mutation_fields.insert("content".to_string(), json!("should fail"));
+    mutation_fields.insert("content".to_string(), json!("written via view"));
     let mutation = Mutation::new(
         "MyView".to_string(),
+        mutation_fields,
+        KeyValue::new(None, Some("2026-01-01".to_string())),
+        "pk".to_string(),
+        MutationType::Create,
+    );
+    db.mutation_manager
+        .write_mutations_batch_async(vec![mutation])
+        .await
+        .unwrap();
+
+    // Query the SOURCE schema to verify the write landed there
+    let query = Query::new("BlogPost".to_string(), vec!["content".to_string()]);
+    let results = db.query_executor.query(query).await.unwrap();
+    assert!(results.contains_key("content"));
+    let values: Vec<_> = results["content"].values().map(|fv| fv.value.clone()).collect();
+    assert!(
+        values.contains(&json!("written via view")),
+        "BlogPost.content should contain value written via view, got {:?}",
+        values
+    );
+}
+
+#[tokio::test]
+async fn identity_view_write_invalidates_view_cache() {
+    let mut db = setup_db().await;
+
+    db.load_schema_from_json(blogpost_schema_json())
+        .await
+        .unwrap();
+    db.schema_manager
+        .set_schema_state("BlogPost", SchemaState::Approved)
+        .await
+        .unwrap();
+
+    // Write initial data
+    let mut fields = HashMap::new();
+    fields.insert("content".to_string(), json!("original"));
+    fields.insert("publish_date".to_string(), json!("2026-01-01"));
+    db.mutation_manager
+        .write_mutations_batch_async(vec![Mutation::new(
+            "BlogPost".to_string(),
+            fields,
+            KeyValue::new(None, Some("2026-01-01".to_string())),
+            "pk".to_string(),
+            MutationType::Create,
+        )])
+        .await
+        .unwrap();
+
+    let view = identity_view("CacheView", "BlogPost", "content");
+    db.schema_manager.register_view(view).await.unwrap();
+
+    // Query view to populate cache
+    let query = Query::new("CacheView".to_string(), vec!["content".to_string()]);
+    db.query_executor.query(query.clone()).await.unwrap();
+
+    // Write through the view — should invalidate the cache
+    let mut mutation_fields = HashMap::new();
+    mutation_fields.insert("content".to_string(), json!("updated via view"));
+    db.mutation_manager
+        .write_mutations_batch_async(vec![Mutation::new(
+            "CacheView".to_string(),
+            mutation_fields,
+            KeyValue::new(None, Some("2026-01-02".to_string())),
+            "pk".to_string(),
+            MutationType::Create,
+        )])
+        .await
+        .unwrap();
+
+    // Re-query view — should return fresh data including the new write
+    let results = db.query_executor.query(query).await.unwrap();
+    let values: Vec<_> = results["content"].values().map(|fv| fv.value.clone()).collect();
+    assert!(
+        values.contains(&json!("updated via view")),
+        "View should return fresh data after write-back, got {:?}",
+        values
+    );
+}
+
+#[tokio::test]
+async fn wasm_view_write_is_rejected() {
+    let mut db = setup_db().await;
+
+    db.load_schema_from_json(blogpost_schema_json())
+        .await
+        .unwrap();
+    db.schema_manager
+        .set_schema_state("BlogPost", SchemaState::Approved)
+        .await
+        .unwrap();
+
+    // Register a WASM view (not identity)
+    let view = TransformView::new(
+        "WasmView",
+        SchemaType::Single,
+        None,
+        vec![Query::new(
+            "BlogPost".to_string(),
+            vec!["content".to_string()],
+        )],
+        Some(vec![0, 1, 2]), // Placeholder WASM — won't be executed
+        HashMap::from([("out".to_string(), FieldValueType::String)]),
+    );
+    db.schema_manager.register_view(view).await.unwrap();
+
+    // Try to mutate the WASM view — should be rejected
+    let mut mutation_fields = HashMap::new();
+    mutation_fields.insert("out".to_string(), json!("should fail"));
+    let mutation = Mutation::new(
+        "WasmView".to_string(),
         mutation_fields,
         KeyValue::new(None, Some("2026-01-01".to_string())),
         "pk".to_string(),
@@ -197,5 +308,8 @@ async fn mutation_targeting_view_is_rejected() {
         .write_mutations_batch_async(vec![mutation])
         .await;
     assert!(result.is_err());
-    assert!(result.unwrap_err().to_string().contains("Cannot mutate view"));
+    assert!(
+        result.unwrap_err().to_string().contains("WASM view"),
+        "Should mention WASM view write-back not supported"
+    );
 }
