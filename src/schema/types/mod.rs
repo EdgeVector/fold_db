@@ -1,6 +1,7 @@
 pub mod declarative_schemas;
 pub mod errors;
 pub mod field;
+pub mod field_value_type;
 pub mod key_config;
 pub mod key_value;
 pub mod mutation;
@@ -8,6 +9,7 @@ pub mod operations;
 pub mod schema;
 pub mod transform;
 pub use declarative_schemas::{DeclarativeSchemaDefinition, FieldDefinition, FieldMapper};
+pub use field_value_type::FieldValueType;
 pub use transform::Transform;
 pub use errors::SchemaError;
 pub use field::{Field, FieldType, FieldVariant, RangeField, SingleField};

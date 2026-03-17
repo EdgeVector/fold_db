@@ -387,6 +387,16 @@ impl MutationManager {
 
             // Create atoms in memory (no storage yet)
             for (field_name, value) in &mutation.fields_and_values {
+                // Validate value against declared field type
+                let field_type = schema.get_field_type(field_name);
+                if let Err(type_err) = field_type.validate(value) {
+                    return Err(SchemaError::InvalidData(format!(
+                        "Type error in field '{}' of schema '{}': {}. Expected {}, got {}",
+                        field_name, schema_name, type_err, field_type,
+                        serde_json::to_string(value).unwrap_or_else(|_| "?".to_string())
+                    )));
+                }
+
                 let atom = DbOperations::create_atom(
                     schema_name,
                     &mutation.pub_key,
