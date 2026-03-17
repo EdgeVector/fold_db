@@ -19,6 +19,7 @@ use crate::storage::traits::TypedStore;
 use crate::schema::types::field::{Field, FieldVariant};
 use crate::schema::types::{KeyValue, Mutation, Schema};
 use crate::schema::{SchemaCore, SchemaError};
+use crate::view::types::{TransformFieldState, TransformWriteMode};
 use log::{debug, error, warn};
 use sha2::{Digest, Sha256};
 use std::collections::HashSet;
@@ -82,6 +83,10 @@ impl MutationManager {
         if mutations.is_empty() {
             return Ok(Vec::new());
         }
+
+        // Phase 0: View write interception
+        // Check if any mutations target views and redirect/handle them
+        let mutations = self.intercept_view_mutations(mutations).await?;
 
         log::info!(
             "🔄 write_mutations_batch_async: Starting batch of {} mutations",
@@ -221,6 +226,16 @@ impl MutationManager {
             );
             batch_events.extend(events);
             mutation_ids.extend(ids);
+
+            // Phase 7.5: Invalidate dependent view field caches
+            let fields_affected: Vec<String> = schema_mutations
+                .iter()
+                .flat_map(|m| m.fields_and_values.keys().cloned())
+                .collect::<HashSet<_>>()
+                .into_iter()
+                .collect();
+            self.invalidate_dependent_view_fields(&schema_name, &fields_affected)
+                .await?;
         }
 
         // Phase 8: Finalize — flush, store idempotency records, publish events
@@ -699,6 +714,233 @@ impl MutationManager {
                 .map_err(|e| SchemaError::InvalidData(e.to_string()))?;
         }
         Ok(())
+    }
+
+    // ========== View mutation interception + invalidation ==========
+
+    /// Phase 0: Intercept mutations targeting views and redirect them.
+    ///
+    /// For each mutation whose `schema_name` matches a registered view:
+    /// - Identity fields → create a redirected mutation targeting the source schema.field
+    /// - Reversible fields → run inverse WASM, create redirected mutation targeting source
+    /// - Irreversible fields → store value directly as Overridden in transform_field_states
+    ///
+    /// Returns the (possibly modified) list of mutations to feed into the normal pipeline.
+    async fn intercept_view_mutations(
+        &self,
+        mutations: Vec<Mutation>,
+    ) -> Result<Vec<Mutation>, SchemaError> {
+        let mut result = Vec::new();
+
+        for mutation in mutations {
+            let view_info = {
+                let registry = self
+                    .schema_manager
+                    .view_registry()
+                    .lock()
+                    .map_err(|_| SchemaError::InvalidData("Failed to acquire view_registry lock".to_string()))?;
+                registry.get_view(&mutation.schema_name).cloned()
+            };
+
+            let Some(view) = view_info else {
+                // Not a view — pass through to normal pipeline
+                result.push(mutation);
+                continue;
+            };
+
+            // This mutation targets a view — redirect each field
+            // Group redirected fields by target source schema
+            let mut redirected: HashMap<String, HashMap<String, serde_json::Value>> = HashMap::new();
+
+            for (field_name, value) in &mutation.fields_and_values {
+                let Some(field_def) = view.fields.get(field_name) else {
+                    return Err(SchemaError::InvalidField(format!(
+                        "Field '{}' not found in view '{}'",
+                        field_name, view.name
+                    )));
+                };
+
+                let write_mode = view
+                    .write_modes
+                    .get(field_name)
+                    .copied()
+                    .unwrap_or(TransformWriteMode::Identity);
+
+                match write_mode {
+                    TransformWriteMode::Identity => {
+                        // Pass value directly to source schema.field
+                        redirected
+                            .entry(field_def.source.schema.clone())
+                            .or_default()
+                            .insert(field_def.source.field.clone(), value.clone());
+                    }
+                    TransformWriteMode::Reversible => {
+                        // Run inverse WASM to convert back to source domain
+                        let inverse_bytes = field_def.wasm_inverse.as_ref().ok_or_else(|| {
+                            SchemaError::InvalidTransform(format!(
+                                "Reversible field '{}' in view '{}' missing inverse WASM",
+                                field_name, view.name
+                            ))
+                        })?;
+                        let wasm_engine = {
+                            let registry = self
+                                .schema_manager
+                                .view_registry()
+                                .lock()
+                                .map_err(|_| SchemaError::InvalidData("view_registry lock".to_string()))?;
+                            Arc::clone(registry.wasm_engine())
+                        };
+                        let source_value = wasm_engine.execute(inverse_bytes, value)?;
+                        redirected
+                            .entry(field_def.source.schema.clone())
+                            .or_default()
+                            .insert(field_def.source.field.clone(), source_value);
+                    }
+                    TransformWriteMode::Irreversible => {
+                        // Store directly as Overridden — no redirect to source
+                        let key = mutation.key_value.clone();
+                        let fv = crate::schema::types::field::FieldValue {
+                            value: value.clone(),
+                            atom_uuid: String::new(),
+                            source_file_name: None,
+                            metadata: None,
+                            molecule_uuid: None,
+                            molecule_version: None,
+                        };
+                        let entries = vec![(key, fv)];
+                        let state = TransformFieldState::Overridden { entries };
+                        self.db_ops
+                            .set_transform_field_state(&view.name, field_name, &state)
+                            .await?;
+                    }
+                }
+            }
+
+            // Create redirected mutations for each target source schema
+            for (target_schema, fields_and_values) in redirected {
+                result.push(Mutation {
+                    uuid: uuid::Uuid::new_v4().to_string(),
+                    schema_name: target_schema,
+                    fields_and_values,
+                    key_value: mutation.key_value.clone(),
+                    pub_key: mutation.pub_key.clone(),
+                    mutation_type: mutation.mutation_type.clone(),
+                    synchronous: mutation.synchronous,
+                    source_file_name: mutation.source_file_name.clone(),
+                    metadata: mutation.metadata.clone(),
+                });
+            }
+        }
+
+        Ok(result)
+    }
+
+    /// Phase 7.5: Invalidate cached view fields that depend on mutated source fields.
+    async fn invalidate_dependent_view_fields(
+        &self,
+        schema_name: &str,
+        fields_affected: &[String],
+    ) -> Result<(), SchemaError> {
+        let dependents: Vec<(String, String)> = {
+            let registry = self
+                .schema_manager
+                .view_registry()
+                .lock()
+                .map_err(|_| SchemaError::InvalidData("view_registry lock".to_string()))?;
+
+            let mut all_deps = Vec::new();
+            for field_name in fields_affected {
+                let deps = registry
+                    .dependency_tracker
+                    .get_dependents(schema_name, field_name);
+                all_deps.extend(deps.iter().cloned());
+            }
+            all_deps
+        };
+
+        for (view_name, view_field) in &dependents {
+            let current_state = self
+                .db_ops
+                .get_transform_field_state(view_name, view_field)
+                .await?;
+
+            if matches!(current_state, TransformFieldState::Cached { .. }) {
+                self.db_ops
+                    .set_transform_field_state(
+                        view_name,
+                        view_field,
+                        &TransformFieldState::Empty,
+                    )
+                    .await?;
+                log::debug!(
+                    "Invalidated cached view field {}.{} (source {}.{} mutated)",
+                    view_name,
+                    view_field,
+                    schema_name,
+                    fields_affected.first().unwrap_or(&String::new())
+                );
+            }
+
+            // Cascade: if this view is itself a source for other views, invalidate those too
+            // (recursive via the same mechanism — view_name is checked as a schema_name)
+            self.invalidate_dependent_view_fields_recursive(view_name, view_field, &mut HashSet::new())
+                .await?;
+        }
+
+        Ok(())
+    }
+
+    /// Recursively invalidate cascading view dependencies.
+    fn invalidate_dependent_view_fields_recursive<'a>(
+        &'a self,
+        view_name: &'a str,
+        _view_field: &'a str,
+        visited: &'a mut HashSet<String>,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), SchemaError>> + Send + 'a>> {
+        Box::pin(async move {
+            if !visited.insert(view_name.to_string()) {
+                return Ok(()); // Already visited — cycle guard
+            }
+
+            let cascade_deps: Vec<(String, String)> = {
+                let registry = self
+                    .schema_manager
+                    .view_registry()
+                    .lock()
+                    .map_err(|_| SchemaError::InvalidData("view_registry lock".to_string()))?;
+
+                // Get all fields of this view, then find what depends on each
+                let view = match registry.get_view(view_name) {
+                    Some(v) => v,
+                    None => return Ok(()),
+                };
+
+                let mut deps = Vec::new();
+                for field_name in view.fields.keys() {
+                    let d = registry.dependency_tracker.get_dependents(view_name, field_name);
+                    deps.extend(d.iter().cloned());
+                }
+                deps
+            };
+
+            for (dep_view, dep_field) in &cascade_deps {
+                let current_state = self
+                    .db_ops
+                    .get_transform_field_state(dep_view, dep_field)
+                    .await?;
+
+                if matches!(current_state, TransformFieldState::Cached { .. }) {
+                    self.db_ops
+                        .set_transform_field_state(dep_view, dep_field, &TransformFieldState::Empty)
+                        .await?;
+                }
+
+                self.invalidate_dependent_view_fields_recursive(dep_view, dep_field, visited)
+                    .await?;
+            }
+
+            Ok(())
+        })
     }
 
     /// Start listening for MutationRequest events in a background thread

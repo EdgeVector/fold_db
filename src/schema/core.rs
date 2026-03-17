@@ -7,6 +7,9 @@ use crate::fold_db_core::infrastructure::message_bus::AsyncMessageBus;
 use crate::schema::types::field::Field;
 use crate::schema::types::{DeclarativeSchemaDefinition, Schema, SchemaError};
 use crate::schema::{SchemaState, SchemaWithState};
+use crate::view::registry::{ViewRegistry, ViewState};
+use crate::view::types::TransformView;
+use crate::view::wasm_engine::WasmTransformEngine;
 
 /// Core schema management system that combines schema interpretation, validation, and management.
 ///
@@ -29,6 +32,8 @@ pub struct SchemaCore {
     db_ops: std::sync::Arc<crate::db_operations::DbOperations>,
     /// Message bus for event-driven communication
     message_bus: Arc<AsyncMessageBus>,
+    /// Registry for transform views
+    view_registry: Mutex<ViewRegistry>,
 }
 
 /// Acquire a `Mutex<HashMap<String, T>>` lock, mapping poison errors to `SchemaError`.
@@ -52,12 +57,19 @@ impl SchemaCore {
         let schema_states = db_ops.get_all_schema_states().await?;
         let superseded_by = db_ops.get_all_superseded_by().await?;
 
+        // Load transform views from storage
+        let views = db_ops.get_all_views().await?;
+        let view_states = db_ops.get_all_view_states().await?;
+        let wasm_engine = Arc::new(WasmTransformEngine::new()?);
+        let view_registry = ViewRegistry::load(views, view_states, wasm_engine);
+
         let schema_core = Self {
             schemas: Arc::new(Mutex::new(schemas)),
             schema_states: Arc::new(Mutex::new(schema_states)),
             superseded_by: Arc::new(Mutex::new(superseded_by)),
             db_ops,
             message_bus,
+            view_registry: Mutex::new(view_registry),
         };
 
         Ok(schema_core)
@@ -443,6 +455,138 @@ impl SchemaCore {
             ))
         }
     }
+    // ========== TRANSFORM VIEW API ==========
+
+    /// Register a new transform view. Validates source references, determines write modes,
+    /// checks for cycles, and persists to storage.
+    pub async fn register_view(&self, view: TransformView) -> Result<(), SchemaError> {
+        let view_name = view.name.clone();
+        {
+            let schemas = lock_map(&self.schemas, "schemas")?;
+            let mut registry = self
+                .view_registry
+                .lock()
+                .map_err(|_| SchemaError::InvalidData("Failed to acquire view_registry lock".to_string()))?;
+
+            // Check cross-registry name uniqueness: view name must not collide with a schema
+            if schemas.contains_key(&view.name) {
+                return Err(SchemaError::InvalidData(format!(
+                    "Name '{}' is already used by a schema",
+                    view.name
+                )));
+            }
+
+            registry.register_view(view, |name| schemas.contains_key(name))?;
+        };
+
+        // Re-acquire to get the stored view (with computed write_modes)
+        let view_clone = {
+            let registry = self
+                .view_registry
+                .lock()
+                .map_err(|_| SchemaError::InvalidData("Failed to acquire view_registry lock".to_string()))?;
+            registry.get_view(&view_name).unwrap().clone()
+        };
+
+        // Persist view and state to storage
+        self.db_ops.store_view(&view_clone.name, &view_clone).await?;
+        self.db_ops
+            .store_view_state(&view_clone.name, &ViewState::Available)
+            .await?;
+
+        Ok(())
+    }
+
+    /// Get a view by name.
+    pub fn get_view(&self, name: &str) -> Result<Option<TransformView>, SchemaError> {
+        let registry = self
+            .view_registry
+            .lock()
+            .map_err(|_| SchemaError::InvalidData("Failed to acquire view_registry lock".to_string()))?;
+        Ok(registry.get_view(name).cloned())
+    }
+
+    /// List all views with their states.
+    pub fn get_views_with_states(&self) -> Result<Vec<(TransformView, ViewState)>, SchemaError> {
+        let registry = self
+            .view_registry
+            .lock()
+            .map_err(|_| SchemaError::InvalidData("Failed to acquire view_registry lock".to_string()))?;
+        Ok(registry
+            .get_views_with_states()
+            .into_iter()
+            .map(|(v, s)| (v.clone(), s))
+            .collect())
+    }
+
+    /// Approve a view.
+    pub async fn approve_view(&self, name: &str) -> Result<(), SchemaError> {
+        {
+            let mut registry = self
+                .view_registry
+                .lock()
+                .map_err(|_| SchemaError::InvalidData("Failed to acquire view_registry lock".to_string()))?;
+            registry.approve_view(name)?;
+        }
+        self.db_ops
+            .store_view_state(name, &ViewState::Approved)
+            .await?;
+        Ok(())
+    }
+
+    /// Block a view.
+    pub async fn block_view(&self, name: &str) -> Result<(), SchemaError> {
+        {
+            let mut registry = self
+                .view_registry
+                .lock()
+                .map_err(|_| SchemaError::InvalidData("Failed to acquire view_registry lock".to_string()))?;
+            registry.block_view(name)?;
+        }
+        self.db_ops
+            .store_view_state(name, &ViewState::Blocked)
+            .await?;
+        Ok(())
+    }
+
+    /// Remove a view and clean up storage.
+    pub async fn remove_view(&self, name: &str) -> Result<(), SchemaError> {
+        {
+            let mut registry = self
+                .view_registry
+                .lock()
+                .map_err(|_| SchemaError::InvalidData("Failed to acquire view_registry lock".to_string()))?;
+            registry.remove_view(name)?;
+        }
+        self.db_ops.delete_view(name).await?;
+        self.db_ops.delete_view_state(name).await?;
+        self.db_ops.clear_view_field_states(name).await?;
+        Ok(())
+    }
+
+    /// Check if a name is used by either a schema or a view.
+    pub fn name_exists(&self, name: &str) -> Result<bool, SchemaError> {
+        let schemas = lock_map(&self.schemas, "schemas")?;
+        if schemas.contains_key(name) {
+            return Ok(true);
+        }
+        let registry = self
+            .view_registry
+            .lock()
+            .map_err(|_| SchemaError::InvalidData("Failed to acquire view_registry lock".to_string()))?;
+        Ok(registry.name_exists(name))
+    }
+
+    /// Get the view registry (for query/mutation integration).
+    pub fn view_registry(&self) -> &Mutex<ViewRegistry> {
+        &self.view_registry
+    }
+
+    /// Get the database operations (for view field state access).
+    pub fn db_ops(&self) -> &Arc<crate::db_operations::DbOperations> {
+        &self.db_ops
+    }
+
     /// Creates a new SchemaCore for testing purposes with a temporary database
     pub async fn new_for_testing() -> Result<Self, SchemaError> {
         let db = sled::Config::new()

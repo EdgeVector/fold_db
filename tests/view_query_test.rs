@@ -1,0 +1,172 @@
+use fold_db::fold_db_core::FoldDB;
+use fold_db::schema::types::key_config::KeyConfig;
+use fold_db::schema::types::operations::MutationType;
+use fold_db::schema::types::schema::DeclarativeSchemaType as SchemaType;
+use fold_db::schema::types::{KeyValue, Mutation, Query};
+use fold_db::schema::SchemaState;
+use fold_db::view::types::{FieldRef, TransformFieldDef, TransformView};
+use serde_json::json;
+use std::collections::HashMap;
+
+async fn setup_db() -> FoldDB {
+    let dir = tempfile::tempdir().unwrap();
+    FoldDB::new(dir.path().to_str().unwrap()).await.unwrap()
+}
+
+fn blogpost_schema_json() -> &'static str {
+    r#"{
+        "name": "BlogPost",
+        "key": { "range_field": "publish_date" },
+        "fields": {
+            "title": {},
+            "content": {},
+            "publish_date": {}
+        }
+    }"#
+}
+
+fn identity_view(name: &str, source_schema: &str, source_field: &str) -> TransformView {
+    let mut fields = HashMap::new();
+    fields.insert(
+        "out".into(),
+        TransformFieldDef {
+            source: FieldRef::new(source_schema, source_field),
+            wasm_forward: None,
+            wasm_inverse: None,
+        },
+    );
+    TransformView::new(name, SchemaType::Range, Some(KeyConfig::new(None, Some("publish_date".to_string()))), fields)
+}
+
+#[tokio::test]
+async fn query_identity_view_returns_source_data() {
+    let mut db = setup_db().await;
+
+    // Load and approve a schema
+    db.load_schema_from_json(blogpost_schema_json())
+        .await
+        .unwrap();
+    db.schema_manager
+        .set_schema_state("BlogPost", SchemaState::Approved)
+        .await
+        .unwrap();
+
+    // Write data to the schema
+    let mut fields = HashMap::new();
+    fields.insert("title".to_string(), json!("Hello World"));
+    fields.insert("content".to_string(), json!("Test content"));
+    fields.insert("publish_date".to_string(), json!("2026-01-01"));
+    let mutation = Mutation::new(
+        "BlogPost".to_string(),
+        fields,
+        KeyValue::new(None, Some("2026-01-01".to_string())),
+        "test_pub_key".to_string(),
+        MutationType::Create,
+    );
+    db.mutation_manager
+        .write_mutations_batch_async(vec![mutation])
+        .await
+        .unwrap();
+
+    // Register a view over BlogPost.content
+    let view = identity_view("ContentView", "BlogPost", "content");
+    db.schema_manager.register_view(view).await.unwrap();
+
+    // Query the view — should return the source data
+    let query = Query::new("ContentView".to_string(), vec!["out".to_string()]);
+    let results = db.query_executor.query(query).await.unwrap();
+
+    assert!(results.contains_key("out"), "View field 'out' should be in results");
+    let out_values = &results["out"];
+    assert!(!out_values.is_empty(), "Should have at least one value");
+
+    // The value should be the content from BlogPost
+    let first_value = out_values.values().next().unwrap();
+    assert_eq!(first_value.value, json!("Test content"));
+}
+
+#[tokio::test]
+async fn query_nonexistent_name_errors() {
+    let db = setup_db().await;
+
+    let query = Query::new("DoesNotExist".to_string(), vec![]);
+    let result = db.query_executor.query(query).await;
+    assert!(result.is_err());
+}
+
+#[tokio::test]
+async fn query_blocked_view_errors() {
+    let mut db = setup_db().await;
+
+    db.load_schema_from_json(blogpost_schema_json())
+        .await
+        .unwrap();
+
+    let view = identity_view("BlockedView", "BlogPost", "title");
+    db.schema_manager.register_view(view).await.unwrap();
+    db.schema_manager.block_view("BlockedView").await.unwrap();
+
+    let query = Query::new("BlockedView".to_string(), vec!["out".to_string()]);
+    let result = db.query_executor.query(query).await;
+    assert!(result.is_err());
+    assert!(result.unwrap_err().to_string().contains("blocked"));
+}
+
+#[tokio::test]
+async fn query_view_with_empty_fields_returns_all() {
+    let mut db = setup_db().await;
+
+    db.load_schema_from_json(blogpost_schema_json())
+        .await
+        .unwrap();
+    db.schema_manager
+        .set_schema_state("BlogPost", SchemaState::Approved)
+        .await
+        .unwrap();
+
+    let mut fields = HashMap::new();
+    fields.insert("title".to_string(), json!("Title"));
+    fields.insert("content".to_string(), json!("Body"));
+    fields.insert("publish_date".to_string(), json!("2026-01-01"));
+    db.mutation_manager
+        .write_mutations_batch_async(vec![Mutation::new(
+            "BlogPost".to_string(),
+            fields,
+            KeyValue::new(None, Some("2026-01-01".to_string())),
+            "pk".to_string(),
+            MutationType::Create,
+        )])
+        .await
+        .unwrap();
+
+    // View with two fields
+    let mut view_fields = HashMap::new();
+    view_fields.insert(
+        "view_title".into(),
+        TransformFieldDef {
+            source: FieldRef::new("BlogPost", "title"),
+            wasm_forward: None,
+            wasm_inverse: None,
+        },
+    );
+    view_fields.insert(
+        "view_content".into(),
+        TransformFieldDef {
+            source: FieldRef::new("BlogPost", "content"),
+            wasm_forward: None,
+            wasm_inverse: None,
+        },
+    );
+    db.schema_manager
+        .register_view(TransformView::new("FullView", SchemaType::Range, Some(KeyConfig::new(None, Some("publish_date".to_string()))), view_fields))
+        .await
+        .unwrap();
+
+    // Query with empty fields — should return all view fields
+    let query = Query::new("FullView".to_string(), vec![]);
+    let results = db.query_executor.query(query).await.unwrap();
+
+    assert_eq!(results.len(), 2);
+    assert!(results.contains_key("view_title"));
+    assert!(results.contains_key("view_content"));
+}
