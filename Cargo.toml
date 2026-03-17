@@ -85,6 +85,7 @@ http = "1.4.0"
 
 tracing-subscriber = "0.3"
 tracing = "0.1"
+wat = "1"
 
 [lib]
 name = "fold_db"
