@@ -84,8 +84,8 @@ impl MutationManager {
             return Ok(Vec::new());
         }
 
-        // Phase 0: Reject mutations targeting views
-        self.reject_view_mutations(&mutations).await?;
+        // Phase 0: Redirect identity view mutations to source schemas
+        let mutations = self.redirect_view_mutations(mutations).await?;
 
         log::info!(
             "🔄 write_mutations_batch_async: Starting batch of {} mutations",
@@ -717,28 +717,72 @@ impl MutationManager {
 
     // ========== View mutation rejection + invalidation ==========
 
-    /// Phase 0: Reject mutations targeting views.
-    /// Write-back through views is deferred — mutations must target source schemas directly.
-    async fn reject_view_mutations(
+    /// Phase 0: Redirect mutations targeting identity views to their source schemas.
+    /// WASM views are not writable (would require inverse transforms).
+    async fn redirect_view_mutations(
         &self,
-        mutations: &[Mutation],
-    ) -> Result<(), SchemaError> {
-        let registry = self
-            .schema_manager
-            .view_registry()
-            .lock()
-            .map_err(|_| SchemaError::InvalidData("Failed to acquire view_registry lock".to_string()))?;
+        mutations: Vec<Mutation>,
+    ) -> Result<Vec<Mutation>, SchemaError> {
+        let mut result = Vec::with_capacity(mutations.len());
 
         for mutation in mutations {
-            if registry.get_view(&mutation.schema_name).is_some() {
-                return Err(SchemaError::InvalidData(format!(
-                    "Cannot mutate view '{}' directly. Mutations must target source schemas.",
-                    mutation.schema_name
-                )));
+            let view_info = {
+                let registry = self
+                    .schema_manager
+                    .view_registry()
+                    .lock()
+                    .map_err(|_| SchemaError::InvalidData("Failed to acquire view_registry lock".to_string()))?;
+                registry.get_view(&mutation.schema_name).cloned()
+            };
+
+            let Some(view) = view_info else {
+                // Not a view — pass through to normal pipeline
+                result.push(mutation);
+                continue;
+            };
+
+            // Get source field map (only works for identity views)
+            let field_map = view.source_field_map().ok_or_else(|| {
+                SchemaError::InvalidData(format!(
+                    "Cannot write to WASM view '{}'. Write-back through WASM views is not yet supported.",
+                    view.name
+                ))
+            })?;
+
+            // Group mutation fields by target source schema
+            let mut redirected: HashMap<String, HashMap<String, serde_json::Value>> = HashMap::new();
+
+            for (field_name, value) in &mutation.fields_and_values {
+                let (source_schema, source_field) = field_map.get(field_name).ok_or_else(|| {
+                    SchemaError::InvalidField(format!(
+                        "Field '{}' not found in view '{}'",
+                        field_name, view.name
+                    ))
+                })?;
+
+                redirected
+                    .entry(source_schema.clone())
+                    .or_default()
+                    .insert(source_field.clone(), value.clone());
+            }
+
+            // Create one redirected mutation per source schema
+            for (target_schema, fields_and_values) in redirected {
+                result.push(Mutation {
+                    uuid: uuid::Uuid::new_v4().to_string(),
+                    schema_name: target_schema,
+                    fields_and_values,
+                    key_value: mutation.key_value.clone(),
+                    pub_key: mutation.pub_key.clone(),
+                    mutation_type: mutation.mutation_type.clone(),
+                    synchronous: mutation.synchronous,
+                    source_file_name: mutation.source_file_name.clone(),
+                    metadata: mutation.metadata.clone(),
+                });
             }
         }
 
-        Ok(())
+        Ok(result)
     }
 
     /// Phase 7.5: Invalidate view caches that depend on mutated source fields.

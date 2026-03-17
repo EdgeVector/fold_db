@@ -96,6 +96,26 @@ impl TransformView {
     pub fn is_identity(&self) -> bool {
         self.wasm_transform.is_none()
     }
+
+    /// For identity views, returns output_field → (source_schema, source_field).
+    /// Returns None for WASM views (write-back requires inverse transform).
+    pub fn source_field_map(&self) -> Option<HashMap<String, (String, String)>> {
+        if !self.is_identity() {
+            return None;
+        }
+        let mut map = HashMap::new();
+        for query in &self.input_queries {
+            for field_name in &query.fields {
+                if self.output_fields.contains_key(field_name) {
+                    map.insert(
+                        field_name.clone(),
+                        (query.schema_name.clone(), field_name.clone()),
+                    );
+                }
+            }
+        }
+        Some(map)
+    }
 }
 
 #[cfg(test)]
