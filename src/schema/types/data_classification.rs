@@ -1,4 +1,4 @@
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 /// Standard sensitivity levels for data classification.
 /// Higher values indicate greater sensitivity.
@@ -21,6 +21,9 @@ pub const MAX_SENSITIVITY_LEVEL: u8 = 4;
 /// Labels with different domains are incomparable — cross-domain information
 /// flow requires explicit authorization.
 ///
+/// Validated on construction AND deserialization — sensitivity_level > 4
+/// or empty data_domain will produce an error in both paths.
+///
 /// ```text
 /// ┌───────┬───────────────────┬──────────────────────────────────────────────┐
 /// │ Level │ Name              │ Description                                  │
@@ -32,13 +35,31 @@ pub const MAX_SENSITIVITY_LEVEL: u8 = 4;
 /// │   4   │ Highly Restricted │ Regulated data (HIPAA, financial, biometric). │
 /// └───────┴───────────────────┴──────────────────────────────────────────────┘
 /// ```
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct DataClassification {
     /// Sensitivity level: 0 (Public) through 4 (Highly Restricted).
     pub sensitivity_level: u8,
     /// Data domain tag identifying the type of data (e.g. "financial", "medical",
     /// "identity", "behavioral", "location", "general").
     pub data_domain: String,
+}
+
+// Custom Deserialize that validates sensitivity_level and data_domain,
+// preventing invalid values from entering the system via JSON.
+impl<'de> serde::Deserialize<'de> for DataClassification {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(serde::Deserialize)]
+        struct Helper {
+            sensitivity_level: u8,
+            data_domain: String,
+        }
+        let h = Helper::deserialize(deserializer)?;
+        DataClassification::new(h.sensitivity_level, h.data_domain)
+            .map_err(serde::de::Error::custom)
+    }
 }
 
 impl DataClassification {
@@ -125,6 +146,22 @@ mod tests {
         let json = serde_json::to_string(&c).unwrap();
         let deserialized: DataClassification = serde_json::from_str(&json).unwrap();
         assert_eq!(c, deserialized);
+    }
+
+    #[test]
+    fn test_deserialize_rejects_invalid_level() {
+        let json = r#"{"sensitivity_level": 99, "data_domain": "general"}"#;
+        let result = serde_json::from_str::<DataClassification>(json);
+        assert!(result.is_err(), "should reject sensitivity_level > 4 during deserialization");
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("exceeds maximum"), "error: {}", err);
+    }
+
+    #[test]
+    fn test_deserialize_rejects_empty_domain() {
+        let json = r#"{"sensitivity_level": 0, "data_domain": ""}"#;
+        let result = serde_json::from_str::<DataClassification>(json);
+        assert!(result.is_err(), "should reject empty data_domain during deserialization");
     }
 
     #[test]
