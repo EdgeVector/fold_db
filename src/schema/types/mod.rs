@@ -1,3 +1,4 @@
+pub mod data_classification;
 pub mod declarative_schemas;
 pub mod errors;
 pub mod field;
@@ -8,6 +9,7 @@ pub mod mutation;
 pub mod operations;
 pub mod schema;
 pub mod transform;
+pub use data_classification::DataClassification;
 pub use declarative_schemas::{DeclarativeSchemaDefinition, FieldDefinition, FieldMapper};
 pub use field_value_type::FieldValueType;
 pub use transform::Transform;
