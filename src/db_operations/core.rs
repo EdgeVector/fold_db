@@ -25,6 +25,11 @@ pub struct DbOperations {
     process_results_store: Arc<TypedKvStore<dyn KvStore>>,
     superseded_by_store: Arc<TypedKvStore<dyn KvStore>>,
 
+    /// Transform view storage namespaces
+    views_store: Arc<TypedKvStore<dyn KvStore>>,
+    view_states_store: Arc<TypedKvStore<dyn KvStore>>,
+    transform_field_states_store: Arc<TypedKvStore<dyn KvStore>>,
+
     native_index_manager: Option<NativeIndexManager>,
 }
 
@@ -43,6 +48,9 @@ impl DbOperations {
         let idempotency_kv = store.open_namespace("idempotency").await?;
         let process_results_kv = store.open_namespace("process_results").await?;
         let superseded_by_kv = store.open_namespace("schema_superseded_by").await?;
+        let views_kv = store.open_namespace("views").await?;
+        let view_states_kv = store.open_namespace("view_states").await?;
+        let transform_field_states_kv = store.open_namespace("transform_field_states").await?;
         let native_index_kv = store.open_namespace("native_index").await?;
 
         // Wrap KvStores in TypedKvStore adapters
@@ -55,6 +63,9 @@ impl DbOperations {
         let idempotency_store = Arc::new(TypedKvStore::new(idempotency_kv));
         let process_results_store = Arc::new(TypedKvStore::new(process_results_kv));
         let superseded_by_store = Arc::new(TypedKvStore::new(superseded_by_kv));
+        let views_store = Arc::new(TypedKvStore::new(views_kv));
+        let view_states_store = Arc::new(TypedKvStore::new(view_states_kv));
+        let transform_field_states_store = Arc::new(TypedKvStore::new(transform_field_states_kv));
 
         // Create native index manager and load any previously stored embeddings
         let native_index_manager = NativeIndexManager::new(native_index_kv);
@@ -70,6 +81,9 @@ impl DbOperations {
             idempotency_store,
             process_results_store,
             superseded_by_store,
+            views_store,
+            view_states_store,
+            transform_field_states_store,
             native_index_manager: Some(native_index_manager),
         })
     }
@@ -141,6 +155,18 @@ impl DbOperations {
 
     pub fn native_index_manager(&self) -> Option<&NativeIndexManager> {
         self.native_index_manager.as_ref()
+    }
+
+    pub fn views_store(&self) -> &Arc<TypedKvStore<dyn KvStore>> {
+        &self.views_store
+    }
+
+    pub fn view_states_store(&self) -> &Arc<TypedKvStore<dyn KvStore>> {
+        &self.view_states_store
+    }
+
+    pub fn transform_field_states_store(&self) -> &Arc<TypedKvStore<dyn KvStore>> {
+        &self.transform_field_states_store
     }
 
     /// Get atoms/molecules store (same as main_store for backward compatibility)

@@ -9,6 +9,7 @@ default = []
 ts-bindings = ["ts-rs"]  # Generate TypeScript bindings when enabled
 cli = ["dep:clap", "dep:clap_complete"]  # CLI tooling (clap derives)
 aws-backend = ["aws-config", "aws-sdk-dynamodb", "aws-sdk-s3", "aws-sdk-sns", "aws-sdk-sqs", "serde_dynamo"]  # AWS backends (DynamoDB, S3, SNS, SQS)
+transform-wasm = ["dep:wasmtime"]  # Enable WASM transform execution for views
 test-utils = []  # Expose test helpers (MockEmbeddingModel, etc.) for integration tests
 
 [dependencies]
@@ -64,6 +65,9 @@ reqwest = { version = "0.11", features = ["json", "multipart"] }
 # Vector embedding model for semantic search
 fastembed = "4"
 
+# WASM runtime for transform views
+wasmtime = { version = "29", optional = true }
+
 # AWS SDK
 aws-config = { version = "1.0", optional = true }
 aws-sdk-dynamodb = { version = "1.0", optional = true }
@@ -81,6 +85,7 @@ http = "1.4.0"
 
 tracing-subscriber = "0.3"
 tracing = "0.1"
+wat = "1"
 
 [lib]
 name = "fold_db"

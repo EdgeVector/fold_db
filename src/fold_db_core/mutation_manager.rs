@@ -19,6 +19,7 @@ use crate::storage::traits::TypedStore;
 use crate::schema::types::field::{Field, FieldVariant};
 use crate::schema::types::{KeyValue, Mutation, Schema};
 use crate::schema::{SchemaCore, SchemaError};
+use crate::view::types::ViewCacheState;
 use log::{debug, error, warn};
 use sha2::{Digest, Sha256};
 use std::collections::HashSet;
@@ -82,6 +83,9 @@ impl MutationManager {
         if mutations.is_empty() {
             return Ok(Vec::new());
         }
+
+        // Phase 0: Redirect identity view mutations to source schemas
+        let mutations = self.redirect_view_mutations(mutations).await?;
 
         log::info!(
             "🔄 write_mutations_batch_async: Starting batch of {} mutations",
@@ -221,6 +225,16 @@ impl MutationManager {
             );
             batch_events.extend(events);
             mutation_ids.extend(ids);
+
+            // Phase 7.5: Invalidate dependent view caches
+            let fields_affected: Vec<String> = schema_mutations
+                .iter()
+                .flat_map(|m| m.fields_and_values.keys().cloned())
+                .collect::<HashSet<_>>()
+                .into_iter()
+                .collect();
+            self.invalidate_dependent_view_caches(&schema_name, &fields_affected)
+                .await?;
         }
 
         // Phase 8: Finalize — flush, store idempotency records, publish events
@@ -699,6 +713,176 @@ impl MutationManager {
                 .map_err(|e| SchemaError::InvalidData(e.to_string()))?;
         }
         Ok(())
+    }
+
+    // ========== View mutation rejection + invalidation ==========
+
+    /// Phase 0: Redirect mutations targeting identity views to their source schemas.
+    /// WASM views are not writable (would require inverse transforms).
+    async fn redirect_view_mutations(
+        &self,
+        mutations: Vec<Mutation>,
+    ) -> Result<Vec<Mutation>, SchemaError> {
+        let mut result = Vec::with_capacity(mutations.len());
+
+        for mutation in mutations {
+            let view_info = {
+                let registry = self
+                    .schema_manager
+                    .view_registry()
+                    .lock()
+                    .map_err(|_| SchemaError::InvalidData("Failed to acquire view_registry lock".to_string()))?;
+                registry.get_view(&mutation.schema_name).cloned()
+            };
+
+            let Some(view) = view_info else {
+                // Not a view — pass through to normal pipeline
+                result.push(mutation);
+                continue;
+            };
+
+            // Get source field map (only works for identity views)
+            let field_map = view.source_field_map().ok_or_else(|| {
+                SchemaError::InvalidData(format!(
+                    "Cannot write to WASM view '{}'. Write-back through WASM views is not yet supported.",
+                    view.name
+                ))
+            })?;
+
+            // Group mutation fields by target source schema
+            let mut redirected: HashMap<String, HashMap<String, serde_json::Value>> = HashMap::new();
+
+            for (field_name, value) in &mutation.fields_and_values {
+                let (source_schema, source_field) = field_map.get(field_name).ok_or_else(|| {
+                    SchemaError::InvalidField(format!(
+                        "Field '{}' not found in view '{}'",
+                        field_name, view.name
+                    ))
+                })?;
+
+                redirected
+                    .entry(source_schema.clone())
+                    .or_default()
+                    .insert(source_field.clone(), value.clone());
+            }
+
+            // Create one redirected mutation per source schema
+            for (target_schema, fields_and_values) in redirected {
+                result.push(Mutation {
+                    uuid: uuid::Uuid::new_v4().to_string(),
+                    schema_name: target_schema,
+                    fields_and_values,
+                    key_value: mutation.key_value.clone(),
+                    pub_key: mutation.pub_key.clone(),
+                    mutation_type: mutation.mutation_type.clone(),
+                    synchronous: mutation.synchronous,
+                    source_file_name: mutation.source_file_name.clone(),
+                    metadata: mutation.metadata.clone(),
+                });
+            }
+        }
+
+        Ok(result)
+    }
+
+    /// Phase 7.5: Invalidate view caches that depend on mutated source fields.
+    /// Operates at the view level (not per-field).
+    async fn invalidate_dependent_view_caches(
+        &self,
+        schema_name: &str,
+        fields_affected: &[String],
+    ) -> Result<(), SchemaError> {
+        // Collect all view names that depend on any of the affected fields
+        let dependent_views: HashSet<String> = {
+            let registry = self
+                .schema_manager
+                .view_registry()
+                .lock()
+                .map_err(|_| SchemaError::InvalidData("view_registry lock".to_string()))?;
+
+            let mut views = HashSet::new();
+            for field_name in fields_affected {
+                let deps = registry
+                    .dependency_tracker
+                    .get_dependents(schema_name, field_name);
+                for view_name in deps {
+                    views.insert(view_name.clone());
+                }
+            }
+            views
+        };
+
+        // Invalidate each dependent view's cache
+        for view_name in &dependent_views {
+            let current_state = self
+                .db_ops
+                .get_view_cache_state(view_name)
+                .await?;
+
+            if matches!(current_state, ViewCacheState::Cached { .. }) {
+                self.db_ops
+                    .set_view_cache_state(view_name, &ViewCacheState::Empty)
+                    .await?;
+                log::debug!(
+                    "Invalidated view cache '{}' (source {}.{} mutated)",
+                    view_name,
+                    schema_name,
+                    fields_affected.first().unwrap_or(&String::new())
+                );
+            }
+
+            // Cascade: if this view is a source for other views, invalidate those too
+            self.invalidate_cascading_view_caches(view_name, &mut HashSet::new())
+                .await?;
+        }
+
+        Ok(())
+    }
+
+    /// Recursively invalidate cascading view dependencies.
+    fn invalidate_cascading_view_caches<'a>(
+        &'a self,
+        view_name: &'a str,
+        visited: &'a mut HashSet<String>,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), SchemaError>> + Send + 'a>> {
+        Box::pin(async move {
+            if !visited.insert(view_name.to_string()) {
+                return Ok(()); // Already visited — cycle guard
+            }
+
+            // Find all views whose input queries reference this view as a source
+            let cascade_views: Vec<String> = {
+                let registry = self
+                    .schema_manager
+                    .view_registry()
+                    .lock()
+                    .map_err(|_| SchemaError::InvalidData("view_registry lock".to_string()))?;
+
+                if registry.get_view(view_name).is_none() {
+                    return Ok(());
+                }
+
+                registry.dependency_tracker.get_all_dependents_of_schema(view_name)
+            };
+
+            for dep_view in &cascade_views {
+                let current_state = self
+                    .db_ops
+                    .get_view_cache_state(dep_view)
+                    .await?;
+
+                if matches!(current_state, ViewCacheState::Cached { .. }) {
+                    self.db_ops
+                        .set_view_cache_state(dep_view, &ViewCacheState::Empty)
+                        .await?;
+                }
+
+                self.invalidate_cascading_view_caches(dep_view, visited)
+                    .await?;
+            }
+
+            Ok(())
+        })
     }
 
     /// Start listening for MutationRequest events in a background thread

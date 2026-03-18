@@ -37,6 +37,7 @@ pub mod schema_service;
 pub mod storage;
 pub mod sync;
 pub mod testing_utils;
+pub mod view;
 
 // Re-export main types for convenience
 pub use error::{FoldDbError, FoldDbResult};
