@@ -3,6 +3,7 @@
 //! A standalone schema registry that provides schema discovery, deduplication,
 //! semantic similarity matching, field canonicalization, and view management.
 
+pub mod classify;
 mod state_expansion;
 mod state_fields;
 mod state_matching;
