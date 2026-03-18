@@ -1,3 +1,4 @@
+use crate::schema::types::data_classification::DataClassification;
 use crate::schema::types::field::Field;
 use crate::schema::types::key_config::KeyConfig;
 use crate::schema::types::schema::DeclarativeSchemaType as SchemaType;
@@ -124,6 +125,8 @@ impl<'de> serde::Deserialize<'de> for DeclarativeSchemaDefinition {
             #[serde(default)]
             field_descriptions: HashMap<String, String>,
             #[serde(default)]
+            field_data_classifications: HashMap<String, DataClassification>,
+            #[serde(default)]
             ref_fields: HashMap<String, String>,
             #[serde(default)]
             field_types: HashMap<String, crate::schema::types::field_value_type::FieldValueType>,
@@ -202,8 +205,9 @@ impl<'de> serde::Deserialize<'de> for DeclarativeSchemaDefinition {
             schema.field_classifications.insert(field_name, classifications);
         }
 
-        // Preserve field_descriptions, ref_fields, field_types and identity_hash
+        // Preserve field_descriptions, field_data_classifications, ref_fields, field_types and identity_hash
         schema.field_descriptions = helper.field_descriptions;
+        schema.field_data_classifications = helper.field_data_classifications;
         schema.ref_fields = helper.ref_fields;
         schema.field_types = helper.field_types;
         schema.identity_hash = helper.identity_hash;
@@ -257,6 +261,10 @@ pub struct DeclarativeSchemaDefinition {
     /// Maps field_name -> description string. Used for semantic field matching in the canonical registry.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub field_descriptions: HashMap<String, String>,
+    /// Data classification labels for each field: (sensitivity_level, data_domain).
+    /// Maps field_name -> DataClassification. Required for new fields at schema creation.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub field_data_classifications: HashMap<String, DataClassification>,
     /// Reference fields that point to child schemas
     /// Maps field_name -> child_schema_name
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
@@ -309,6 +317,7 @@ impl PartialEq for DeclarativeSchemaDefinition {
             && self.hash == other.hash
             && self.field_molecule_uuids == other.field_molecule_uuids
             && self.field_classifications == other.field_classifications
+            && self.field_data_classifications == other.field_data_classifications
             && self.ref_fields == other.ref_fields
             && self.field_types == other.field_types
             && self.identity_hash == other.identity_hash
@@ -446,6 +455,7 @@ impl DeclarativeSchemaDefinition {
             field_molecule_uuids: None,
             field_classifications: HashMap::new(),
             field_descriptions: HashMap::new(),
+            field_data_classifications: HashMap::new(),
             ref_fields: HashMap::new(),
             field_types: HashMap::new(),
             identity_hash: None,
