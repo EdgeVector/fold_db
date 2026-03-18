@@ -73,35 +73,86 @@ impl SchemaServiceState {
 
     /// Register new fields from a schema as canonical.
     /// Only adds fields that don't already exist in the registry.
-    pub(super) fn register_canonical_fields(&self, schema: &Schema) {
+    ///
+    /// The schema service is the authority on classification. For each new field:
+    /// 1. Use caller-provided classification if present
+    /// 2. LLM call to analyze field description (requires ANTHROPIC_API_KEY)
+    /// 3. No fallback — returns error if classification cannot be determined
+    pub(super) async fn register_canonical_fields(
+        &self,
+        schema: &Schema,
+    ) -> FoldDbResult<()> {
         let field_names = schema.fields.as_deref().unwrap_or(&[]);
 
-        let mut fields = match self.canonical_fields.write() {
-            Ok(f) => f,
-            Err(_) => return,
-        };
-        let mut embeddings = match self.canonical_field_embeddings.write() {
-            Ok(e) => e,
-            Err(_) => return,
+        // Phase 1: Identify new fields (read lock only)
+        let new_fields: Vec<String> = {
+            let fields = self.canonical_fields.read().map_err(|_| {
+                FoldDbError::Config("Failed to acquire canonical_fields read lock".to_string())
+            })?;
+            field_names
+                .iter()
+                .filter(|f| !fields.contains_key(*f))
+                .cloned()
+                .collect()
         };
 
-        for field_name in field_names {
-            if fields.contains_key(field_name) {
-                continue;
-            }
+        if new_fields.is_empty() {
+            return Ok(());
+        }
+
+        // Phase 2: Build canonical entries with inferred classifications (no locks held)
+        let mut entries: Vec<(String, CanonicalField, Option<Vec<f32>>)> = Vec::new();
+
+        for field_name in &new_fields {
             let desc = Self::build_field_description(field_name, schema);
             let field_type = Self::infer_field_type(field_name, schema);
+            let caller_provided = schema.field_data_classifications.get(field_name);
+
+            let classification = super::classify::infer_classification(
+                field_name,
+                &desc,
+                caller_provided,
+            )
+            .await
+            .map_err(FoldDbError::Config)?;
+
             let embed_text = Self::build_embedding_text(field_name, &desc);
-            if let Ok(vec) = self.embedder.embed_text(&embed_text) {
+            let embedding = self.embedder.embed_text(&embed_text).ok();
+
+            entries.push((
+                field_name.clone(),
+                CanonicalField {
+                    description: desc,
+                    field_type,
+                    classification: Some(classification),
+                },
+                embedding,
+            ));
+        }
+
+        // Phase 3: Store under write locks
+        let mut fields = self.canonical_fields.write().map_err(|_| {
+            FoldDbError::Config("Failed to acquire canonical_fields write lock".to_string())
+        })?;
+        let mut embeddings = self.canonical_field_embeddings.write().map_err(|_| {
+            FoldDbError::Config(
+                "Failed to acquire canonical_field_embeddings write lock".to_string(),
+            )
+        })?;
+
+        for (field_name, canonical, embedding) in entries {
+            // Re-check in case another thread registered it between phase 1 and 3
+            if fields.contains_key(&field_name) {
+                continue;
+            }
+            if let Some(vec) = embedding {
                 embeddings.insert(field_name.clone(), vec);
             }
-            let canonical = CanonicalField {
-                description: desc,
-                field_type,
-            };
-            self.persist_canonical_field(field_name, &canonical);
-            fields.insert(field_name.clone(), canonical);
+            self.persist_canonical_field(&field_name, &canonical);
+            fields.insert(field_name, canonical);
         }
+
+        Ok(())
     }
 
     /// Canonicalize incoming field names against the global canonical field registry.
@@ -232,6 +283,7 @@ impl SchemaServiceState {
                     CanonicalField {
                         description: desc,
                         field_type: FieldValueType::Any,
+                        classification: None,
                     }
                 };
 
@@ -284,6 +336,7 @@ impl SchemaServiceState {
                         CanonicalField {
                             description: desc,
                             field_type,
+                            classification: None,
                         },
                     );
                 }
@@ -334,6 +387,30 @@ impl SchemaServiceState {
                     schema
                         .field_types
                         .insert(field_name.clone(), canonical.field_type.clone());
+                }
+            }
+        }
+    }
+
+    /// Populate a schema's `field_data_classifications` map from the canonical field registry.
+    /// Called after canonicalization to propagate classifications from the registry to the schema.
+    /// Only fills in fields that don't already have a classification declared.
+    pub(super) fn apply_canonical_classifications(&self, schema: &mut Schema) {
+        let fields = match self.canonical_fields.read() {
+            Ok(f) => f,
+            Err(_) => return,
+        };
+
+        for field_name in schema.fields.as_deref().unwrap_or(&[]) {
+            // Skip if the schema already has a classification for this field
+            if schema.field_data_classifications.contains_key(field_name) {
+                continue;
+            }
+            if let Some(canonical) = fields.get(field_name) {
+                if let Some(ref classification) = canonical.classification {
+                    schema
+                        .field_data_classifications
+                        .insert(field_name.clone(), classification.clone());
                 }
             }
         }

@@ -1,3 +1,4 @@
+use crate::schema::types::data_classification::DataClassification;
 use crate::schema::types::field_value_type::FieldValueType;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -7,11 +8,16 @@ use crate::schema::types::schema::DeclarativeSchemaType;
 use crate::schema::types::Schema;
 
 /// A canonical field entry in the global field registry.
-/// Carries description (for semantic matching) and type (for enforcement).
+/// Carries description (for semantic matching), type (for enforcement),
+/// and optional data classification (for sensitivity labeling).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CanonicalField {
     pub description: String,
     pub field_type: FieldValueType,
+    /// Data classification label for this field. `None` for legacy fields
+    /// that were registered before classification was required.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub classification: Option<DataClassification>,
 }
 
 /// Response containing a list of available schema names
@@ -165,6 +171,9 @@ pub struct AddViewRequest {
     /// Classifications for each output field
     #[serde(default)]
     pub field_classifications: HashMap<String, Vec<String>>,
+    /// Data classifications for each output field (sensitivity + domain)
+    #[serde(default)]
+    pub field_data_classifications: HashMap<String, DataClassification>,
     /// Optional WASM transform bytes
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub wasm_bytes: Option<Vec<u8>>,

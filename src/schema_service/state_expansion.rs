@@ -191,13 +191,19 @@ impl SchemaServiceState {
             }
         }
 
-        // Rename in field_classifications
+        // Rename in field_classifications and field_data_classifications
         for (old_name, canonical) in rename_map {
             if let Some(classifications) = schema.field_classifications.remove(old_name) {
                 schema
                     .field_classifications
                     .entry(canonical.clone())
                     .or_insert(classifications);
+            }
+            if let Some(data_classification) = schema.field_data_classifications.remove(old_name) {
+                schema
+                    .field_data_classifications
+                    .entry(canonical.clone())
+                    .or_insert(data_classification);
             }
             // Add mutation_mapper: old_name → canonical so AI mutations still work
             mutation_mappers
@@ -281,6 +287,14 @@ impl SchemaServiceState {
                 .or_insert_with(|| classifications.clone());
         }
 
+        // Merge field_data_classifications (keep existing, add new)
+        for (field, classification) in &existing.field_data_classifications {
+            schema
+                .field_data_classifications
+                .entry(field.clone())
+                .or_insert_with(|| classification.clone());
+        }
+
         // Merge ref_fields (keep existing references)
         for (field, target) in &existing.ref_fields {
             schema
@@ -322,11 +336,13 @@ impl SchemaServiceState {
             index.insert(desc_name.to_string(), expanded_name);
         }
 
-        // Register new fields as canonical for future schema proposals
-        self.register_canonical_fields(schema);
+        // Register new fields as canonical for future schema proposals.
+        // Fails if classification cannot be determined (no ANTHROPIC_API_KEY for new fields).
+        self.register_canonical_fields(schema).await?;
 
-        // Propagate canonical field types to the expanded schema
+        // Propagate canonical field types and classifications to the expanded schema
         self.apply_canonical_types(schema);
+        self.apply_canonical_classifications(schema);
 
         log_feature!(
             LogFeature::Schema,

@@ -578,11 +578,13 @@ impl SchemaServiceState {
             }
         }
 
-        // Register new fields as canonical for future schema proposals
-        self.register_canonical_fields(&schema);
+        // Register new fields as canonical for future schema proposals.
+        // Fails if classification cannot be determined (no ANTHROPIC_API_KEY for new fields).
+        self.register_canonical_fields(&schema).await?;
 
-        // Propagate canonical field types to the schema
+        // Propagate canonical field types and classifications to the schema
         self.apply_canonical_types(&mut schema);
+        self.apply_canonical_classifications(&mut schema);
 
         log_feature!(
             LogFeature::Schema,
@@ -861,6 +863,7 @@ impl SchemaServiceState {
         output_schema.descriptive_name = Some(request.descriptive_name.clone());
         output_schema.field_descriptions = request.field_descriptions.clone();
         output_schema.field_classifications = request.field_classifications.clone();
+        output_schema.field_data_classifications = request.field_data_classifications.clone();
         output_schema.schema_type = request.schema_type.clone();
 
         // Run through the full schema pipeline (similarity, canonicalization, dedup, expansion)
