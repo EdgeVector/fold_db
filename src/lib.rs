@@ -33,6 +33,7 @@ pub mod logging;
 pub mod progress;
 pub mod schema;
 pub mod security;
+pub mod schema_service;
 pub mod storage;
 pub mod sync;
 pub mod testing_utils;
