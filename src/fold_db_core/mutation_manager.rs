@@ -902,20 +902,25 @@ impl MutationManager {
             self.collect_cascade_views(view_name, &mut visited, &mut all_invalidated)?;
         }
 
-        // Invalidate all collected views
+        // Invalidate all collected views (both Cached and Computing).
+        // Computing views must also be reset: a background precompute task
+        // started before this mutation holds stale source data. Resetting to
+        // Empty ensures the precompute task's check-before-store sees Empty
+        // and the view will be re-precomputed with fresh data.
         for view_name in &all_invalidated {
             let current_state = self
                 .db_ops
                 .get_view_cache_state(view_name)
                 .await?;
 
-            if matches!(current_state, ViewCacheState::Cached { .. }) {
+            if !current_state.is_empty() {
                 self.db_ops
                     .set_view_cache_state(view_name, &ViewCacheState::Empty)
                     .await?;
                 log::debug!(
-                    "Invalidated view cache '{}' (source {}.{} mutated)",
+                    "Invalidated view cache '{}' ({:?} → Empty, source {}.{} mutated)",
                     view_name,
+                    current_state,
                     schema_name,
                     fields_affected.first().unwrap_or(&String::new())
                 );
@@ -958,8 +963,10 @@ impl MutationManager {
         };
 
         for dep in &cascade_views {
-            result.push(dep.clone());
-            self.collect_cascade_views(dep, visited, result)?;
+            if !visited.contains(dep) {
+                result.push(dep.clone());
+                self.collect_cascade_views(dep, visited, result)?;
+            }
         }
 
         Ok(())
@@ -980,32 +987,59 @@ impl MutationManager {
 
         let invalidated_set: HashSet<&str> = invalidated.iter().map(|s| s.as_str()).collect();
 
-        // Classify each view as level-1 (only schema sources) or deep (has view sources)
+        // Classify each view as level-1 (only schema sources) or deep (has view sources).
+        // Also build an adjacency map for topological sorting.
         let mut deep: HashSet<String> = HashSet::new();
-        let mut all: Vec<String> = Vec::new();
+        let mut in_degree: HashMap<String, usize> = HashMap::new();
+        // view_name → list of views that depend on it (within the invalidated set)
+        let mut dependents_of: HashMap<String, Vec<String>> = HashMap::new();
 
         for view_name in invalidated {
             if let Some(view) = registry.get_view(view_name) {
-                let has_view_source = view.source_schemas().iter().any(|source| {
-                    registry.get_view(source).is_some()
-                        && invalidated_set.contains(source.as_str())
-                });
-                if has_view_source {
+                let view_sources_in_set: Vec<String> = view
+                    .source_schemas()
+                    .into_iter()
+                    .filter(|source| {
+                        registry.get_view(source).is_some()
+                            && invalidated_set.contains(source.as_str())
+                    })
+                    .collect();
+
+                if !view_sources_in_set.is_empty() {
                     deep.insert(view_name.clone());
                 }
-                all.push(view_name.clone());
+
+                in_degree.insert(view_name.clone(), view_sources_in_set.len());
+                for source in view_sources_in_set {
+                    dependents_of
+                        .entry(source)
+                        .or_default()
+                        .push(view_name.clone());
+                }
             }
         }
 
-        // Sort bottom-up: views with fewer view-dependencies come first
-        let all_set: HashSet<String> = all.iter().cloned().collect();
-        all.sort_by_key(|name| {
-            let view = registry.get_view(name).unwrap();
-            view.source_schemas()
-                .iter()
-                .filter(|s| all_set.contains(*s))
-                .count()
-        });
+        // Kahn's algorithm: topological sort so leaves (in_degree=0) come first
+        let mut queue: std::collections::VecDeque<String> = in_degree
+            .iter()
+            .filter(|(_, &deg)| deg == 0)
+            .map(|(name, _)| name.clone())
+            .collect();
+        let mut all: Vec<String> = Vec::new();
+
+        while let Some(current) = queue.pop_front() {
+            all.push(current.clone());
+            if let Some(deps) = dependents_of.get(&current) {
+                for dep in deps {
+                    if let Some(deg) = in_degree.get_mut(dep) {
+                        *deg = deg.saturating_sub(1);
+                        if *deg == 0 {
+                            queue.push_back(dep.clone());
+                        }
+                    }
+                }
+            }
+        }
 
         Ok((all, deep))
     }

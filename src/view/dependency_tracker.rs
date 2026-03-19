@@ -66,11 +66,17 @@ impl DependencyTracker {
         }
     }
 
-    /// Check if adding a view would create a dependency cycle.
+    /// Maximum allowed depth for view dependency chains.
+    /// Prevents runaway recursion in cascade invalidation and precomputation.
+    pub const MAX_DEPTH: usize = 16;
+
+    /// Check if adding a view would create a dependency cycle or exceed the
+    /// maximum chain depth.
     ///
     /// A cycle exists if the new view reads from a source that (transitively)
     /// reads from the new view. Since views can be sources for other views,
-    /// we perform DFS through the dependency graph.
+    /// we perform DFS through the dependency graph. The depth of the new view
+    /// in the dependency chain must also not exceed `MAX_DEPTH`.
     pub fn would_create_cycle(
         &self,
         new_view_name: &str,
@@ -82,11 +88,16 @@ impl DependencyTracker {
 
         // DFS: check if any source schema transitively depends on new_view_name
         let mut visited = HashSet::new();
-        let mut stack: Vec<String> = sources.into_iter().collect();
+        // (view_name, depth)
+        let mut stack: Vec<(String, usize)> =
+            sources.into_iter().map(|s| (s, 1)).collect();
 
-        while let Some(current) = stack.pop() {
+        while let Some((current, depth)) = stack.pop() {
             if current == new_view_name {
                 return true; // Cycle detected
+            }
+            if depth > Self::MAX_DEPTH {
+                return true; // Depth limit exceeded
             }
             if !visited.insert(current.clone()) {
                 continue; // Already visited
@@ -94,7 +105,7 @@ impl DependencyTracker {
             // If `current` is itself a view, check what it reads from
             if let Some(view) = existing_views.get(&current) {
                 for schema_name in view.source_schemas() {
-                    stack.push(schema_name);
+                    stack.push((schema_name, depth + 1));
                 }
             }
         }
@@ -267,5 +278,55 @@ mod tests {
         assert_eq!(tracker.get_dependents("BlogPost", "title").len(), 1);
         assert_eq!(tracker.get_dependents("BlogPost", "content").len(), 1);
         assert_eq!(tracker.get_dependents("Author", "name").len(), 1);
+    }
+
+    #[test]
+    fn test_depth_limit_exceeded() {
+        let tracker = DependencyTracker::new();
+
+        // Build a chain of MAX_DEPTH + 1 views: V0 → V1 → V2 → ... → V(MAX_DEPTH)
+        let mut existing = HashMap::new();
+        for i in 0..DependencyTracker::MAX_DEPTH {
+            let source = if i == 0 {
+                "BaseSchema".to_string()
+            } else {
+                format!("V{}", i - 1)
+            };
+            let view = make_view(&format!("V{}", i), vec![(&source, vec!["f1"])]);
+            existing.insert(format!("V{}", i), view);
+        }
+
+        // Adding one more layer should be rejected (depth limit)
+        let last = format!("V{}", DependencyTracker::MAX_DEPTH - 1);
+        let new_view = make_view("VTooDeep", vec![(&last, vec!["f1"])]);
+        assert!(
+            tracker.would_create_cycle("VTooDeep", &new_view, &existing),
+            "Should reject view chain exceeding MAX_DEPTH"
+        );
+    }
+
+    #[test]
+    fn test_depth_at_limit_is_allowed() {
+        let tracker = DependencyTracker::new();
+
+        // Build a chain of exactly MAX_DEPTH - 1 views (so the new view is at depth MAX_DEPTH)
+        let mut existing = HashMap::new();
+        for i in 0..(DependencyTracker::MAX_DEPTH - 1) {
+            let source = if i == 0 {
+                "BaseSchema".to_string()
+            } else {
+                format!("V{}", i - 1)
+            };
+            let view = make_view(&format!("V{}", i), vec![(&source, vec!["f1"])]);
+            existing.insert(format!("V{}", i), view);
+        }
+
+        // Adding at exactly MAX_DEPTH should be allowed
+        let last = format!("V{}", DependencyTracker::MAX_DEPTH - 2);
+        let new_view = make_view("VAtLimit", vec![(&last, vec!["f1"])]);
+        assert!(
+            !tracker.would_create_cycle("VAtLimit", &new_view, &existing),
+            "Should allow view chain at exactly MAX_DEPTH"
+        );
     }
 }
