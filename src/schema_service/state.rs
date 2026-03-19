@@ -1051,22 +1051,14 @@ impl SchemaServiceState {
             }
             #[cfg(feature = "aws-backend")]
             SchemaStorage::Cloud { store } => {
-                // Load views from DynamoDB: they're stored with VIEW# prefix
+                // Load views from DynamoDB: they're stored with VIEW# prefix.
+                // Collect all async work first, then acquire the write lock to avoid
+                // holding a !Send RwLockWriteGuard across .await points.
                 let all_schemas = store.get_all_schemas().await?;
-                let mut views = self.views.write().map_err(|_| {
-                    FoldDbError::Config("Failed to acquire views write lock".to_string())
-                })?;
-                views.clear();
 
-                for schema in all_schemas {
+                for schema in &all_schemas {
                     if schema.name.starts_with("VIEW#") {
-                        // This is a view entry; extract the view JSON from mutation_mappers
-                        // We need to re-fetch with mappers to get the view JSON
-                        // For now, try to get the schema with mappers
                         if let Ok(Some(raw_schema)) = store.get_schema(&schema.name).await {
-                            // The view JSON was stored in field_descriptions as a workaround
-                            // Actually, we stored it in mutation_mappers with key __view_json__
-                            // We need a different approach for cloud storage
                             log_feature!(
                                 LogFeature::Schema,
                                 warn,
@@ -1076,6 +1068,11 @@ impl SchemaServiceState {
                         }
                     }
                 }
+
+                let mut views = self.views.write().map_err(|_| {
+                    FoldDbError::Config("Failed to acquire views write lock".to_string())
+                })?;
+                views.clear();
             }
         }
         Ok(())
