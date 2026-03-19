@@ -19,10 +19,83 @@ use crate::storage::traits::TypedStore;
 use crate::schema::types::field::{Field, FieldVariant};
 use crate::schema::types::{KeyValue, Mutation, Schema};
 use crate::schema::{SchemaCore, SchemaError};
+use crate::view::resolver::{SourceQueryFn, ViewResolver};
 use crate::view::types::ViewCacheState;
 use log::{debug, error, warn};
 use sha2::{Digest, Sha256};
 use std::collections::HashSet;
+
+/// Source query implementation for background precomputation.
+/// Resolves sources from schemas or cached views (does NOT recurse into
+/// uncached views — those should already be computed by the time we need them,
+/// since we process in bottom-up order).
+struct PrecomputeSourceQuery {
+    schema_manager: Arc<SchemaCore>,
+    db_ops: Arc<DbOperations>,
+    hash_range_processor: super::query::hash_range_query::HashRangeQueryProcessor,
+    view_resolver: ViewResolver,
+}
+
+#[async_trait::async_trait]
+impl SourceQueryFn for PrecomputeSourceQuery {
+    async fn execute_query(
+        &self,
+        query: &crate::schema::types::operations::Query,
+    ) -> Result<
+        HashMap<String, HashMap<KeyValue, crate::schema::types::field::FieldValue>>,
+        SchemaError,
+    > {
+        // Try as schema first
+        match self.schema_manager.get_schema(&query.schema_name).await? {
+            Some(mut schema) => {
+                self.hash_range_processor
+                    .query_with_filter(
+                        &mut schema,
+                        &query.fields,
+                        query.filter.clone(),
+                        query.as_of,
+                    )
+                    .await
+            }
+            None => {
+                // Try as view — must be cached (computed earlier in bottom-up order)
+                let view = {
+                    let registry = self
+                        .schema_manager
+                        .view_registry()
+                        .lock()
+                        .map_err(|_| {
+                            SchemaError::InvalidData("view_registry lock".to_string())
+                        })?;
+                    registry.get_view(&query.schema_name).cloned().ok_or_else(|| {
+                        SchemaError::NotFound(format!(
+                            "'{}' not found as schema or view during precomputation",
+                            query.schema_name
+                        ))
+                    })?
+                };
+
+                let cache_state = self
+                    .db_ops
+                    .get_view_cache_state(&view.name)
+                    .await?;
+
+                if !matches!(cache_state, ViewCacheState::Cached { .. }) {
+                    return Err(SchemaError::InvalidData(format!(
+                        "Source view '{}' is not cached during precomputation \
+                         (expected bottom-up order to have computed it first)",
+                        view.name
+                    )));
+                }
+
+                self.view_resolver
+                    .resolve(&view, &query.fields, &cache_state, self)
+                    .await
+                    .map(|(results, _)| results)
+            }
+        }
+    }
+}
 
 /// Manages mutation operations for the FoldDB system
 pub struct MutationManager {
@@ -812,8 +885,16 @@ impl MutationManager {
             views
         };
 
-        // Invalidate each dependent view's cache
+        // Collect ALL views to invalidate (direct + transitive) in one pass
+        let mut all_invalidated: Vec<String> = Vec::new();
+        let mut visited = HashSet::new();
         for view_name in &dependent_views {
+            all_invalidated.push(view_name.clone());
+            self.collect_cascade_views(view_name, &mut visited, &mut all_invalidated)?;
+        }
+
+        // Invalidate all collected views
+        for view_name in &all_invalidated {
             let current_state = self
                 .db_ops
                 .get_view_cache_state(view_name)
@@ -830,59 +911,194 @@ impl MutationManager {
                     fields_affected.first().unwrap_or(&String::new())
                 );
             }
+        }
 
-            // Cascade: if this view is a source for other views, invalidate those too
-            self.invalidate_cascading_view_caches(view_name, &mut HashSet::new())
-                .await?;
+        // Identify views deeper than level 1 (depend on other views) and
+        // spawn background precomputation for them.
+        let deep_views = self.find_deep_views(&all_invalidated)?;
+        if !deep_views.is_empty() {
+            self.spawn_background_precomputation(deep_views).await?;
         }
 
         Ok(())
     }
 
-    /// Recursively invalidate cascading view dependencies.
-    fn invalidate_cascading_view_caches<'a>(
-        &'a self,
-        view_name: &'a str,
-        visited: &'a mut HashSet<String>,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), SchemaError>> + Send + 'a>> {
-        Box::pin(async move {
-            if !visited.insert(view_name.to_string()) {
-                return Ok(()); // Already visited — cycle guard
-            }
+    /// Collect all transitive cascade views in one pass (single lock acquisition).
+    fn collect_cascade_views(
+        &self,
+        view_name: &str,
+        visited: &mut HashSet<String>,
+        result: &mut Vec<String>,
+    ) -> Result<(), SchemaError> {
+        if !visited.insert(view_name.to_string()) {
+            return Ok(());
+        }
 
-            // Find all views whose input queries reference this view as a source
-            let cascade_views: Vec<String> = {
-                let registry = self
-                    .schema_manager
+        let cascade_views: Vec<String> = {
+            let registry = self
+                .schema_manager
+                .view_registry()
+                .lock()
+                .map_err(|_| SchemaError::InvalidData("view_registry lock".to_string()))?;
+            registry
+                .dependency_tracker
+                .get_all_dependents_of_schema(view_name)
+        };
+
+        for dep in &cascade_views {
+            result.push(dep.clone());
+            self.collect_cascade_views(dep, visited, result)?;
+        }
+
+        Ok(())
+    }
+
+    /// Identify views that depend on other views (depth > 1).
+    /// Returns them in bottom-up order (leaves first) for precomputation.
+    fn find_deep_views(&self, invalidated: &[String]) -> Result<Vec<String>, SchemaError> {
+        let registry = self
+            .schema_manager
+            .view_registry()
+            .lock()
+            .map_err(|_| SchemaError::InvalidData("view_registry lock".to_string()))?;
+
+        let invalidated_set: HashSet<&str> = invalidated.iter().map(|s| s.as_str()).collect();
+
+        // A view is "deep" if any of its input query sources is itself a view
+        // (and that source view was also invalidated)
+        let mut deep: Vec<String> = Vec::new();
+        for view_name in invalidated {
+            if let Some(view) = registry.get_view(view_name) {
+                let has_view_source = view.source_schemas().iter().any(|source| {
+                    registry.get_view(source).is_some() && invalidated_set.contains(source.as_str())
+                });
+                if has_view_source {
+                    deep.push(view_name.clone());
+                }
+            }
+        }
+
+        // Sort: views whose sources appear earlier should come later
+        // (bottom-up order). Simple approach: stable sort by number of
+        // view-sources that are in the deep set.
+        let deep_set: HashSet<String> = deep.iter().cloned().collect();
+        deep.sort_by_key(|name| {
+            let view = registry.get_view(name).unwrap();
+            view.source_schemas()
+                .iter()
+                .filter(|s| deep_set.contains(*s))
+                .count()
+        });
+
+        Ok(deep)
+    }
+
+    /// Mark deep views as Computing and spawn a background task to precompute them.
+    async fn spawn_background_precomputation(
+        &self,
+        deep_views: Vec<String>,
+    ) -> Result<(), SchemaError> {
+        // Mark all deep views as Computing
+        for view_name in &deep_views {
+            self.db_ops
+                .set_view_cache_state(view_name, &ViewCacheState::Computing)
+                .await?;
+            log::debug!("View '{}' marked as Computing for background precomputation", view_name);
+        }
+
+        // Spawn background task
+        let schema_manager = Arc::clone(&self.schema_manager);
+        let db_ops = Arc::clone(&self.db_ops);
+
+        tokio::spawn(async move {
+            if let Err(e) =
+                Self::precompute_views(schema_manager, db_ops, deep_views).await
+            {
+                log::error!("Background view precomputation failed: {}", e);
+            }
+        });
+
+        Ok(())
+    }
+
+    /// Background task: precompute views in bottom-up order.
+    /// Each view's sources must be Cached before it can be computed.
+    async fn precompute_views(
+        schema_manager: Arc<SchemaCore>,
+        db_ops: Arc<DbOperations>,
+        views_to_compute: Vec<String>,
+    ) -> Result<(), SchemaError> {
+        use super::query::hash_range_query::HashRangeQueryProcessor;
+
+        let wasm_engine = {
+            let registry = schema_manager
+                .view_registry()
+                .lock()
+                .map_err(|_| SchemaError::InvalidData("view_registry lock".to_string()))?;
+            Arc::clone(registry.wasm_engine())
+        };
+
+        for view_name in &views_to_compute {
+            // Get view definition
+            let view = {
+                let registry = schema_manager
                     .view_registry()
                     .lock()
                     .map_err(|_| SchemaError::InvalidData("view_registry lock".to_string()))?;
-
-                if registry.get_view(view_name).is_none() {
-                    return Ok(());
+                match registry.get_view(view_name) {
+                    Some(v) => v.clone(),
+                    None => {
+                        log::warn!("View '{}' disappeared during precomputation", view_name);
+                        continue;
+                    }
                 }
-
-                registry.dependency_tracker.get_all_dependents_of_schema(view_name)
             };
 
-            for dep_view in &cascade_views {
-                let current_state = self
-                    .db_ops
-                    .get_view_cache_state(dep_view)
-                    .await?;
-
-                if matches!(current_state, ViewCacheState::Cached { .. }) {
-                    self.db_ops
-                        .set_view_cache_state(dep_view, &ViewCacheState::Empty)
-                        .await?;
-                }
-
-                self.invalidate_cascading_view_caches(dep_view, visited)
-                    .await?;
+            // Check if still in Computing state (may have been invalidated again)
+            let state = db_ops.get_view_cache_state(view_name).await?;
+            if !state.is_computing() {
+                log::debug!(
+                    "View '{}' no longer Computing (state changed), skipping precomputation",
+                    view_name
+                );
+                continue;
             }
 
-            Ok(())
-        })
+            // Build source query for resolution
+            let source_query = PrecomputeSourceQuery {
+                schema_manager: Arc::clone(&schema_manager),
+                db_ops: Arc::clone(&db_ops),
+                hash_range_processor: HashRangeQueryProcessor::new(Arc::clone(&db_ops)),
+                view_resolver: ViewResolver::new(Arc::clone(&wasm_engine)),
+            };
+
+            let resolver = ViewResolver::new(Arc::clone(&wasm_engine));
+            match resolver
+                .resolve(&view, &[], &ViewCacheState::Empty, &source_query)
+                .await
+            {
+                Ok((_, new_cache)) => {
+                    // Only store if still Computing (not re-invalidated)
+                    let current = db_ops.get_view_cache_state(view_name).await?;
+                    if current.is_computing() {
+                        db_ops.set_view_cache_state(view_name, &new_cache).await?;
+                        log::info!("View '{}' precomputed successfully", view_name);
+                    }
+                }
+                Err(e) => {
+                    log::error!("Failed to precompute view '{}': {}", view_name, e);
+                    // Reset to Empty so it can be lazily computed on next query
+                    let current = db_ops.get_view_cache_state(view_name).await?;
+                    if current.is_computing() {
+                        db_ops
+                            .set_view_cache_state(view_name, &ViewCacheState::Empty)
+                            .await?;
+                    }
+                }
+            }
+        }
+
+        Ok(())
     }
 
     /// Start listening for MutationRequest events in a background thread

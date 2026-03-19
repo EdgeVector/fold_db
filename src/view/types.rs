@@ -9,10 +9,24 @@ use std::collections::HashMap;
 
 /// Cache state for an entire view's computed output.
 /// Per-view (not per-field) since the WASM transform is holistic.
+///
+/// ```text
+///   Empty ──(background task spawned)──▶ Computing
+///     ▲                                      │
+///     │                                      │ (task completes)
+///     │                                      ▼
+///     └───────(invalidate)──────────── Cached
+/// ```
+///
+/// Views deeper than level 1 (i.e., depending on other views) transition
+/// through `Computing` during background precomputation. Queries against
+/// a `Computing` view return an error until precomputation finishes.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ViewCacheState {
     /// Never computed or invalidated.
     Empty,
+    /// Background precomputation in progress. Queries should wait or error.
+    Computing,
     /// Computed output: field_name → (key → value).
     Cached {
         entries: HashMap<String, Vec<(KeyValue, FieldValue)>>,
@@ -27,6 +41,10 @@ impl ViewCacheState {
 
     pub fn is_empty(&self) -> bool {
         matches!(self, ViewCacheState::Empty)
+    }
+
+    pub fn is_computing(&self) -> bool {
+        matches!(self, ViewCacheState::Computing)
     }
 }
 

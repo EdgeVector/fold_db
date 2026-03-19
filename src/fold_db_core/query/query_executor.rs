@@ -84,6 +84,13 @@ impl RecursiveSourceQuery {
             .get_view_cache_state(&view.name)
             .await?;
 
+        if cache_state.is_computing() {
+            return Err(SchemaError::InvalidData(format!(
+                "View '{}' is currently being precomputed and is not ready for queries",
+                view.name
+            )));
+        }
+
         // Create a nested source query for this view's input queries
         let nested_source = RecursiveSourceQuery {
             schema_manager: Arc::clone(&self.schema_manager),
@@ -217,6 +224,14 @@ impl QueryExecutor {
             .db_ops
             .get_view_cache_state(&view.name)
             .await?;
+
+        // Reject queries on views that are being precomputed in the background
+        if cache_state.is_computing() {
+            return Err(SchemaError::InvalidData(format!(
+                "View '{}' is currently being precomputed and is not ready for queries",
+                query.schema_name
+            )));
+        }
 
         // Create source query implementation for recursive resolution
         let source_query = RecursiveSourceQuery {
