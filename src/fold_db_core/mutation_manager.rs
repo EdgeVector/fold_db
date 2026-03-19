@@ -80,18 +80,27 @@ impl SourceQueryFn for PrecomputeSourceQuery {
                     .get_view_cache_state(&view.name)
                     .await?;
 
-                if !matches!(cache_state, ViewCacheState::Cached { .. }) {
-                    return Err(SchemaError::InvalidData(format!(
-                        "Source view '{}' is not cached during precomputation \
-                         (expected bottom-up order to have computed it first)",
-                        view.name
-                    )));
+                // Source view should be Cached (computed earlier in bottom-up order).
+                // If it's still Empty, compute it inline.
+                let effective_cache = if matches!(cache_state, ViewCacheState::Cached { .. }) {
+                    cache_state
+                } else {
+                    ViewCacheState::Empty
+                };
+
+                let (results, new_cache) = self
+                    .view_resolver
+                    .resolve(&view, &query.fields, &effective_cache, self)
+                    .await?;
+
+                // Persist if we just computed it
+                if effective_cache.is_empty() && matches!(new_cache, ViewCacheState::Cached { .. }) {
+                    self.db_ops
+                        .set_view_cache_state(&view.name, &new_cache)
+                        .await?;
                 }
 
-                self.view_resolver
-                    .resolve(&view, &query.fields, &cache_state, self)
-                    .await
-                    .map(|(results, _)| results)
+                Ok(results)
             }
         }
     }
@@ -914,10 +923,13 @@ impl MutationManager {
         }
 
         // Identify views deeper than level 1 (depend on other views) and
-        // spawn background precomputation for them.
-        let deep_views = self.find_deep_views(&all_invalidated)?;
+        // spawn background precomputation. All invalidated views are passed
+        // in bottom-up order so leaf views compute first, but only deep views
+        // (level 2+) are marked Computing — level 1 views stay Empty and can
+        // also be lazily queried.
+        let (all_ordered, deep_views) = self.partition_views_for_precomputation(&all_invalidated)?;
         if !deep_views.is_empty() {
-            self.spawn_background_precomputation(deep_views).await?;
+            self.spawn_background_precomputation(all_ordered, deep_views).await?;
         }
 
         Ok(())
@@ -953,9 +965,13 @@ impl MutationManager {
         Ok(())
     }
 
-    /// Identify views that depend on other views (depth > 1).
-    /// Returns them in bottom-up order (leaves first) for precomputation.
-    fn find_deep_views(&self, invalidated: &[String]) -> Result<Vec<String>, SchemaError> {
+    /// Partition invalidated views into:
+    /// - `all_ordered`: all views in bottom-up order (leaves first) for precomputation
+    /// - `deep_only`: subset that depends on other views (level 2+), to be marked Computing
+    fn partition_views_for_precomputation(
+        &self,
+        invalidated: &[String],
+    ) -> Result<(Vec<String>, HashSet<String>), SchemaError> {
         let registry = self
             .schema_manager
             .view_registry()
@@ -964,41 +980,45 @@ impl MutationManager {
 
         let invalidated_set: HashSet<&str> = invalidated.iter().map(|s| s.as_str()).collect();
 
-        // A view is "deep" if any of its input query sources is itself a view
-        // (and that source view was also invalidated)
-        let mut deep: Vec<String> = Vec::new();
+        // Classify each view as level-1 (only schema sources) or deep (has view sources)
+        let mut deep: HashSet<String> = HashSet::new();
+        let mut all: Vec<String> = Vec::new();
+
         for view_name in invalidated {
             if let Some(view) = registry.get_view(view_name) {
                 let has_view_source = view.source_schemas().iter().any(|source| {
-                    registry.get_view(source).is_some() && invalidated_set.contains(source.as_str())
+                    registry.get_view(source).is_some()
+                        && invalidated_set.contains(source.as_str())
                 });
                 if has_view_source {
-                    deep.push(view_name.clone());
+                    deep.insert(view_name.clone());
                 }
+                all.push(view_name.clone());
             }
         }
 
-        // Sort: views whose sources appear earlier should come later
-        // (bottom-up order). Simple approach: stable sort by number of
-        // view-sources that are in the deep set.
-        let deep_set: HashSet<String> = deep.iter().cloned().collect();
-        deep.sort_by_key(|name| {
+        // Sort bottom-up: views with fewer view-dependencies come first
+        let all_set: HashSet<String> = all.iter().cloned().collect();
+        all.sort_by_key(|name| {
             let view = registry.get_view(name).unwrap();
             view.source_schemas()
                 .iter()
-                .filter(|s| deep_set.contains(*s))
+                .filter(|s| all_set.contains(*s))
                 .count()
         });
 
-        Ok(deep)
+        Ok((all, deep))
     }
 
-    /// Mark deep views as Computing and spawn a background task to precompute them.
+    /// Mark deep views as Computing and spawn a background task to precompute
+    /// all views in bottom-up order. Level 1 views are computed first (they
+    /// only depend on schemas) so that deep views can resolve against them.
     async fn spawn_background_precomputation(
         &self,
-        deep_views: Vec<String>,
+        all_ordered: Vec<String>,
+        deep_views: HashSet<String>,
     ) -> Result<(), SchemaError> {
-        // Mark all deep views as Computing
+        // Only mark deep views as Computing (level 1 stays Empty for lazy query)
         for view_name in &deep_views {
             self.db_ops
                 .set_view_cache_state(view_name, &ViewCacheState::Computing)
@@ -1006,13 +1026,13 @@ impl MutationManager {
             log::debug!("View '{}' marked as Computing for background precomputation", view_name);
         }
 
-        // Spawn background task
+        // Spawn background task that computes ALL views bottom-up
         let schema_manager = Arc::clone(&self.schema_manager);
         let db_ops = Arc::clone(&self.db_ops);
 
         tokio::spawn(async move {
             if let Err(e) =
-                Self::precompute_views(schema_manager, db_ops, deep_views).await
+                Self::precompute_views(schema_manager, db_ops, all_ordered).await
             {
                 log::error!("Background view precomputation failed: {}", e);
             }
@@ -1054,11 +1074,14 @@ impl MutationManager {
                 }
             };
 
-            // Check if still in Computing state (may have been invalidated again)
+            // Check current state:
+            // - Computing: deep view, precompute and store
+            // - Empty: level-1 view, precompute and store (needed by deeper views)
+            // - Cached: already computed (perhaps by a lazy query), skip
             let state = db_ops.get_view_cache_state(view_name).await?;
-            if !state.is_computing() {
+            if matches!(state, ViewCacheState::Cached { .. }) {
                 log::debug!(
-                    "View '{}' no longer Computing (state changed), skipping precomputation",
+                    "View '{}' already Cached, skipping precomputation",
                     view_name
                 );
                 continue;
@@ -1078,16 +1101,16 @@ impl MutationManager {
                 .await
             {
                 Ok((_, new_cache)) => {
-                    // Only store if still Computing (not re-invalidated)
+                    // Only store if not re-invalidated since we started
                     let current = db_ops.get_view_cache_state(view_name).await?;
-                    if current.is_computing() {
+                    if !matches!(current, ViewCacheState::Cached { .. }) {
                         db_ops.set_view_cache_state(view_name, &new_cache).await?;
                         log::info!("View '{}' precomputed successfully", view_name);
                     }
                 }
                 Err(e) => {
                     log::error!("Failed to precompute view '{}': {}", view_name, e);
-                    // Reset to Empty so it can be lazily computed on next query
+                    // Reset Computing to Empty so it can be lazily computed on next query
                     let current = db_ops.get_view_cache_state(view_name).await?;
                     if current.is_computing() {
                         db_ops
