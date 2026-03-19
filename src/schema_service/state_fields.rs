@@ -331,12 +331,14 @@ impl SchemaServiceState {
                     if let Ok(vec) = self.embedder.embed_text(&embed_text) {
                         embeddings.insert(field_name.clone(), vec);
                     }
+                    let classification =
+                        schema.field_data_classifications.get(field_name).cloned();
                     fields.insert(
                         field_name.clone(),
                         CanonicalField {
                             description: desc,
                             field_type,
-                            classification: None,
+                            classification,
                         },
                     );
                 }
