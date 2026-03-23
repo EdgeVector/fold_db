@@ -11,7 +11,6 @@ cli = ["dep:clap", "dep:clap_complete"]  # CLI tooling (clap derives)
 aws-backend = ["aws-config", "aws-sdk-dynamodb", "aws-sdk-s3", "aws-sdk-sns", "aws-sdk-sqs", "serde_dynamo"]  # AWS backends (DynamoDB, S3, SNS, SQS)
 transform-wasm = ["dep:wasmtime"]  # Enable WASM transform execution for views
 test-utils = []  # Expose test helpers (MockEmbeddingModel, etc.) for integration tests
-transform-wasm = []  # Enable Phase 2 NMI-based classification for transforms (requires WASM runtime)
 
 [dependencies]
 # Cryptography

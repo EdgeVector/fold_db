@@ -73,11 +73,11 @@ impl SchemaServiceState {
                 &request.wasm_bytes,
                 &input_schema,
                 &request.output_fields,
-                input_ceiling,
+                input_ceiling.clone(),
             );
 
         // Final assignment: max(ceiling, output)
-        let assigned_classification = std::cmp::max(input_ceiling, output_classification);
+        let assigned_classification = std::cmp::max(input_ceiling.clone(), output_classification.clone());
 
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -336,7 +336,7 @@ impl SchemaServiceState {
         })?;
 
         let mut input_schema = HashMap::new();
-        let mut max_classification = DataClassification::Low;
+        let mut max_classification = DataClassification::low();
 
         for query in input_queries {
             // Look up schema by name (identity_hash) or by descriptive_name
@@ -470,7 +470,7 @@ impl SchemaServiceState {
         )?;
 
         // Determine output classification from NMI matrix
-        let mut output_classification = DataClassification::Low;
+        let mut output_classification = DataClassification::low();
         for (input_field, output_scores) in &nmi_matrix {
             let input_classification = classify_field_from_schema(input_field, input_schema);
             for (_output_field, &nmi_score) in output_scores {
@@ -490,17 +490,17 @@ impl SchemaServiceState {
 fn classify_field(classifications: Option<&Vec<String>>) -> DataClassification {
     let tags = match classifications {
         Some(t) if !t.is_empty() => t,
-        _ => return DataClassification::Low,
+        _ => return DataClassification::low(),
     };
 
-    let mut max = DataClassification::Low;
+    let mut max = DataClassification::low();
     for tag in tags {
         let level = match tag.to_lowercase().as_str() {
             "high" | "restricted" | "pii" | "medical" | "financial" | "hipaa" => {
-                DataClassification::High
+                DataClassification::high()
             }
-            "medium" | "internal" | "confidential" => DataClassification::Medium,
-            _ => DataClassification::Low,
+            "medium" | "internal" | "confidential" => DataClassification::medium(),
+            _ => DataClassification::low(),
         };
         max = std::cmp::max(max, level);
     }
@@ -524,5 +524,5 @@ fn classify_field_from_schema(
     // from the schema. For now, treat all input fields as their declared level.
     // The classification is already resolved in Phase 1.
     let _ = qualified_field;
-    DataClassification::Low
+    DataClassification::low()
 }

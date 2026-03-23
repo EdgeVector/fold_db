@@ -52,6 +52,15 @@ async fn add_test_schema(
         schema
             .field_classifications
             .insert(f.to_string(), vec![c.to_string()]);
+        // Provide struct-based DataClassification so LLM is not required
+        let dc = match c.to_lowercase().as_str() {
+            "high" | "restricted" | "pii" | "medical" | "financial" | "hipaa" => {
+                DataClassification::high()
+            }
+            "medium" | "internal" | "confidential" => DataClassification::medium(),
+            _ => DataClassification::low(),
+        };
+        schema.field_data_classifications.insert(f.to_string(), dc);
     }
     // Fill in default classifications for fields without explicit ones
     for (f, _) in fields {
@@ -59,6 +68,11 @@ async fn add_test_schema(
             schema
                 .field_classifications
                 .insert(f.to_string(), vec!["word".to_string()]);
+        }
+        if !schema.field_data_classifications.contains_key(*f) {
+            schema
+                .field_data_classifications
+                .insert(f.to_string(), DataClassification::low());
         }
     }
     let outcome = state
@@ -313,9 +327,9 @@ async fn test_classification_high_input_produces_high_ceiling() {
         .expect("failed to register");
 
     // "medical" maps to HIGH in classify_field
-    assert_eq!(record.input_ceiling, DataClassification::High);
+    assert_eq!(record.input_ceiling, DataClassification::high());
     // Without Phase 2, assigned = max(ceiling, output) = HIGH
-    assert_eq!(record.assigned_classification, DataClassification::High);
+    assert_eq!(record.assigned_classification, DataClassification::high());
 }
 
 #[tokio::test]
@@ -342,8 +356,8 @@ async fn test_classification_low_input_produces_low_ceiling() {
         .await
         .expect("failed to register");
 
-    assert_eq!(record.input_ceiling, DataClassification::Low);
-    assert_eq!(record.assigned_classification, DataClassification::Low);
+    assert_eq!(record.input_ceiling, DataClassification::low());
+    assert_eq!(record.assigned_classification, DataClassification::low());
 }
 
 #[tokio::test]
@@ -373,7 +387,7 @@ async fn test_classification_medium_input() {
         .await
         .expect("failed to register");
 
-    assert_eq!(record.input_ceiling, DataClassification::Medium);
+    assert_eq!(record.input_ceiling, DataClassification::medium());
 }
 
 // ============== Phase 2 Skipped (no transform-wasm feature) ==============
@@ -434,7 +448,7 @@ async fn test_phase1_ceiling_used_when_phase2_inconclusive() {
 
     // Phase 2 didn't run → ceiling is used
     assert!(!record.classification_verified);
-    assert_eq!(record.assigned_classification, DataClassification::High);
+    assert_eq!(record.assigned_classification, DataClassification::high());
 }
 
 // ============== Unknown Schema Fails Registration ==============
