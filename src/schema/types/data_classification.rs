@@ -97,6 +97,12 @@ impl DataClassification {
     }
 }
 
+impl std::fmt::Display for DataClassification {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}:{}", self.sensitivity_name(), self.data_domain)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

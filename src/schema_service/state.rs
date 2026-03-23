@@ -16,7 +16,7 @@ use super::state_matching::collect_field_names;
 pub use super::state_matching::jaccard_index;
 use super::types::{
     AddViewRequest, SchemaAddOutcome, SchemaLookupEntry, SchemaReuseMatch, SimilarSchemaEntry,
-    SimilarSchemasResponse, StoredView, ViewAddOutcome,
+    SimilarSchemasResponse, StoredView, TransformRecord, ViewAddOutcome,
 };
 
 
@@ -54,6 +54,8 @@ pub struct SchemaServiceState {
     pub storage: SchemaStorage,
     /// Registered views: view_name -> StoredView
     pub views: Arc<RwLock<HashMap<String, StoredView>>>,
+    /// Registered transforms: sha256_hash -> TransformRecord (no wasm_bytes)
+    pub transforms: Arc<RwLock<HashMap<String, TransformRecord>>>,
 }
 
 impl SchemaServiceState {
@@ -78,6 +80,10 @@ impl SchemaServiceState {
             .open_tree("views")
             .map_err(|e| FoldDbError::Config(format!("Failed to open views tree: {}", e)))?;
 
+        let transform_metadata_tree = db
+            .open_tree("transform_metadata")
+            .map_err(|e| FoldDbError::Config(format!("Failed to open transform_metadata tree: {}", e)))?;
+
         let state = Self {
             schemas: Arc::new(RwLock::new(HashMap::new())),
             descriptive_name_index: Arc::new(RwLock::new(HashMap::new())),
@@ -88,6 +94,7 @@ impl SchemaServiceState {
             embedder: Arc::new(FastEmbedModel::new()),
             storage: SchemaStorage::Sled { db, schemas_tree },
             views: Arc::new(RwLock::new(HashMap::new())),
+            transforms: Arc::new(RwLock::new(HashMap::new())),
         };
 
         // Load schemas synchronously for sled
@@ -95,6 +102,7 @@ impl SchemaServiceState {
         state.rebuild_descriptive_name_index();
         state.load_canonical_fields_from_tree(&canonical_fields_tree)?;
         state.load_views_from_tree(&views_tree)?;
+        state.load_transforms_from_tree(&transform_metadata_tree)?;
 
         Ok(state)
     }
@@ -174,6 +182,7 @@ impl SchemaServiceState {
                 store: Arc::new(store),
             },
             views: Arc::new(RwLock::new(HashMap::new())),
+            transforms: Arc::new(RwLock::new(HashMap::new())),
         };
 
         // Load schemas on initialization
@@ -323,6 +332,9 @@ impl SchemaServiceState {
         let views_tree = db
             .open_tree("views")
             .map_err(|e| FoldDbError::Config(format!("Failed to open views tree: {}", e)))?;
+        let transform_metadata_tree = db
+            .open_tree("transform_metadata")
+            .map_err(|e| FoldDbError::Config(format!("Failed to open transform_metadata tree: {}", e)))?;
 
         let state = Self {
             schemas: Arc::new(RwLock::new(HashMap::new())),
@@ -334,12 +346,14 @@ impl SchemaServiceState {
             embedder,
             storage: SchemaStorage::Sled { db, schemas_tree },
             views: Arc::new(RwLock::new(HashMap::new())),
+            transforms: Arc::new(RwLock::new(HashMap::new())),
         };
 
         state.load_schemas_sync()?;
         state.rebuild_descriptive_name_index();
         state.load_canonical_fields_from_tree(&canonical_fields_tree)?;
         state.load_views_from_tree(&views_tree)?;
+        state.load_transforms_from_tree(&transform_metadata_tree)?;
 
         Ok(state)
     }
@@ -883,6 +897,7 @@ impl SchemaServiceState {
         let view = StoredView {
             name: request.name.clone(),
             input_queries: request.input_queries,
+            transform_hash: None,
             wasm_bytes: request.wasm_bytes,
             output_schema_name: output_schema.name.clone(),
             schema_type: request.schema_type,
