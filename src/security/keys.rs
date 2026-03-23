@@ -123,6 +123,27 @@ impl Ed25519PublicKey {
     pub fn verify(&self, message: &[u8], signature: &Signature) -> bool {
         self.verifying_key.verify(message, signature).is_ok()
     }
+
+    /// Verify a signature from raw bytes (64-byte Ed25519 signature).
+    /// Returns Ok(()) on success, Err with message on failure.
+    pub fn verify_raw(&self, message: &[u8], signature_bytes: &[u8]) -> SecurityResult<()> {
+        if signature_bytes.len() != 64 {
+            return Err(SecurityError::InvalidSignature(format!(
+                "Invalid signature length: expected 64 bytes, got {}",
+                signature_bytes.len()
+            )));
+        }
+        let mut sig_array = [0u8; 64];
+        sig_array.copy_from_slice(signature_bytes);
+        let signature = Signature::from_bytes(&sig_array);
+        if self.verifying_key.verify(message, &signature).is_ok() {
+            Ok(())
+        } else {
+            Err(SecurityError::SignatureVerificationFailed(
+                "Ed25519 signature verification failed".to_string(),
+            ))
+        }
+    }
 }
 
 /// Utility functions for key management

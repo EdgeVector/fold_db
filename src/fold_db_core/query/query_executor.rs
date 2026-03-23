@@ -3,8 +3,9 @@
 //! Main query execution logic extracted from FoldDB core, handling all query types
 //! including HashRange schemas with proper delegation to specialized processors.
 
+use crate::access::{self, AccessContext, PaymentGate};
 use crate::db_operations::DbOperations;
-use crate::schema::types::field::FieldValue;
+use crate::schema::types::field::{Field, FieldValue};
 use crate::schema::types::key_value::KeyValue;
 use crate::schema::types::Query;
 use crate::schema::{SchemaCore, SchemaState};
@@ -138,10 +139,33 @@ impl QueryExecutor {
         }
     }
 
-    /// Query multiple fields from a schema or view
+    /// Query multiple fields from a schema or view (legacy — no access control)
     pub async fn query(
         &self,
         query: Query,
+    ) -> Result<HashMap<String, HashMap<KeyValue, FieldValue>>, SchemaError> {
+        self.query_internal(query, None, None).await
+    }
+
+    /// Query with access control enforcement.
+    ///
+    /// For schema queries: fields where the caller lacks read access are filtered out.
+    /// For view queries: all-or-nothing — the view is the access unit.
+    pub async fn query_with_access(
+        &self,
+        query: Query,
+        access_context: &AccessContext,
+        payment_gate: Option<&PaymentGate>,
+    ) -> Result<HashMap<String, HashMap<KeyValue, FieldValue>>, SchemaError> {
+        self.query_internal(query, Some(access_context), payment_gate)
+            .await
+    }
+
+    async fn query_internal(
+        &self,
+        query: Query,
+        access_context: Option<&AccessContext>,
+        payment_gate: Option<&PaymentGate>,
     ) -> Result<HashMap<String, HashMap<KeyValue, FieldValue>>, SchemaError> {
         // First: try to resolve as a schema (existing path)
         match self.schema_manager.get_schema(&query.schema_name).await? {
@@ -160,15 +184,60 @@ impl QueryExecutor {
                     )));
                 }
 
-                self.hash_range_processor
+                let results = self
+                    .hash_range_processor
                     .query_with_filter(&mut schema, &query.fields, query.filter, query.as_of)
-                    .await
+                    .await?;
+
+                // Apply per-field access control filtering if context is provided
+                if let Some(ctx) = access_context {
+                    Ok(Self::filter_fields_by_access(
+                        results,
+                        &schema,
+                        ctx,
+                        &query.schema_name,
+                        payment_gate,
+                    ))
+                } else {
+                    Ok(results)
+                }
             }
             None => {
                 // Second: try to resolve as a view
                 self.try_query_view(&query).await
             }
         }
+    }
+
+    /// Filter query results by per-field access policies.
+    /// Fields where the caller lacks read access are removed from the results.
+    fn filter_fields_by_access(
+        mut results: HashMap<String, HashMap<KeyValue, FieldValue>>,
+        schema: &crate::schema::types::Schema,
+        context: &AccessContext,
+        schema_name: &str,
+        payment_gate: Option<&PaymentGate>,
+    ) -> HashMap<String, HashMap<KeyValue, FieldValue>> {
+        let fields_to_remove: Vec<String> = results
+            .keys()
+            .filter(|field_name| {
+                let policy = schema
+                    .runtime_fields
+                    .get(*field_name)
+                    .map(|fv| fv.common().access_policy.as_ref())
+                    .unwrap_or(None);
+                let decision =
+                    access::check_read_access(policy, context, schema_name, payment_gate);
+                decision.is_denied()
+            })
+            .cloned()
+            .collect();
+
+        for field_name in fields_to_remove {
+            results.remove(&field_name);
+        }
+
+        results
     }
 
     /// Attempt to resolve a query against the view registry.
