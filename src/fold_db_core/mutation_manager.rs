@@ -153,6 +153,59 @@ impl MutationManager {
         }
     }
 
+    /// Write mutations with access control enforcement.
+    ///
+    /// Checks per-field write access for every field in every mutation.
+    /// Mutations are all-or-nothing: if any field is denied, the entire batch
+    /// for that schema is rejected.
+    pub async fn write_mutations_with_access(
+        &mut self,
+        mutations: Vec<Mutation>,
+        access_context: &crate::access::AccessContext,
+        payment_gate: Option<&crate::access::PaymentGate>,
+    ) -> Result<Vec<String>, SchemaError> {
+        use crate::access;
+        use crate::schema::types::field::Field;
+
+        // Pre-check access for all mutations before processing any
+        for mutation in &mutations {
+            let schema = self
+                .schema_manager
+                .get_schema_metadata(&mutation.schema_name)?
+                .ok_or_else(|| {
+                    SchemaError::InvalidData(format!(
+                        "Schema '{}' not found",
+                        mutation.schema_name
+                    ))
+                })?;
+
+            for field_name in mutation.fields_and_values.keys() {
+                let policy = schema
+                    .runtime_fields
+                    .get(field_name)
+                    .map(|fv| fv.common().access_policy.as_ref())
+                    .unwrap_or(None);
+
+                let decision = access::check_write_access(
+                    policy,
+                    access_context,
+                    &mutation.schema_name,
+                    payment_gate,
+                );
+
+                if let access::AccessDecision::Denied(reason) = decision {
+                    return Err(SchemaError::PermissionDenied(format!(
+                        "Write denied for field '{}' on schema '{}': {}",
+                        field_name, mutation.schema_name, reason
+                    )));
+                }
+            }
+        }
+
+        // All access checks passed — delegate to the standard batch writer
+        self.write_mutations_batch_async(mutations).await
+    }
+
     /// Write multiple mutations in a batch for improved performance (async version)
     /// Groups mutations by schema to minimize schema reloads and uses true batching
     ///

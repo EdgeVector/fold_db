@@ -23,6 +23,7 @@
 //! and the operations that can be performed on it. Each schema has fields with associated
 //! permissions and payment requirements.
 
+pub mod access;
 pub mod atom;
 pub mod constants;
 pub mod crypto;

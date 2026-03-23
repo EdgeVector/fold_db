@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use crate::access::types::FieldAccessPolicy;
 use crate::db_operations::DbOperations;
 use crate::schema::types::declarative_schemas::FieldMapper;
 use crate::schema::types::field::FieldValue;
@@ -54,6 +55,9 @@ pub struct FieldCommon {
     pub transform: Option<Transform>,
     #[serde(default = "default_writable")]
     pub writable: bool,
+    /// Per-field access control policy. None = legacy behavior (no access checks).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub access_policy: Option<FieldAccessPolicy>,
 }
 
 fn default_writable() -> bool {
@@ -67,6 +71,7 @@ impl FieldCommon {
             field_mappers,
             transform: None,
             writable: true,
+            access_policy: None,
         }
     }
 

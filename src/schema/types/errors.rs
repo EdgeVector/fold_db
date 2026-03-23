@@ -8,6 +8,7 @@ pub enum SchemaError {
     InvalidPermission(String),
     InvalidTransform(String),
     InvalidData(String),
+    PermissionDenied(String),
 }
 
 impl fmt::Display for SchemaError {
@@ -18,6 +19,7 @@ impl fmt::Display for SchemaError {
             Self::InvalidPermission(msg) => write!(f, "Invalid permission: {msg}"),
             Self::InvalidTransform(msg) => write!(f, "Invalid transform: {msg}"),
             Self::InvalidData(msg) => write!(f, "Invalid data: {msg}"),
+            Self::PermissionDenied(msg) => write!(f, "Permission denied: {msg}"),
         }
     }
 }
