@@ -9,3 +9,4 @@ pub use wasm_engine::WasmTransformEngine;
 pub use dependency_tracker::DependencyTracker;
 pub use registry::ViewRegistry;
 pub use resolver::ViewResolver;
+pub mod invertibility;
