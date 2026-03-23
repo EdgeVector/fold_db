@@ -95,6 +95,39 @@ impl DataClassification {
             _ => "Unknown",
         }
     }
+
+    /// Convenience constructor for Low (Public, general domain).
+    pub fn low() -> Self {
+        Self { sensitivity_level: PUBLIC, data_domain: "general".to_string() }
+    }
+
+    /// Convenience constructor for Medium (Confidential, general domain).
+    pub fn medium() -> Self {
+        Self { sensitivity_level: CONFIDENTIAL, data_domain: "general".to_string() }
+    }
+
+    /// Convenience constructor for High (Highly Restricted, general domain).
+    pub fn high() -> Self {
+        Self { sensitivity_level: HIGHLY_RESTRICTED, data_domain: "general".to_string() }
+    }
+}
+
+impl PartialOrd for DataClassification {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for DataClassification {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.sensitivity_level.cmp(&other.sensitivity_level)
+    }
+}
+
+impl std::fmt::Display for DataClassification {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}:{}", self.sensitivity_name(), self.data_domain)
+    }
 }
 
 #[cfg(test)]

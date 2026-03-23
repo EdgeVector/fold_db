@@ -146,7 +146,10 @@ pub struct StoredView {
     pub name: String,
     /// Queries that feed data into this view
     pub input_queries: Vec<Query>,
-    /// Optional WASM transform bytes (base64-encoded in JSON)
+    /// sha256 hash referencing Global Transform Registry — fetched on demand
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transform_hash: Option<String>,
+    /// Fallback: inline WASM bytes (for local/dev use only, not registered)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub wasm_bytes: Option<Vec<u8>>,
     /// Identity hash of the output schema (registered via add_schema)
@@ -217,4 +220,130 @@ pub struct ViewsListResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AvailableViewsResponse {
     pub views: Vec<StoredView>,
+}
+
+// ============== Transform Types ==============
+
+/// A registered transform in the Global Transform Registry.
+/// Metadata record — does NOT include wasm_bytes (stored separately).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TransformRecord {
+    /// sha256(wasm_bytes) — the canonical identity
+    pub hash: String,
+    /// Human-readable name (e.g. "downgrade_medical_to_summary")
+    pub name: String,
+    /// Semver version string
+    pub version: String,
+    /// Optional description
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// Input field types expected by the transform (resolved from input_queries)
+    pub input_schema: HashMap<String, FieldValueType>,
+    /// Output field types produced by the transform
+    pub output_schema: HashMap<String, FieldValueType>,
+    /// URL to source code (GitHub, etc.) — for verifiability
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_url: Option<String>,
+    /// When registered (Unix timestamp)
+    pub registered_at: u64,
+    /// Phase 1: max of all input field classifications
+    pub input_ceiling: DataClassification,
+    /// Phase 2: NMI-derived output classification (or ceiling if inconclusive)
+    pub output_classification: DataClassification,
+    /// Input field → output field → NMI score
+    #[serde(default)]
+    pub nmi_matrix: HashMap<String, HashMap<String, f32>>,
+    /// true if Phase 2 ran with sufficient samples
+    pub classification_verified: bool,
+    /// How many synthetic samples Phase 2 used (0 if Phase 2 skipped)
+    pub sample_count: u32,
+    /// Enforced classification: max(ceiling, output)
+    pub assigned_classification: DataClassification,
+}
+
+/// Request to register a new transform
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RegisterTransformRequest {
+    pub name: String,
+    pub version: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// Queries defining what this transform reads — field classifications resolved from schema service
+    pub input_queries: Vec<Query>,
+    /// Output field types produced by the transform
+    pub output_fields: HashMap<String, FieldValueType>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_url: Option<String>,
+    /// The compiled WASM bytes (base64-encoded in JSON)
+    pub wasm_bytes: Vec<u8>,
+}
+
+/// Response for registering a transform
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RegisterTransformResponse {
+    /// Computed sha256 hash
+    pub hash: String,
+    /// Full transform record (without wasm_bytes)
+    pub record: TransformRecord,
+    /// Whether the transform was newly added or already existed
+    pub outcome: TransformAddOutcome,
+}
+
+/// Outcome of registering a transform
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum TransformAddOutcome {
+    /// Transform was newly registered
+    Added,
+    /// Transform already exists (same hash) — idempotent
+    AlreadyExists,
+}
+
+/// Response containing a list of transform hashes + names
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TransformsListResponse {
+    pub transforms: Vec<TransformListEntry>,
+}
+
+/// A single entry in the transforms list
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TransformListEntry {
+    pub hash: String,
+    pub name: String,
+    pub version: String,
+}
+
+/// Response containing all transforms with full metadata (no wasm_bytes)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AvailableTransformsResponse {
+    pub transforms: Vec<TransformRecord>,
+}
+
+/// Request to verify a WASM blob matches a hash
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VerifyTransformRequest {
+    pub hash: String,
+    pub wasm_bytes: Vec<u8>,
+}
+
+/// Response for verify endpoint
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VerifyTransformResponse {
+    pub hash: String,
+    pub matches: bool,
+    pub computed_hash: String,
+}
+
+/// A transform entry with its similarity score
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SimilarTransformEntry {
+    pub record: TransformRecord,
+    pub similarity: f64,
+}
+
+/// Response for the find-similar-transforms endpoint
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SimilarTransformsResponse {
+    pub query_name: String,
+    pub threshold: f64,
+    pub similar_transforms: Vec<SimilarTransformEntry>,
 }

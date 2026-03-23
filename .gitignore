@@ -140,3 +140,9 @@ mutation_*.json
 query_*.json
 sample_*.json
 .fastembed_cache/
+
+# Claude Code worktrees
+.claude/
+
+# Local static-react dev (not part of this repo)
+src/server/static-react/
