@@ -1124,9 +1124,12 @@ impl SchemaServiceState {
             }
         }
 
-        // Build an output schema from the view's fields and run it through add_schema
+        // Build an output schema from the view's fields and run it through add_schema.
+        // Use descriptive_name as the initial schema name — add_schema replaces it with
+        // the identity hash, but having a meaningful name prevents infer_name_from_fields
+        // from falling back to the view name (which is not a collection name).
         let mut output_schema = Schema::new(
-            request.name.clone(),
+            request.descriptive_name.clone(),
             crate::schema::types::schema::DeclarativeSchemaType::Single,
             None,
             Some(request.output_fields.clone()),
