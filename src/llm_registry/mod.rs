@@ -1,7 +1,7 @@
 //! Centralized LLM registry for model definitions, provider configs, and prompt templates.
 //!
 //! All LLM model IDs, API configurations, and prompt templates live here so that
-//! every project in the workspace (`fold_db_node`, `file_to_json`, `file_to_markdown`,
+//! every project in the workspace (`fold_db_node`, `file_to_markdown`,
 //! `exemem-infra`) can reference a single source of truth.
 //!
 //! # Usage

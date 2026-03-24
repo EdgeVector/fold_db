@@ -13,7 +13,7 @@ pub const ANTHROPIC_HAIKU: &str = "claude-haiku-4-5-20251001";
 /// Used by: `fold_db_node` ingestion + LLM query service.
 pub const ANTHROPIC_SONNET: &str = "claude-sonnet-4-20250514";
 
-/// OpenRouter-style model path for Sonnet (used by `file_to_json`).
+/// OpenRouter-style model path for Sonnet.
 pub const ANTHROPIC_SONNET_OPENROUTER: &str = "anthropic/claude-sonnet-4-20250514";
 
 // ---- Ollama Models ----
@@ -106,7 +106,7 @@ pub const OLLAMA_MIN_P: f32 = 0.0;
 /// Maximum characters before a field value is truncated in prompts.
 pub const PROMPT_FIELD_TRUNCATION_LIMIT: usize = 300;
 
-/// Maximum bytes for LLM input in `file_to_json` before chunking kicks in.
+/// Maximum bytes for LLM input before chunking kicks in.
 pub const MAX_LLM_INPUT_BYTES: usize = 128 * 1024;
 
 #[cfg(test)]
