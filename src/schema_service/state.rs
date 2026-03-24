@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 
-use crate::db_operations::native_index::{Embedder, FastEmbedModel};
+use crate::db_operations::native_index::{cosine_similarity, Embedder, FastEmbedModel};
 use crate::error::{FoldDbError, FoldDbResult};
 use crate::log_feature;
 use crate::logging::features::LogFeature;
@@ -56,9 +56,129 @@ pub struct SchemaServiceState {
     pub views: Arc<RwLock<HashMap<String, StoredView>>>,
     /// Registered transforms: sha256_hash -> TransformRecord (no wasm_bytes)
     pub transforms: Arc<RwLock<HashMap<String, TransformRecord>>>,
+    /// Pre-computed embeddings for reference collection names (anchor set).
+    /// Used to validate that incoming descriptive_names are proper collection names
+    /// rather than AI-generated captions/descriptions.
+    pub collection_name_anchors: Vec<Vec<f32>>,
 }
 
+/// Reference collection names used as anchor points in embedding space.
+/// Real collection names cluster near these; AI captions are far from all of them.
+const COLLECTION_NAME_ANCHORS: &[&str] = &[
+    "Photo Collection",
+    "Recipe Collection",
+    "Medical Records",
+    "Journal Entries",
+    "Financial Transactions",
+    "Product Catalog",
+    "User Profiles",
+    "Event Schedule",
+    "Document Collection",
+    "Contact Directory",
+    "Task List",
+    "Insurance Records",
+    "Tax Documents",
+    "Course Materials",
+    "Meeting Notes",
+    "Travel Itinerary",
+    "Order History",
+    "Sales Records",
+    "Music Library",
+    "Email Archive",
+    "Inventory List",
+    "Workout Log",
+    "Customer Database",
+    "Blog Posts",
+];
+
+/// Minimum cosine similarity to any anchor for a descriptive_name to be accepted.
+const COLLECTION_NAME_SIMILARITY_THRESHOLD: f32 = 0.3;
+
 impl SchemaServiceState {
+    /// Compute embeddings for the reference collection name anchors.
+    /// Returns an empty vec if the embedding model is unavailable.
+    fn compute_anchor_embeddings(embedder: &dyn Embedder) -> Vec<Vec<f32>> {
+        let mut anchors = Vec::with_capacity(COLLECTION_NAME_ANCHORS.len());
+        for name in COLLECTION_NAME_ANCHORS {
+            match embedder.embed_text(name) {
+                Ok(vec) => anchors.push(vec),
+                Err(e) => {
+                    log_feature!(
+                        LogFeature::Schema,
+                        warn,
+                        "Failed to embed anchor '{}': {} — falling back to heuristic validation",
+                        name,
+                        e
+                    );
+                    return Vec::new();
+                }
+            }
+        }
+        anchors
+    }
+
+    /// Check whether a descriptive_name looks like a proper collection name
+    /// rather than an AI-generated caption or description.
+    ///
+    /// Applies fast heuristic pre-filters (word count, sentence patterns) first,
+    /// then uses embedding similarity against reference collection names when the
+    /// embedding model is available.
+    pub fn is_valid_collection_name(&self, name: &str) -> bool {
+        // Fast pre-filter: names with more than 8 words are almost certainly captions
+        let word_count = name.split_whitespace().count();
+        if word_count > 8 {
+            return false;
+        }
+
+        // Fast pre-filter: reject names that start with common sentence/caption patterns.
+        // These are dead giveaways of AI-generated descriptions regardless of embedding similarity.
+        let dn_lower = name.to_lowercase();
+        if dn_lower.starts_with("this is ")
+            || dn_lower.starts_with("the image ")
+            || dn_lower.starts_with("this image ")
+            || dn_lower.starts_with("- **")
+            || dn_lower.starts_with("- this")
+            || dn_lower.starts_with("a close-up ")
+            || dn_lower.starts_with("a photo ")
+            || dn_lower.starts_with("an image ")
+        {
+            return false;
+        }
+
+        // If anchors are empty (embedding model unavailable), use heuristic fallback
+        if self.collection_name_anchors.is_empty() {
+            return Self::heuristic_collection_name_check(name);
+        }
+
+        // Compute embedding for the candidate name
+        let candidate_embedding = match self.embedder.embed_text(name) {
+            Ok(vec) => vec,
+            Err(_) => return Self::heuristic_collection_name_check(name),
+        };
+
+        // Find max cosine similarity to any anchor
+        let max_sim = self
+            .collection_name_anchors
+            .iter()
+            .map(|anchor| cosine_similarity(&candidate_embedding, anchor))
+            .fold(f32::NEG_INFINITY, f32::max);
+
+        max_sim >= COLLECTION_NAME_SIMILARITY_THRESHOLD
+    }
+
+    /// Heuristic fallback when embedding model is unavailable.
+    /// Rejects names that look like AI captions based on word count and common patterns.
+    fn heuristic_collection_name_check(name: &str) -> bool {
+        let dn_lower = name.to_lowercase();
+        let is_caption = dn_lower.starts_with("this is ")
+            || dn_lower.starts_with("the image ")
+            || dn_lower.starts_with("this image ")
+            || dn_lower.starts_with("- **")
+            || dn_lower.starts_with("- this")
+            || name.len() > 80;
+        !is_caption
+    }
+
     /// Create a new schema service state with local sled storage
     pub fn new(db_path: String) -> FoldDbResult<Self> {
         let db = sled::open(&db_path).map_err(|e| {
@@ -84,6 +204,9 @@ impl SchemaServiceState {
             .open_tree("transform_metadata")
             .map_err(|e| FoldDbError::Config(format!("Failed to open transform_metadata tree: {}", e)))?;
 
+        let embedder: Arc<dyn Embedder> = Arc::new(FastEmbedModel::new());
+        let collection_name_anchors = Self::compute_anchor_embeddings(embedder.as_ref());
+
         let state = Self {
             schemas: Arc::new(RwLock::new(HashMap::new())),
             descriptive_name_index: Arc::new(RwLock::new(HashMap::new())),
@@ -91,10 +214,11 @@ impl SchemaServiceState {
             field_embeddings: Arc::new(RwLock::new(HashMap::new())),
             canonical_fields: Arc::new(RwLock::new(HashMap::new())),
             canonical_field_embeddings: Arc::new(RwLock::new(HashMap::new())),
-            embedder: Arc::new(FastEmbedModel::new()),
+            embedder,
             storage: SchemaStorage::Sled { db, schemas_tree },
             views: Arc::new(RwLock::new(HashMap::new())),
             transforms: Arc::new(RwLock::new(HashMap::new())),
+            collection_name_anchors,
         };
 
         // Load schemas synchronously for sled
@@ -170,6 +294,9 @@ impl SchemaServiceState {
 
         let store = DynamoDbSchemaStore::new(config).await?;
 
+        let embedder: Arc<dyn Embedder> = Arc::new(FastEmbedModel::new());
+        let collection_name_anchors = Self::compute_anchor_embeddings(embedder.as_ref());
+
         let state = Self {
             schemas: Arc::new(RwLock::new(HashMap::new())),
             descriptive_name_index: Arc::new(RwLock::new(HashMap::new())),
@@ -177,12 +304,13 @@ impl SchemaServiceState {
             field_embeddings: Arc::new(RwLock::new(HashMap::new())),
             canonical_fields: Arc::new(RwLock::new(HashMap::new())),
             canonical_field_embeddings: Arc::new(RwLock::new(HashMap::new())),
-            embedder: Arc::new(FastEmbedModel::new()),
+            embedder,
             storage: SchemaStorage::Cloud {
                 store: Arc::new(store),
             },
             views: Arc::new(RwLock::new(HashMap::new())),
             transforms: Arc::new(RwLock::new(HashMap::new())),
+            collection_name_anchors,
         };
 
         // Load schemas on initialization
@@ -336,6 +464,8 @@ impl SchemaServiceState {
             .open_tree("transform_metadata")
             .map_err(|e| FoldDbError::Config(format!("Failed to open transform_metadata tree: {}", e)))?;
 
+        let collection_name_anchors = Self::compute_anchor_embeddings(embedder.as_ref());
+
         let state = Self {
             schemas: Arc::new(RwLock::new(HashMap::new())),
             descriptive_name_index: Arc::new(RwLock::new(HashMap::new())),
@@ -347,6 +477,7 @@ impl SchemaServiceState {
             storage: SchemaStorage::Sled { db, schemas_tree },
             views: Arc::new(RwLock::new(HashMap::new())),
             transforms: Arc::new(RwLock::new(HashMap::new())),
+            collection_name_anchors,
         };
 
         state.load_schemas_sync()?;
@@ -373,17 +504,9 @@ impl SchemaServiceState {
 
         // Reject descriptive names that look like AI-generated descriptions or
         // vision model captions rather than proper collection names.
-        // Good: "Photo Collection", "Recipe Collection", "Medical Records"
-        // Bad:  "This image depicts a scenic boat tour...", "- **Description of the Image**:"
+        // Uses embedding similarity against reference collection names (with heuristic fallback).
         if let Some(ref dn) = schema.descriptive_name {
-            let dn_lower = dn.to_lowercase();
-            let is_caption = dn_lower.starts_with("this is ")
-                || dn_lower.starts_with("the image ")
-                || dn_lower.starts_with("this image ")
-                || dn_lower.starts_with("- **")
-                || dn_lower.starts_with("- this")
-                || dn.len() > 80;
-            if is_caption {
+            if !self.is_valid_collection_name(dn) {
                 return Err(FoldDbError::Config(format!(
                     "descriptive_name looks like an AI caption, not a schema name: '{}'. \
                      Use a short collection name like 'Photo Collection' or 'Medical Records'.",
@@ -1112,5 +1235,184 @@ impl SchemaServiceState {
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+    use tempfile::TempDir;
+
+    /// Create a SchemaServiceState with the real FastEmbedModel for testing.
+    /// Returns None if the embedding model is unavailable (e.g., in CI).
+    fn create_test_state() -> Option<SchemaServiceState> {
+        let tmp = TempDir::new().expect("failed to create temp dir");
+        let db_path = tmp.path().join("test_schema_db");
+        let embedder: Arc<dyn Embedder> = Arc::new(FastEmbedModel::new());
+
+        // Test if the model works by embedding a simple string
+        if embedder.embed_text("test").is_err() {
+            return None;
+        }
+
+        let state = SchemaServiceState::new_with_embedder(
+            db_path.to_string_lossy().to_string(),
+            embedder,
+        )
+        .expect("failed to create state");
+
+        // Leak the TempDir so the sled DB stays alive for the duration of the test
+        std::mem::forget(tmp);
+        Some(state)
+    }
+
+    /// Create a SchemaServiceState with the MockEmbeddingModel (heuristic fallback).
+    /// Clears anchor embeddings so `is_valid_collection_name` falls back to the
+    /// heuristic check (mock embeddings lack semantic meaning).
+    fn create_mock_state() -> SchemaServiceState {
+        let tmp = TempDir::new().expect("failed to create temp dir");
+        let db_path = tmp.path().join("test_schema_db_mock");
+        let embedder: Arc<dyn Embedder> = Arc::new(crate::db_operations::native_index::MockEmbeddingModel);
+        let mut state = SchemaServiceState::new_with_embedder(
+            db_path.to_string_lossy().to_string(),
+            embedder,
+        )
+        .expect("failed to create state");
+        state.collection_name_anchors.clear();
+        std::mem::forget(tmp);
+        state
+    }
+
+    // ---- Good names: should ALL pass validation ----
+
+    #[test]
+    fn test_valid_name_photo_collection() {
+        let state = create_test_state().unwrap_or_else(create_mock_state);
+        assert!(state.is_valid_collection_name("Photo Collection"));
+    }
+
+    #[test]
+    fn test_valid_name_medical_records() {
+        let state = create_test_state().unwrap_or_else(create_mock_state);
+        assert!(state.is_valid_collection_name("Medical Records"));
+    }
+
+    #[test]
+    fn test_valid_name_recipe_book() {
+        let state = create_test_state().unwrap_or_else(create_mock_state);
+        assert!(state.is_valid_collection_name("Recipe Book"));
+    }
+
+    #[test]
+    fn test_valid_name_travel_photos() {
+        let state = create_test_state().unwrap_or_else(create_mock_state);
+        assert!(state.is_valid_collection_name("Travel Photos"));
+    }
+
+    #[test]
+    fn test_valid_name_work_documents() {
+        let state = create_test_state().unwrap_or_else(create_mock_state);
+        assert!(state.is_valid_collection_name("Work Documents"));
+    }
+
+    #[test]
+    fn test_valid_name_family_album() {
+        let state = create_test_state().unwrap_or_else(create_mock_state);
+        assert!(state.is_valid_collection_name("Family Album"));
+    }
+
+    #[test]
+    fn test_valid_name_expense_reports() {
+        let state = create_test_state().unwrap_or_else(create_mock_state);
+        assert!(state.is_valid_collection_name("Expense Reports"));
+    }
+
+    #[test]
+    fn test_valid_name_customer_orders() {
+        let state = create_test_state().unwrap_or_else(create_mock_state);
+        assert!(state.is_valid_collection_name("Customer Orders"));
+    }
+
+    #[test]
+    fn test_valid_name_blog_posts() {
+        let state = create_test_state().unwrap_or_else(create_mock_state);
+        assert!(state.is_valid_collection_name("Blog Posts"));
+    }
+
+    #[test]
+    fn test_valid_name_image_library() {
+        let state = create_test_state().unwrap_or_else(create_mock_state);
+        assert!(state.is_valid_collection_name("Image Library"));
+    }
+
+    // ---- Bad names: should ALL fail validation ----
+
+    #[test]
+    fn test_invalid_name_vision_caption_1() {
+        let state = create_test_state().unwrap_or_else(create_mock_state);
+        assert!(!state.is_valid_collection_name(
+            "This image depicts a scenic outdoor scene on a boat"
+        ));
+    }
+
+    #[test]
+    fn test_invalid_name_vision_caption_2() {
+        let state = create_test_state().unwrap_or_else(create_mock_state);
+        assert!(!state.is_valid_collection_name(
+            "The image depicts a woman seated at a restaurant table with wine"
+        ));
+    }
+
+    #[test]
+    fn test_invalid_name_description_with_markdown() {
+        let state = create_test_state().unwrap_or_else(create_mock_state);
+        assert!(!state.is_valid_collection_name(
+            "- **Description of the Image**: A pastoral landscape"
+        ));
+    }
+
+    #[test]
+    fn test_invalid_name_long_sentence() {
+        let state = create_test_state().unwrap_or_else(create_mock_state);
+        assert!(!state.is_valid_collection_name(
+            "A close-up photograph of a red fox in a snowy forest setting"
+        ));
+    }
+
+    #[test]
+    fn test_invalid_name_this_is_pattern() {
+        let state = create_test_state().unwrap_or_else(create_mock_state);
+        assert!(!state.is_valid_collection_name(
+            "This is not a document, receipt, or screenshot"
+        ));
+    }
+
+    #[test]
+    fn test_invalid_name_technical_description() {
+        let state = create_test_state().unwrap_or_else(create_mock_state);
+        assert!(!state.is_valid_collection_name(
+            "The image shows a person wearing a form-fitting deep red long-sleeved top"
+        ));
+    }
+
+    // ---- Heuristic fallback tests (using mock embedder) ----
+
+    #[test]
+    fn test_heuristic_rejects_this_is_prefix() {
+        assert!(!SchemaServiceState::heuristic_collection_name_check(
+            "This is a description of something"
+        ));
+    }
+
+    #[test]
+    fn test_heuristic_rejects_long_names() {
+        let long_name = "A".repeat(81);
+        assert!(!SchemaServiceState::heuristic_collection_name_check(&long_name));
+    }
+
+    #[test]
+    fn test_heuristic_accepts_short_collection_name() {
+        assert!(SchemaServiceState::heuristic_collection_name_check("Photo Collection"));
     }
 }

@@ -601,7 +601,7 @@ async fn test_get_transform_by_hash() {
     let state = make_test_state();
     let schema_name = add_test_schema(
         &state,
-        "TestSchema",
+        "Test Records",
         &[("x", FieldValueType::Integer)],
         &[("x", "word")],
     )
@@ -653,7 +653,7 @@ async fn test_transforms_persist_across_restart() {
         let state = SchemaServiceState::new(db_path.clone()).expect("failed to create state");
         let schema_name = add_test_schema(
             &state,
-            "PersistTest",
+            "Persistence Records",
             &[("data", FieldValueType::String)],
             &[("data", "word")],
         )
@@ -698,7 +698,7 @@ async fn test_find_similar_transforms() {
     let state = make_test_state();
     let schema_name = add_test_schema(
         &state,
-        "SimilarTest",
+        "Similarity Records",
         &[("f", FieldValueType::String)],
         &[("f", "word")],
     )
