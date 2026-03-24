@@ -403,7 +403,7 @@ impl SchemaServiceState {
         // Without it, conservatively return the input ceiling.
         #[cfg(feature = "transform-wasm")]
         {
-            match self.run_nmi_estimation(wasm_bytes, input_schema, output_fields, input_ceiling) {
+            match self.run_nmi_estimation(wasm_bytes, input_schema, output_fields, input_ceiling.clone()) {
                 Ok(result) => result,
                 Err(e) => {
                     log_feature!(
@@ -436,7 +436,7 @@ impl SchemaServiceState {
         wasm_bytes: &[u8],
         input_schema: &HashMap<String, FieldValueType>,
         output_fields: &HashMap<String, FieldValueType>,
-        input_ceiling: DataClassification,
+        _input_ceiling: DataClassification,
     ) -> FoldDbResult<(
         DataClassification,
         HashMap<String, HashMap<String, f32>>,
@@ -476,7 +476,7 @@ impl SchemaServiceState {
             for (_output_field, &nmi_score) in output_scores {
                 if nmi_score > NMI_LEAKAGE_THRESHOLD {
                     output_classification =
-                        std::cmp::max(output_classification, input_classification);
+                        std::cmp::max(output_classification, input_classification.clone());
                 }
             }
         }
