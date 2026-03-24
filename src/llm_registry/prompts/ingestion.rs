@@ -21,7 +21,7 @@ pub const PROMPT_HEADER: &str = r#"Create a schema for this sample json data. Re
 REJECTED descriptive_name values — names made entirely of structural words are rejected: "Document Collection", "Data Records", "Text Content", "File Metadata", "Record List", "General Information". Read the actual content and name the topic specifically: "Family Vacation Photos", "Technical Architecture Notes", "Weekly Meeting Minutes".
 
 Example:
-{"name": "social_media_posts", "descriptive_name": "Social Media Posts", "key": {"hash_field": "author", "range_field": "created_at"}, "fields": ["created_at", "author", "content"], "field_descriptions": {"created_at": "...", "author": "...", "content": "..."}, "field_classifications": {"created_at": ["date"], "author": ["name:person", "word"], "content": ["word"]}}"#;
+{"name": "social_media_posts", "descriptive_name": "Social Media Posts", "key": {"hash_field": "author", "range_field": "created_at"}, "fields": ["created_at", "author", "content"], "field_descriptions": {"created_at": "...", "author": "...", "content": "..."}}"#;
 
 /// Instructions appended to every ingestion prompt after the sample data.
 pub const PROMPT_ACTIONS: &str = r#"Please analyze the sample data and create a new schema definition in new_schemas with mutation_mappers.
@@ -64,14 +64,6 @@ mod tests {
         assert!(PROMPT_HEADER.contains("HashRange"));
     }
 
-    #[test]
-    fn prompt_header_mentions_key_classification_types() {
-        // The optimized prompt includes essential types in the example;
-        // the full list was removed as autoresearch proved models infer them.
-        for cls in &["word", "name:person", "date"] {
-            assert!(PROMPT_HEADER.contains(cls), "Missing classification type: {}", cls);
-        }
-    }
 
     #[test]
     fn prompt_actions_requires_json() {
