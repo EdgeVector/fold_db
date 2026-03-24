@@ -371,6 +371,27 @@ impl SchemaServiceState {
             ));
         }
 
+        // Reject descriptive names that look like AI-generated descriptions or
+        // vision model captions rather than proper collection names.
+        // Good: "Photo Collection", "Recipe Collection", "Medical Records"
+        // Bad:  "This image depicts a scenic boat tour...", "- **Description of the Image**:"
+        if let Some(ref dn) = schema.descriptive_name {
+            let dn_lower = dn.to_lowercase();
+            let is_caption = dn_lower.starts_with("this is ")
+                || dn_lower.starts_with("the image ")
+                || dn_lower.starts_with("this image ")
+                || dn_lower.starts_with("- **")
+                || dn_lower.starts_with("- this")
+                || dn.len() > 80;
+            if is_caption {
+                return Err(FoldDbError::Config(format!(
+                    "descriptive_name looks like an AI caption, not a schema name: '{}'. \
+                     Use a short collection name like 'Photo Collection' or 'Medical Records'.",
+                    &dn[..dn.len().min(60)]
+                )));
+            }
+        }
+
         // field_descriptions is required — the schema service uses them for
         // semantic field matching (embedding "field_name: description").
         // Without descriptions, field matching degrades to bare name comparison.
