@@ -179,6 +179,87 @@ impl SchemaServiceState {
         !is_caption
     }
 
+    /// Generate a proper collection name from a schema's fields and field_descriptions.
+    ///
+    /// 1. Concatenates field names and descriptions into a single text
+    /// 2. Embeds the text and compares against anchor collection names
+    /// 3. If max similarity > 0.25, uses the best-matching anchor name
+    /// 4. Otherwise, infers a name from field name patterns or falls back to the schema name
+    pub fn generate_collection_name(&self, schema: &Schema) -> String {
+        // Build text from fields + descriptions
+        let field_text = Self::build_field_text(schema);
+
+        // Try embedding-based matching against anchors
+        if !self.collection_name_anchors.is_empty() && !field_text.is_empty() {
+            if let Ok(embedding) = self.embedder.embed_text(&field_text) {
+                let mut best_sim = f32::NEG_INFINITY;
+                let mut best_idx = 0;
+                for (i, anchor) in self.collection_name_anchors.iter().enumerate() {
+                    let sim = cosine_similarity(&embedding, anchor);
+                    if sim > best_sim {
+                        best_sim = sim;
+                        best_idx = i;
+                    }
+                }
+                if best_sim > 0.25 {
+                    return COLLECTION_NAME_ANCHORS[best_idx].to_string();
+                }
+            }
+        }
+
+        // Fallback: infer from field name patterns
+        Self::infer_name_from_fields(schema)
+    }
+
+    /// Build a text string from schema fields and their descriptions for embedding.
+    fn build_field_text(schema: &Schema) -> String {
+        let fields = match schema.fields.as_ref() {
+            Some(f) if !f.is_empty() => f,
+            _ => return String::new(),
+        };
+
+        fields
+            .iter()
+            .map(|f| {
+                if let Some(desc) = schema.field_descriptions.get(f) {
+                    format!("{}: {}", f, desc)
+                } else {
+                    f.clone()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+
+    /// Infer a collection name from field name patterns when embedding matching fails.
+    fn infer_name_from_fields(schema: &Schema) -> String {
+        if let Some(ref fields) = schema.fields {
+            let all_lower: Vec<String> = fields.iter().map(|f| f.to_lowercase()).collect();
+            let joined = all_lower.join(" ");
+
+            if joined.contains("gps") || joined.contains("camera") || joined.contains("image") {
+                return "Photo Collection".to_string();
+            }
+            if joined.contains("amount") || joined.contains("balance") || joined.contains("transaction") {
+                return "Financial Records".to_string();
+            }
+            if joined.contains("title") && joined.contains("content") {
+                return "Document Collection".to_string();
+            }
+        }
+
+        // Use schema name if it looks like a word (not a hash)
+        let name = &schema.name;
+        if !name.is_empty() && name.len() < 40 && name.chars().all(|c| c.is_alphanumeric() || c == '_' || c == ' ' || c == '-') && name.chars().any(|c| c.is_alphabetic()) {
+            // Don't use it if it looks like a hex hash
+            if !(name.len() > 16 && name.chars().all(|c| c.is_ascii_hexdigit() || c == '_')) {
+                return name.clone();
+            }
+        }
+
+        "Data Records".to_string()
+    }
+
     /// Create a new schema service state with local sled storage
     pub fn new(db_path: String) -> FoldDbResult<Self> {
         let db = sled::open(&db_path).map_err(|e| {
@@ -502,16 +583,50 @@ impl SchemaServiceState {
             ));
         }
 
-        // Reject descriptive names that look like AI-generated descriptions or
+        // Auto-correct descriptive names that look like AI-generated descriptions or
         // vision model captions rather than proper collection names.
         // Uses embedding similarity against reference collection names (with heuristic fallback).
-        if let Some(ref dn) = schema.descriptive_name {
+        if let Some(ref dn) = schema.descriptive_name.clone() {
             if !self.is_valid_collection_name(dn) {
-                return Err(FoldDbError::Config(format!(
-                    "descriptive_name looks like an AI caption, not a schema name: '{}'. \
-                     Use a short collection name like 'Photo Collection' or 'Medical Records'.",
-                    &dn[..dn.len().min(60)]
-                )));
+                let generated = self.generate_collection_name(&schema);
+                log_feature!(
+                    LogFeature::Schema,
+                    warn,
+                    "Auto-corrected descriptive_name from '{}' to '{}'",
+                    &dn[..dn.len().min(60)],
+                    generated
+                );
+                schema.descriptive_name = Some(generated);
+            } else {
+                // Name is valid, but check if a generated name would match an existing
+                // schema better — encourages merging related schemas.
+                let generated = self.generate_collection_name(&schema);
+                if generated != *dn {
+                    // Check if the generated name matches an existing schema
+                    if let Ok((Some(_matched), Some(_hash), _)) =
+                        self.find_matching_descriptive_name(&generated)
+                    {
+                        // Only swap if the original and generated are in the same ballpark
+                        if let (Ok(orig_emb), Ok(gen_emb)) = (
+                            self.embedder.embed_text(dn),
+                            self.embedder.embed_text(&generated),
+                        ) {
+                            let sim = cosine_similarity(&orig_emb, &gen_emb);
+                            if sim > 0.5 {
+                                log_feature!(
+                                    LogFeature::Schema,
+                                    warn,
+                                    "Auto-corrected descriptive_name from '{}' to '{}' \
+                                     (matches existing schema, similarity {:.3})",
+                                    dn,
+                                    generated,
+                                    sim
+                                );
+                                schema.descriptive_name = Some(generated);
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -1346,7 +1461,7 @@ mod tests {
         assert!(state.is_valid_collection_name("Image Library"));
     }
 
-    // ---- Bad names: should ALL fail validation ----
+    // ---- Bad names: should ALL fail validation (still detected as invalid) ----
 
     #[test]
     fn test_invalid_name_vision_caption_1() {
@@ -1394,6 +1509,161 @@ mod tests {
         assert!(!state.is_valid_collection_name(
             "The image shows a person wearing a form-fitting deep red long-sleeved top"
         ));
+    }
+
+    // ---- Auto-correction tests ----
+
+    /// Helper to create a photo-like schema with image-related fields
+    fn make_photo_schema(descriptive_name: &str) -> Schema {
+        use crate::schema::types::schema::DeclarativeSchemaType;
+        let mut schema = Schema::new(
+            "test_photo_schema".to_string(),
+            DeclarativeSchemaType::Single,
+            None,
+            Some(vec![
+                "image_format".to_string(),
+                "camera_model".to_string(),
+                "gps_latitude".to_string(),
+            ]),
+            None,
+            None,
+        );
+        schema.descriptive_name = Some(descriptive_name.to_string());
+        schema.field_descriptions.insert("image_format".to_string(), "image format".to_string());
+        schema.field_descriptions.insert("camera_model".to_string(), "camera model".to_string());
+        schema.field_descriptions.insert("gps_latitude".to_string(), "GPS latitude".to_string());
+        schema
+    }
+
+    #[test]
+    fn test_autocorrect_vision_caption_1() {
+        // AI caption should be auto-corrected to a proper collection name
+        let state = create_test_state().unwrap_or_else(create_mock_state);
+        let schema = make_photo_schema("This image depicts a scenic outdoor scene on a boat");
+        let generated = state.generate_collection_name(&schema);
+        // Should produce something like "Photo Collection" based on image/camera/gps fields
+        assert!(state.is_valid_collection_name(&generated),
+            "Auto-corrected name '{}' should be a valid collection name", generated);
+    }
+
+    #[test]
+    fn test_autocorrect_vision_caption_2() {
+        let state = create_test_state().unwrap_or_else(create_mock_state);
+        let schema = make_photo_schema("The image depicts a woman seated at a restaurant table with wine");
+        let generated = state.generate_collection_name(&schema);
+        assert!(state.is_valid_collection_name(&generated),
+            "Auto-corrected name '{}' should be a valid collection name", generated);
+    }
+
+    #[test]
+    fn test_autocorrect_preserves_valid_name() {
+        // Valid names should NOT be changed by is_valid_collection_name
+        let state = create_test_state().unwrap_or_else(create_mock_state);
+        assert!(state.is_valid_collection_name("Photo Collection"));
+        assert!(state.is_valid_collection_name("Medical Records"));
+        assert!(state.is_valid_collection_name("Recipe Book"));
+    }
+
+    #[test]
+    fn test_autocorrect_photo_fields_produce_photo_name() {
+        // Schemas with image/camera/gps fields should produce "Photo Collection"
+        // when using the field-pattern fallback
+        let state = create_mock_state(); // mock state forces heuristic/field-pattern path
+        let schema = make_photo_schema("anything");
+        let generated = state.generate_collection_name(&schema);
+        assert_eq!(generated, "Photo Collection");
+    }
+
+    #[test]
+    fn test_autocorrect_financial_fields() {
+        use crate::schema::types::schema::DeclarativeSchemaType;
+        let state = create_mock_state();
+        let mut schema = Schema::new(
+            "test_fin".to_string(),
+            DeclarativeSchemaType::Single,
+            None,
+            Some(vec!["amount".to_string(), "description".to_string()]),
+            None,
+            None,
+        );
+        schema.descriptive_name = Some("some caption".to_string());
+        schema.field_descriptions.insert("amount".to_string(), "transaction amount".to_string());
+        schema.field_descriptions.insert("description".to_string(), "transaction description".to_string());
+        let generated = state.generate_collection_name(&schema);
+        assert_eq!(generated, "Financial Records");
+    }
+
+    #[test]
+    fn test_autocorrect_document_fields() {
+        use crate::schema::types::schema::DeclarativeSchemaType;
+        let state = create_mock_state();
+        let mut schema = Schema::new(
+            "test_doc".to_string(),
+            DeclarativeSchemaType::Single,
+            None,
+            Some(vec!["title".to_string(), "content".to_string(), "author".to_string()]),
+            None,
+            None,
+        );
+        schema.descriptive_name = Some("some caption".to_string());
+        schema.field_descriptions.insert("title".to_string(), "document title".to_string());
+        schema.field_descriptions.insert("content".to_string(), "document content".to_string());
+        schema.field_descriptions.insert("author".to_string(), "document author".to_string());
+        let generated = state.generate_collection_name(&schema);
+        assert_eq!(generated, "Document Collection");
+    }
+
+    #[test]
+    fn test_autocorrect_fallback_to_schema_name() {
+        use crate::schema::types::schema::DeclarativeSchemaType;
+        let state = create_mock_state();
+        let mut schema = Schema::new(
+            "my_recipes".to_string(),
+            DeclarativeSchemaType::Single,
+            None,
+            Some(vec!["ingredient".to_string(), "step".to_string()]),
+            None,
+            None,
+        );
+        schema.descriptive_name = Some("some caption".to_string());
+        schema.field_descriptions.insert("ingredient".to_string(), "recipe ingredient".to_string());
+        schema.field_descriptions.insert("step".to_string(), "cooking step".to_string());
+        let generated = state.generate_collection_name(&schema);
+        // No field pattern matches, should fall back to schema name
+        assert_eq!(generated, "my_recipes");
+    }
+
+    #[test]
+    fn test_autocorrect_fallback_data_records_for_hash_name() {
+        use crate::schema::types::schema::DeclarativeSchemaType;
+        let state = create_mock_state();
+        let mut schema = Schema::new(
+            "abcdef1234567890abcdef".to_string(),
+            DeclarativeSchemaType::Single,
+            None,
+            Some(vec!["foo".to_string(), "bar".to_string()]),
+            None,
+            None,
+        );
+        schema.descriptive_name = Some("some caption".to_string());
+        schema.field_descriptions.insert("foo".to_string(), "a foo".to_string());
+        schema.field_descriptions.insert("bar".to_string(), "a bar".to_string());
+        let generated = state.generate_collection_name(&schema);
+        assert_eq!(generated, "Data Records");
+    }
+
+    #[test]
+    fn test_autocorrect_enables_schema_expansion() {
+        // Two photo schemas with different AI captions should both generate
+        // the same collection name, enabling schema expansion/merging
+        let state = create_mock_state();
+        let schema1 = make_photo_schema("This image depicts a scenic outdoor scene on a boat");
+        let schema2 = make_photo_schema("The image depicts a woman seated at a restaurant table with wine");
+        let name1 = state.generate_collection_name(&schema1);
+        let name2 = state.generate_collection_name(&schema2);
+        assert_eq!(name1, name2,
+            "Both photo schemas should generate the same collection name for merging: '{}' vs '{}'",
+            name1, name2);
     }
 
     // ---- Heuristic fallback tests (using mock embedder) ----
