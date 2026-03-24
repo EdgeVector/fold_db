@@ -9,28 +9,9 @@
 //! 2. LLM call using field description (requires ANTHROPIC_API_KEY)
 //! 3. No fallback — returns error. Incorrect classification is worse than no schema.
 
+use crate::llm_registry::models;
+use crate::llm_registry::prompts::classification::build_classification_prompt;
 use crate::schema::types::data_classification::DataClassification;
-
-/// Prompt for LLM-based classification of a single field.
-fn build_classification_prompt(field_name: &str, description: &str) -> String {
-    format!(
-        r#"Classify this database field's data sensitivity. Return ONLY a JSON object with two fields, no explanation.
-
-Field name: "{field_name}"
-Description: "{description}"
-
-Sensitivity levels:
-0 = Public (freely distributable, no restrictions)
-1 = Internal (not sensitive but not for public release)
-2 = Confidential (business-sensitive, competitive value)
-3 = Restricted (personally identifiable or individually attributable)
-4 = Highly Restricted (regulated data: HIPAA, financial records, biometric)
-
-Data domains: "general", "financial", "medical", "identity", "behavioral", "location"
-
-Return format: {{"sensitivity_level": <0-4>, "data_domain": "<domain>"}}"#
-    )
-}
 
 /// Classify a field using LLM analysis of its description.
 /// Returns a descriptive error string on failure.
@@ -52,22 +33,22 @@ pub async fn classify_with_llm(
     let prompt = build_classification_prompt(field_name, description);
 
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(15))
+        .timeout(std::time::Duration::from_secs(models::TIMEOUT_CLASSIFICATION))
         .no_proxy()
         .build()
         .map_err(|e| format!("Failed to create HTTP client for classification: {}", e))?;
 
     let request_body = serde_json::json!({
-        "model": "claude-haiku-4-5-20251001",
+        "model": models::ANTHROPIC_HAIKU,
         "messages": [{"role": "user", "content": prompt}],
-        "max_tokens": 100,
-        "temperature": 0.0
+        "max_tokens": models::MAX_TOKENS_CLASSIFICATION,
+        "temperature": models::TEMPERATURE_DETERMINISTIC
     });
 
     let response = client
-        .post("https://api.anthropic.com/v1/messages")
+        .post(format!("{}/v1/messages", models::ANTHROPIC_API_URL))
         .header("x-api-key", &api_key)
-        .header("anthropic-version", "2023-06-01")
+        .header("anthropic-version", models::ANTHROPIC_API_VERSION)
         .header("Content-Type", "application/json")
         .json(&request_body)
         .send()
