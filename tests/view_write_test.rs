@@ -1,3 +1,4 @@
+use fold_db::db_operations::native_index::FastEmbedModel;
 use fold_db::fold_db_core::FoldDB;
 use fold_db::schema::types::field_value_type::FieldValueType;
 use fold_db::schema::types::key_config::KeyConfig;
@@ -8,10 +9,13 @@ use fold_db::schema::SchemaState;
 use fold_db::view::types::{TransformView, ViewCacheState};
 use serde_json::json;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 async fn setup_db() -> FoldDB {
     let dir = tempfile::tempdir().unwrap();
-    FoldDB::new(dir.path().to_str().unwrap()).await.unwrap()
+    FoldDB::new(dir.path().to_str().unwrap(), Arc::new(FastEmbedModel::new()))
+        .await
+        .unwrap()
 }
 
 fn blogpost_schema_json() -> &'static str {

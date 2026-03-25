@@ -1,6 +1,5 @@
 use fold_db::db_operations::native_index::FastEmbedModel;
 use fold_db::schema::{SchemaCore, SchemaState};
-use std::sync::Arc;
 
 fn schema_a_json() -> String {
     r#"{

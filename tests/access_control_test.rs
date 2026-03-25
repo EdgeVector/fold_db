@@ -2,6 +2,7 @@ use fold_db::access::{
     AccessContext, FieldAccessPolicy, PaymentGate,
     SecurityLabel, TrustDistancePolicy, TrustGraph,
 };
+use fold_db::db_operations::native_index::FastEmbedModel;
 use fold_db::fold_db_core::FoldDB;
 use fold_db::schema::types::field::Field;
 use fold_db::schema::types::operations::{MutationType, Query};
@@ -9,10 +10,13 @@ use fold_db::schema::SchemaState;
 use fold_db::schema::types::{KeyValue, Mutation};
 use serde_json::json;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 async fn setup_db() -> FoldDB {
     let dir = tempfile::tempdir().unwrap();
-    FoldDB::new(dir.path().to_str().unwrap()).await.unwrap()
+    FoldDB::new(dir.path().to_str().unwrap(), Arc::new(FastEmbedModel::new()))
+        .await
+        .unwrap()
 }
 
 fn notes_schema_json() -> &'static str {
