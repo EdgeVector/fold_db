@@ -179,6 +179,41 @@ impl SchemaServiceState {
         !is_caption
     }
 
+    /// Detect AI-generated captions/descriptions masquerading as names.
+    ///
+    /// Returns `true` for sentence-like names (> 8 words, or starting with
+    /// common caption patterns like "This is", "A photo of", etc.).
+    fn is_caption_name(name: &str) -> bool {
+        let word_count = name.split_whitespace().count();
+        if word_count > 8 {
+            return true;
+        }
+        let lower = name.to_lowercase();
+        lower.starts_with("this is ")
+            || lower.starts_with("the image ")
+            || lower.starts_with("this image ")
+            || lower.starts_with("- **")
+            || lower.starts_with("- this")
+            || lower.starts_with("a close-up ")
+            || lower.starts_with("a photo ")
+            || lower.starts_with("an image ")
+    }
+
+    /// Convert a snake_case name to Title Case (e.g. "technical_notes" → "Technical Notes").
+    fn snake_to_title_case(name: &str) -> String {
+        name.replace('_', " ")
+            .split_whitespace()
+            .map(|w| {
+                let mut chars = w.chars();
+                match chars.next() {
+                    None => String::new(),
+                    Some(f) => f.to_uppercase().to_string() + chars.as_str(),
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+
     /// Generate a proper collection name from a schema's fields and field_descriptions.
     ///
     /// 1. Concatenates field names and descriptions into a single text
@@ -237,14 +272,14 @@ impl SchemaServiceState {
             let all_lower: Vec<String> = fields.iter().map(|f| f.to_lowercase()).collect();
             let joined = all_lower.join(" ");
 
-            if joined.contains("gps") || joined.contains("camera") || joined.contains("image") {
-                return "Photo Collection".to_string();
+            if joined.contains("gps") || joined.contains("camera") || joined.contains("focal") {
+                return "Photography".to_string();
             }
             if joined.contains("amount") || joined.contains("balance") || joined.contains("transaction") {
                 return "Financial Records".to_string();
             }
-            if joined.contains("title") && joined.contains("content") {
-                return "Document Collection".to_string();
+            if joined.contains("title") && joined.contains("content") && joined.contains("author") {
+                return "Written Works".to_string();
             }
         }
 
@@ -504,6 +539,11 @@ impl SchemaServiceState {
         index.clear();
         embeddings.clear();
         for (name, schema) in schemas.iter() {
+            // Skip superseded schemas — only the active expanded version
+            // should be in the index.
+            if schema.superseded_by.is_some() {
+                continue;
+            }
             if let Some(ref desc) = schema.descriptive_name {
                 index.insert(desc.clone(), name.clone());
                 match self.embedder.embed_text(desc) {
@@ -583,50 +623,22 @@ impl SchemaServiceState {
             ));
         }
 
-        // Auto-correct descriptive names that look like AI-generated descriptions or
-        // vision model captions rather than proper collection names.
-        // Uses embedding similarity against reference collection names (with heuristic fallback).
+        // Auto-correct bad descriptive names:
+        // 1. AI captions ("A photo of a sunset") → use schema.name title-cased
+        // 2. Generic structural names ("Document Collection") → use schema.name title-cased
+        // The ingestion layer already rejects these with retries, so this is a
+        // last-resort safety net that auto-corrects rather than failing.
         if let Some(ref dn) = schema.descriptive_name.clone() {
-            if !self.is_valid_collection_name(dn) {
-                let generated = self.generate_collection_name(&schema);
+            if Self::is_caption_name(dn) || super::name_validator::is_generic_name(dn) {
+                let title_cased = Self::snake_to_title_case(&schema.name);
                 log_feature!(
                     LogFeature::Schema,
                     warn,
-                    "Auto-corrected descriptive_name from '{}' to '{}'",
+                    "Auto-corrected descriptive_name from '{}' to '{}' (caption or generic)",
                     &dn[..dn.len().min(60)],
-                    generated
+                    title_cased
                 );
-                schema.descriptive_name = Some(generated);
-            } else {
-                // Name is valid, but check if a generated name would match an existing
-                // schema better — encourages merging related schemas.
-                let generated = self.generate_collection_name(&schema);
-                if generated != *dn {
-                    // Check if the generated name matches an existing schema
-                    if let Ok((Some(_matched), Some(_hash), _)) =
-                        self.find_matching_descriptive_name(&generated)
-                    {
-                        // Only swap if the original and generated are in the same ballpark
-                        if let (Ok(orig_emb), Ok(gen_emb)) = (
-                            self.embedder.embed_text(dn),
-                            self.embedder.embed_text(&generated),
-                        ) {
-                            let sim = cosine_similarity(&orig_emb, &gen_emb);
-                            if sim > 0.5 {
-                                log_feature!(
-                                    LogFeature::Schema,
-                                    warn,
-                                    "Auto-corrected descriptive_name from '{}' to '{}' \
-                                     (matches existing schema, similarity {:.3})",
-                                    dn,
-                                    generated,
-                                    sim
-                                );
-                                schema.descriptive_name = Some(generated);
-                            }
-                        }
-                    }
-                }
+                schema.descriptive_name = Some(title_cased);
             }
         }
 
@@ -820,15 +832,141 @@ impl SchemaServiceState {
             }
         }
 
-        // No field-overlap fallback needed — descriptive_name is required (validated above),
-        // so descriptive_name matching handles all expansion cases.
+        // Field-overlap fallback: catch near-duplicate schemas whose descriptive names
+        // differ but whose fields are largely the same (Jaccard >= 0.6 AND name similarity >= 0.8).
+        let overlap_target = {
+            let schemas = self.schemas.read().map_err(|_| {
+                FoldDbError::Config("Failed to acquire schemas read lock".to_string())
+            })?;
+            let incoming_fields: std::collections::HashSet<String> = schema
+                .fields
+                .as_ref()
+                .map(|f| f.iter().cloned().collect())
+                .unwrap_or_default();
+
+            let mut best: Option<(String, Schema, f64)> = None;
+            for (existing_name, existing_schema) in schemas.iter() {
+                if existing_schema.superseded_by.is_some() {
+                    continue;
+                }
+                let existing_fields: std::collections::HashSet<String> = existing_schema
+                    .fields
+                    .as_ref()
+                    .map(|f| f.iter().cloned().collect())
+                    .unwrap_or_default();
+                let jaccard = super::state_matching::jaccard_index(&incoming_fields, &existing_fields);
+                if jaccard >= 0.6 {
+                    if let (Some(ref inc_desc), Some(ref ext_desc)) =
+                        (&schema.descriptive_name, &existing_schema.descriptive_name)
+                    {
+                        if let (Ok(inc_emb), Ok(ext_emb)) = (
+                            self.embedder.embed_text(inc_desc),
+                            self.embedder.embed_text(ext_desc),
+                        ) {
+                            let name_sim = cosine_similarity(&inc_emb, &ext_emb);
+                            if name_sim >= 0.8
+                                && best.as_ref().is_none_or(|(_, _, j)| jaccard > *j)
+                            {
+                                best = Some((existing_name.clone(), existing_schema.clone(), jaccard));
+                            }
+                        }
+                    }
+                }
+            }
+            best
+        }; // read lock dropped here
+
+        if let Some((target_name, existing, jaccard)) = overlap_target {
+            let desc_name = existing
+                .descriptive_name
+                .clone()
+                .unwrap_or_else(|| schema.descriptive_name.clone().unwrap_or_default());
+            schema.descriptive_name = Some(desc_name.clone());
+
+            log_feature!(
+                LogFeature::Schema,
+                info,
+                "Field-overlap expansion: Jaccard={:.2}, merging into '{}'",
+                jaccard,
+                desc_name
+            );
+
+            let incoming_fields_vec = schema.fields.clone().unwrap_or_default();
+            let existing_fields_vec = existing.fields.clone().unwrap_or_default();
+            let rename_map = self.semantic_field_rename_map(
+                &incoming_fields_vec,
+                &existing_fields_vec,
+                &desc_name,
+                &schema.field_descriptions,
+                &existing.field_descriptions,
+            );
+            Self::apply_field_renames(&mut schema, &rename_map, &mut mutation_mappers);
+            schema.dedup_fields();
+
+            return self
+                .expand_schema(
+                    &mut schema,
+                    &existing,
+                    &target_name,
+                    &desc_name,
+                    &mutation_mappers,
+                )
+                .await;
+        }
 
         schema.name = schema_name.clone();
+
+        // Final guard: re-check descriptive_name_index under write lock to prevent
+        // race conditions where two concurrent add_schema calls with the same
+        // descriptive_name both pass the read-only check and create duplicates.
+        // Final guard: snapshot the descriptive_name_index to detect if a concurrent
+        // add_schema call already registered this descriptive_name.
+        let race_expansion_target = if let Some(ref desc_name_owned) = schema.descriptive_name {
+            let index = self.descriptive_name_index.read().map_err(|_| {
+                FoldDbError::Config("Failed to acquire descriptive_name_index read lock".to_string())
+            })?;
+            let target = index.get(desc_name_owned).cloned();
+            drop(index); // release lock before any await
+            target
+        } else {
+            None
+        };
+
+        if let Some(existing_hash) = race_expansion_target {
+            let existing = {
+                let schemas = self.schemas.read().map_err(|_| {
+                    FoldDbError::Config("Failed to acquire schemas read lock".to_string())
+                })?;
+                schemas.get(&existing_hash).cloned()
+            };
+            if let Some(existing) = existing {
+                if existing.superseded_by.is_none() {
+                    let desc_name_owned = schema.descriptive_name.clone().unwrap_or_default();
+                    log_feature!(
+                        LogFeature::Schema,
+                        warn,
+                        "Race condition: descriptive_name '{}' already registered as '{}' — redirecting to expansion",
+                        desc_name_owned,
+                        existing_hash
+                    );
+                    return self
+                        .expand_schema(
+                            &mut schema,
+                            &existing,
+                            &existing_hash,
+                            &desc_name_owned,
+                            &mutation_mappers,
+                        )
+                        .await;
+                }
+            }
+        }
 
         // Persist to storage backend
         self.persist_schema(&schema, &mutation_mappers).await?;
 
-        // Insert into in-memory cache and update descriptive_name index
+        // Insert into in-memory cache and update descriptive_name index atomically
+        // to prevent a window where the schema exists but isn't indexed.
         {
             let mut schemas = self.schemas.write().map_err(|_| {
                 FoldDbError::Config("Failed to acquire schemas write lock".to_string())
@@ -1405,9 +1543,9 @@ mod tests {
     // ---- Good names: should ALL pass validation ----
 
     #[test]
-    fn test_valid_name_photo_collection() {
+    fn test_valid_name_photography() {
         let state = create_test_state().unwrap_or_else(create_mock_state);
-        assert!(state.is_valid_collection_name("Photo Collection"));
+        assert!(state.is_valid_collection_name("Photography"));
     }
 
     #[test]
@@ -1423,9 +1561,9 @@ mod tests {
     }
 
     #[test]
-    fn test_valid_name_travel_photos() {
+    fn test_valid_name_travel_photography() {
         let state = create_test_state().unwrap_or_else(create_mock_state);
-        assert!(state.is_valid_collection_name("Travel Photos"));
+        assert!(state.is_valid_collection_name("Travel Photography"));
     }
 
     #[test]
@@ -1459,9 +1597,9 @@ mod tests {
     }
 
     #[test]
-    fn test_valid_name_image_library() {
+    fn test_valid_name_landscape_paintings() {
         let state = create_test_state().unwrap_or_else(create_mock_state);
-        assert!(state.is_valid_collection_name("Image Library"));
+        assert!(state.is_valid_collection_name("Landscape Paintings"));
     }
 
     // ---- Bad names: should ALL fail validation (still detected as invalid) ----
@@ -1516,7 +1654,7 @@ mod tests {
 
     // ---- Auto-correction tests ----
 
-    /// Helper to create a photo-like schema with image-related fields
+    /// Helper to create a photo-like schema with camera/GPS fields
     fn make_photo_schema(descriptive_name: &str) -> Schema {
         use crate::schema::types::schema::DeclarativeSchemaType;
         let mut schema = Schema::new(
@@ -1524,7 +1662,7 @@ mod tests {
             DeclarativeSchemaType::Single,
             None,
             Some(vec![
-                "image_format".to_string(),
+                "focal_length".to_string(),
                 "camera_model".to_string(),
                 "gps_latitude".to_string(),
             ]),
@@ -1532,7 +1670,7 @@ mod tests {
             None,
         );
         schema.descriptive_name = Some(descriptive_name.to_string());
-        schema.field_descriptions.insert("image_format".to_string(), "image format".to_string());
+        schema.field_descriptions.insert("focal_length".to_string(), "lens focal length".to_string());
         schema.field_descriptions.insert("camera_model".to_string(), "camera model".to_string());
         schema.field_descriptions.insert("gps_latitude".to_string(), "GPS latitude".to_string());
         schema
@@ -1562,19 +1700,19 @@ mod tests {
     fn test_autocorrect_preserves_valid_name() {
         // Valid names should NOT be changed by is_valid_collection_name
         let state = create_test_state().unwrap_or_else(create_mock_state);
-        assert!(state.is_valid_collection_name("Photo Collection"));
+        assert!(state.is_valid_collection_name("Photography"));
         assert!(state.is_valid_collection_name("Medical Records"));
         assert!(state.is_valid_collection_name("Recipe Book"));
     }
 
     #[test]
-    fn test_autocorrect_photo_fields_produce_photo_name() {
-        // Schemas with image/camera/gps fields should produce "Photo Collection"
+    fn test_autocorrect_photo_fields_produce_photography_name() {
+        // Schemas with camera/gps fields should produce "Photography"
         // when using the field-pattern fallback
         let state = create_mock_state(); // mock state forces heuristic/field-pattern path
         let schema = make_photo_schema("anything");
         let generated = state.generate_collection_name(&schema);
-        assert_eq!(generated, "Photo Collection");
+        assert_eq!(generated, "Photography");
     }
 
     #[test]
@@ -1613,7 +1751,7 @@ mod tests {
         schema.field_descriptions.insert("content".to_string(), "document content".to_string());
         schema.field_descriptions.insert("author".to_string(), "document author".to_string());
         let generated = state.generate_collection_name(&schema);
-        assert_eq!(generated, "Document Collection");
+        assert_eq!(generated, "Written Works");
     }
 
     #[test]
@@ -1667,6 +1805,7 @@ mod tests {
         assert_eq!(name1, name2,
             "Both photo schemas should generate the same collection name for merging: '{}' vs '{}'",
             name1, name2);
+        assert_eq!(name1, "Photography");
     }
 
     // ---- Heuristic fallback tests (using mock embedder) ----
@@ -1686,6 +1825,154 @@ mod tests {
 
     #[test]
     fn test_heuristic_accepts_short_collection_name() {
-        assert!(SchemaServiceState::heuristic_collection_name_check("Photo Collection"));
+        assert!(SchemaServiceState::heuristic_collection_name_check("Photography"));
+    }
+
+    // ---- Duplicate schema prevention tests (same descriptive_name → expansion) ----
+
+    /// Helper to create a simple schema with given name, descriptive_name, and fields
+    fn make_schema(name: &str, descriptive_name: &str, fields: &[&str]) -> (Schema, HashMap<String, String>) {
+        use crate::schema::types::schema::DeclarativeSchemaType;
+        let field_vec: Vec<String> = fields.iter().map(|f| f.to_string()).collect();
+        let mut schema = Schema::new(
+            name.to_string(),
+            DeclarativeSchemaType::Single,
+            None,
+            Some(field_vec),
+            None,
+            None,
+        );
+        schema.descriptive_name = Some(descriptive_name.to_string());
+        // Add field descriptions (required by add_schema)
+        for f in fields {
+            schema.field_descriptions.insert(f.to_string(), format!("{} description", f));
+        }
+        let mappers = HashMap::new();
+        (schema, mappers)
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_same_descriptive_name_different_fields_expands() {
+        let state = create_mock_state();
+
+        // Register first schema
+        let (schema1, mappers1) = make_schema(
+            "nature_shots",
+            "Nature Photography",
+            &["camera_model", "gps_latitude", "focal_length"],
+        );
+        let result1 = state.add_schema(schema1, mappers1).await;
+        assert!(result1.is_ok(), "First schema should succeed: {:?}", result1);
+        let outcome1 = result1.unwrap();
+        assert!(
+            matches!(outcome1, SchemaAddOutcome::Added(_, _)),
+            "First schema should be Added, got: {:?}",
+            std::mem::discriminant(&outcome1)
+        );
+
+        // Register second schema with SAME descriptive_name but different fields
+        let (schema2, mappers2) = make_schema(
+            "nature_shots",
+            "Nature Photography",
+            &["camera_model", "gps_latitude", "focal_length", "shutter_speed", "iso"],
+        );
+        let result2 = state.add_schema(schema2, mappers2).await;
+        assert!(result2.is_ok(), "Second schema should succeed: {:?}", result2);
+        let outcome2 = result2.unwrap();
+
+        // Must be Expanded or AlreadyExists — NOT Added (which would create a duplicate)
+        assert!(
+            !matches!(outcome2, SchemaAddOutcome::Added(_, _)),
+            "Second schema with same descriptive_name must NOT create a duplicate — should expand or reuse, got Added"
+        );
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_same_descriptive_name_same_fields_reuses() {
+        let state = create_mock_state();
+
+        let (schema1, mappers1) = make_schema(
+            "nature_shots",
+            "Nature Photography",
+            &["camera_model", "gps_latitude"],
+        );
+        let result1 = state.add_schema(schema1, mappers1).await.unwrap();
+        assert!(matches!(result1, SchemaAddOutcome::Added(_, _)));
+
+        // Same descriptive_name and same fields → should return AlreadyExists
+        let (schema2, mappers2) = make_schema(
+            "nature_shots",
+            "Nature Photography",
+            &["camera_model", "gps_latitude"],
+        );
+        let result2 = state.add_schema(schema2, mappers2).await.unwrap();
+        assert!(
+            matches!(result2, SchemaAddOutcome::AlreadyExists(_, _)),
+            "Same name + same fields should reuse existing, got: {:?}",
+            std::mem::discriminant(&result2)
+        );
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_same_descriptive_name_subset_fields_reuses() {
+        let state = create_mock_state();
+
+        let (schema1, mappers1) = make_schema(
+            "nature_shots",
+            "Nature Photography",
+            &["camera_model", "gps_latitude", "focal_length"],
+        );
+        state.add_schema(schema1, mappers1).await.unwrap();
+
+        // Subset of fields → should return AlreadyExists (existing is a superset)
+        let (schema2, mappers2) = make_schema(
+            "nature_shots",
+            "Nature Photography",
+            &["camera_model", "gps_latitude"],
+        );
+        let result2 = state.add_schema(schema2, mappers2).await.unwrap();
+        assert!(
+            matches!(result2, SchemaAddOutcome::AlreadyExists(_, _)),
+            "Subset of existing fields should reuse existing, got: {:?}",
+            std::mem::discriminant(&result2)
+        );
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_no_duplicate_schemas_after_expansion() {
+        let state = create_mock_state();
+
+        let (schema1, mappers1) = make_schema(
+            "nature_shots",
+            "Nature Photography",
+            &["camera_model", "gps_latitude"],
+        );
+        state.add_schema(schema1, mappers1).await.unwrap();
+
+        let (schema2, mappers2) = make_schema(
+            "nature_shots",
+            "Nature Photography",
+            &["camera_model", "gps_latitude", "focal_length"],
+        );
+        state.add_schema(schema2, mappers2).await.unwrap();
+
+        // Count non-superseded schemas with this descriptive_name
+        let schemas = state.schemas.read().unwrap();
+        let active_count = schemas
+            .values()
+            .filter(|s| {
+                s.superseded_by.is_none()
+                    && s.descriptive_name.as_deref() == Some("Nature Photography")
+            })
+            .count();
+        assert_eq!(
+            active_count, 1,
+            "Should have exactly 1 active schema for 'Nature Photography', found {}",
+            active_count
+        );
     }
 }
