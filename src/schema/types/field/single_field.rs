@@ -9,6 +9,7 @@ use crate::schema::types::declarative_schemas::FieldMapper;
 use crate::schema::types::field::base::FieldBase;
 use crate::schema::types::field::FieldValue;
 use crate::schema::types::field::{FilterApplicator, HashRangeFilter, HashRangeFilterResult};
+use crate::schema::types::field::WriteContext;
 use crate::schema::types::key_value::KeyValue;
 use crate::schema::types::SchemaError;
 // Removed unused JsonValue import
@@ -46,12 +47,11 @@ impl crate::schema::types::field::Field for SingleField {
     fn write_mutation(
         &mut self,
         _key_value: &crate::schema::types::key_value::KeyValue,
-        atom: crate::atom::Atom,
-        pub_key: String,
+        ctx: WriteContext,
     ) {
         // Initialize molecule if needed and set molecule_uuid in FieldCommon
         if self.base.molecule.is_none() {
-            let new_molecule = crate::atom::Molecule::new(atom.uuid().to_string(), pub_key.clone());
+            let new_molecule = crate::atom::Molecule::new(ctx.atom.uuid().to_string(), ctx.pub_key.clone());
             // Get the molecule's UUID and set it in FieldCommon for persistence lookup
             self.base
                 .inner
@@ -61,7 +61,12 @@ impl crate::schema::types::field::Field for SingleField {
 
         // For SingleField, we store the atom using the pub_key
         if let Some(molecule) = &mut self.base.molecule {
-            molecule.set_atom_uuid(atom.uuid().to_string());
+            molecule.set_atom_uuid(ctx.atom.uuid().to_string());
+            // Store per-key metadata on the molecule
+            molecule.set_key_metadata(crate::atom::KeyMetadata {
+                source_file_name: ctx.source_file_name,
+                metadata: ctx.metadata,
+            });
         }
     }
 
@@ -74,9 +79,10 @@ impl crate::schema::types::field::Field for SingleField {
         self.refresh_from_db(db_ops).await;
         if let Some(molecule) = &self.base.molecule {
             let uuid = molecule.get_atom_uuid().clone();
-            let result = super::fetch_atoms_for_matches_async(
+            let key_meta = molecule.get_key_metadata().cloned();
+            let result = super::fetch_atoms_with_key_metadata_async(
                 db_ops,
-                vec![(KeyValue::new(None, None), uuid)].into_iter(),
+                vec![(KeyValue::new(None, None), uuid, key_meta)].into_iter(),
             )
             .await?;
             Ok(result)

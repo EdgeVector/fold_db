@@ -630,7 +630,12 @@ impl MutationManager {
             };
 
             // Write mutation to memory
-            schema_field.write_mutation(key_value, atom.clone(), mutation.pub_key.clone());
+            schema_field.write_mutation(key_value, crate::schema::types::field::WriteContext {
+                atom: atom.clone(),
+                pub_key: mutation.pub_key.clone(),
+                source_file_name: mutation.source_file_name.clone(),
+                metadata: mutation.metadata.clone(),
+            });
 
             // Build mutation event if something actually changed
             if old_atom_uuid.as_deref() != Some(atom.uuid()) {

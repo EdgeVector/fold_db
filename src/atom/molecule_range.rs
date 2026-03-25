@@ -12,6 +12,8 @@ pub struct MoleculeRange {
     updated_at: DateTime<Utc>,
     #[serde(default)]
     version: u64,
+    #[serde(default)]
+    key_metadata: BTreeMap<String, super::KeyMetadata>,
 }
 
 impl MoleculeRange {
@@ -23,6 +25,7 @@ impl MoleculeRange {
             atom_uuids: BTreeMap::new(),
             updated_at: Utc::now(),
             version: 0,
+            key_metadata: BTreeMap::new(),
         }
     }
 
@@ -70,6 +73,17 @@ impl MoleculeRange {
     #[must_use]
     pub fn version(&self) -> u64 {
         self.version
+    }
+
+    /// Sets per-key metadata for a given range key.
+    pub fn set_key_metadata(&mut self, key: String, meta: super::KeyMetadata) {
+        self.key_metadata.insert(key, meta);
+    }
+
+    /// Returns the per-key metadata for a given range key, if any.
+    #[must_use]
+    pub fn get_key_metadata(&self, key: &str) -> Option<&super::KeyMetadata> {
+        self.key_metadata.get(key)
     }
 }
 
