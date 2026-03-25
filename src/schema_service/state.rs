@@ -1852,7 +1852,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore]
     async fn test_same_descriptive_name_different_fields_expands() {
         let state = create_mock_state();
 
@@ -1889,7 +1888,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore]
     async fn test_same_descriptive_name_same_fields_reuses() {
         let state = create_mock_state();
 
@@ -1916,7 +1914,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore]
     async fn test_same_descriptive_name_subset_fields_reuses() {
         let state = create_mock_state();
 
@@ -1942,7 +1939,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore]
     async fn test_no_duplicate_schemas_after_expansion() {
         let state = create_mock_state();
 
