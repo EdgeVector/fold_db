@@ -347,7 +347,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let db = sled::open(tmp.path()).unwrap();
         let db_ops =
-            Arc::new(crate::db_operations::DbOperations::from_sled(db).await.unwrap());
+            Arc::new(crate::db_operations::DbOperations::from_sled(db, std::sync::Arc::new(crate::db_operations::native_index::FastEmbedModel::new())).await.unwrap());
 
         let mol_uuid = "mol-single-1";
         let t0 = Utc::now() - Duration::seconds(10);
@@ -396,7 +396,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let db = sled::open(tmp.path()).unwrap();
         let db_ops =
-            Arc::new(crate::db_operations::DbOperations::from_sled(db).await.unwrap());
+            Arc::new(crate::db_operations::DbOperations::from_sled(db, std::sync::Arc::new(crate::db_operations::native_index::FastEmbedModel::new())).await.unwrap());
 
         let mol_uuid = "mol-single-2";
         let t0 = Utc::now() - Duration::seconds(10);
@@ -430,7 +430,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let db = sled::open(tmp.path()).unwrap();
         let db_ops =
-            Arc::new(crate::db_operations::DbOperations::from_sled(db).await.unwrap());
+            Arc::new(crate::db_operations::DbOperations::from_sled(db, std::sync::Arc::new(crate::db_operations::native_index::FastEmbedModel::new())).await.unwrap());
 
         let mol_uuid = "mol-range-1";
         let t0 = Utc::now() - Duration::seconds(10);
@@ -483,7 +483,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let db = sled::open(tmp.path()).unwrap();
         let db_ops =
-            Arc::new(crate::db_operations::DbOperations::from_sled(db).await.unwrap());
+            Arc::new(crate::db_operations::DbOperations::from_sled(db, std::sync::Arc::new(crate::db_operations::native_index::FastEmbedModel::new())).await.unwrap());
 
         let mol_uuid = "mol-hr-1";
         let t0 = Utc::now() - Duration::seconds(10);
@@ -544,7 +544,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let db = sled::open(tmp.path()).unwrap();
         let db_ops =
-            Arc::new(crate::db_operations::DbOperations::from_sled(db).await.unwrap());
+            Arc::new(crate::db_operations::DbOperations::from_sled(db, std::sync::Arc::new(crate::db_operations::native_index::FastEmbedModel::new())).await.unwrap());
 
         let mol_uuid = "mol-aba";
         let t0 = Utc::now() - Duration::seconds(10);
@@ -604,7 +604,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let db = sled::open(tmp.path()).unwrap();
         let db_ops =
-            Arc::new(crate::db_operations::DbOperations::from_sled(db).await.unwrap());
+            Arc::new(crate::db_operations::DbOperations::from_sled(db, std::sync::Arc::new(crate::db_operations::native_index::FastEmbedModel::new())).await.unwrap());
 
         let mol_uuid = "mol-empty";
         let mut field = make_single_field("atom-current", mol_uuid);

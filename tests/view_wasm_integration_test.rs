@@ -2,7 +2,9 @@
 //! Only run when the `transform-wasm` feature is enabled.
 #![cfg(feature = "transform-wasm")]
 
+use fold_db::db_operations::native_index::FastEmbedModel;
 use fold_db::fold_db_core::FoldDB;
+use std::sync::Arc;
 use fold_db::schema::types::field_value_type::FieldValueType;
 use fold_db::schema::types::operations::{MutationType, Query};
 use fold_db::schema::types::schema::DeclarativeSchemaType as SchemaType;
@@ -51,7 +53,7 @@ fn hardcoded_wasm() -> Vec<u8> {
 
 async fn setup_db() -> FoldDB {
     let dir = tempfile::tempdir().unwrap();
-    FoldDB::new(dir.path().to_str().unwrap()).await.unwrap()
+    FoldDB::new(dir.path().to_str().unwrap(), Arc::new(FastEmbedModel::new())).await.unwrap()
 }
 
 fn blogpost_schema_json() -> &'static str {

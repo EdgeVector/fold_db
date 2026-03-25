@@ -1,4 +1,6 @@
+use fold_db::db_operations::native_index::FastEmbedModel;
 use fold_db::schema::{SchemaCore, SchemaState};
+use std::sync::Arc;
 
 fn schema_a_json() -> String {
     r#"{
@@ -133,7 +135,7 @@ async fn superseded_by_persists_across_schema_core_instances() {
     let dir = tempfile::tempdir().expect("tempdir");
     let db = sled::open(dir.path()).expect("open sled");
     let db_ops = Arc::new(
-        fold_db::db_operations::DbOperations::from_sled(db)
+        fold_db::db_operations::DbOperations::from_sled(db, Arc::new(FastEmbedModel::new()))
             .await
             .expect("db_ops"),
     );

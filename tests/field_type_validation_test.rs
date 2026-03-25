@@ -1,4 +1,6 @@
+use fold_db::db_operations::native_index::FastEmbedModel;
 use fold_db::fold_db_core::FoldDB;
+use std::sync::Arc;
 use fold_db::schema::types::operations::MutationType;
 use fold_db::schema::types::{KeyValue, Mutation};
 use fold_db::schema::SchemaState;
@@ -7,7 +9,7 @@ use std::collections::HashMap;
 
 async fn setup_db() -> FoldDB {
     let dir = tempfile::tempdir().unwrap();
-    FoldDB::new(dir.path().to_str().unwrap()).await.unwrap()
+    FoldDB::new(dir.path().to_str().unwrap(), Arc::new(FastEmbedModel::new())).await.unwrap()
 }
 
 fn typed_schema_json() -> &'static str {

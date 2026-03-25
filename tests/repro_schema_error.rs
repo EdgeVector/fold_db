@@ -1,4 +1,6 @@
+use fold_db::db_operations::native_index::FastEmbedModel;
 use fold_db::fold_db_core::fold_db::FoldDB;
+use std::sync::Arc;
 
 #[tokio::test]
 async fn test_reproduce_schema_mismatch() {
@@ -8,7 +10,7 @@ async fn test_reproduce_schema_mismatch() {
     // 1. Setup FoldDB with a temp dir
     let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
     let db_path = temp_dir.path().to_str().expect("failed to get path");
-    let mut db = FoldDB::new(db_path).await.expect("Failed to create DB");
+    let mut db = FoldDB::new(db_path, Arc::new(FastEmbedModel::new())).await.expect("Failed to create DB");
 
     let schema_json = r#"{
         "name": "lowercase_hash",

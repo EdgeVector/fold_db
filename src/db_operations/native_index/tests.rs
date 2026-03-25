@@ -8,7 +8,7 @@ async fn make_manager() -> NativeIndexManager {
     let db = sled::Config::new().temporary(true).open().unwrap();
     let store = Arc::new(SledNamespacedStore::new(db));
     let kv = store.open_namespace("native_index").await.unwrap();
-    NativeIndexManager::with_model(kv, Arc::new(MockEmbeddingModel))
+    NativeIndexManager::new(kv, Arc::new(MockEmbeddingModel))
 }
 
 #[tokio::test]
@@ -115,7 +115,7 @@ async fn test_restore_from_store_loads_existing_embeddings() {
     let kv = store.open_namespace("native_index").await.unwrap();
 
     // Index a record with manager 1
-    let mgr1 = NativeIndexManager::with_model(kv.clone(), Arc::new(MockEmbeddingModel));
+    let mgr1 = NativeIndexManager::new(kv.clone(), Arc::new(MockEmbeddingModel));
     let key = KeyValue::new(Some("rec1".to_string()), None);
     let fields = std::collections::HashMap::from([
         ("field".to_string(), serde_json::json!("value")),
@@ -123,7 +123,7 @@ async fn test_restore_from_store_loads_existing_embeddings() {
     mgr1.index_record("S", &key, &fields).await.unwrap();
 
     // Create manager 2 with same store, restore from store
-    let mgr2 = NativeIndexManager::with_model(kv, Arc::new(MockEmbeddingModel));
+    let mgr2 = NativeIndexManager::new(kv, Arc::new(MockEmbeddingModel));
     mgr2.restore_from_store().await;
 
     let entries = mgr2.embedding_index.entries.read().unwrap();

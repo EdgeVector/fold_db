@@ -2,6 +2,7 @@
 //!
 //! This module eliminates duplicate database setup code found across 11+ files
 
+use crate::db_operations::native_index::FastEmbedModel;
 use crate::db_operations::DbOperations;
 use crate::fold_db_core::infrastructure::message_bus::AsyncMessageBus;
 use sled::{Db, Tree};
@@ -19,7 +20,7 @@ impl TestDatabaseFactory {
     /// Create temporary DbOperations for testing - consolidates pattern from multiple files
     pub async fn create_temp_db_ops() -> Result<DbOperations, Box<dyn std::error::Error>> {
         let db = Self::create_temp_sled_db()?;
-        Ok(DbOperations::from_sled(db).await?)
+        Ok(DbOperations::from_sled(db, Arc::new(FastEmbedModel::new())).await?)
     }
 
     /// Create complete test environment with db_ops and message bus

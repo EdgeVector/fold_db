@@ -10,6 +10,7 @@ use std::sync::Arc;
 use log::{debug, info};
 
 // Internal crate imports
+use crate::db_operations::native_index::Embedder;
 use crate::db_operations::{DbOperations, IndexResult};
 use crate::logging::features::{log_feature, LogFeature};
 use crate::schema::{SchemaCore, SchemaError};
@@ -140,11 +141,11 @@ impl FoldDB {
     /// Creates a new FoldDB instance with the specified storage path.
     /// All initializations happen here. This is the main entry point for the FoldDB system.
     /// Do not initialize anywhere else.
-    pub async fn new(path: &str) -> Result<Self, StorageError> {
+    pub async fn new(path: &str, embedder: Arc<dyn Embedder>) -> Result<Self, StorageError> {
         let db = sled::open(path)
             .map_err(|e| StorageError::IoError(std::io::Error::other(e.to_string())))?;
 
-        Self::initialize_from_db(db, path).await
+        Self::initialize_from_db(db, path, embedder).await
     }
 
     /// Creates a new FoldDB instance with fully initialized components.
@@ -163,14 +164,14 @@ impl FoldDB {
 
     /// Common initialization logic shared by both new() and new_with_s3()
     /// This method initializes all FoldDB components from an already-opened sled database
-    async fn initialize_from_db(db: sled::Db, db_path: &str) -> Result<Self, StorageError> {
+    async fn initialize_from_db(db: sled::Db, db_path: &str, embedder: Arc<dyn Embedder>) -> Result<Self, StorageError> {
         log_feature!(
             LogFeature::Database,
             info,
             "🔄 Using DbOperations with storage abstraction layer (Sled backend)"
         );
 
-        let db_ops = Arc::new(DbOperations::from_sled(db.clone()).await?);
+        let db_ops = Arc::new(DbOperations::from_sled(db.clone(), embedder).await?);
 
         log_feature!(
             LogFeature::Database,

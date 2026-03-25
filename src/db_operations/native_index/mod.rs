@@ -26,10 +26,10 @@ pub struct NativeIndexManager {
 }
 
 impl NativeIndexManager {
-    pub fn new(store: Arc<dyn KvStore>) -> Self {
+    pub fn new(store: Arc<dyn KvStore>, model: Arc<dyn Embedder>) -> Self {
         Self {
             store,
-            embedding_model: Arc::new(FastEmbedModel::new()),
+            embedding_model: model,
             embedding_index: Arc::new(EmbeddingIndex::new(Vec::new())),
         }
     }
@@ -38,15 +38,6 @@ impl NativeIndexManager {
     pub async fn restore_from_store(&self) {
         let entries = EmbeddingIndex::load_from_store(&*self.store).await;
         *self.embedding_index.entries.write().unwrap() = entries;
-    }
-
-    #[cfg(any(test, feature = "test-utils"))]
-    pub(crate) fn with_model(store: Arc<dyn KvStore>, model: Arc<dyn Embedder>) -> Self {
-        Self {
-            store,
-            embedding_model: model,
-            embedding_index: Arc::new(EmbeddingIndex::new(Vec::new())),
-        }
     }
 
     /// Index all fields of a record as a single document embedding.

@@ -1,3 +1,4 @@
+use super::native_index::Embedder;
 use super::NativeIndexManager;
 use crate::schema::SchemaError;
 use crate::storage::traits::*;
@@ -37,6 +38,7 @@ impl DbOperations {
     /// Create from a NamespacedStore (works with any backend)
     pub async fn from_namespaced_store(
         store: Arc<dyn NamespacedStore>,
+        embedder: Arc<dyn Embedder>,
     ) -> Result<Self, crate::storage::StorageError> {
         // Open all required namespaces
         let main_kv = store.open_namespace("main").await?;
@@ -68,7 +70,7 @@ impl DbOperations {
         let transform_field_states_store = Arc::new(TypedKvStore::new(transform_field_states_kv));
 
         // Create native index manager and load any previously stored embeddings
-        let native_index_manager = NativeIndexManager::new(native_index_kv);
+        let native_index_manager = NativeIndexManager::new(native_index_kv, embedder);
         native_index_manager.restore_from_store().await;
 
         Ok(Self {
@@ -88,10 +90,10 @@ impl DbOperations {
         })
     }
 
-    /// Convenience constructor for Sled backend (backward compatible, no E2E)
-    pub async fn from_sled(db: sled::Db) -> Result<Self, crate::storage::StorageError> {
+    /// Convenience constructor for Sled backend
+    pub async fn from_sled(db: sled::Db, embedder: Arc<dyn Embedder>) -> Result<Self, crate::storage::StorageError> {
         let store = Arc::new(SledNamespacedStore::new(db)) as Arc<dyn NamespacedStore>;
-        Self::from_namespaced_store(store).await
+        Self::from_namespaced_store(store, embedder).await
     }
 
     /// Convenience constructor for Cloud backend with simplified config
@@ -100,10 +102,11 @@ impl DbOperations {
         client: aws_sdk_dynamodb::Client,
         table_name: String,
         user_id: String,
+        embedder: Arc<dyn Embedder>,
     ) -> Result<Self, crate::storage::StorageError> {
         let _ = user_id; // Suppress unused warning - user_id will be obtained from request context
         let store = DynamoDbNamespacedStore::new_with_prefix(client, table_name);
-        Self::from_namespaced_store(Arc::new(store)).await
+        Self::from_namespaced_store(Arc::new(store), embedder).await
     }
 
     /// Constructor for Cloud backend with detailed configuration
@@ -113,10 +116,11 @@ impl DbOperations {
         resolver: crate::storage::TableNameResolver,
         auto_create: bool,
         user_id: String,
+        embedder: Arc<dyn Embedder>,
     ) -> Result<Self, crate::storage::StorageError> {
         let _ = user_id; // Suppress unused warning - user_id will be obtained from request context
         let store = DynamoDbNamespacedStore::new(client, resolver, auto_create);
-        Self::from_namespaced_store(Arc::new(store)).await
+        Self::from_namespaced_store(Arc::new(store), embedder).await
     }
 
     // ===== Namespace-specific store getters =====

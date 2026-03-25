@@ -1,3 +1,4 @@
+use fold_db::db_operations::native_index::FastEmbedModel;
 use fold_db::schema::types::field_value_type::FieldValueType;
 use fold_db::schema::types::operations::Query;
 use fold_db::schema::types::schema::DeclarativeSchemaType as SchemaType;
@@ -5,6 +6,7 @@ use fold_db::schema::SchemaCore;
 use fold_db::view::registry::ViewState;
 use fold_db::view::types::TransformView;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 fn blogpost_schema_json() -> String {
     r#"{
@@ -145,7 +147,7 @@ async fn remove_view_cleans_up() {
 async fn view_persists_across_schema_core_instances() {
     let db = sled::Config::new().temporary(true).open().unwrap();
     let db_ops = std::sync::Arc::new(
-        fold_db::db_operations::DbOperations::from_sled(db.clone())
+        fold_db::db_operations::DbOperations::from_sled(db.clone(), Arc::new(FastEmbedModel::new()))
             .await
             .unwrap(),
     );

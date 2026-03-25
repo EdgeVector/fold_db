@@ -1,4 +1,5 @@
 use crate::crypto::E2eKeys;
+use crate::db_operations::native_index::Embedder;
 use crate::db_operations::DbOperations;
 use crate::error::{FoldDbError, FoldDbResult};
 use crate::fold_db_core::FoldDB;
@@ -25,10 +26,11 @@ use crate::log_feature;
 pub async fn create_fold_db(
     config: &DatabaseConfig,
     e2e_keys: &E2eKeys,
+    embedder: Arc<dyn Embedder>,
 ) -> FoldDbResult<Arc<Mutex<FoldDB>>> {
     match config {
         DatabaseConfig::Local { path } => {
-            create_local_fold_db(path, e2e_keys, None).await
+            create_local_fold_db(path, e2e_keys, None, embedder).await
         }
         DatabaseConfig::Exemem { api_url, api_key } => {
             // Exemem mode: local Sled + S3 sync via the Exemem platform.
@@ -39,11 +41,11 @@ pub async fn create_fold_db(
             let data_dir = path.to_str()
                 .ok_or_else(|| FoldDbError::Config("Invalid storage path".to_string()))?;
             let sync_setup = SyncSetup::from_exemem(api_url, api_key, data_dir);
-            create_local_fold_db(&path, e2e_keys, Some(sync_setup)).await
+            create_local_fold_db(&path, e2e_keys, Some(sync_setup), embedder).await
         }
         #[cfg(feature = "aws-backend")]
         DatabaseConfig::Cloud(cloud_config) => {
-            create_cloud_fold_db(cloud_config, e2e_keys).await
+            create_cloud_fold_db(cloud_config, e2e_keys, embedder).await
         }
     }
 }
@@ -62,6 +64,7 @@ async fn create_local_fold_db(
     path: &std::path::Path,
     e2e_keys: &E2eKeys,
     sync_setup: Option<SyncSetup>,
+    embedder: Arc<dyn Embedder>,
 ) -> FoldDbResult<Arc<Mutex<FoldDB>>> {
     let path_str = path
         .to_str()
@@ -136,7 +139,7 @@ async fn create_local_fold_db(
         (Arc::new(enc_store), None, 0)
     };
 
-    let db_ops = DbOperations::from_namespaced_store(store)
+    let db_ops = DbOperations::from_namespaced_store(store, embedder)
         .await
         .map_err(|e| FoldDbError::Config(e.to_string()))?;
 
@@ -163,6 +166,7 @@ async fn create_local_fold_db(
 async fn create_cloud_fold_db(
     cloud_config: &crate::storage::config::CloudConfig,
     e2e_keys: &E2eKeys,
+    embedder: Arc<dyn Embedder>,
 ) -> FoldDbResult<Arc<Mutex<FoldDB>>> {
     log_feature!(
         LogFeature::Database,
@@ -232,7 +236,7 @@ async fn create_cloud_fold_db(
         Arc::new(e2e_store) as Arc<dyn crate::storage::traits::NamespacedStore>;
 
     let db_ops = Arc::new(
-        DbOperations::from_namespaced_store(final_store)
+        DbOperations::from_namespaced_store(final_store, embedder)
             .await
             .map_err(|e| {
                 FoldDbError::Config(format!("Failed to initialize DynamoDB backend: {}", e))

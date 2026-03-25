@@ -594,9 +594,12 @@ impl SchemaCore {
             .open()
             .map_err(|e| SchemaError::InvalidData(e.to_string()))?;
         let db_ops = std::sync::Arc::new(
-            crate::db_operations::DbOperations::from_sled(db)
-                .await
-                .map_err(|e| SchemaError::InvalidData(e.to_string()))?,
+            crate::db_operations::DbOperations::from_sled(
+                db,
+                Arc::new(crate::db_operations::native_index::FastEmbedModel::new()),
+            )
+            .await
+            .map_err(|e| SchemaError::InvalidData(e.to_string()))?,
         );
         let message_bus = Arc::new(AsyncMessageBus::new());
         Self::new(db_ops, message_bus).await
