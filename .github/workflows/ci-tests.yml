@@ -23,10 +23,15 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          components: clippy
+          components: clippy, rustfmt
 
       - name: Cache Rust artifacts
         uses: Swatinem/rust-cache@v2
+
+      - name: Check formatting
+        id: fmt
+        continue-on-error: true
+        run: cargo fmt --all -- --check
 
       - name: Run clippy
         id: clippy
@@ -41,18 +46,22 @@ jobs:
       - name: Run cargo test
         id: cargo-test
         continue-on-error: true
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: cargo test --workspace --all-targets
 
       - name: Rust test summary
         if: always()
         run: |
-          for step_name in clippy check-aws cargo-test; do
+          for step_name in fmt clippy check-aws cargo-test; do
             case "$step_name" in
+              fmt)            label="Rust Format" ;;
               clippy)         label="Rust Clippy" ;;
               check-aws)      label="AWS Backend Check" ;;
               cargo-test)     label="Rust Tests" ;;
             esac
             case "$step_name" in
+              fmt)            status="${{ steps.fmt.outcome }}" ;;
               clippy)         status="${{ steps.clippy.outcome }}" ;;
               check-aws)      status="${{ steps.check-aws.outcome }}" ;;
               cargo-test)     status="${{ steps.cargo-test.outcome }}" ;;
@@ -66,6 +75,7 @@ jobs:
 
       - name: Fail if clippy or tests failed
         if: |
+          steps.fmt.outcome == 'failure' ||
           steps.clippy.outcome == 'failure' ||
           steps.check-aws.outcome == 'failure' ||
           steps.cargo-test.outcome == 'failure'
