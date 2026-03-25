@@ -1830,9 +1830,11 @@ mod tests {
 
     // ---- Duplicate schema prevention tests (same descriptive_name → expansion) ----
 
-    /// Helper to create a simple schema with given name, descriptive_name, and fields
+    /// Helper to create a simple schema with given name, descriptive_name, and fields.
+    /// Pre-populates field_data_classifications so tests don't need ANTHROPIC_API_KEY.
     fn make_schema(name: &str, descriptive_name: &str, fields: &[&str]) -> (Schema, HashMap<String, String>) {
         use crate::schema::types::schema::DeclarativeSchemaType;
+        use crate::schema::types::data_classification::DataClassification;
         let field_vec: Vec<String> = fields.iter().map(|f| f.to_string()).collect();
         let mut schema = Schema::new(
             name.to_string(),
@@ -1843,9 +1845,13 @@ mod tests {
             None,
         );
         schema.descriptive_name = Some(descriptive_name.to_string());
-        // Add field descriptions (required by add_schema)
         for f in fields {
             schema.field_descriptions.insert(f.to_string(), format!("{} description", f));
+            // Provide classification so infer_classification skips the LLM call
+            schema.field_data_classifications.insert(
+                f.to_string(),
+                DataClassification::new(1, "general").expect("valid classification"),
+            );
         }
         let mappers = HashMap::new();
         (schema, mappers)
