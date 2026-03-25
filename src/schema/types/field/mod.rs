@@ -7,9 +7,10 @@ pub mod range_field;
 pub mod single_field;
 pub mod variant;
 
-pub use common::{Field, FieldCommon, FieldType};
+pub use common::{Field, FieldCommon, FieldType, WriteContext};
 pub use filter_utils::{
-    apply_hash_filter, apply_hash_range_filter, apply_range_filter, fetch_atoms_for_matches_async,
+    apply_hash_filter, apply_hash_range_filter, apply_range_filter,
+    fetch_atoms_for_matches_async, fetch_atoms_with_key_metadata_async,
     FilterApplicator, FilterUtils, HashOperations, HashRangeOperations, RangeOperations,
 };
 pub use hash_field::HashField;

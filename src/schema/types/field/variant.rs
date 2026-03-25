@@ -8,7 +8,7 @@ use crate::atom::{FieldKey, MutationEvent};
 use crate::db_operations::DbOperations;
 use crate::schema::types::field::{
     fetch_atoms_for_matches_async, Field, FieldCommon, FilterApplicator, HashField,
-    HashRangeField, HashRangeFilter, RangeField, SingleField,
+    HashRangeField, HashRangeFilter, RangeField, SingleField, WriteContext,
 };
 use crate::schema::types::key_value::KeyValue;
 use crate::schema::types::SchemaError;
@@ -82,10 +82,9 @@ impl Field for FieldVariant {
     fn write_mutation(
         &mut self,
         key_value: &crate::schema::types::key_value::KeyValue,
-        atom: crate::atom::Atom,
-        pub_key: String,
+        ctx: WriteContext,
     ) {
-        delegate_field_method!(self, write_mutation, key_value, atom, pub_key)
+        delegate_field_method!(self, write_mutation, key_value, ctx)
     }
 
     async fn resolve_value(

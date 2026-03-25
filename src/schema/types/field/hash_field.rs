@@ -8,6 +8,7 @@ use crate::schema::types::field::base::FieldBase;
 use crate::schema::types::field::hash_range_filter::{HashRangeFilter, HashRangeFilterResult};
 use crate::schema::types::field::FieldValue;
 use crate::schema::types::field::{apply_hash_filter, FilterApplicator};
+use crate::schema::types::field::WriteContext;
 use crate::schema::types::key_value::KeyValue;
 use crate::schema::types::SchemaError;
 use serde::{Deserialize, Serialize};
@@ -53,12 +54,11 @@ impl crate::schema::types::field::Field for HashField {
     fn write_mutation(
         &mut self,
         key_value: &crate::schema::types::key_value::KeyValue,
-        atom: crate::atom::Atom,
-        pub_key: String,
+        ctx: WriteContext,
     ) {
         // Initialize molecule if needed and set molecule_uuid in FieldCommon
         if self.base.molecule.is_none() {
-            let new_molecule = crate::atom::MoleculeHash::new(pub_key.clone());
+            let new_molecule = crate::atom::MoleculeHash::new(ctx.pub_key.clone());
             self.base
                 .inner
                 .set_molecule_uuid(new_molecule.uuid().to_string());
@@ -68,7 +68,12 @@ impl crate::schema::types::field::Field for HashField {
         // For HashField, we use the hash key to store the atom
         if let Some(hash_key) = &key_value.hash {
             if let Some(molecule) = &mut self.base.molecule {
-                molecule.set_atom_uuid(hash_key.clone(), atom.uuid().to_string());
+                molecule.set_atom_uuid(hash_key.clone(), ctx.atom.uuid().to_string());
+                // Store per-key metadata on the molecule
+                molecule.set_key_metadata(hash_key.clone(), crate::atom::KeyMetadata {
+                    source_file_name: ctx.source_file_name,
+                    metadata: ctx.metadata,
+                });
             }
         }
     }
@@ -81,7 +86,18 @@ impl crate::schema::types::field::Field for HashField {
     ) -> Result<HashMap<KeyValue, FieldValue>, SchemaError> {
         self.refresh_from_db(db_ops).await;
         let result = self.apply_filter(filter);
-        super::fetch_atoms_for_matches_async(db_ops, result.matches).await
+        // Attach per-key metadata from molecule to each match
+        let matches_with_meta: Vec<(KeyValue, String, Option<crate::atom::KeyMetadata>)> = result
+            .matches
+            .into_iter()
+            .map(|(kv, atom_uuid)| {
+                let key_meta = kv.hash.as_ref().and_then(|h| {
+                    self.base.molecule.as_ref().and_then(|m| m.get_key_metadata(h).cloned())
+                });
+                (kv, atom_uuid, key_meta)
+            })
+            .collect();
+        super::fetch_atoms_with_key_metadata_async(db_ops, matches_with_meta.into_iter()).await
     }
 }
 

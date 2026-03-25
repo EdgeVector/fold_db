@@ -41,23 +41,49 @@ pub async fn fetch_atoms_for_matches_async(
     db_ops: &Arc<DbOperations>,
     matches: impl IntoIterator<Item = (KeyValue, String)>,
 ) -> Result<HashMap<KeyValue, FieldValue>, SchemaError> {
+    // Delegate to the metadata-aware version with None metadata
+    fetch_atoms_with_key_metadata_async(
+        db_ops,
+        matches.into_iter().map(|(kv, uuid)| (kv, uuid, None)),
+    )
+    .await
+}
+
+/// Resolve atom UUID matches into concrete FieldValue map, preferring molecule
+/// per-key metadata over atom metadata for source_file_name and metadata fields.
+/// Falls back to atom metadata for backward compatibility with pre-existing data.
+pub async fn fetch_atoms_with_key_metadata_async(
+    db_ops: &Arc<DbOperations>,
+    matches: impl IntoIterator<Item = (KeyValue, String, Option<crate::atom::KeyMetadata>)>,
+) -> Result<HashMap<KeyValue, FieldValue>, SchemaError> {
     let mut resolved_values: HashMap<KeyValue, FieldValue> = HashMap::new();
 
     use crate::storage::traits::TypedStore;
-    for (key, atom_uuid) in matches.into_iter() {
+    for (key, atom_uuid, key_meta) in matches.into_iter() {
         match db_ops
             .atoms_store()
             .get_item::<crate::atom::Atom>(&format!("atom:{}", atom_uuid))
             .await
         {
             Ok(Some(atom)) => {
+                // Prefer molecule per-key metadata, fall back to atom metadata
+                let (source_file_name, metadata) = match key_meta {
+                    Some(km) => (
+                        km.source_file_name.or_else(|| atom.source_file_name().cloned()),
+                        km.metadata.or_else(|| atom.metadata().cloned()),
+                    ),
+                    None => (
+                        atom.source_file_name().cloned(),
+                        atom.metadata().cloned(),
+                    ),
+                };
                 resolved_values.insert(
                     key,
                     FieldValue {
                         value: atom.content().clone(),
                         atom_uuid: atom_uuid.clone(),
-                        source_file_name: atom.source_file_name().cloned(),
-                        metadata: atom.metadata().cloned(),
+                        source_file_name,
+                        metadata,
                         molecule_uuid: None,
                         molecule_version: None,
                     },

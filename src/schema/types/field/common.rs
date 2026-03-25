@@ -12,6 +12,17 @@ use crate::schema::types::field::HashRangeFilter;
 use crate::schema::types::key_value::KeyValue;
 use crate::schema::types::SchemaError;
 use crate::schema::types::Transform;
+
+/// Bundles all write-time provenance through the Field trait.
+/// Contains the atom plus optional metadata that should be stored
+/// per-key on the molecule (surviving atom dedup).
+pub struct WriteContext {
+    pub atom: crate::atom::Atom,
+    pub pub_key: String,
+    pub source_file_name: Option<String>,
+    pub metadata: Option<std::collections::HashMap<String, String>>,
+}
+
 /// Common interface for all schema fields.
 ///
 /// The `Field` trait exposes accessors for properties shared by all field
@@ -29,7 +40,7 @@ pub trait Field: Send + Sync {
     async fn refresh_from_db(&mut self, db_ops: &crate::db_operations::DbOperations);
 
     /// Writes a mutation to the field
-    fn write_mutation(&mut self, key_value: &KeyValue, atom: crate::atom::Atom, pub_key: String);
+    fn write_mutation(&mut self, key_value: &KeyValue, ctx: WriteContext);
 
     /// Resolves field values by refreshing the field, applying filters, and fetching atom content.
     /// If `as_of` is provided, rewinds the molecule to that point in time before resolving.
@@ -121,9 +132,9 @@ macro_rules! impl_field {
             fn write_mutation(
                 &mut self,
                 key_value: &$crate::schema::types::key_value::KeyValue,
-                atom: $crate::atom::Atom,
-                pub_key: String,
+                ctx: $crate::schema::types::field::WriteContext,
             ) {
+                let _ = (key_value, ctx);
                 log::error!("write_mutation not implemented for {}", stringify!($t));
             }
 

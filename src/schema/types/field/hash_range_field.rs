@@ -9,6 +9,7 @@ use crate::schema::types::declarative_schemas::FieldMapper;
 use crate::schema::types::field::hash_range_filter::{HashRangeFilter, HashRangeFilterResult};
 use crate::schema::types::field::FieldValue;
 use crate::schema::types::field::{apply_hash_range_filter, FilterApplicator};
+use crate::schema::types::field::WriteContext;
 use crate::schema::types::key_value::KeyValue;
 use crate::schema::types::SchemaError;
 use serde::{Deserialize, Serialize};
@@ -56,12 +57,11 @@ impl crate::schema::types::field::Field for HashRangeField {
     fn write_mutation(
         &mut self,
         key_value: &crate::schema::types::key_value::KeyValue,
-        atom: crate::atom::Atom,
-        pub_key: String,
+        ctx: WriteContext,
     ) {
         // Initialize molecule if needed and set molecule_uuid in FieldCommon
         if self.base.molecule.is_none() {
-            let new_molecule = crate::atom::MoleculeHashRange::new(pub_key.clone());
+            let new_molecule = crate::atom::MoleculeHashRange::new(ctx.pub_key.clone());
             // Get the molecule's UUID and set it in FieldCommon for persistence lookup
             self.base
                 .inner
@@ -76,7 +76,16 @@ impl crate::schema::types::field::Field for HashRangeField {
                     molecule.set_atom_uuid_from_values(
                         hash_key.clone(),
                         range_key.clone(),
-                        atom.uuid().to_string(),
+                        ctx.atom.uuid().to_string(),
+                    );
+                    // Store per-key metadata on the molecule
+                    molecule.set_key_metadata(
+                        hash_key.clone(),
+                        range_key.clone(),
+                        crate::atom::KeyMetadata {
+                            source_file_name: ctx.source_file_name,
+                            metadata: ctx.metadata,
+                        },
                     );
                 }
             }
@@ -84,7 +93,7 @@ impl crate::schema::types::field::Field for HashRangeField {
                 log::warn!(
                     "HashRangeField::write_mutation: atom {} not indexed — hash={:?}, range={:?}. \
                      Both hash and range keys are required for HashRange fields.",
-                    atom.uuid(), key_value.hash, key_value.range
+                    ctx.atom.uuid(), key_value.hash, key_value.range
                 );
             }
         }
@@ -97,16 +106,25 @@ impl crate::schema::types::field::Field for HashRangeField {
         _as_of: Option<chrono::DateTime<chrono::Utc>>,
     ) -> Result<HashMap<KeyValue, FieldValue>, SchemaError> {
         self.refresh_from_db(db_ops).await;
-        // let filter_debug = filter.clone();
         let result = self.apply_filter(filter);
-        // log::debug!("🔍 HashRangeField::resolve_value: filter={:?}, matches={}", filter_debug, result.matches.len());
         if result.matches.is_empty() {
-            // log::warn!("⚠️ HashRangeField::resolve_value: No matches found. molecule={:?}, molecule_uuid={:?}",
-            //    self.base.molecule.is_some(),
-            //    self.base.inner.molecule_uuid()
-            // );
+            // No matches found
         }
-        super::fetch_atoms_for_matches_async(db_ops, result.matches).await
+        // Attach per-key metadata from molecule to each match
+        let matches_with_meta: Vec<(KeyValue, String, Option<crate::atom::KeyMetadata>)> = result
+            .matches
+            .into_iter()
+            .map(|(kv, atom_uuid)| {
+                let key_meta = match (&kv.hash, &kv.range) {
+                    (Some(h), Some(r)) => {
+                        self.base.molecule.as_ref().and_then(|m| m.get_key_metadata(h, r).cloned())
+                    }
+                    _ => None,
+                };
+                (kv, atom_uuid, key_meta)
+            })
+            .collect();
+        super::fetch_atoms_with_key_metadata_async(db_ops, matches_with_meta.into_iter()).await
     }
 }
 

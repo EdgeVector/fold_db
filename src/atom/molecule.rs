@@ -11,6 +11,8 @@ pub struct Molecule {
     updated_at: DateTime<Utc>,
     #[serde(default)]
     version: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    key_metadata: Option<super::KeyMetadata>,
 }
 
 impl Molecule {
@@ -22,6 +24,7 @@ impl Molecule {
             atom_uuid,
             updated_at: Utc::now(),
             version: 0,
+            key_metadata: None,
         }
     }
 
@@ -57,6 +60,17 @@ impl Molecule {
     #[must_use]
     pub fn get_atom_uuid(&self) -> &String {
         &self.atom_uuid
+    }
+
+    /// Sets per-key metadata on the molecule.
+    pub fn set_key_metadata(&mut self, meta: super::KeyMetadata) {
+        self.key_metadata = Some(meta);
+    }
+
+    /// Returns the per-key metadata, if any.
+    #[must_use]
+    pub fn get_key_metadata(&self) -> Option<&super::KeyMetadata> {
+        self.key_metadata.as_ref()
     }
 }
 

@@ -33,6 +33,10 @@ pub struct MoleculeHashRange {
     /// Monotonic version counter, bumped on each actual change
     #[serde(default)]
     version: u64,
+    /// Per-key metadata organized by hash and range values
+    /// Structure: HashMap<hash_value, BTreeMap<range_value, KeyMetadata>>
+    #[serde(default)]
+    key_metadata: HashMap<String, BTreeMap<String, crate::atom::KeyMetadata>>,
 }
 
 impl MoleculeHashRange {
@@ -45,6 +49,7 @@ impl MoleculeHashRange {
             updated_at: Utc::now(),
             update_order: vec![],
             version: 0,
+            key_metadata: HashMap::new(),
         }
     }
 
@@ -69,6 +74,7 @@ impl MoleculeHashRange {
             updated_at: Utc::now(),
             update_order,
             version: 0,
+            key_metadata: HashMap::new(),
         }
     }
 
@@ -210,6 +216,27 @@ impl MoleculeHashRange {
     #[must_use]
     pub fn sample(&self, n: usize) -> Vec<KeyValue> {
         self.update_order.iter().take(n).cloned().collect()
+    }
+
+    /// Sets per-key metadata for a given hash + range key combination.
+    pub fn set_key_metadata(
+        &mut self,
+        hash: String,
+        range: String,
+        meta: crate::atom::KeyMetadata,
+    ) {
+        self.key_metadata
+            .entry(hash)
+            .or_default()
+            .insert(range, meta);
+    }
+
+    /// Returns the per-key metadata for a given hash + range key, if any.
+    #[must_use]
+    pub fn get_key_metadata(&self, hash: &str, range: &str) -> Option<&crate::atom::KeyMetadata> {
+        self.key_metadata
+            .get(hash)
+            .and_then(|range_map| range_map.get(range))
     }
 }
 
