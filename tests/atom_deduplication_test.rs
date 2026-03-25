@@ -55,13 +55,25 @@ async fn test_atom_deduplication_in_db() {
     // Create the first atom
     let content = json!({"title": "Duplicate Test", "body": "This is duplicate content"});
     let atom1 = db_ops
-        .create_and_store_atom_for_mutation_deferred("TestSchema", "user1", content.clone(), None, None)
+        .create_and_store_atom_for_mutation_deferred(
+            "TestSchema",
+            "user1",
+            content.clone(),
+            None,
+            None,
+        )
         .await
         .expect("Failed to create atom1");
 
     // Try to create a second atom with the same content
     let atom2 = db_ops
-        .create_and_store_atom_for_mutation_deferred("TestSchema", "user2", content.clone(), None, None)
+        .create_and_store_atom_for_mutation_deferred(
+            "TestSchema",
+            "user2",
+            content.clone(),
+            None,
+            None,
+        )
         .await
         .expect("Failed to create atom2");
 

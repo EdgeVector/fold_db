@@ -111,7 +111,10 @@ async fn deep_view_enters_computing_after_mutation() {
     // task (which computes all views bottom-up to unblock deep views).
     let state_a = db.db_ops.get_view_cache_state("ViewA").await.unwrap();
     assert!(
-        matches!(state_a, ViewCacheState::Empty | ViewCacheState::Cached { .. }),
+        matches!(
+            state_a,
+            ViewCacheState::Empty | ViewCacheState::Cached { .. }
+        ),
         "ViewA (level 1) should be Empty or Cached, got {:?}",
         state_a
     );
@@ -120,7 +123,10 @@ async fn deep_view_enters_computing_after_mutation() {
     // (background task may complete very fast)
     let state_b = db.db_ops.get_view_cache_state("ViewB").await.unwrap();
     assert!(
-        matches!(state_b, ViewCacheState::Computing | ViewCacheState::Cached { .. }),
+        matches!(
+            state_b,
+            ViewCacheState::Computing | ViewCacheState::Cached { .. }
+        ),
         "ViewB (level 2) should be Computing or Cached after mutation, got {:?}",
         state_b
     );
@@ -251,7 +257,10 @@ async fn three_level_chain_precomputes_bottom_up() {
     // background task (which computes all views bottom-up). Either state is valid.
     let state_a = db.db_ops.get_view_cache_state("ViewA").await.unwrap();
     assert!(
-        matches!(state_a, ViewCacheState::Empty | ViewCacheState::Cached { .. }),
+        matches!(
+            state_a,
+            ViewCacheState::Empty | ViewCacheState::Cached { .. }
+        ),
         "ViewA should be Empty or already Cached, got {:?}",
         state_a
     );
@@ -260,12 +269,18 @@ async fn three_level_chain_precomputes_bottom_up() {
     let state_b = db.db_ops.get_view_cache_state("ViewB").await.unwrap();
     let state_c = db.db_ops.get_view_cache_state("ViewC").await.unwrap();
     assert!(
-        matches!(state_b, ViewCacheState::Computing | ViewCacheState::Cached { .. }),
+        matches!(
+            state_b,
+            ViewCacheState::Computing | ViewCacheState::Cached { .. }
+        ),
         "ViewB should be Computing or Cached, got {:?}",
         state_b
     );
     assert!(
-        matches!(state_c, ViewCacheState::Computing | ViewCacheState::Cached { .. }),
+        matches!(
+            state_c,
+            ViewCacheState::Computing | ViewCacheState::Cached { .. }
+        ),
         "ViewC should be Computing or Cached, got {:?}",
         state_c
     );

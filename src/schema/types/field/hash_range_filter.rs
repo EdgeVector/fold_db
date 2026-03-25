@@ -47,7 +47,6 @@ pub enum HashRangeFilter {
     HashRange { start: String, end: String },
 }
 
-
 /// Result of a hash-range filter operation
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-bindings", derive(TS))]

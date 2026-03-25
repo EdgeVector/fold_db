@@ -285,7 +285,10 @@ mod tests {
     fn test_with_atoms_starts_at_zero() {
         let mol = MoleculeHashRange::with_atoms(
             "key".to_string(),
-            HashMap::from([("h1".to_string(), std::collections::BTreeMap::from([("r1".to_string(), "a1".to_string())]))]),
+            HashMap::from([(
+                "h1".to_string(),
+                std::collections::BTreeMap::from([("r1".to_string(), "a1".to_string())]),
+            )]),
         );
         assert_eq!(mol.version(), 0);
     }

@@ -29,10 +29,7 @@ impl TransformResolver {
     /// - `cache_db`: Sled database for local caching
     pub fn new(registry_url: String, cache_db: &sled::Db) -> FoldDbResult<Self> {
         let cache_tree = cache_db.open_tree("transform_wasm_cache").map_err(|e| {
-            FoldDbError::Config(format!(
-                "Failed to open transform_wasm_cache tree: {}",
-                e
-            ))
+            FoldDbError::Config(format!("Failed to open transform_wasm_cache tree: {}", e))
         })?;
 
         Ok(Self {
@@ -100,9 +97,9 @@ impl TransformResolver {
 
     /// Evict a transform from the local cache.
     pub fn evict(&self, hash: &str) -> FoldDbResult<()> {
-        self.cache_tree
-            .remove(hash.as_bytes())
-            .map_err(|e| FoldDbError::Config(format!("Failed to evict from transform cache: {}", e)))?;
+        self.cache_tree.remove(hash.as_bytes()).map_err(|e| {
+            FoldDbError::Config(format!("Failed to evict from transform cache: {}", e))
+        })?;
         Ok(())
     }
 
@@ -132,17 +129,12 @@ impl TransformResolver {
     async fn fetch_from_registry(&self, hash: &str) -> FoldDbResult<Vec<u8>> {
         let url = format!("{}/api/transform/{}/wasm", self.registry_url, hash);
 
-        let response = self
-            .client
-            .get(&url)
-            .send()
-            .await
-            .map_err(|e| {
-                FoldDbError::Config(format!(
-                    "Failed to fetch transform '{}' from registry: {}",
-                    hash, e
-                ))
-            })?;
+        let response = self.client.get(&url).send().await.map_err(|e| {
+            FoldDbError::Config(format!(
+                "Failed to fetch transform '{}' from registry: {}",
+                hash, e
+            ))
+        })?;
 
         if response.status() == reqwest::StatusCode::NOT_FOUND {
             return Err(FoldDbError::Config(format!(
@@ -195,9 +187,8 @@ mod tests {
         let temp_dir = tempdir().expect("failed to create temp directory");
         let db_path = temp_dir.path().join("test_cache_db");
         let db = sled::open(&db_path).expect("failed to open sled");
-        let resolver =
-            TransformResolver::new("http://localhost:9999".to_string(), &db)
-                .expect("failed to create resolver");
+        let resolver = TransformResolver::new("http://localhost:9999".to_string(), &db)
+            .expect("failed to create resolver");
 
         let hash = "abc123";
         let wasm = b"fake wasm bytes";
@@ -221,9 +212,8 @@ mod tests {
         let temp_dir = tempdir().expect("failed to create temp directory");
         let db_path = temp_dir.path().join("test_verify_db");
         let db = sled::open(&db_path).expect("failed to open sled");
-        let resolver =
-            TransformResolver::new("http://localhost:9999".to_string(), &db)
-                .expect("failed to create resolver");
+        let resolver = TransformResolver::new("http://localhost:9999".to_string(), &db)
+            .expect("failed to create resolver");
 
         let wasm = b"test wasm data";
         let correct_hash = compute_sha256(wasm);

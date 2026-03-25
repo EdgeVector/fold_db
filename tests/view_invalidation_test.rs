@@ -79,11 +79,7 @@ async fn mutating_source_invalidates_view_cache() {
     assert_eq!(first_value, json!("original"));
 
     // Verify cache state is Cached
-    let state = db
-        .db_ops
-        .get_view_cache_state("CV")
-        .await
-        .unwrap();
+    let state = db.db_ops.get_view_cache_state("CV").await.unwrap();
     assert!(
         matches!(state, ViewCacheState::Cached { .. }),
         "View should be cached after first query"
@@ -105,11 +101,7 @@ async fn mutating_source_invalidates_view_cache() {
         .unwrap();
 
     // Verify cache state was invalidated to Empty
-    let state_after = db
-        .db_ops
-        .get_view_cache_state("CV")
-        .await
-        .unwrap();
+    let state_after = db.db_ops.get_view_cache_state("CV").await.unwrap();
     assert!(
         matches!(state_after, ViewCacheState::Empty),
         "View cache should be invalidated after source mutation, got {:?}",
@@ -118,7 +110,10 @@ async fn mutating_source_invalidates_view_cache() {
 
     // Re-query: should fetch fresh data
     let results2 = db.query_executor.query(query).await.unwrap();
-    let all_values: Vec<_> = results2["content"].values().map(|fv| fv.value.clone()).collect();
+    let all_values: Vec<_> = results2["content"]
+        .values()
+        .map(|fv| fv.value.clone())
+        .collect();
     assert!(
         all_values.contains(&json!("updated")),
         "Re-query should contain updated value, got {:?}",
@@ -338,7 +333,10 @@ async fn view_chain_query_returns_source_data() {
     let results = db.query_executor.query(query).await.unwrap();
 
     assert!(results.contains_key("title"));
-    let values: Vec<_> = results["title"].values().map(|fv| fv.value.clone()).collect();
+    let values: Vec<_> = results["title"]
+        .values()
+        .map(|fv| fv.value.clone())
+        .collect();
     assert!(
         values.contains(&json!("Chain Test")),
         "ViewB should return BlogPost data through ViewA chain, got {:?}",

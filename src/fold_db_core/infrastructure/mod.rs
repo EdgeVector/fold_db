@@ -13,5 +13,5 @@ pub mod pending_task_tracker;
 pub mod process_results_subscriber;
 
 pub use event_monitor::EventMonitor;
-pub use process_results_subscriber::ProcessResultsSubscriber;
 pub use message_bus::{AsyncMessageBus, Event};
+pub use process_results_subscriber::ProcessResultsSubscriber;

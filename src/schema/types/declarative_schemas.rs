@@ -202,7 +202,9 @@ impl<'de> serde::Deserialize<'de> for DeclarativeSchemaDefinition {
 
         // Merge classifications from helper
         for (field_name, classifications) in helper.field_classifications {
-            schema.field_classifications.insert(field_name, classifications);
+            schema
+                .field_classifications
+                .insert(field_name, classifications);
         }
 
         // Preserve field_descriptions, field_data_classifications, ref_fields, field_types and identity_hash
@@ -477,8 +479,12 @@ impl DeclarativeSchemaDefinition {
     }
 
     /// Get the declared type for a field. Returns `Any` if no type is declared.
-    pub fn get_field_type(&self, field_name: &str) -> &crate::schema::types::field_value_type::FieldValueType {
-        static ANY: crate::schema::types::field_value_type::FieldValueType = crate::schema::types::field_value_type::FieldValueType::Any;
+    pub fn get_field_type(
+        &self,
+        field_name: &str,
+    ) -> &crate::schema::types::field_value_type::FieldValueType {
+        static ANY: crate::schema::types::field_value_type::FieldValueType =
+            crate::schema::types::field_value_type::FieldValueType::Any;
         self.field_types.get(field_name).unwrap_or(&ANY)
     }
 
@@ -639,7 +645,9 @@ impl DeclarativeSchemaDefinition {
     /// Extract input fields from a single transform expression.
     /// Example: "BlogPost.content.split_by_word()" -> ["BlogPost.content"]
     pub fn extract_inputs_from_expression(expression: &str) -> Vec<String> {
-        Self::parse_expression_input(expression).into_iter().collect()
+        Self::parse_expression_input(expression)
+            .into_iter()
+            .collect()
     }
 }
 

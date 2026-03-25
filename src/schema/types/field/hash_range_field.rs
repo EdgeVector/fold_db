@@ -8,8 +8,8 @@ use crate::db_operations::DbOperations;
 use crate::schema::types::declarative_schemas::FieldMapper;
 use crate::schema::types::field::hash_range_filter::{HashRangeFilter, HashRangeFilterResult};
 use crate::schema::types::field::FieldValue;
-use crate::schema::types::field::{apply_hash_range_filter, FilterApplicator};
 use crate::schema::types::field::WriteContext;
+use crate::schema::types::field::{apply_hash_range_filter, FilterApplicator};
 use crate::schema::types::key_value::KeyValue;
 use crate::schema::types::SchemaError;
 use serde::{Deserialize, Serialize};
@@ -93,7 +93,9 @@ impl crate::schema::types::field::Field for HashRangeField {
                 log::warn!(
                     "HashRangeField::write_mutation: atom {} not indexed — hash={:?}, range={:?}. \
                      Both hash and range keys are required for HashRange fields.",
-                    ctx.atom.uuid(), key_value.hash, key_value.range
+                    ctx.atom.uuid(),
+                    key_value.hash,
+                    key_value.range
                 );
             }
         }
@@ -116,9 +118,11 @@ impl crate::schema::types::field::Field for HashRangeField {
             .into_iter()
             .map(|(kv, atom_uuid)| {
                 let key_meta = match (&kv.hash, &kv.range) {
-                    (Some(h), Some(r)) => {
-                        self.base.molecule.as_ref().and_then(|m| m.get_key_metadata(h, r).cloned())
-                    }
+                    (Some(h), Some(r)) => self
+                        .base
+                        .molecule
+                        .as_ref()
+                        .and_then(|m| m.get_key_metadata(h, r).cloned()),
                     _ => None,
                 };
                 (kv, atom_uuid, key_meta)

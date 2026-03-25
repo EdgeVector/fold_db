@@ -8,8 +8,8 @@ use crate::db_operations::DbOperations;
 use crate::schema::types::field::{Field, FieldValue};
 use crate::schema::types::key_value::KeyValue;
 use crate::schema::types::Query;
-use crate::schema::{SchemaCore, SchemaState};
 use crate::schema::SchemaError;
+use crate::schema::{SchemaCore, SchemaState};
 use crate::view::registry::ViewState;
 use crate::view::resolver::{SourceQueryFn, ViewResolver};
 use crate::view::types::ViewCacheState;
@@ -46,7 +46,12 @@ impl SourceQueryFn for RecursiveSourceQuery {
         match self.schema_manager.get_schema(&query.schema_name).await? {
             Some(mut schema) => {
                 self.hash_range_processor
-                    .query_with_filter(&mut schema, &query.fields, query.filter.clone(), query.as_of)
+                    .query_with_filter(
+                        &mut schema,
+                        &query.fields,
+                        query.filter.clone(),
+                        query.as_of,
+                    )
                     .await
             }
             None => {
@@ -63,27 +68,23 @@ impl RecursiveSourceQuery {
         query: &Query,
     ) -> Result<HashMap<String, HashMap<KeyValue, FieldValue>>, SchemaError> {
         let view = {
-            let registry = self
-                .schema_manager
-                .view_registry()
-                .lock()
-                .map_err(|_| {
-                    SchemaError::InvalidData("Failed to acquire view_registry lock".to_string())
-                })?;
+            let registry = self.schema_manager.view_registry().lock().map_err(|_| {
+                SchemaError::InvalidData("Failed to acquire view_registry lock".to_string())
+            })?;
 
-            registry.get_view(&query.schema_name).cloned().ok_or_else(|| {
-                SchemaError::NotFound(format!(
-                    "'{}' not found as schema or view",
-                    query.schema_name
-                ))
-            })?
+            registry
+                .get_view(&query.schema_name)
+                .cloned()
+                .ok_or_else(|| {
+                    SchemaError::NotFound(format!(
+                        "'{}' not found as schema or view",
+                        query.schema_name
+                    ))
+                })?
         };
 
         // Load cache state
-        let cache_state = self
-            .db_ops
-            .get_view_cache_state(&view.name)
-            .await?;
+        let cache_state = self.db_ops.get_view_cache_state(&view.name).await?;
 
         if cache_state.is_computing() {
             return Err(SchemaError::InvalidData(format!(
@@ -246,13 +247,9 @@ impl QueryExecutor {
         query: &Query,
     ) -> Result<HashMap<String, HashMap<KeyValue, FieldValue>>, SchemaError> {
         let view = {
-            let registry = self
-                .schema_manager
-                .view_registry()
-                .lock()
-                .map_err(|_| {
-                    SchemaError::InvalidData("Failed to acquire view_registry lock".to_string())
-                })?;
+            let registry = self.schema_manager.view_registry().lock().map_err(|_| {
+                SchemaError::InvalidData("Failed to acquire view_registry lock".to_string())
+            })?;
 
             let view = registry.get_view(&query.schema_name).ok_or_else(|| {
                 let available = self.schema_manager.get_schemas().unwrap_or_default();
@@ -289,10 +286,7 @@ impl QueryExecutor {
         };
 
         // Load cache state
-        let cache_state = self
-            .db_ops
-            .get_view_cache_state(&view.name)
-            .await?;
+        let cache_state = self.db_ops.get_view_cache_state(&view.name).await?;
 
         // Reject queries on views that are being precomputed in the background
         if cache_state.is_computing() {

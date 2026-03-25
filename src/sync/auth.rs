@@ -85,9 +85,7 @@ impl AuthClient {
     fn apply_auth(&self, req: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
         match &self.auth {
             SyncAuth::ApiKey(key) => req.header("X-API-Key", key),
-            SyncAuth::BearerToken(token) => {
-                req.header("Authorization", format!("Bearer {token}"))
-            }
+            SyncAuth::BearerToken(token) => req.header("Authorization", format!("Bearer {token}")),
         }
     }
 
@@ -107,20 +105,23 @@ impl AuthClient {
         })?;
 
         let status = response.status();
-        if status == reqwest::StatusCode::UNAUTHORIZED
-            || status == reqwest::StatusCode::FORBIDDEN
-        {
-            return Err(SyncError::Auth("authentication failed — re-authenticate".to_string()));
+        if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
+            return Err(SyncError::Auth(
+                "authentication failed — re-authenticate".to_string(),
+            ));
         }
 
         if status.is_server_error() {
             let body = response.text().await.unwrap_or_default();
-            return Err(SyncError::Auth(format!("auth Lambda error: HTTP {status}: {body}")));
+            return Err(SyncError::Auth(format!(
+                "auth Lambda error: HTTP {status}: {body}"
+            )));
         }
 
-        let json: serde_json::Value = response.json().await.map_err(|e| {
-            SyncError::Auth(format!("invalid JSON from auth Lambda: {e}"))
-        })?;
+        let json: serde_json::Value = response
+            .json()
+            .await
+            .map_err(|e| SyncError::Auth(format!("invalid JSON from auth Lambda: {e}")))?;
 
         Ok(json)
     }
@@ -160,9 +161,11 @@ impl AuthClient {
             ));
         }
 
-        parsed.urls.into_iter().next().ok_or_else(|| {
-            SyncError::Auth("no presigned URL returned".to_string())
-        })
+        parsed
+            .urls
+            .into_iter()
+            .next()
+            .ok_or_else(|| SyncError::Auth("no presigned URL returned".to_string()))
     }
 
     /// Request a presigned URL for downloading a snapshot.
@@ -181,9 +184,11 @@ impl AuthClient {
             ));
         }
 
-        parsed.urls.into_iter().next().ok_or_else(|| {
-            SyncError::Auth("no presigned URL returned".to_string())
-        })
+        parsed
+            .urls
+            .into_iter()
+            .next()
+            .ok_or_else(|| SyncError::Auth("no presigned URL returned".to_string()))
     }
 
     /// Request presigned URLs for deleting log entries.

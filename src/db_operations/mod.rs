@@ -10,6 +10,6 @@ mod schema_operations;
 mod trust_operations;
 mod view_operations;
 // Re-export the main DbOperations struct
+pub use atom_operations::MoleculeData;
 pub use core::DbOperations;
 pub use native_index::{IndexResult, NativeIndexManager};
-pub use atom_operations::MoleculeData;

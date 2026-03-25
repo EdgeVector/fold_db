@@ -89,8 +89,7 @@ impl DependencyTracker {
         // DFS: check if any source schema transitively depends on new_view_name
         let mut visited = HashSet::new();
         // (view_name, depth)
-        let mut stack: Vec<(String, usize)> =
-            sources.into_iter().map(|s| (s, 1)).collect();
+        let mut stack: Vec<(String, usize)> = sources.into_iter().map(|s| (s, 1)).collect();
 
         while let Some((current, depth)) = stack.pop() {
             if current == new_view_name {
@@ -143,10 +142,10 @@ mod tests {
     #[test]
     fn test_register_and_lookup() {
         let mut tracker = DependencyTracker::new();
-        let view = make_view("Analytics", vec![
-            ("BlogPost", vec!["content"]),
-            ("Weather", vec!["temp_c"]),
-        ]);
+        let view = make_view(
+            "Analytics",
+            vec![("BlogPost", vec!["content"]), ("Weather", vec!["temp_c"])],
+        );
         tracker.register(&view);
 
         let deps = tracker.get_dependents("BlogPost", "content");
@@ -239,10 +238,7 @@ mod tests {
         existing.insert("ViewB".to_string(), view_b);
 
         // ViewC reads from ViewA and ViewB — no cycle
-        let view_c = make_view("ViewC", vec![
-            ("ViewA", vec!["a"]),
-            ("ViewB", vec!["b"]),
-        ]);
+        let view_c = make_view("ViewC", vec![("ViewA", vec!["a"]), ("ViewB", vec!["b"])]);
         assert!(!tracker.would_create_cycle("ViewC", &view_c, &existing));
     }
 
@@ -269,10 +265,13 @@ mod tests {
     #[test]
     fn test_multi_field_query_dependencies() {
         let mut tracker = DependencyTracker::new();
-        let view = make_view("Dashboard", vec![
-            ("BlogPost", vec!["title", "content"]),
-            ("Author", vec!["name"]),
-        ]);
+        let view = make_view(
+            "Dashboard",
+            vec![
+                ("BlogPost", vec!["title", "content"]),
+                ("Author", vec!["name"]),
+            ],
+        );
         tracker.register(&view);
 
         assert_eq!(tracker.get_dependents("BlogPost", "title").len(), 1);

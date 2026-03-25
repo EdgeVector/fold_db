@@ -45,7 +45,9 @@ pub(super) struct EmbeddingIndex {
 
 impl EmbeddingIndex {
     pub(super) fn new(entries: Vec<EmbeddingEntry>) -> Self {
-        Self { entries: std::sync::RwLock::new(entries) }
+        Self {
+            entries: std::sync::RwLock::new(entries),
+        }
     }
 
     /// Load all persisted embeddings from the KV store into memory.
@@ -130,9 +132,7 @@ impl EmbeddingIndex {
             .map(|(i, e)| (cosine_similarity(query_vec, &e.embedding), i))
             .collect();
 
-        scored.sort_unstable_by(|a, b| {
-            b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal)
-        });
+        scored.sort_unstable_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
 
         scored
             .into_iter()
@@ -156,12 +156,20 @@ pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
     let dot: f32 = a.iter().zip(b).map(|(x, y)| x * y).sum();
     let norm_a: f32 = a.iter().map(|x| x * x).sum::<f32>().sqrt();
     let norm_b: f32 = b.iter().map(|x| x * x).sum::<f32>().sqrt();
-    if norm_a == 0.0 || norm_b == 0.0 { 0.0 } else { dot / (norm_a * norm_b) }
+    if norm_a == 0.0 || norm_b == 0.0 {
+        0.0
+    } else {
+        dot / (norm_a * norm_b)
+    }
 }
 
 /// Convert a map of field values to a single text string for embedding.
 pub(super) fn fields_to_text(fields: &HashMap<String, Value>) -> String {
-    fields.values().map(value_to_text).collect::<Vec<_>>().join(" ")
+    fields
+        .values()
+        .map(value_to_text)
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn value_to_text(v: &Value) -> String {
@@ -170,7 +178,11 @@ fn value_to_text(v: &Value) -> String {
         Value::Number(n) => n.to_string(),
         Value::Bool(b) => b.to_string(),
         Value::Array(arr) => arr.iter().map(value_to_text).collect::<Vec<_>>().join(" "),
-        Value::Object(obj) => obj.values().map(value_to_text).collect::<Vec<_>>().join(" "),
+        Value::Object(obj) => obj
+            .values()
+            .map(value_to_text)
+            .collect::<Vec<_>>()
+            .join(" "),
         Value::Null => String::new(),
     }
 }

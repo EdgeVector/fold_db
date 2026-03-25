@@ -74,8 +74,11 @@ impl SchemaServiceState {
             }
 
             let incoming_emb = match self.get_field_embedding(
-                incoming_field, descriptive_name,
-                incoming_descriptions.get(incoming_field.as_str()).map(|s| s.as_str()),
+                incoming_field,
+                descriptive_name,
+                incoming_descriptions
+                    .get(incoming_field.as_str())
+                    .map(|s| s.as_str()),
             ) {
                 Some(v) => v,
                 None => continue,
@@ -86,18 +89,18 @@ impl SchemaServiceState {
                 if claimed.contains(existing_field) {
                     continue;
                 }
-                let existing_emb =
-                    match self.get_field_embedding(
-                        existing_field, descriptive_name,
-                        existing_descriptions.get(existing_field.as_str()).map(|s| s.as_str()),
-                    ) {
-                        Some(v) => v,
-                        None => continue,
-                    };
+                let existing_emb = match self.get_field_embedding(
+                    existing_field,
+                    descriptive_name,
+                    existing_descriptions
+                        .get(existing_field.as_str())
+                        .map(|s| s.as_str()),
+                ) {
+                    Some(v) => v,
+                    None => continue,
+                };
                 let sim = cosine_similarity(&incoming_emb, &existing_emb);
-                if sim >= SEMANTIC_RENAME_THRESHOLD
-                    && best.as_ref().is_none_or(|(_, s)| sim > *s)
-                {
+                if sim >= SEMANTIC_RENAME_THRESHOLD && best.as_ref().is_none_or(|(_, s)| sim > *s) {
                     best = Some((existing_field.as_str(), sim));
                 }
             }
@@ -108,7 +111,8 @@ impl SchemaServiceState {
                 // positives like "medium"→"artist" when "creator"→"artist" is stronger.
                 let existing_emb = self
                     .get_field_embedding(
-                        matched_field, descriptive_name,
+                        matched_field,
+                        descriptive_name,
                         existing_descriptions.get(matched_field).map(|s| s.as_str()),
                     )
                     .unwrap();
@@ -117,22 +121,24 @@ impl SchemaServiceState {
                     if existing_set.contains(candidate) {
                         continue; // skip literal matches
                     }
-                    let candidate_emb =
-                        match self.get_field_embedding(
-                            candidate, descriptive_name,
-                            incoming_descriptions.get(candidate.as_str()).map(|s| s.as_str()),
-                        ) {
-                            Some(v) => v,
-                            None => continue,
-                        };
+                    let candidate_emb = match self.get_field_embedding(
+                        candidate,
+                        descriptive_name,
+                        incoming_descriptions
+                            .get(candidate.as_str())
+                            .map(|s| s.as_str()),
+                    ) {
+                        Some(v) => v,
+                        None => continue,
+                    };
                     let sim = cosine_similarity(&existing_emb, &candidate_emb);
                     if reverse_best.as_ref().is_none_or(|(_, s)| sim > *s) {
                         reverse_best = Some((candidate.as_str(), sim));
                     }
                 }
 
-                let is_mutual = reverse_best
-                    .is_some_and(|(best_incoming, _)| best_incoming == incoming_field);
+                let is_mutual =
+                    reverse_best.is_some_and(|(best_incoming, _)| best_incoming == incoming_field);
 
                 if is_mutual {
                     log_feature!(
@@ -245,7 +251,10 @@ impl SchemaServiceState {
                 old_name,
                 desc_name
             );
-            return Ok(SchemaAddOutcome::AlreadyExists(existing.clone(), mutation_mappers.clone()));
+            return Ok(SchemaAddOutcome::AlreadyExists(
+                existing.clone(),
+                mutation_mappers.clone(),
+            ));
         }
 
         log_feature!(
@@ -257,24 +266,20 @@ impl SchemaServiceState {
         );
 
         // Merge to superset: existing fields + new-only fields
-        let new_fields_to_add: Vec<String> = new_field_set
-            .difference(&existing_set)
-            .cloned()
-            .collect();
+        let new_fields_to_add: Vec<String> =
+            new_field_set.difference(&existing_set).cloned().collect();
         let mut merged_fields = existing_fields.clone();
         merged_fields.extend(new_fields_to_add);
         schema.fields = Some(merged_fields);
 
         // Set field_mappers for shared fields (pointing to old schema's molecules)
         use crate::schema::types::declarative_schemas::FieldMapper;
-        let mut mappers: HashMap<String, FieldMapper> = schema
-            .field_mappers()
-            .cloned()
-            .unwrap_or_default();
+        let mut mappers: HashMap<String, FieldMapper> =
+            schema.field_mappers().cloned().unwrap_or_default();
         for field in &existing_fields {
-            mappers.entry(field.clone()).or_insert_with(|| {
-                FieldMapper::new(old_name.to_string(), field.clone())
-            });
+            mappers
+                .entry(field.clone())
+                .or_insert_with(|| FieldMapper::new(old_name.to_string(), field.clone()));
         }
         schema.field_mappers = Some(mappers);
         schema.field_molecule_uuids = None;
@@ -343,7 +348,9 @@ impl SchemaServiceState {
         // Update descriptive_name index to point to expanded schema
         {
             let mut index = self.descriptive_name_index.write().map_err(|_| {
-                FoldDbError::Config("Failed to acquire descriptive_name_index write lock".to_string())
+                FoldDbError::Config(
+                    "Failed to acquire descriptive_name_index write lock".to_string(),
+                )
             })?;
             index.insert(desc_name.to_string(), expanded_name);
         }

@@ -12,15 +12,15 @@ use super::infrastructure::message_bus::events::query_events::MutationExecuted;
 
 use super::infrastructure::message_bus::{AsyncMessageBus, Event};
 use super::orchestration::index_status::IndexStatusTracker;
-use chrono::Utc;
 use crate::atom::{Atom, FieldKey, MutationEvent};
 use crate::db_operations::{DbOperations, MoleculeData};
-use crate::storage::traits::TypedStore;
 use crate::schema::types::field::{Field, FieldVariant};
 use crate::schema::types::{KeyValue, Mutation, Schema};
 use crate::schema::{SchemaCore, SchemaError};
+use crate::storage::traits::TypedStore;
 use crate::view::resolver::{SourceQueryFn, ViewResolver};
 use crate::view::types::ViewCacheState;
+use chrono::Utc;
 use log::{debug, error, warn};
 use sha2::{Digest, Sha256};
 use std::collections::HashSet;
@@ -60,25 +60,22 @@ impl SourceQueryFn for PrecomputeSourceQuery {
             None => {
                 // Try as view — must be cached (computed earlier in bottom-up order)
                 let view = {
-                    let registry = self
-                        .schema_manager
-                        .view_registry()
-                        .lock()
-                        .map_err(|_| {
+                    let registry =
+                        self.schema_manager.view_registry().lock().map_err(|_| {
                             SchemaError::InvalidData("view_registry lock".to_string())
                         })?;
-                    registry.get_view(&query.schema_name).cloned().ok_or_else(|| {
-                        SchemaError::NotFound(format!(
-                            "'{}' not found as schema or view during precomputation",
-                            query.schema_name
-                        ))
-                    })?
+                    registry
+                        .get_view(&query.schema_name)
+                        .cloned()
+                        .ok_or_else(|| {
+                            SchemaError::NotFound(format!(
+                                "'{}' not found as schema or view during precomputation",
+                                query.schema_name
+                            ))
+                        })?
                 };
 
-                let cache_state = self
-                    .db_ops
-                    .get_view_cache_state(&view.name)
-                    .await?;
+                let cache_state = self.db_ops.get_view_cache_state(&view.name).await?;
 
                 // Source view should be Cached (computed earlier in bottom-up order).
                 // If it's still Empty, compute it inline.
@@ -94,7 +91,8 @@ impl SourceQueryFn for PrecomputeSourceQuery {
                     .await?;
 
                 // Persist if we just computed it
-                if effective_cache.is_empty() && matches!(new_cache, ViewCacheState::Cached { .. }) {
+                if effective_cache.is_empty() && matches!(new_cache, ViewCacheState::Cached { .. })
+                {
                     self.db_ops
                         .set_view_cache_state(&view.name, &new_cache)
                         .await?;
@@ -173,10 +171,7 @@ impl MutationManager {
                 .schema_manager
                 .get_schema_metadata(&mutation.schema_name)?
                 .ok_or_else(|| {
-                    SchemaError::InvalidData(format!(
-                        "Schema '{}' not found",
-                        mutation.schema_name
-                    ))
+                    SchemaError::InvalidData(format!("Schema '{}' not found", mutation.schema_name))
                 })?;
 
             for field_name in mutation.fields_and_values.keys() {
@@ -241,7 +236,10 @@ impl MutationManager {
         timing_breakdown.insert("idempotency_check", idem_start.elapsed());
 
         if new_mutations.is_empty() {
-            log::info!("All {} mutations were idempotency duplicates, skipping processing", already_seen_ids.len());
+            log::info!(
+                "All {} mutations were idempotency duplicates, skipping processing",
+                already_seen_ids.len()
+            );
             return Ok(already_seen_ids);
         }
 
@@ -305,20 +303,21 @@ impl MutationManager {
 
             // Phase 5: Persist modified molecules and mutation events
             let phase3_start = std::time::Instant::now();
-            self.persist_modified_molecules(&schema, modified_fields, mutation_events, &mut timing_breakdown)
-                .await?;
+            self.persist_modified_molecules(
+                &schema,
+                modified_fields,
+                mutation_events,
+                &mut timing_breakdown,
+            )
+            .await?;
             *timing_breakdown
                 .entry("  - write_molecules_batch")
                 .or_insert(std::time::Duration::ZERO) += phase3_start.elapsed();
 
             // Phase 6: Inline index mutations
             let inline_index_start = std::time::Instant::now();
-            self.inline_index_mutations(
-                &schema_name,
-                &schema_mutations,
-                &mutation_key_values,
-            )
-            .await;
+            self.inline_index_mutations(&schema_name, &schema_mutations, &mutation_key_values)
+                .await;
             *timing_breakdown
                 .entry("inline_indexing")
                 .or_insert(std::time::Duration::ZERO) += inline_index_start.elapsed();
@@ -373,12 +372,8 @@ impl MutationManager {
         }
 
         // Phase 8: Finalize — flush, store idempotency records, publish events
-        self.finalize_batch(
-            &hash_to_uuid,
-            batch_events,
-            &mut timing_breakdown,
-        )
-        .await?;
+        self.finalize_batch(&hash_to_uuid, batch_events, &mut timing_breakdown)
+            .await?;
 
         let total_time = start_time.elapsed();
 
@@ -437,9 +432,18 @@ impl MutationManager {
         for mutation in mutations {
             let hash = mutation.content_hash();
             let key = format!("idem:{}", hash);
-            match self.db_ops.idempotency_store().get_item::<String>(&key).await {
+            match self
+                .db_ops
+                .idempotency_store()
+                .get_item::<String>(&key)
+                .await
+            {
                 Ok(Some(cached_id)) => {
-                    log::debug!("Idempotency hit for mutation hash {}, returning cached id {}", hash, cached_id);
+                    log::debug!(
+                        "Idempotency hit for mutation hash {}, returning cached id {}",
+                        hash,
+                        cached_id
+                    );
                     already_seen_ids.push(cached_id);
                 }
                 _ => {
@@ -468,20 +472,21 @@ impl MutationManager {
             // Prefer the pre-computed key_value from the mutation (set by the
             // ingestion service with date normalization and proper field extraction).
             // Fall back to KeyValue::from_mutation() only when both fields are None.
-            let mut key_value = if mutation.key_value.hash.is_some() || mutation.key_value.range.is_some() {
-                mutation.key_value.clone()
-            } else {
-                let key_config = schema.key.clone();
-                KeyValue::from_mutation(
-                    &mutation.fields_and_values,
-                    key_config.as_ref().ok_or_else(|| {
-                        SchemaError::InvalidData(format!(
-                            "Schema '{}' has no key configuration. Cannot execute mutation.",
-                            schema_name
-                        ))
-                    })?,
-                )
-            };
+            let mut key_value =
+                if mutation.key_value.hash.is_some() || mutation.key_value.range.is_some() {
+                    mutation.key_value.clone()
+                } else {
+                    let key_config = schema.key.clone();
+                    KeyValue::from_mutation(
+                        &mutation.fields_and_values,
+                        key_config.as_ref().ok_or_else(|| {
+                            SchemaError::InvalidData(format!(
+                                "Schema '{}' has no key configuration. Cannot execute mutation.",
+                                schema_name
+                            ))
+                        })?,
+                    )
+                };
 
             // Safety net: if key is still empty after both extraction paths,
             // generate a deterministic content hash so the mutation is stored
@@ -541,7 +546,10 @@ impl MutationManager {
                 if let Err(type_err) = field_type.validate(value) {
                     return Err(SchemaError::InvalidData(format!(
                         "Type error in field '{}' of schema '{}': {}. Expected {}, got {}",
-                        field_name, schema_name, type_err, field_type,
+                        field_name,
+                        schema_name,
+                        type_err,
+                        field_type,
                         serde_json::to_string(value).unwrap_or_else(|_| "?".to_string())
                     )));
                 }
@@ -609,33 +617,45 @@ impl MutationManager {
 
             // Capture old atom UUID before write_mutation
             let old_atom_uuid: Option<String> = match schema_field {
-                FieldVariant::Single(f) => {
-                    f.base.molecule.as_ref().map(|m| m.get_atom_uuid().to_string())
-                }
-                FieldVariant::Hash(f) => {
-                    key_value.hash.as_ref().and_then(|h| {
-                        f.base.molecule.as_ref().and_then(|m| m.get_atom_uuid(h).cloned())
-                    })
-                }
-                FieldVariant::Range(f) => {
-                    key_value.range.as_ref().and_then(|r| {
-                        f.base.molecule.as_ref().and_then(|m| m.get_atom_uuid(r).cloned())
-                    })
-                }
-                FieldVariant::HashRange(f) => {
-                    key_value.hash.as_ref().zip(key_value.range.as_ref()).and_then(|(h, r)| {
-                        f.base.molecule.as_ref().and_then(|m| m.get_atom_uuid(h, r).cloned())
-                    })
-                }
+                FieldVariant::Single(f) => f
+                    .base
+                    .molecule
+                    .as_ref()
+                    .map(|m| m.get_atom_uuid().to_string()),
+                FieldVariant::Hash(f) => key_value.hash.as_ref().and_then(|h| {
+                    f.base
+                        .molecule
+                        .as_ref()
+                        .and_then(|m| m.get_atom_uuid(h).cloned())
+                }),
+                FieldVariant::Range(f) => key_value.range.as_ref().and_then(|r| {
+                    f.base
+                        .molecule
+                        .as_ref()
+                        .and_then(|m| m.get_atom_uuid(r).cloned())
+                }),
+                FieldVariant::HashRange(f) => key_value
+                    .hash
+                    .as_ref()
+                    .zip(key_value.range.as_ref())
+                    .and_then(|(h, r)| {
+                        f.base
+                            .molecule
+                            .as_ref()
+                            .and_then(|m| m.get_atom_uuid(h, r).cloned())
+                    }),
             };
 
             // Write mutation to memory
-            schema_field.write_mutation(key_value, crate::schema::types::field::WriteContext {
-                atom: atom.clone(),
-                pub_key: mutation.pub_key.clone(),
-                source_file_name: mutation.source_file_name.clone(),
-                metadata: mutation.metadata.clone(),
-            });
+            schema_field.write_mutation(
+                key_value,
+                crate::schema::types::field::WriteContext {
+                    atom: atom.clone(),
+                    pub_key: mutation.pub_key.clone(),
+                    source_file_name: mutation.source_file_name.clone(),
+                    metadata: mutation.metadata.clone(),
+                },
+            );
 
             // Build mutation event if something actually changed
             if old_atom_uuid.as_deref() != Some(atom.uuid()) {
@@ -685,8 +705,9 @@ impl MutationManager {
         let mut molecules_to_store: Vec<(String, MoleculeData)> = Vec::new();
 
         for field_name in modified_fields {
-            let schema_field = schema.runtime_fields.get(&field_name)
-                .expect("field_name came from modified_fields which was populated from runtime_fields keys");
+            let schema_field = schema.runtime_fields.get(&field_name).expect(
+                "field_name came from modified_fields which was populated from runtime_fields keys",
+            );
             let molecule_uuid = schema_field.common().molecule_uuid().unwrap().to_string(); // verified is_some above
 
             if let Some(mol_data) = schema_field.clone_molecule_data() {
@@ -697,14 +718,18 @@ impl MutationManager {
         // Batch store all molecules at once
         if !molecules_to_store.is_empty() {
             log::info!("💾 Batch storing {} molecules", molecules_to_store.len());
-            self.db_ops.batch_store_molecules(molecules_to_store).await?;
+            self.db_ops
+                .batch_store_molecules(molecules_to_store)
+                .await?;
         }
 
         // Store mutation events for point-in-time queries
         if !mutation_events.is_empty() {
             let phase4_start = std::time::Instant::now();
             log::debug!("💾 Storing {} mutation events", mutation_events.len());
-            self.db_ops.batch_store_mutation_events(mutation_events).await?;
+            self.db_ops
+                .batch_store_mutation_events(mutation_events)
+                .await?;
             *timing_breakdown
                 .entry("  - store_mutation_events")
                 .or_insert(std::time::Duration::ZERO) += phase4_start.elapsed();
@@ -731,7 +756,10 @@ impl MutationManager {
                 .index_record(schema_name, key_value, &mutation.fields_and_values)
                 .await
             {
-                warn!("Embedding indexing failed for schema '{}': {}", schema_name, e);
+                warn!(
+                    "Embedding indexing failed for schema '{}': {}",
+                    schema_name, e
+                );
             }
         }
     }
@@ -753,13 +781,19 @@ impl MutationManager {
             let data = mutation.fields_and_values.clone();
             let metadata = mutation.metadata.clone();
 
-            let mutation_context = Some(crate::fold_db_core::infrastructure::message_bus::atom_events::MutationContext {
-                key_value: Some(key_value),
-                mutation_hash: Some(mutation_id.clone()),
-                incremental: true,
-            });
+            let mutation_context = Some(
+                crate::fold_db_core::infrastructure::message_bus::atom_events::MutationContext {
+                    key_value: Some(key_value),
+                    mutation_hash: Some(mutation_id.clone()),
+                    incremental: true,
+                },
+            );
 
-            let mol_versions_opt = if mol_versions.is_empty() { None } else { Some(mol_versions.clone()) };
+            let mol_versions_opt = if mol_versions.is_empty() {
+                None
+            } else {
+                Some(mol_versions.clone())
+            };
 
             let event = MutationExecuted {
                 operation: "write_mutations_batch".to_string(),
@@ -867,11 +901,9 @@ impl MutationManager {
 
         for mutation in mutations {
             let view_info = {
-                let registry = self
-                    .schema_manager
-                    .view_registry()
-                    .lock()
-                    .map_err(|_| SchemaError::InvalidData("Failed to acquire view_registry lock".to_string()))?;
+                let registry = self.schema_manager.view_registry().lock().map_err(|_| {
+                    SchemaError::InvalidData("Failed to acquire view_registry lock".to_string())
+                })?;
                 registry.get_view(&mutation.schema_name).cloned()
             };
 
@@ -890,7 +922,8 @@ impl MutationManager {
             })?;
 
             // Group mutation fields by target source schema
-            let mut redirected: HashMap<String, HashMap<String, serde_json::Value>> = HashMap::new();
+            let mut redirected: HashMap<String, HashMap<String, serde_json::Value>> =
+                HashMap::new();
 
             for (field_name, value) in &mutation.fields_and_values {
                 let (source_schema, source_field) = field_map.get(field_name).ok_or_else(|| {
@@ -966,10 +999,7 @@ impl MutationManager {
         // Empty ensures the precompute task's check-before-store sees Empty
         // and the view will be re-precomputed with fresh data.
         for view_name in &all_invalidated {
-            let current_state = self
-                .db_ops
-                .get_view_cache_state(view_name)
-                .await?;
+            let current_state = self.db_ops.get_view_cache_state(view_name).await?;
 
             if !current_state.is_empty() {
                 self.db_ops
@@ -990,9 +1020,11 @@ impl MutationManager {
         // in bottom-up order so leaf views compute first, but only deep views
         // (level 2+) are marked Computing — level 1 views stay Empty and can
         // also be lazily queried.
-        let (all_ordered, deep_views) = self.partition_views_for_precomputation(&all_invalidated)?;
+        let (all_ordered, deep_views) =
+            self.partition_views_for_precomputation(&all_invalidated)?;
         if !deep_views.is_empty() {
-            self.spawn_background_precomputation(all_ordered, deep_views).await?;
+            self.spawn_background_precomputation(all_ordered, deep_views)
+                .await?;
         }
 
         Ok(())
@@ -1115,7 +1147,10 @@ impl MutationManager {
             self.db_ops
                 .set_view_cache_state(view_name, &ViewCacheState::Computing)
                 .await?;
-            log::debug!("View '{}' marked as Computing for background precomputation", view_name);
+            log::debug!(
+                "View '{}' marked as Computing for background precomputation",
+                view_name
+            );
         }
 
         // Spawn background task that computes ALL views bottom-up
@@ -1123,9 +1158,7 @@ impl MutationManager {
         let db_ops = Arc::clone(&self.db_ops);
 
         tokio::spawn(async move {
-            if let Err(e) =
-                Self::precompute_views(schema_manager, db_ops, all_ordered).await
-            {
+            if let Err(e) = Self::precompute_views(schema_manager, db_ops, all_ordered).await {
                 log::error!("Background view precomputation failed: {}", e);
             }
         });
@@ -1233,44 +1266,47 @@ impl MutationManager {
         // Use tokio::spawn for async background task
         tokio::spawn(async move {
             crate::logging::core::run_with_user(&user_id, async move {
-            // Subscribe to MutationRequest events
-            let mut consumer = message_bus.subscribe("MutationRequest").await;
+                // Subscribe to MutationRequest events
+                let mut consumer = message_bus.subscribe("MutationRequest").await;
 
-            // Main event processing loop
-            while is_listening.load(std::sync::atomic::Ordering::Acquire) {
-                // Async receive
-                if let Some(event) = consumer.recv().await {
-                    match event {
-                        Event::MutationRequest(mutation_request) => {
-                            let mut temp_manager = Self::new(
-                                Arc::clone(&db_ops),
-                                Arc::clone(&schema_manager),
-                                Arc::clone(&message_bus),
-                                None,
-                            );
+                // Main event processing loop
+                while is_listening.load(std::sync::atomic::Ordering::Acquire) {
+                    // Async receive
+                    if let Some(event) = consumer.recv().await {
+                        match event {
+                            Event::MutationRequest(mutation_request) => {
+                                let mut temp_manager = Self::new(
+                                    Arc::clone(&db_ops),
+                                    Arc::clone(&schema_manager),
+                                    Arc::clone(&message_bus),
+                                    None,
+                                );
 
-                            if let Err(e) = temp_manager
-                                .write_mutations_batch_async(vec![mutation_request
-                                    .mutation
-                                    .clone()])
-                                .await
-                            {
-                                error!("MutationManager failed to handle mutation request: {}", e);
+                                if let Err(e) = temp_manager
+                                    .write_mutations_batch_async(vec![mutation_request
+                                        .mutation
+                                        .clone()])
+                                    .await
+                                {
+                                    error!(
+                                        "MutationManager failed to handle mutation request: {}",
+                                        e
+                                    );
+                                }
+                            }
+                            _ => {
+                                // Ignore other events if any leaked (shouldn't happen with filtered subscribe)
                             }
                         }
-                        _ => {
-                            // Ignore other events if any leaked (shouldn't happen with filtered subscribe)
-                        }
+                    } else {
+                        // Disconnected
+                        error!("MutationManager message bus consumer disconnected");
+                        break;
                     }
-                } else {
-                    // Disconnected
-                    error!("MutationManager message bus consumer disconnected");
-                    break;
                 }
-            }
-            }).await
+            })
+            .await
         });
         Ok(())
     }
-
 }

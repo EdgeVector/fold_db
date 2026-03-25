@@ -79,7 +79,10 @@ async fn register_view_fails_when_name_collides_with_schema() {
     let view = identity_view("BlogPost", "BlogPost", "content");
     let result = core.register_view(view).await;
     assert!(result.is_err());
-    assert!(result.unwrap_err().to_string().contains("already used by a schema"));
+    assert!(result
+        .unwrap_err()
+        .to_string()
+        .contains("already used by a schema"));
 }
 
 #[tokio::test]

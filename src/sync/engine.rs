@@ -145,11 +145,13 @@ impl SyncEngine {
 
     /// Record a put operation for sync.
     pub async fn record_put(&self, namespace: &str, key: &[u8], value: &[u8]) {
-        let entry = self.make_entry(LogOp::Put {
-            namespace: namespace.to_string(),
-            key: LogOp::encode_bytes(key),
-            value: LogOp::encode_bytes(value),
-        }).await;
+        let entry = self
+            .make_entry(LogOp::Put {
+                namespace: namespace.to_string(),
+                key: LogOp::encode_bytes(key),
+                value: LogOp::encode_bytes(value),
+            })
+            .await;
 
         self.pending.lock().await.push(entry);
         self.set_state(SyncState::Dirty, None).await;
@@ -157,10 +159,12 @@ impl SyncEngine {
 
     /// Record a delete operation for sync.
     pub async fn record_delete(&self, namespace: &str, key: &[u8]) {
-        let entry = self.make_entry(LogOp::Delete {
-            namespace: namespace.to_string(),
-            key: LogOp::encode_bytes(key),
-        }).await;
+        let entry = self
+            .make_entry(LogOp::Delete {
+                namespace: namespace.to_string(),
+                key: LogOp::encode_bytes(key),
+            })
+            .await;
 
         self.pending.lock().await.push(entry);
         self.set_state(SyncState::Dirty, None).await;
@@ -173,10 +177,12 @@ impl SyncEngine {
             .map(|(k, v)| (LogOp::encode_bytes(k), LogOp::encode_bytes(v)))
             .collect();
 
-        let entry = self.make_entry(LogOp::BatchPut {
-            namespace: namespace.to_string(),
-            items: encoded_items,
-        }).await;
+        let entry = self
+            .make_entry(LogOp::BatchPut {
+                namespace: namespace.to_string(),
+                items: encoded_items,
+            })
+            .await;
 
         self.pending.lock().await.push(entry);
         self.set_state(SyncState::Dirty, None).await;
@@ -186,10 +192,12 @@ impl SyncEngine {
     pub async fn record_batch_delete(&self, namespace: &str, keys: &[Vec<u8>]) {
         let encoded_keys: Vec<String> = keys.iter().map(|k| LogOp::encode_bytes(k)).collect();
 
-        let entry = self.make_entry(LogOp::BatchDelete {
-            namespace: namespace.to_string(),
-            keys: encoded_keys,
-        }).await;
+        let entry = self
+            .make_entry(LogOp::BatchDelete {
+                namespace: namespace.to_string(),
+                keys: encoded_keys,
+            })
+            .await;
 
         self.pending.lock().await.push(entry);
         self.set_state(SyncState::Dirty, None).await;
@@ -314,11 +322,7 @@ impl SyncEngine {
     async fn compact(&self, last_seq: u64) -> SyncResult<()> {
         log::info!("compacting: creating snapshot at seq {last_seq}");
 
-        let snapshot = Snapshot::create(
-            self.store.as_ref(),
-            &self.device_id,
-            last_seq,
-        ).await?;
+        let snapshot = Snapshot::create(self.store.as_ref(), &self.device_id, last_seq).await?;
 
         let sealed = snapshot.seal(&self.crypto).await?;
 
@@ -405,23 +409,26 @@ impl SyncEngine {
         log_seqs.sort();
 
         if !log_seqs.is_empty() {
-            log::info!("replaying {} log entries (seq {}..={})", log_seqs.len(), log_seqs[0], log_seqs[log_seqs.len() - 1]);
+            log::info!(
+                "replaying {} log entries (seq {}..={})",
+                log_seqs.len(),
+                log_seqs[0],
+                log_seqs[log_seqs.len() - 1]
+            );
 
             let urls = self.auth.presign_log_download(&log_seqs).await?;
 
             for (seq, url) in log_seqs.iter().zip(urls.iter()) {
                 let data = self.s3.download(url).await?;
                 match data {
-                    Some(bytes) => {
-                        match LogEntry::unseal(&bytes, &self.crypto).await {
-                            Ok(entry) => {
-                                self.replay_entry(&entry).await?;
-                            }
-                            Err(e) => {
-                                log::warn!("skipping corrupt log entry seq={seq}: {e}");
-                            }
+                    Some(bytes) => match LogEntry::unseal(&bytes, &self.crypto).await {
+                        Ok(entry) => {
+                            self.replay_entry(&entry).await?;
                         }
-                    }
+                        Err(e) => {
+                            log::warn!("skipping corrupt log entry seq={seq}: {e}");
+                        }
+                    },
                     None => {
                         log::warn!("log entry seq={seq} not found in S3, skipping");
                     }
@@ -440,7 +447,11 @@ impl SyncEngine {
     /// Replay a single log entry by executing the operation against the local store.
     async fn replay_entry(&self, entry: &LogEntry) -> SyncResult<()> {
         match &entry.op {
-            LogOp::Put { namespace, key, value } => {
+            LogOp::Put {
+                namespace,
+                key,
+                value,
+            } => {
                 let kv = self.store.open_namespace(namespace).await?;
                 let key_bytes = LogOp::decode_bytes(key)?;
                 let value_bytes = LogOp::decode_bytes(value)?;
@@ -455,9 +466,7 @@ impl SyncEngine {
                 let kv = self.store.open_namespace(namespace).await?;
                 let decoded: Vec<(Vec<u8>, Vec<u8>)> = items
                     .iter()
-                    .map(|(k, v)| {
-                        Ok((LogOp::decode_bytes(k)?, LogOp::decode_bytes(v)?))
-                    })
+                    .map(|(k, v)| Ok((LogOp::decode_bytes(k)?, LogOp::decode_bytes(v)?)))
                     .collect::<SyncResult<Vec<_>>>()?;
                 kv.batch_put(decoded).await?;
             }

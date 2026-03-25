@@ -268,10 +268,7 @@ async fn write_through_view_cascades_invalidation() {
         "ViewB",
         SchemaType::Range,
         Some(KeyConfig::new(None, Some("publish_date".to_string()))),
-        vec![Query::new(
-            "ViewA".to_string(),
-            vec!["content".to_string()],
-        )],
+        vec![Query::new("ViewA".to_string(), vec!["content".to_string()])],
         None,
         HashMap::from([("content".to_string(), FieldValueType::Any)]),
     );

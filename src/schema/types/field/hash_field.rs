@@ -7,8 +7,8 @@ use crate::schema::types::declarative_schemas::FieldMapper;
 use crate::schema::types::field::base::FieldBase;
 use crate::schema::types::field::hash_range_filter::{HashRangeFilter, HashRangeFilterResult};
 use crate::schema::types::field::FieldValue;
-use crate::schema::types::field::{apply_hash_filter, FilterApplicator};
 use crate::schema::types::field::WriteContext;
+use crate::schema::types::field::{apply_hash_filter, FilterApplicator};
 use crate::schema::types::key_value::KeyValue;
 use crate::schema::types::SchemaError;
 use serde::{Deserialize, Serialize};
@@ -70,10 +70,13 @@ impl crate::schema::types::field::Field for HashField {
             if let Some(molecule) = &mut self.base.molecule {
                 molecule.set_atom_uuid(hash_key.clone(), ctx.atom.uuid().to_string());
                 // Store per-key metadata on the molecule
-                molecule.set_key_metadata(hash_key.clone(), crate::atom::KeyMetadata {
-                    source_file_name: ctx.source_file_name,
-                    metadata: ctx.metadata,
-                });
+                molecule.set_key_metadata(
+                    hash_key.clone(),
+                    crate::atom::KeyMetadata {
+                        source_file_name: ctx.source_file_name,
+                        metadata: ctx.metadata,
+                    },
+                );
             }
         }
     }
@@ -92,7 +95,10 @@ impl crate::schema::types::field::Field for HashField {
             .into_iter()
             .map(|(kv, atom_uuid)| {
                 let key_meta = kv.hash.as_ref().and_then(|h| {
-                    self.base.molecule.as_ref().and_then(|m| m.get_key_metadata(h).cloned())
+                    self.base
+                        .molecule
+                        .as_ref()
+                        .and_then(|m| m.get_key_metadata(h).cloned())
                 });
                 (kv, atom_uuid, key_meta)
             })

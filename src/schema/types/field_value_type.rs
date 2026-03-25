@@ -12,7 +12,7 @@ pub enum FieldValueType {
     String,
     Integer,
     Float,
-    Number,  // accepts either integer or float
+    Number, // accepts either integer or float
     Boolean,
     Null,
 
@@ -321,7 +321,9 @@ mod tests {
             .validate(&json!({"name": "Tom", "age": 30, "extra": true}))
             .is_ok());
         // Wrong type fails
-        assert!(t.validate(&json!({"name": "Tom", "age": "thirty"})).is_err());
+        assert!(t
+            .validate(&json!({"name": "Tom", "age": "thirty"}))
+            .is_err());
         // Missing field gets Null → fails if not nullable
         assert!(t.validate(&json!({"name": "Tom"})).is_err());
     }
@@ -383,13 +385,20 @@ mod tests {
         let err = t
             .validate(&json!([{"name": "ok"}, {"name": 42}]))
             .unwrap_err();
-        assert!(err.contains("Array[1]"), "Error should include index: {}", err);
+        assert!(
+            err.contains("Array[1]"),
+            "Error should include index: {}",
+            err
+        );
         assert!(err.contains(".name"), "Error should include field: {}", err);
     }
 
     #[test]
     fn test_infer_from_value() {
-        assert_eq!(FieldValueType::infer(&json!("hello")), FieldValueType::String);
+        assert_eq!(
+            FieldValueType::infer(&json!("hello")),
+            FieldValueType::String
+        );
         assert_eq!(FieldValueType::infer(&json!(42)), FieldValueType::Integer);
         assert_eq!(FieldValueType::infer(&json!(2.5)), FieldValueType::Float);
         assert_eq!(FieldValueType::infer(&json!(true)), FieldValueType::Boolean);
@@ -404,7 +413,10 @@ mod tests {
     fn test_display() {
         assert_eq!(format!("{}", FieldValueType::String), "String");
         assert_eq!(
-            format!("{}", FieldValueType::Array(Box::new(FieldValueType::Integer))),
+            format!(
+                "{}",
+                FieldValueType::Array(Box::new(FieldValueType::Integer))
+            ),
             "Array<Integer>"
         );
         assert_eq!(

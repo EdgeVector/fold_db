@@ -1,8 +1,6 @@
 //! Security utility functions and helpers
 
-use crate::security::{
-    MessageVerifier, PublicKeyInfo, SecurityResult,
-};
+use crate::security::{MessageVerifier, PublicKeyInfo, SecurityResult};
 use std::sync::Arc;
 
 /// Security manager that combines all security functionality
@@ -18,10 +16,7 @@ impl SecurityManager {
     pub fn new(config: crate::security::SecurityConfig) -> SecurityResult<Self> {
         let verifier = Arc::new(MessageVerifier::new(300)); // 5 minute timestamp drift
 
-        Ok(Self {
-            verifier,
-            config,
-        })
+        Ok(Self { verifier, config })
     }
 
     /// Create a new security manager with database persistence
@@ -31,10 +26,7 @@ impl SecurityManager {
     ) -> SecurityResult<Self> {
         let verifier = Arc::new(MessageVerifier::new_with_persistence(300, db_ops).await?);
 
-        Ok(Self {
-            verifier,
-            config,
-        })
+        Ok(Self { verifier, config })
     }
 
     /// Get the system public key if it exists.
@@ -49,9 +41,7 @@ mod tests {
 
     #[test]
     fn test_security_manager_creation() {
-        let config = crate::security::SecurityConfig {
-            require_tls: true,
-        };
+        let config = crate::security::SecurityConfig { require_tls: true };
         let manager = SecurityManager::new(config).unwrap();
         assert!(manager.get_system_public_key().unwrap().is_none());
     }

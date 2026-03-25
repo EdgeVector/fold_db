@@ -29,10 +29,7 @@ impl SchemaServiceState {
     /// in a schema and inflates cross-field similarity, causing false positive matches
     /// (e.g. "subject" matching "calendar" because both end with "in Calendar Events").
     /// Only the fallback paths use the suffix since their descriptions are generic.
-    pub(super) fn build_field_description(
-        field_name: &str,
-        schema: &Schema,
-    ) -> String {
+    pub(super) fn build_field_description(field_name: &str, schema: &Schema) -> String {
         // Prefer the AI-generated natural language description (already specific)
         if let Some(desc) = schema.field_descriptions.get(field_name) {
             return desc.clone();
@@ -78,10 +75,7 @@ impl SchemaServiceState {
     /// 1. Use caller-provided classification if present
     /// 2. LLM call to analyze field description (requires ANTHROPIC_API_KEY)
     /// 3. No fallback — returns error if classification cannot be determined
-    pub(super) async fn register_canonical_fields(
-        &self,
-        schema: &Schema,
-    ) -> FoldDbResult<()> {
+    pub(super) async fn register_canonical_fields(&self, schema: &Schema) -> FoldDbResult<()> {
         let field_names = schema.fields.as_deref().unwrap_or(&[]);
 
         // Phase 1: Identify new fields (read lock only)
@@ -108,13 +102,10 @@ impl SchemaServiceState {
             let field_type = Self::infer_field_type(field_name, schema);
             let caller_provided = schema.field_data_classifications.get(field_name);
 
-            let classification = super::classify::infer_classification(
-                field_name,
-                &desc,
-                caller_provided,
-            )
-            .await
-            .map_err(FoldDbError::Config)?;
+            let classification =
+                super::classify::infer_classification(field_name, &desc, caller_provided)
+                    .await
+                    .map_err(FoldDbError::Config)?;
 
             let embed_text = Self::build_embedding_text(field_name, &desc);
             let embedding = self.embedder.embed_text(&embed_text).ok();
@@ -227,7 +218,8 @@ impl SchemaServiceState {
                 }
             }
 
-            let is_mutual = reverse_best.is_some_and(|(best_incoming, _)| best_incoming == incoming_field);
+            let is_mutual =
+                reverse_best.is_some_and(|(best_incoming, _)| best_incoming == incoming_field);
             if is_mutual && !claimed.contains(matched_canonical) {
                 log_feature!(
                     LogFeature::Schema,
@@ -257,7 +249,9 @@ impl SchemaServiceState {
             FoldDbError::Config("Failed to acquire canonical_fields write lock".to_string())
         })?;
         let mut embeddings = self.canonical_field_embeddings.write().map_err(|_| {
-            FoldDbError::Config("Failed to acquire canonical_field_embeddings write lock".to_string())
+            FoldDbError::Config(
+                "Failed to acquire canonical_field_embeddings write lock".to_string(),
+            )
         })?;
         fields.clear();
         embeddings.clear();
@@ -266,9 +260,8 @@ impl SchemaServiceState {
             let (key, value) = result.map_err(|e| {
                 FoldDbError::Config(format!("Failed to iterate canonical_fields: {}", e))
             })?;
-            let name = String::from_utf8(key.to_vec()).map_err(|e| {
-                FoldDbError::Config(format!("Invalid canonical field key: {}", e))
-            })?;
+            let name = String::from_utf8(key.to_vec())
+                .map_err(|e| FoldDbError::Config(format!("Invalid canonical field key: {}", e)))?;
             let value_bytes = value.to_vec();
 
             // Try to deserialize as CanonicalField (new format); fall back to plain description string (legacy)
@@ -331,8 +324,7 @@ impl SchemaServiceState {
                     if let Ok(vec) = self.embedder.embed_text(&embed_text) {
                         embeddings.insert(field_name.clone(), vec);
                     }
-                    let classification =
-                        schema.field_data_classifications.get(field_name).cloned();
+                    let classification = schema.field_data_classifications.get(field_name).cloned();
                     fields.insert(
                         field_name.clone(),
                         CanonicalField {

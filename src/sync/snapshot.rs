@@ -98,14 +98,11 @@ impl Snapshot {
     /// then encrypt the file contents.
     ///
     /// Returns the encrypted bytes (hash + ciphertext).
-    pub async fn seal(
-        &self,
-        crypto: &Arc<dyn CryptoProvider>,
-    ) -> SyncResult<Vec<u8>> {
+    pub async fn seal(&self, crypto: &Arc<dyn CryptoProvider>) -> SyncResult<Vec<u8>> {
         // Serialize to a temp file for large snapshots
         let json = tokio::task::spawn_blocking({
-            let snapshot = serde_json::to_vec(self)
-                .map_err(|e| SyncError::Serialization(e.to_string()));
+            let snapshot =
+                serde_json::to_vec(self).map_err(|e| SyncError::Serialization(e.to_string()));
             move || snapshot
         })
         .await
@@ -125,11 +122,11 @@ impl Snapshot {
     }
 
     /// Decrypt and deserialize a snapshot.
-    pub async fn unseal(
-        data: &[u8],
-        crypto: &Arc<dyn CryptoProvider>,
-    ) -> SyncResult<Self> {
-        let plaintext = crypto.decrypt(data).await.map_err(|_| SyncError::WrongKey)?;
+    pub async fn unseal(data: &[u8], crypto: &Arc<dyn CryptoProvider>) -> SyncResult<Self> {
+        let plaintext = crypto
+            .decrypt(data)
+            .await
+            .map_err(|_| SyncError::WrongKey)?;
 
         if plaintext.len() < HASH_SIZE {
             return Err(SyncError::Crypto("snapshot too short for hash".to_string()));
@@ -142,7 +139,9 @@ impl Snapshot {
         let computed_hash: [u8; 32] = hasher.finalize().into();
 
         if stored_hash != computed_hash.as_slice() {
-            return Err(SyncError::Crypto("snapshot hash mismatch — data corrupted".to_string()));
+            return Err(SyncError::Crypto(
+                "snapshot hash mismatch — data corrupted".to_string(),
+            ));
         }
 
         let snapshot: Snapshot = serde_json::from_slice(json_bytes)?;
@@ -160,10 +159,7 @@ impl Snapshot {
     /// Restore a snapshot into a NamespacedStore.
     ///
     /// This clears existing namespaces and writes the snapshot data.
-    pub async fn restore(
-        &self,
-        store: &dyn NamespacedStore,
-    ) -> SyncResult<()> {
+    pub async fn restore(&self, store: &dyn NamespacedStore) -> SyncResult<()> {
         use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 
         for ns_data in &self.namespaces {
@@ -219,7 +215,9 @@ mod tests {
         main.put(b"atom:2", b"value2".to_vec()).await.unwrap();
 
         let meta = store.open_namespace("metadata").await.unwrap();
-        meta.put(b"schema:foo", b"schema_data".to_vec()).await.unwrap();
+        meta.put(b"schema:foo", b"schema_data".to_vec())
+            .await
+            .unwrap();
 
         store
     }
@@ -234,7 +232,11 @@ mod tests {
         assert_eq!(snapshot.last_seq, 10);
         assert_eq!(snapshot.namespaces.len(), 2);
 
-        let main_ns = snapshot.namespaces.iter().find(|n| n.name == "main").unwrap();
+        let main_ns = snapshot
+            .namespaces
+            .iter()
+            .find(|n| n.name == "main")
+            .unwrap();
         assert_eq!(main_ns.entries.len(), 2);
     }
 

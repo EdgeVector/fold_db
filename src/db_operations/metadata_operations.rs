@@ -33,9 +33,10 @@ impl DbOperations {
     /// Sets the node identifier
     pub async fn set_node_id(&self, node_id: &str) -> Result<(), SchemaError> {
         use crate::storage::traits::TypedStore;
-        self.metadata_store().put_item("node_id", &node_id.to_string()).await?;
+        self.metadata_store()
+            .put_item("node_id", &node_id.to_string())
+            .await?;
         self.metadata_store().inner().flush().await?;
         Ok(())
     }
-
 }

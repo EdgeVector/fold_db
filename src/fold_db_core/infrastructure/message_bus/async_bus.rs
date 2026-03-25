@@ -5,10 +5,7 @@
 
 use super::error_handling::{AsyncRecvError, AsyncTryRecvError, MessageBusError, MessageBusResult};
 use super::events::Event;
-use super::{
-    atom_events::FieldValueSet,
-    query_events::MutationExecuted,
-};
+use super::{atom_events::FieldValueSet, query_events::MutationExecuted};
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -53,7 +50,6 @@ impl AsyncConsumer<Event> {
             }
         }
     }
-
 }
 
 /// Async subscriber registry for managing async event subscribers
@@ -170,7 +166,6 @@ impl AsyncMessageBus {
         let registry = self.registry.lock().await;
         registry.get_subscribers(event_type).len()
     }
-
 }
 
 impl Default for AsyncMessageBus {

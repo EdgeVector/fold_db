@@ -1,7 +1,7 @@
 use super::{key_value::KeyValue, operations::MutationType};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use sha2::{Sha256, Digest};
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use uuid::Uuid;
 
@@ -62,17 +62,26 @@ impl Mutation {
     pub fn content_hash(&self) -> String {
         let mut hasher = Sha256::new();
         hasher.update(self.schema_name.as_bytes());
-        hasher.update(serde_json::to_string(&self.mutation_type)
-            .expect("MutationType is always serializable").as_bytes());
-        hasher.update(serde_json::to_string(&self.key_value)
-            .expect("KeyValue is always serializable").as_bytes());
+        hasher.update(
+            serde_json::to_string(&self.mutation_type)
+                .expect("MutationType is always serializable")
+                .as_bytes(),
+        );
+        hasher.update(
+            serde_json::to_string(&self.key_value)
+                .expect("KeyValue is always serializable")
+                .as_bytes(),
+        );
         // Sort keys for deterministic ordering of HashMap
         let mut sorted_fields: Vec<_> = self.fields_and_values.iter().collect();
         sorted_fields.sort_by_key(|(k, _)| (*k).clone());
         for (k, v) in sorted_fields {
             hasher.update(k.as_bytes());
-            hasher.update(serde_json::to_string(v)
-                .expect("serde_json::Value is always serializable").as_bytes());
+            hasher.update(
+                serde_json::to_string(v)
+                    .expect("serde_json::Value is always serializable")
+                    .as_bytes(),
+            );
         }
         hasher.update(self.pub_key.as_bytes());
         let result = hasher.finalize();
@@ -234,11 +243,11 @@ mod tests {
             "key".to_string(),
             MutationType::Update,
         )
-        .with_metadata(HashMap::from([
-            ("file_hash".to_string(), "abc123def456".to_string()),
-        ]));
+        .with_metadata(HashMap::from([(
+            "file_hash".to_string(),
+            "abc123def456".to_string(),
+        )]));
 
         assert_eq!(m1.content_hash(), m2.content_hash());
     }
-
 }

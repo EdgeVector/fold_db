@@ -139,7 +139,10 @@ async fn typed_schema_rejects_wrong_array_element_type() {
         .mutation_manager
         .write_mutations_batch_async(vec![mutation])
         .await;
-    assert!(result.is_err(), "Wrong array element type should be rejected");
+    assert!(
+        result.is_err(),
+        "Wrong array element type should be rejected"
+    );
     let err = result.unwrap_err().to_string();
     assert!(err.contains("tags"), "Error should mention field: {}", err);
 }
@@ -237,7 +240,11 @@ async fn schema_ref_type_enforced() {
             MutationType::Create,
         )])
         .await;
-    assert!(result.is_ok(), "Valid schema ref should succeed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Valid schema ref should succeed: {:?}",
+        result.err()
+    );
 
     // Invalid ref — points to wrong schema
     let mut bad_fields = HashMap::new();
@@ -260,5 +267,9 @@ async fn schema_ref_type_enforced() {
         .await;
     assert!(result.is_err(), "Wrong schema ref should be rejected");
     let err = result.unwrap_err().to_string();
-    assert!(err.contains("Post"), "Error should mention expected schema: {}", err);
+    assert!(
+        err.contains("Post"),
+        "Error should mention expected schema: {}",
+        err
+    );
 }

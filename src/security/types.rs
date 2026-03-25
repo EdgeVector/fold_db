@@ -22,7 +22,6 @@ impl SignedMessage {
     }
 }
 
-
 /// Public key information stored on the backend
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PublicKeyInfo {

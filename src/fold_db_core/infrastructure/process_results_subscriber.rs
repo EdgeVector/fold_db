@@ -44,17 +44,14 @@ impl ProcessResultsSubscriber {
                     }
                 }
                 log::warn!("ProcessResultsSubscriber: consumer disconnected");
-            }).await
+            })
+            .await
         });
     }
 
     async fn handle_event(event: &MutationExecuted, db_ops: &Arc<DbOperations>) {
         // Extract progress_id from metadata
-        let progress_id = match event
-            .metadata
-            .as_ref()
-            .and_then(|m| m.get("progress_id"))
-        {
+        let progress_id = match event.metadata.as_ref().and_then(|m| m.get("progress_id")) {
             Some(id) => id.clone(),
             None => return, // Not an ingestion mutation — nothing to record
         };

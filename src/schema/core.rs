@@ -100,7 +100,10 @@ impl SchemaCore {
     /// Blocked schemas have been superseded and should not appear in the Data Browser.
     pub fn get_active_schemas_with_states(&self) -> Result<Vec<SchemaWithState>, SchemaError> {
         let all = self.get_schemas_with_states()?;
-        Ok(all.into_iter().filter(|s| s.state != SchemaState::Blocked).collect())
+        Ok(all
+            .into_iter()
+            .filter(|s| s.state != SchemaState::Blocked)
+            .collect())
     }
 
     pub async fn set_schema_state(
@@ -188,7 +191,8 @@ impl SchemaCore {
                     Err(e) => {
                         log::warn!(
                             "apply_field_mappers: error loading source schema '{}': {}, skipping",
-                            source_schema_name, e
+                            source_schema_name,
+                            e
                         );
                         continue;
                     }
@@ -235,8 +239,7 @@ impl SchemaCore {
         if updated {
             schema.sync_molecule_uuids();
             self.db_ops.store_schema(schema_name, &schema).await?;
-            lock_map(&self.schemas, "schemas")?
-                .insert(schema_name.to_string(), schema);
+            lock_map(&self.schemas, "schemas")?.insert(schema_name.to_string(), schema);
         }
 
         Ok(())
@@ -258,9 +261,7 @@ impl SchemaCore {
         self.set_schema_state(old_name, SchemaState::Blocked)
             .await?;
 
-        self.db_ops
-            .store_superseded_by(old_name, new_name)
-            .await?;
+        self.db_ops.store_superseded_by(old_name, new_name).await?;
 
         lock_map(&self.superseded_by, "superseded_by")?
             .insert(old_name.to_string(), new_name.to_string());
@@ -282,7 +283,9 @@ impl SchemaCore {
     }
 
     pub fn get_schema_metadata(&self, schema_name: &str) -> Result<Option<Schema>, SchemaError> {
-        Ok(lock_map(&self.schemas, "schemas")?.get(schema_name).cloned())
+        Ok(lock_map(&self.schemas, "schemas")?
+            .get(schema_name)
+            .cloned())
     }
 
     /// Fetches a schema by name, checking both in-memory cache and database.
@@ -297,64 +300,66 @@ impl SchemaCore {
         &self,
         schema_name: &str,
         depth: usize,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Option<Schema>, SchemaError>> + Send + '_>> {
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<Option<Schema>, SchemaError>> + Send + '_>,
+    > {
         let schema_name = schema_name.to_string();
         Box::pin(async move {
-        let schema_name = schema_name.as_str();
-        const MAX_REDIRECT_HOPS: usize = 5;
+            let schema_name = schema_name.as_str();
+            const MAX_REDIRECT_HOPS: usize = 5;
 
-        if depth > MAX_REDIRECT_HOPS {
-            return Err(SchemaError::InvalidData(format!(
-                "Superseded-by chain for schema '{}' exceeds maximum depth of {}",
-                schema_name, MAX_REDIRECT_HOPS
-            )));
-        }
-
-        // Check if this schema is blocked and has a successor
-        let successor = {
-            let state = lock_map(&self.schema_states, "schema_states")?
-                .get(schema_name)
-                .copied();
-            if state == Some(SchemaState::Blocked) {
-                lock_map(&self.superseded_by, "superseded_by")?
-                    .get(schema_name)
-                    .cloned()
-            } else {
-                None
+            if depth > MAX_REDIRECT_HOPS {
+                return Err(SchemaError::InvalidData(format!(
+                    "Superseded-by chain for schema '{}' exceeds maximum depth of {}",
+                    schema_name, MAX_REDIRECT_HOPS
+                )));
             }
-        };
 
-        if let Some(new_name) = successor {
-            log::info!(
-                "Schema '{}' is blocked with successor, redirecting to '{}'",
-                schema_name,
-                new_name
-            );
-            return self.get_schema_resolved(&new_name, depth + 1).await;
-        }
+            // Check if this schema is blocked and has a successor
+            let successor = {
+                let state = lock_map(&self.schema_states, "schema_states")?
+                    .get(schema_name)
+                    .copied();
+                if state == Some(SchemaState::Blocked) {
+                    lock_map(&self.superseded_by, "superseded_by")?
+                        .get(schema_name)
+                        .cloned()
+                } else {
+                    None
+                }
+            };
 
-        // 1. Try exact match in memory
-        if let Some(schema) = self.get_schema_metadata(schema_name)? {
-            return Ok(Some(schema));
-        }
+            if let Some(new_name) = successor {
+                log::info!(
+                    "Schema '{}' is blocked with successor, redirecting to '{}'",
+                    schema_name,
+                    new_name
+                );
+                return self.get_schema_resolved(&new_name, depth + 1).await;
+            }
 
-        // 2. Try exact match in database (refresh cache if found)
-        if let Some(schema) = self
-            .db_ops
-            .get_schema(schema_name)
-            .await
-            .map_err(|e| SchemaError::InvalidData(e.to_string()))?
-        {
-            // Update memory
-            self.load_schema_internal(schema.clone()).await?;
-            log::info!(
-                "Refreshed schema '{}' from database (stale cache)",
-                schema.name
-            );
-            return Ok(Some(schema));
-        }
+            // 1. Try exact match in memory
+            if let Some(schema) = self.get_schema_metadata(schema_name)? {
+                return Ok(Some(schema));
+            }
 
-        Ok(None)
+            // 2. Try exact match in database (refresh cache if found)
+            if let Some(schema) = self
+                .db_ops
+                .get_schema(schema_name)
+                .await
+                .map_err(|e| SchemaError::InvalidData(e.to_string()))?
+            {
+                // Update memory
+                self.load_schema_internal(schema.clone()).await?;
+                log::info!(
+                    "Refreshed schema '{}' from database (stale cache)",
+                    schema.name
+                );
+                return Ok(Some(schema));
+            }
+
+            Ok(None)
         }) // end Box::pin
     }
 
@@ -377,7 +382,8 @@ impl SchemaCore {
             {
                 let mut schemas = lock_map(&self.schemas, "schemas")?;
 
-                let incoming_has_molecules = schema.field_molecule_uuids
+                let incoming_has_molecules = schema
+                    .field_molecule_uuids
                     .as_ref()
                     .is_some_and(|m| !m.is_empty());
 
@@ -385,7 +391,8 @@ impl SchemaCore {
                     // Incoming schema carries molecule state (from mutation_manager) — use it
                     schemas.insert(name.clone(), schema);
                 } else if let Some(cached) = schemas.get(&name) {
-                    let cached_has_molecules = cached.field_molecule_uuids
+                    let cached_has_molecules = cached
+                        .field_molecule_uuids
                         .as_ref()
                         .is_some_and(|m| !m.is_empty());
                     if cached_has_molecules {
@@ -405,8 +412,7 @@ impl SchemaCore {
             // Preserve existing state from database
             let existing_state = self.db_ops.get_schema_state(&name).await?;
             let state = existing_state.unwrap_or(SchemaState::Available);
-            lock_map(&self.schema_states, "schema_states")?
-                .insert(name.clone(), state);
+            lock_map(&self.schema_states, "schema_states")?.insert(name.clone(), state);
         } else {
             // New schema - persist to database and update in-memory caches
             self.db_ops.store_schema(&name, &schema).await?;
@@ -463,10 +469,9 @@ impl SchemaCore {
         let view_name = view.name.clone();
         {
             let schemas = lock_map(&self.schemas, "schemas")?;
-            let mut registry = self
-                .view_registry
-                .lock()
-                .map_err(|_| SchemaError::InvalidData("Failed to acquire view_registry lock".to_string()))?;
+            let mut registry = self.view_registry.lock().map_err(|_| {
+                SchemaError::InvalidData("Failed to acquire view_registry lock".to_string())
+            })?;
 
             // Check cross-registry name uniqueness: view name must not collide with a schema
             if schemas.contains_key(&view.name) {
@@ -481,15 +486,16 @@ impl SchemaCore {
 
         // Re-acquire to get the stored view
         let view_clone = {
-            let registry = self
-                .view_registry
-                .lock()
-                .map_err(|_| SchemaError::InvalidData("Failed to acquire view_registry lock".to_string()))?;
+            let registry = self.view_registry.lock().map_err(|_| {
+                SchemaError::InvalidData("Failed to acquire view_registry lock".to_string())
+            })?;
             registry.get_view(&view_name).unwrap().clone()
         };
 
         // Persist view and state to storage
-        self.db_ops.store_view(&view_clone.name, &view_clone).await?;
+        self.db_ops
+            .store_view(&view_clone.name, &view_clone)
+            .await?;
         self.db_ops
             .store_view_state(&view_clone.name, &ViewState::Available)
             .await?;
@@ -499,19 +505,17 @@ impl SchemaCore {
 
     /// Get a view by name.
     pub fn get_view(&self, name: &str) -> Result<Option<TransformView>, SchemaError> {
-        let registry = self
-            .view_registry
-            .lock()
-            .map_err(|_| SchemaError::InvalidData("Failed to acquire view_registry lock".to_string()))?;
+        let registry = self.view_registry.lock().map_err(|_| {
+            SchemaError::InvalidData("Failed to acquire view_registry lock".to_string())
+        })?;
         Ok(registry.get_view(name).cloned())
     }
 
     /// List all views with their states.
     pub fn get_views_with_states(&self) -> Result<Vec<(TransformView, ViewState)>, SchemaError> {
-        let registry = self
-            .view_registry
-            .lock()
-            .map_err(|_| SchemaError::InvalidData("Failed to acquire view_registry lock".to_string()))?;
+        let registry = self.view_registry.lock().map_err(|_| {
+            SchemaError::InvalidData("Failed to acquire view_registry lock".to_string())
+        })?;
         Ok(registry
             .get_views_with_states()
             .into_iter()
@@ -522,10 +526,9 @@ impl SchemaCore {
     /// Approve a view.
     pub async fn approve_view(&self, name: &str) -> Result<(), SchemaError> {
         {
-            let mut registry = self
-                .view_registry
-                .lock()
-                .map_err(|_| SchemaError::InvalidData("Failed to acquire view_registry lock".to_string()))?;
+            let mut registry = self.view_registry.lock().map_err(|_| {
+                SchemaError::InvalidData("Failed to acquire view_registry lock".to_string())
+            })?;
             registry.approve_view(name)?;
         }
         self.db_ops
@@ -537,10 +540,9 @@ impl SchemaCore {
     /// Block a view.
     pub async fn block_view(&self, name: &str) -> Result<(), SchemaError> {
         {
-            let mut registry = self
-                .view_registry
-                .lock()
-                .map_err(|_| SchemaError::InvalidData("Failed to acquire view_registry lock".to_string()))?;
+            let mut registry = self.view_registry.lock().map_err(|_| {
+                SchemaError::InvalidData("Failed to acquire view_registry lock".to_string())
+            })?;
             registry.block_view(name)?;
         }
         self.db_ops
@@ -552,10 +554,9 @@ impl SchemaCore {
     /// Remove a view and clean up storage.
     pub async fn remove_view(&self, name: &str) -> Result<(), SchemaError> {
         {
-            let mut registry = self
-                .view_registry
-                .lock()
-                .map_err(|_| SchemaError::InvalidData("Failed to acquire view_registry lock".to_string()))?;
+            let mut registry = self.view_registry.lock().map_err(|_| {
+                SchemaError::InvalidData("Failed to acquire view_registry lock".to_string())
+            })?;
             registry.remove_view(name)?;
         }
         self.db_ops.delete_view(name).await?;
@@ -570,10 +571,9 @@ impl SchemaCore {
         if schemas.contains_key(name) {
             return Ok(true);
         }
-        let registry = self
-            .view_registry
-            .lock()
-            .map_err(|_| SchemaError::InvalidData("Failed to acquire view_registry lock".to_string()))?;
+        let registry = self.view_registry.lock().map_err(|_| {
+            SchemaError::InvalidData("Failed to acquire view_registry lock".to_string())
+        })?;
         Ok(registry.name_exists(name))
     }
 
@@ -763,11 +763,10 @@ mod tests {
         {
             let mut schemas = core.schemas.lock().unwrap();
             let schema = schemas.get_mut("BlogPost").expect("schema exists");
-            let field = schema
-                .runtime_fields
-                .get_mut("title")
-                .expect("title field");
-            field.common_mut().set_molecule_uuid("mol-uuid-title".to_string());
+            let field = schema.runtime_fields.get_mut("title").expect("title field");
+            field
+                .common_mut()
+                .set_molecule_uuid("mol-uuid-title".to_string());
             schema.sync_molecule_uuids();
 
             // Persist to DB so load_schema_internal sees it exists
@@ -829,7 +828,9 @@ mod tests {
         assert_eq!(all.len(), 2);
 
         // get_active_schemas_with_states excludes blocked
-        let active = core.get_active_schemas_with_states().expect("active schemas");
+        let active = core
+            .get_active_schemas_with_states()
+            .expect("active schemas");
         assert_eq!(active.len(), 1);
         assert_eq!(active[0].name(), "BlogPostWordIndex");
     }
@@ -857,7 +858,11 @@ mod tests {
             .expect("supersede");
 
         // get_schema("BlogPost") should redirect to BlogPostWordIndex
-        let schema = core.get_schema("BlogPost").await.expect("get").expect("some");
+        let schema = core
+            .get_schema("BlogPost")
+            .await
+            .expect("get")
+            .expect("some");
         assert_eq!(schema.name, "BlogPostWordIndex");
     }
 }

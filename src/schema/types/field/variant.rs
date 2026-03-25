@@ -7,8 +7,8 @@ use std::sync::Arc;
 use crate::atom::{FieldKey, MutationEvent};
 use crate::db_operations::DbOperations;
 use crate::schema::types::field::{
-    Field, FieldCommon, FilterApplicator, HashField,
-    HashRangeField, HashRangeFilter, RangeField, SingleField, WriteContext,
+    Field, FieldCommon, FilterApplicator, HashField, HashRangeField, HashRangeFilter, RangeField,
+    SingleField, WriteContext,
 };
 use crate::schema::types::key_value::KeyValue;
 use crate::schema::types::SchemaError;
@@ -116,22 +116,29 @@ impl Field for FieldVariant {
             .into_iter()
             .map(|(kv, atom_uuid)| {
                 let key_meta = match self {
-                    FieldVariant::Single(f) => {
-                        f.base.molecule.as_ref().and_then(|m| m.get_key_metadata().cloned())
-                    }
-                    FieldVariant::Hash(f) => {
-                        kv.hash.as_ref().and_then(|h| {
-                            f.base.molecule.as_ref().and_then(|m| m.get_key_metadata(h).cloned())
-                        })
-                    }
-                    FieldVariant::Range(f) => {
-                        kv.range.as_ref().and_then(|r| {
-                            f.base.molecule.as_ref().and_then(|m| m.get_key_metadata(r).cloned())
-                        })
-                    }
+                    FieldVariant::Single(f) => f
+                        .base
+                        .molecule
+                        .as_ref()
+                        .and_then(|m| m.get_key_metadata().cloned()),
+                    FieldVariant::Hash(f) => kv.hash.as_ref().and_then(|h| {
+                        f.base
+                            .molecule
+                            .as_ref()
+                            .and_then(|m| m.get_key_metadata(h).cloned())
+                    }),
+                    FieldVariant::Range(f) => kv.range.as_ref().and_then(|r| {
+                        f.base
+                            .molecule
+                            .as_ref()
+                            .and_then(|m| m.get_key_metadata(r).cloned())
+                    }),
                     FieldVariant::HashRange(f) => {
                         kv.hash.as_ref().zip(kv.range.as_ref()).and_then(|(h, r)| {
-                            f.base.molecule.as_ref().and_then(|m| m.get_key_metadata(h, r).cloned())
+                            f.base
+                                .molecule
+                                .as_ref()
+                                .and_then(|m| m.get_key_metadata(h, r).cloned())
                         })
                     }
                 };
@@ -310,10 +317,7 @@ mod tests {
     }
 
     // Helper to create a RangeField with entries
-    fn make_range_field(
-        entries: &[(&str, &str)],
-        mol_uuid: &str,
-    ) -> FieldVariant {
+    fn make_range_field(entries: &[(&str, &str)], mol_uuid: &str) -> FieldVariant {
         let mut mol = MoleculeRange::new("test_key".to_string());
         for (range_key, atom_uuid) in entries {
             mol.set_atom_uuid(range_key.to_string(), atom_uuid.to_string());
@@ -324,10 +328,7 @@ mod tests {
     }
 
     // Helper to create a HashRangeField with entries
-    fn make_hash_range_field(
-        entries: &[(&str, &str, &str)],
-        mol_uuid: &str,
-    ) -> FieldVariant {
+    fn make_hash_range_field(entries: &[(&str, &str, &str)], mol_uuid: &str) -> FieldVariant {
         let mut mol = MoleculeHashRange::new("test_key".to_string());
         for (hash, range, atom_uuid) in entries {
             mol.set_atom_uuid_from_values(
@@ -346,8 +347,11 @@ mod tests {
         // Setup: Sled temp DB
         let tmp = tempfile::tempdir().unwrap();
         let db = sled::open(tmp.path()).unwrap();
-        let db_ops =
-            Arc::new(crate::db_operations::DbOperations::from_sled(db).await.unwrap());
+        let db_ops = Arc::new(
+            crate::db_operations::DbOperations::from_sled(db)
+                .await
+                .unwrap(),
+        );
 
         let mol_uuid = "mol-single-1";
         let t0 = Utc::now() - Duration::seconds(10);
@@ -395,8 +399,11 @@ mod tests {
     async fn test_rewind_single_field_to_before_any_mutation() {
         let tmp = tempfile::tempdir().unwrap();
         let db = sled::open(tmp.path()).unwrap();
-        let db_ops =
-            Arc::new(crate::db_operations::DbOperations::from_sled(db).await.unwrap());
+        let db_ops = Arc::new(
+            crate::db_operations::DbOperations::from_sled(db)
+                .await
+                .unwrap(),
+        );
 
         let mol_uuid = "mol-single-2";
         let t0 = Utc::now() - Duration::seconds(10);
@@ -429,8 +436,11 @@ mod tests {
     async fn test_rewind_range_field() {
         let tmp = tempfile::tempdir().unwrap();
         let db = sled::open(tmp.path()).unwrap();
-        let db_ops =
-            Arc::new(crate::db_operations::DbOperations::from_sled(db).await.unwrap());
+        let db_ops = Arc::new(
+            crate::db_operations::DbOperations::from_sled(db)
+                .await
+                .unwrap(),
+        );
 
         let mol_uuid = "mol-range-1";
         let t0 = Utc::now() - Duration::seconds(10);
@@ -442,7 +452,9 @@ mod tests {
             MutationEvent {
                 molecule_uuid: mol_uuid.to_string(),
                 timestamp: t1,
-                field_key: FieldKey::Range { range: "key1".to_string() },
+                field_key: FieldKey::Range {
+                    range: "key1".to_string(),
+                },
                 old_atom_uuid: None,
                 new_atom_uuid: "atom-k1".to_string(),
                 version: 0,
@@ -450,7 +462,9 @@ mod tests {
             MutationEvent {
                 molecule_uuid: mol_uuid.to_string(),
                 timestamp: t2,
-                field_key: FieldKey::Range { range: "key2".to_string() },
+                field_key: FieldKey::Range {
+                    range: "key2".to_string(),
+                },
                 old_atom_uuid: None,
                 new_atom_uuid: "atom-k2".to_string(),
                 version: 0,
@@ -459,10 +473,7 @@ mod tests {
         db_ops.batch_store_mutation_events(events).await.unwrap();
 
         // Current state: both keys exist
-        let mut field = make_range_field(
-            &[("key1", "atom-k1"), ("key2", "atom-k2")],
-            mol_uuid,
-        );
+        let mut field = make_range_field(&[("key1", "atom-k1"), ("key2", "atom-k2")], mol_uuid);
 
         // Rewind to between t1 and t2 -> only key1 should exist
         let as_of = t1 + Duration::seconds(1);
@@ -482,8 +493,11 @@ mod tests {
     async fn test_rewind_hash_range_field() {
         let tmp = tempfile::tempdir().unwrap();
         let db = sled::open(tmp.path()).unwrap();
-        let db_ops =
-            Arc::new(crate::db_operations::DbOperations::from_sled(db).await.unwrap());
+        let db_ops = Arc::new(
+            crate::db_operations::DbOperations::from_sled(db)
+                .await
+                .unwrap(),
+        );
 
         let mol_uuid = "mol-hr-1";
         let t0 = Utc::now() - Duration::seconds(10);
@@ -517,10 +531,7 @@ mod tests {
         ];
         db_ops.batch_store_mutation_events(events).await.unwrap();
 
-        let mut field = make_hash_range_field(
-            &[("h1", "r1", "atom-v2")],
-            mol_uuid,
-        );
+        let mut field = make_hash_range_field(&[("h1", "r1", "atom-v2")], mol_uuid);
 
         // Rewind to between t1 and t2 -> should get atom-v1
         let as_of = t1 + Duration::seconds(1);
@@ -529,10 +540,7 @@ mod tests {
         match &field {
             FieldVariant::HashRange(f) => {
                 let mol = f.base.molecule.as_ref().unwrap();
-                assert_eq!(
-                    mol.get_atom_uuid("h1", "r1"),
-                    Some(&"atom-v1".to_string())
-                );
+                assert_eq!(mol.get_atom_uuid("h1", "r1"), Some(&"atom-v1".to_string()));
             }
             _ => panic!("Expected HashRange"),
         }
@@ -543,8 +551,11 @@ mod tests {
         // A->B->A cycle: the event log correctly preserves intermediate state
         let tmp = tempfile::tempdir().unwrap();
         let db = sled::open(tmp.path()).unwrap();
-        let db_ops =
-            Arc::new(crate::db_operations::DbOperations::from_sled(db).await.unwrap());
+        let db_ops = Arc::new(
+            crate::db_operations::DbOperations::from_sled(db)
+                .await
+                .unwrap(),
+        );
 
         let mol_uuid = "mol-aba";
         let t0 = Utc::now() - Duration::seconds(10);
@@ -603,8 +614,11 @@ mod tests {
         // No events stored — rewind should be a no-op
         let tmp = tempfile::tempdir().unwrap();
         let db = sled::open(tmp.path()).unwrap();
-        let db_ops =
-            Arc::new(crate::db_operations::DbOperations::from_sled(db).await.unwrap());
+        let db_ops = Arc::new(
+            crate::db_operations::DbOperations::from_sled(db)
+                .await
+                .unwrap(),
+        );
 
         let mol_uuid = "mol-empty";
         let mut field = make_single_field("atom-current", mol_uuid);

@@ -27,11 +27,7 @@ pub struct SyncingKvStore {
 }
 
 impl SyncingKvStore {
-    pub fn new(
-        inner: Arc<dyn KvStore>,
-        sync_engine: Arc<SyncEngine>,
-        namespace: String,
-    ) -> Self {
+    pub fn new(inner: Arc<dyn KvStore>, sync_engine: Arc<SyncEngine>, namespace: String) -> Self {
         Self {
             inner,
             sync_engine,
@@ -59,9 +55,7 @@ impl KvStore for SyncingKvStore {
     async fn delete(&self, key: &[u8]) -> StorageResult<bool> {
         let existed = self.inner.delete(key).await?;
         if existed {
-            self.sync_engine
-                .record_delete(&self.namespace, key)
-                .await;
+            self.sync_engine.record_delete(&self.namespace, key).await;
         }
         Ok(existed)
     }

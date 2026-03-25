@@ -56,7 +56,7 @@ impl WebOutput {
         }
 
         if let Ok(filter) = self.level_filter.read() {
-             let log_level = match level {
+            let log_level = match level {
                 LogLevel::Trace => log::Level::Trace,
                 LogLevel::Debug => log::Level::Debug,
                 LogLevel::Info => log::Level::Info,
@@ -99,9 +99,11 @@ impl Logger for WebOutput {
     ) -> Result<Vec<LogEntry>, Box<dyn std::error::Error + Send + Sync>> {
         let entries = self.get_logs();
         let from_ts = from_timestamp.unwrap_or(0);
-        
+
         // Filter by timestamp
-        Ok(entries.into_iter().filter(|e| e.timestamp > from_ts).collect())
+        Ok(entries
+            .into_iter()
+            .filter(|e| e.timestamp > from_ts)
+            .collect())
     }
 }
-

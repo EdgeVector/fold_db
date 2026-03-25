@@ -80,16 +80,11 @@ async fn blocked_without_successor_returns_none() {
         .expect("load A");
 
     // Block A without a successor — no redirect, schema is just gone
-    core.block_schema("ContactV1")
-        .await
-        .expect("block");
+    core.block_schema("ContactV1").await.expect("block");
 
     // get_schema should still find it (Blocked doesn't hide from get_schema,
     // only from QueryExecutor)
-    let schema = core
-        .get_schema("ContactV1")
-        .await
-        .expect("get_schema");
+    let schema = core.get_schema("ContactV1").await.expect("get_schema");
     assert!(schema.is_some());
 }
 

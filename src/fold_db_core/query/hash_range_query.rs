@@ -2,13 +2,13 @@
 //!
 //! Handles query processing for HashRange schemas using field resolution.
 
-use chrono::{DateTime, Utc};
 use crate::db_operations::DbOperations;
 use crate::schema::types::field::Field;
 use crate::schema::types::field::FieldValue;
 use crate::schema::types::field::HashRangeFilter;
 use crate::schema::types::key_value::KeyValue;
 use crate::schema::{Schema, SchemaError};
+use chrono::{DateTime, Utc};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -44,7 +44,9 @@ impl HashRangeQueryProcessor {
                 continue;
             }
             log::debug!("🔍 Resolving field: {}", field_name);
-            let field_value = field.resolve_value(&self.db_ops, filter.clone(), as_of).await?;
+            let field_value = field
+                .resolve_value(&self.db_ops, filter.clone(), as_of)
+                .await?;
             log::debug!(
                 "✅ Field '{}' resolved {} values",
                 field_name,

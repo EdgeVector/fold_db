@@ -114,10 +114,16 @@ mod tests {
     #[test]
     fn test_from_mutation_nested_dotted_path() {
         let mut fields = HashMap::new();
-        fields.insert("departure".to_string(), json!({"date": "2025-03-15", "city": "NYC"}));
+        fields.insert(
+            "departure".to_string(),
+            json!({"date": "2025-03-15", "city": "NYC"}),
+        );
         fields.insert("booking_id".to_string(), json!("BK-001"));
 
-        let kv = KeyValue::from_mutation(&fields, &make_key_config(Some("booking_id"), Some("departure.date")));
+        let kv = KeyValue::from_mutation(
+            &fields,
+            &make_key_config(Some("booking_id"), Some("departure.date")),
+        );
         assert_eq!(kv.hash, Some("BK-001".to_string()));
         assert_eq!(kv.range, Some("2025-03-15".to_string()));
     }
@@ -127,7 +133,10 @@ mod tests {
         let mut fields = HashMap::new();
         fields.insert("name".to_string(), json!("Alice"));
 
-        let kv = KeyValue::from_mutation(&fields, &make_key_config(Some("name"), Some("nonexistent.field")));
+        let kv = KeyValue::from_mutation(
+            &fields,
+            &make_key_config(Some("name"), Some("nonexistent.field")),
+        );
         assert_eq!(kv.hash, Some("Alice".to_string()));
         assert_eq!(kv.range, None);
     }
@@ -138,7 +147,8 @@ mod tests {
         fields.insert("id".to_string(), json!(42));
         fields.insert("details".to_string(), json!({"count": 7}));
 
-        let kv = KeyValue::from_mutation(&fields, &make_key_config(Some("id"), Some("details.count")));
+        let kv =
+            KeyValue::from_mutation(&fields, &make_key_config(Some("id"), Some("details.count")));
         assert_eq!(kv.hash, Some("42".to_string()));
         assert_eq!(kv.range, Some("7".to_string()));
     }

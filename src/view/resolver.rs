@@ -46,7 +46,13 @@ impl ViewResolver {
         requested_fields: &[String],
         cache_state: &ViewCacheState,
         source_query: &dyn SourceQueryFn,
-    ) -> Result<(HashMap<String, HashMap<KeyValue, FieldValue>>, ViewCacheState), SchemaError> {
+    ) -> Result<
+        (
+            HashMap<String, HashMap<KeyValue, FieldValue>>,
+            ViewCacheState,
+        ),
+        SchemaError,
+    > {
         // Determine which fields to return
         let fields_to_return: Vec<String> = if requested_fields.is_empty() {
             view.output_fields.keys().cloned().collect()
@@ -67,14 +73,8 @@ impl ViewResolver {
         if let ViewCacheState::Cached { entries } = cache_state {
             let mut result = HashMap::new();
             for field_name in &fields_to_return {
-                let field_entries = entries
-                    .get(field_name)
-                    .cloned()
-                    .unwrap_or_default();
-                result.insert(
-                    field_name.clone(),
-                    field_entries.into_iter().collect(),
-                );
+                let field_entries = entries.get(field_name).cloned().unwrap_or_default();
+                result.insert(field_name.clone(), field_entries.into_iter().collect());
             }
             return Ok((result, cache_state.clone()));
         }
@@ -117,7 +117,10 @@ impl ViewResolver {
             .map(|(field_name, entries)| {
                 (
                     field_name.clone(),
-                    entries.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
+                    entries
+                        .iter()
+                        .map(|(k, v)| (k.clone(), v.clone()))
+                        .collect(),
                 )
             })
             .collect();
@@ -128,10 +131,7 @@ impl ViewResolver {
         // Return only requested fields
         let mut result = HashMap::new();
         for field_name in &fields_to_return {
-            let field_entries = output
-                .get(field_name)
-                .cloned()
-                .unwrap_or_default();
+            let field_entries = output.get(field_name).cloned().unwrap_or_default();
             result.insert(field_name.clone(), field_entries);
         }
 
@@ -182,8 +182,7 @@ impl ViewResolver {
                     let key_str = key.to_string();
                     field_map.insert(key_str, fv.value.clone());
                 }
-                schema_fields
-                    .insert(field_name.clone(), serde_json::Value::Object(field_map));
+                schema_fields.insert(field_name.clone(), serde_json::Value::Object(field_map));
             }
             inputs.insert(
                 schema_name.clone(),
@@ -410,10 +409,7 @@ mod tests {
             results: results_map,
         };
 
-        let (results, _) = resolver
-            .resolve(&view, &[], &cache, &mock)
-            .await
-            .unwrap();
+        let (results, _) = resolver.resolve(&view, &[], &cache, &mock).await.unwrap();
 
         assert_eq!(results.len(), 2);
         assert!(results.contains_key("title"));
@@ -459,12 +455,11 @@ mod tests {
         results_map.insert("BlogPost".to_string(), blogpost_fields);
         results_map.insert("Author".to_string(), author_fields);
 
-        let mock = MockSourceQuery { results: results_map };
+        let mock = MockSourceQuery {
+            results: results_map,
+        };
 
-        let (results, _) = resolver
-            .resolve(&view, &[], &cache, &mock)
-            .await
-            .unwrap();
+        let (results, _) = resolver.resolve(&view, &[], &cache, &mock).await.unwrap();
 
         assert_eq!(results.len(), 2);
         assert_eq!(
@@ -490,7 +485,9 @@ mod tests {
         let mut results_map = HashMap::new();
         results_map.insert("BlogPost".to_string(), blogpost_fields);
 
-        let mock = MockSourceQuery { results: results_map };
+        let mock = MockSourceQuery {
+            results: results_map,
+        };
 
         let (results, new_cache) = resolver
             .resolve(&view, &["content".to_string()], &cache, &mock)
@@ -541,12 +538,11 @@ mod tests {
         let mut results_map = HashMap::new();
         results_map.insert("BlogPost".to_string(), blogpost_all);
 
-        let mock = MockSourceQuery { results: results_map };
+        let mock = MockSourceQuery {
+            results: results_map,
+        };
 
-        let (results, _) = resolver
-            .resolve(&view, &[], &cache, &mock)
-            .await
-            .unwrap();
+        let (results, _) = resolver.resolve(&view, &[], &cache, &mock).await.unwrap();
 
         // Both fields should be present (not overwritten)
         assert_eq!(results.len(), 2);
@@ -596,6 +592,9 @@ mod tests {
             .resolve(&view, &["count".to_string()], &cache, &mock)
             .await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("type validation failed"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("type validation failed"));
     }
 }

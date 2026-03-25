@@ -85,7 +85,9 @@ impl SchemaServiceState {
         };
 
         let embeddings = self.descriptive_name_embeddings.read().map_err(|_| {
-            FoldDbError::Config("Failed to acquire descriptive_name_embeddings read lock".to_string())
+            FoldDbError::Config(
+                "Failed to acquire descriptive_name_embeddings read lock".to_string(),
+            )
         })?;
 
         let mut best_match: Option<(&str, f32)> = None;
@@ -108,7 +110,9 @@ impl SchemaServiceState {
                 similarity
             );
             let index = self.descriptive_name_index.read().map_err(|_| {
-                FoldDbError::Config("Failed to acquire descriptive_name_index read lock".to_string())
+                FoldDbError::Config(
+                    "Failed to acquire descriptive_name_index read lock".to_string(),
+                )
             })?;
             let hash = index.get(matched_desc).cloned();
             return Ok((Some(matched_desc.to_string()), hash, false));

@@ -22,14 +22,8 @@ pub struct SyncingNamespacedStore {
 }
 
 impl SyncingNamespacedStore {
-    pub fn new(
-        inner: Arc<dyn NamespacedStore>,
-        sync_engine: Arc<SyncEngine>,
-    ) -> Self {
-        Self {
-            inner,
-            sync_engine,
-        }
+    pub fn new(inner: Arc<dyn NamespacedStore>, sync_engine: Arc<SyncEngine>) -> Self {
+        Self { inner, sync_engine }
     }
 }
 
@@ -37,11 +31,7 @@ impl SyncingNamespacedStore {
 impl NamespacedStore for SyncingNamespacedStore {
     async fn open_namespace(&self, name: &str) -> StorageResult<Arc<dyn KvStore>> {
         let inner_kv = self.inner.open_namespace(name).await?;
-        let syncing = SyncingKvStore::new(
-            inner_kv,
-            self.sync_engine.clone(),
-            name.to_string(),
-        );
+        let syncing = SyncingKvStore::new(inner_kv, self.sync_engine.clone(), name.to_string());
         Ok(Arc::new(syncing))
     }
 

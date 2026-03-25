@@ -19,7 +19,6 @@ use super::types::{
     SimilarSchemasResponse, StoredView, TransformRecord, ViewAddOutcome,
 };
 
-
 /// Storage backend for the schema service
 #[derive(Clone)]
 pub enum SchemaStorage {
@@ -275,7 +274,10 @@ impl SchemaServiceState {
             if joined.contains("gps") || joined.contains("camera") || joined.contains("focal") {
                 return "Photography".to_string();
             }
-            if joined.contains("amount") || joined.contains("balance") || joined.contains("transaction") {
+            if joined.contains("amount")
+                || joined.contains("balance")
+                || joined.contains("transaction")
+            {
                 return "Financial Records".to_string();
             }
             if joined.contains("title") && joined.contains("content") && joined.contains("author") {
@@ -285,7 +287,13 @@ impl SchemaServiceState {
 
         // Use schema name if it looks like a word (not a hash)
         let name = &schema.name;
-        if !name.is_empty() && name.len() < 40 && name.chars().all(|c| c.is_alphanumeric() || c == '_' || c == ' ' || c == '-') && name.chars().any(|c| c.is_alphabetic()) {
+        if !name.is_empty()
+            && name.len() < 40
+            && name
+                .chars()
+                .all(|c| c.is_alphanumeric() || c == '_' || c == ' ' || c == '-')
+            && name.chars().any(|c| c.is_alphabetic())
+        {
             // Don't use it if it looks like a hex hash
             if !(name.len() > 16 && name.chars().all(|c| c.is_ascii_hexdigit() || c == '_')) {
                 return name.clone();
@@ -308,17 +316,17 @@ impl SchemaServiceState {
             .open_tree("schemas")
             .map_err(|e| FoldDbError::Config(format!("Failed to open schemas tree: {}", e)))?;
 
-        let canonical_fields_tree = db
-            .open_tree("canonical_fields")
-            .map_err(|e| FoldDbError::Config(format!("Failed to open canonical_fields tree: {}", e)))?;
+        let canonical_fields_tree = db.open_tree("canonical_fields").map_err(|e| {
+            FoldDbError::Config(format!("Failed to open canonical_fields tree: {}", e))
+        })?;
 
         let views_tree = db
             .open_tree("views")
             .map_err(|e| FoldDbError::Config(format!("Failed to open views tree: {}", e)))?;
 
-        let transform_metadata_tree = db
-            .open_tree("transform_metadata")
-            .map_err(|e| FoldDbError::Config(format!("Failed to open transform_metadata tree: {}", e)))?;
+        let transform_metadata_tree = db.open_tree("transform_metadata").map_err(|e| {
+            FoldDbError::Config(format!("Failed to open transform_metadata tree: {}", e))
+        })?;
 
         let embedder: Arc<dyn Embedder> = Arc::new(FastEmbedModel::new());
         let collection_name_anchors = Self::compute_anchor_embeddings(embedder.as_ref());
@@ -547,7 +555,9 @@ impl SchemaServiceState {
             if let Some(ref desc) = schema.descriptive_name {
                 index.insert(desc.clone(), name.clone());
                 match self.embedder.embed_text(desc) {
-                    Ok(vec) => { embeddings.insert(desc.clone(), vec); }
+                    Ok(vec) => {
+                        embeddings.insert(desc.clone(), vec);
+                    }
                     Err(e) => {
                         log_feature!(
                             LogFeature::Schema,
@@ -575,15 +585,15 @@ impl SchemaServiceState {
         let schemas_tree = db
             .open_tree("schemas")
             .map_err(|e| FoldDbError::Config(format!("Failed to open schemas tree: {}", e)))?;
-        let canonical_fields_tree = db
-            .open_tree("canonical_fields")
-            .map_err(|e| FoldDbError::Config(format!("Failed to open canonical_fields tree: {}", e)))?;
+        let canonical_fields_tree = db.open_tree("canonical_fields").map_err(|e| {
+            FoldDbError::Config(format!("Failed to open canonical_fields tree: {}", e))
+        })?;
         let views_tree = db
             .open_tree("views")
             .map_err(|e| FoldDbError::Config(format!("Failed to open views tree: {}", e)))?;
-        let transform_metadata_tree = db
-            .open_tree("transform_metadata")
-            .map_err(|e| FoldDbError::Config(format!("Failed to open transform_metadata tree: {}", e)))?;
+        let transform_metadata_tree = db.open_tree("transform_metadata").map_err(|e| {
+            FoldDbError::Config(format!("Failed to open transform_metadata tree: {}", e))
+        })?;
 
         let collection_name_anchors = Self::compute_anchor_embeddings(embedder.as_ref());
 
@@ -617,7 +627,11 @@ impl SchemaServiceState {
     ) -> FoldDbResult<SchemaAddOutcome> {
         // descriptive_name is required — it's how schemas are identified, displayed,
         // and matched for expansion. A schema without one is a bug in the caller.
-        if schema.descriptive_name.as_ref().is_none_or(|dn| dn.trim().is_empty()) {
+        if schema
+            .descriptive_name
+            .as_ref()
+            .is_none_or(|dn| dn.trim().is_empty())
+        {
             return Err(FoldDbError::Config(
                 "Schema must have a non-empty descriptive_name".to_string(),
             ));
@@ -737,7 +751,9 @@ impl SchemaServiceState {
                         "Schema '{}' (active='{}') has new fields {:?} — expanding",
                         schema_name,
                         check_name,
-                        incoming_fields.difference(&existing_fields).collect::<Vec<_>>()
+                        incoming_fields
+                            .difference(&existing_fields)
+                            .collect::<Vec<_>>()
                     );
                     // Fall through to expansion path below
                 } else {
@@ -749,7 +765,10 @@ impl SchemaServiceState {
                         check_name
                     );
 
-                    return Ok(SchemaAddOutcome::AlreadyExists(check_schema, mutation_mappers.clone()));
+                    return Ok(SchemaAddOutcome::AlreadyExists(
+                        check_schema,
+                        mutation_mappers.clone(),
+                    ));
                 }
             }
         }
@@ -757,7 +776,8 @@ impl SchemaServiceState {
         // Check for schema expansion: if the new schema has a descriptive_name that
         // matches an existing schema (exact or semantic), merge fields (expand, never shrink).
         if let Some(incoming_desc_name) = schema.descriptive_name.clone() {
-            let (matched_desc, existing_schema_name, is_exact_match) = self.find_matching_descriptive_name(&incoming_desc_name)?;
+            let (matched_desc, existing_schema_name, is_exact_match) =
+                self.find_matching_descriptive_name(&incoming_desc_name)?;
 
             // For semantic (non-exact) matches, use descriptive names as a second gate.
             // "holiday_illustrations" and "famous_paintings" have similar descriptive names
@@ -795,7 +815,10 @@ impl SchemaServiceState {
                     }
                 }
                 // Use the (possibly canonical) descriptive_name for the rest of expansion
-                let desc_name = schema.descriptive_name.clone().unwrap_or(incoming_desc_name);
+                let desc_name = schema
+                    .descriptive_name
+                    .clone()
+                    .unwrap_or(incoming_desc_name);
                 // We already checked exact-hash match above, so the old schema
                 // has a different (smaller) field set. Merge fields as a superset.
                 let old_schema = {
@@ -826,7 +849,13 @@ impl SchemaServiceState {
                     schema.dedup_fields();
 
                     return self
-                        .expand_schema(&mut schema, &existing, &old_name, &desc_name, &mutation_mappers)
+                        .expand_schema(
+                            &mut schema,
+                            &existing,
+                            &old_name,
+                            &desc_name,
+                            &mutation_mappers,
+                        )
                         .await;
                 }
             }
@@ -854,7 +883,8 @@ impl SchemaServiceState {
                     .as_ref()
                     .map(|f| f.iter().cloned().collect())
                     .unwrap_or_default();
-                let jaccard = super::state_matching::jaccard_index(&incoming_fields, &existing_fields);
+                let jaccard =
+                    super::state_matching::jaccard_index(&incoming_fields, &existing_fields);
                 if jaccard >= 0.6 {
                     if let (Some(ref inc_desc), Some(ref ext_desc)) =
                         (&schema.descriptive_name, &existing_schema.descriptive_name)
@@ -864,10 +894,10 @@ impl SchemaServiceState {
                             self.embedder.embed_text(ext_desc),
                         ) {
                             let name_sim = cosine_similarity(&inc_emb, &ext_emb);
-                            if name_sim >= 0.8
-                                && best.as_ref().is_none_or(|(_, _, j)| jaccard > *j)
+                            if name_sim >= 0.8 && best.as_ref().is_none_or(|(_, _, j)| jaccard > *j)
                             {
-                                best = Some((existing_name.clone(), existing_schema.clone(), jaccard));
+                                best =
+                                    Some((existing_name.clone(), existing_schema.clone(), jaccard));
                             }
                         }
                     }
@@ -923,7 +953,9 @@ impl SchemaServiceState {
         // add_schema call already registered this descriptive_name.
         let race_expansion_target = if let Some(ref desc_name_owned) = schema.descriptive_name {
             let index = self.descriptive_name_index.read().map_err(|_| {
-                FoldDbError::Config("Failed to acquire descriptive_name_index read lock".to_string())
+                FoldDbError::Config(
+                    "Failed to acquire descriptive_name_index read lock".to_string(),
+                )
             })?;
             let target = index.get(desc_name_owned).cloned();
             drop(index); // release lock before any await
@@ -976,7 +1008,9 @@ impl SchemaServiceState {
 
         if let Some(ref desc_name) = schema.descriptive_name {
             let mut index = self.descriptive_name_index.write().map_err(|_| {
-                FoldDbError::Config("Failed to acquire descriptive_name_index write lock".to_string())
+                FoldDbError::Config(
+                    "Failed to acquire descriptive_name_index write lock".to_string(),
+                )
             })?;
             index.insert(desc_name.clone(), schema_name.clone());
             drop(index);
@@ -1018,25 +1052,36 @@ impl SchemaServiceState {
             SchemaStorage::Sled { db, schemas_tree } => {
                 let serialized = serde_json::to_vec(schema).map_err(|e| {
                     FoldDbError::Serialization(format!(
-                        "Failed to serialize schema '{}': {}", schema.name, e
+                        "Failed to serialize schema '{}': {}",
+                        schema.name, e
                     ))
                 })?;
                 schemas_tree
                     .insert(schema.name.as_bytes(), serialized)
                     .map_err(|e| {
                         FoldDbError::Config(format!(
-                            "Failed to insert schema '{}' into sled: {}", schema.name, e
+                            "Failed to insert schema '{}' into sled: {}",
+                            schema.name, e
                         ))
                     })?;
-                db.flush().map_err(|e| {
-                    FoldDbError::Config(format!("Failed to flush sled: {}", e))
-                })?;
-                log_feature!(LogFeature::Schema, info, "Schema '{}' persisted to sled", schema.name);
+                db.flush()
+                    .map_err(|e| FoldDbError::Config(format!("Failed to flush sled: {}", e)))?;
+                log_feature!(
+                    LogFeature::Schema,
+                    info,
+                    "Schema '{}' persisted to sled",
+                    schema.name
+                );
             }
             #[cfg(feature = "aws-backend")]
             SchemaStorage::Cloud { store } => {
                 store.put_schema(schema, mutation_mappers).await?;
-                log_feature!(LogFeature::Schema, info, "Schema '{}' persisted to DynamoDB", schema.name);
+                log_feature!(
+                    LogFeature::Schema,
+                    info,
+                    "Schema '{}' persisted to DynamoDB",
+                    schema.name
+                );
             }
         }
         Ok(())
@@ -1085,9 +1130,9 @@ impl SchemaServiceState {
             .read()
             .map_err(|_| FoldDbError::Config("Failed to acquire schemas read lock".to_string()))?;
 
-        let target = schemas.get(name).ok_or_else(|| {
-            FoldDbError::Config(format!("Schema '{}' not found", name))
-        })?;
+        let target = schemas
+            .get(name)
+            .ok_or_else(|| FoldDbError::Config(format!("Schema '{}' not found", name)))?;
 
         let target_fields = collect_field_names(target);
 
@@ -1108,7 +1153,11 @@ impl SchemaServiceState {
             })
             .collect();
 
-        similar.sort_by(|a, b| b.similarity.partial_cmp(&a.similarity).unwrap_or(std::cmp::Ordering::Equal));
+        similar.sort_by(|a, b| {
+            b.similarity
+                .partial_cmp(&a.similarity)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         Ok(SimilarSchemasResponse {
             query_schema: name.to_string(),
@@ -1164,11 +1213,8 @@ impl SchemaServiceState {
                 };
 
             // 3. Get the active schema's fields
-            let existing_fields: Vec<String> = active_schema
-                .fields
-                .as_ref()
-                .cloned()
-                .unwrap_or_default();
+            let existing_fields: Vec<String> =
+                active_schema.fields.as_ref().cloned().unwrap_or_default();
 
             // 4. Compute semantic field rename map
             let field_rename_map = self.semantic_field_rename_map(
@@ -1213,7 +1259,9 @@ impl SchemaServiceState {
     pub async fn add_view(&self, request: AddViewRequest) -> FoldDbResult<ViewAddOutcome> {
         // Validate view name
         if request.name.trim().is_empty() {
-            return Err(FoldDbError::Config("View name must be non-empty".to_string()));
+            return Err(FoldDbError::Config(
+                "View name must be non-empty".to_string(),
+            ));
         }
 
         // Validate input queries have explicit field lists
@@ -1281,9 +1329,7 @@ impl SchemaServiceState {
         output_schema.schema_type = request.schema_type.clone();
 
         // Run through the full schema pipeline (similarity, canonicalization, dedup, expansion)
-        let schema_outcome = self
-            .add_schema(output_schema, HashMap::new())
-            .await?;
+        let schema_outcome = self.add_schema(output_schema, HashMap::new()).await?;
 
         let (output_schema, _replaced_schema) = match &schema_outcome {
             SchemaAddOutcome::Added(schema, _) => (schema.clone(), None),
@@ -1365,9 +1411,9 @@ impl SchemaServiceState {
     async fn persist_view(&self, view: &StoredView) -> FoldDbResult<()> {
         match &self.storage {
             SchemaStorage::Sled { db, .. } => {
-                let views_tree = db
-                    .open_tree("views")
-                    .map_err(|e| FoldDbError::Config(format!("Failed to open views tree: {}", e)))?;
+                let views_tree = db.open_tree("views").map_err(|e| {
+                    FoldDbError::Config(format!("Failed to open views tree: {}", e))
+                })?;
                 let serialized = serde_json::to_vec(view).map_err(|e| {
                     FoldDbError::Serialization(format!(
                         "Failed to serialize view '{}': {}",
@@ -1384,7 +1430,12 @@ impl SchemaServiceState {
                     })?;
                 db.flush()
                     .map_err(|e| FoldDbError::Config(format!("Failed to flush sled: {}", e)))?;
-                log_feature!(LogFeature::Schema, info, "View '{}' persisted to sled", view.name);
+                log_feature!(
+                    LogFeature::Schema,
+                    info,
+                    "View '{}' persisted to sled",
+                    view.name
+                );
             }
             #[cfg(feature = "aws-backend")]
             SchemaStorage::Cloud { store } => {
@@ -1409,7 +1460,12 @@ impl SchemaServiceState {
                 let mut mappers = HashMap::new();
                 mappers.insert("__view_json__".to_string(), view_json);
                 store.put_schema(&view_as_schema, &mappers).await?;
-                log_feature!(LogFeature::Schema, info, "View '{}' persisted to DynamoDB", view.name);
+                log_feature!(
+                    LogFeature::Schema,
+                    info,
+                    "View '{}' persisted to DynamoDB",
+                    view.name
+                );
             }
         }
         Ok(())
@@ -1459,9 +1515,9 @@ impl SchemaServiceState {
     pub async fn load_views(&self) -> FoldDbResult<()> {
         match &self.storage {
             SchemaStorage::Sled { db, .. } => {
-                let views_tree = db
-                    .open_tree("views")
-                    .map_err(|e| FoldDbError::Config(format!("Failed to open views tree: {}", e)))?;
+                let views_tree = db.open_tree("views").map_err(|e| {
+                    FoldDbError::Config(format!("Failed to open views tree: {}", e))
+                })?;
                 self.load_views_from_tree(&views_tree)?;
             }
             #[cfg(feature = "aws-backend")]
@@ -1512,11 +1568,9 @@ mod tests {
             return None;
         }
 
-        let state = SchemaServiceState::new_with_embedder(
-            db_path.to_string_lossy().to_string(),
-            embedder,
-        )
-        .expect("failed to create state");
+        let state =
+            SchemaServiceState::new_with_embedder(db_path.to_string_lossy().to_string(), embedder)
+                .expect("failed to create state");
 
         // Leak the TempDir so the sled DB stays alive for the duration of the test
         std::mem::forget(tmp);
@@ -1529,12 +1583,11 @@ mod tests {
     fn create_mock_state() -> SchemaServiceState {
         let tmp = TempDir::new().expect("failed to create temp dir");
         let db_path = tmp.path().join("test_schema_db_mock");
-        let embedder: Arc<dyn Embedder> = Arc::new(crate::db_operations::native_index::MockEmbeddingModel);
-        let mut state = SchemaServiceState::new_with_embedder(
-            db_path.to_string_lossy().to_string(),
-            embedder,
-        )
-        .expect("failed to create state");
+        let embedder: Arc<dyn Embedder> =
+            Arc::new(crate::db_operations::native_index::MockEmbeddingModel);
+        let mut state =
+            SchemaServiceState::new_with_embedder(db_path.to_string_lossy().to_string(), embedder)
+                .expect("failed to create state");
         state.collection_name_anchors.clear();
         std::mem::forget(tmp);
         state
@@ -1607,9 +1660,9 @@ mod tests {
     #[test]
     fn test_invalid_name_vision_caption_1() {
         let state = create_test_state().unwrap_or_else(create_mock_state);
-        assert!(!state.is_valid_collection_name(
-            "This image depicts a scenic outdoor scene on a boat"
-        ));
+        assert!(
+            !state.is_valid_collection_name("This image depicts a scenic outdoor scene on a boat")
+        );
     }
 
     #[test]
@@ -1623,9 +1676,9 @@ mod tests {
     #[test]
     fn test_invalid_name_description_with_markdown() {
         let state = create_test_state().unwrap_or_else(create_mock_state);
-        assert!(!state.is_valid_collection_name(
-            "- **Description of the Image**: A pastoral landscape"
-        ));
+        assert!(
+            !state.is_valid_collection_name("- **Description of the Image**: A pastoral landscape")
+        );
     }
 
     #[test]
@@ -1639,9 +1692,7 @@ mod tests {
     #[test]
     fn test_invalid_name_this_is_pattern() {
         let state = create_test_state().unwrap_or_else(create_mock_state);
-        assert!(!state.is_valid_collection_name(
-            "This is not a document, receipt, or screenshot"
-        ));
+        assert!(!state.is_valid_collection_name("This is not a document, receipt, or screenshot"));
     }
 
     #[test]
@@ -1670,9 +1721,15 @@ mod tests {
             None,
         );
         schema.descriptive_name = Some(descriptive_name.to_string());
-        schema.field_descriptions.insert("focal_length".to_string(), "lens focal length".to_string());
-        schema.field_descriptions.insert("camera_model".to_string(), "camera model".to_string());
-        schema.field_descriptions.insert("gps_latitude".to_string(), "GPS latitude".to_string());
+        schema
+            .field_descriptions
+            .insert("focal_length".to_string(), "lens focal length".to_string());
+        schema
+            .field_descriptions
+            .insert("camera_model".to_string(), "camera model".to_string());
+        schema
+            .field_descriptions
+            .insert("gps_latitude".to_string(), "GPS latitude".to_string());
         schema
     }
 
@@ -1683,17 +1740,24 @@ mod tests {
         let schema = make_photo_schema("This image depicts a scenic outdoor scene on a boat");
         let generated = state.generate_collection_name(&schema);
         // Should produce something like "Photo Collection" based on image/camera/gps fields
-        assert!(state.is_valid_collection_name(&generated),
-            "Auto-corrected name '{}' should be a valid collection name", generated);
+        assert!(
+            state.is_valid_collection_name(&generated),
+            "Auto-corrected name '{}' should be a valid collection name",
+            generated
+        );
     }
 
     #[test]
     fn test_autocorrect_vision_caption_2() {
         let state = create_test_state().unwrap_or_else(create_mock_state);
-        let schema = make_photo_schema("The image depicts a woman seated at a restaurant table with wine");
+        let schema =
+            make_photo_schema("The image depicts a woman seated at a restaurant table with wine");
         let generated = state.generate_collection_name(&schema);
-        assert!(state.is_valid_collection_name(&generated),
-            "Auto-corrected name '{}' should be a valid collection name", generated);
+        assert!(
+            state.is_valid_collection_name(&generated),
+            "Auto-corrected name '{}' should be a valid collection name",
+            generated
+        );
     }
 
     #[test]
@@ -1728,8 +1792,13 @@ mod tests {
             None,
         );
         schema.descriptive_name = Some("some caption".to_string());
-        schema.field_descriptions.insert("amount".to_string(), "transaction amount".to_string());
-        schema.field_descriptions.insert("description".to_string(), "transaction description".to_string());
+        schema
+            .field_descriptions
+            .insert("amount".to_string(), "transaction amount".to_string());
+        schema.field_descriptions.insert(
+            "description".to_string(),
+            "transaction description".to_string(),
+        );
         let generated = state.generate_collection_name(&schema);
         assert_eq!(generated, "Financial Records");
     }
@@ -1742,14 +1811,24 @@ mod tests {
             "test_doc".to_string(),
             DeclarativeSchemaType::Single,
             None,
-            Some(vec!["title".to_string(), "content".to_string(), "author".to_string()]),
+            Some(vec![
+                "title".to_string(),
+                "content".to_string(),
+                "author".to_string(),
+            ]),
             None,
             None,
         );
         schema.descriptive_name = Some("some caption".to_string());
-        schema.field_descriptions.insert("title".to_string(), "document title".to_string());
-        schema.field_descriptions.insert("content".to_string(), "document content".to_string());
-        schema.field_descriptions.insert("author".to_string(), "document author".to_string());
+        schema
+            .field_descriptions
+            .insert("title".to_string(), "document title".to_string());
+        schema
+            .field_descriptions
+            .insert("content".to_string(), "document content".to_string());
+        schema
+            .field_descriptions
+            .insert("author".to_string(), "document author".to_string());
         let generated = state.generate_collection_name(&schema);
         assert_eq!(generated, "Written Works");
     }
@@ -1767,8 +1846,12 @@ mod tests {
             None,
         );
         schema.descriptive_name = Some("some caption".to_string());
-        schema.field_descriptions.insert("ingredient".to_string(), "recipe ingredient".to_string());
-        schema.field_descriptions.insert("step".to_string(), "cooking step".to_string());
+        schema
+            .field_descriptions
+            .insert("ingredient".to_string(), "recipe ingredient".to_string());
+        schema
+            .field_descriptions
+            .insert("step".to_string(), "cooking step".to_string());
         let generated = state.generate_collection_name(&schema);
         // No field pattern matches, should fall back to schema name
         assert_eq!(generated, "my_recipes");
@@ -1787,8 +1870,12 @@ mod tests {
             None,
         );
         schema.descriptive_name = Some("some caption".to_string());
-        schema.field_descriptions.insert("foo".to_string(), "a foo".to_string());
-        schema.field_descriptions.insert("bar".to_string(), "a bar".to_string());
+        schema
+            .field_descriptions
+            .insert("foo".to_string(), "a foo".to_string());
+        schema
+            .field_descriptions
+            .insert("bar".to_string(), "a bar".to_string());
         let generated = state.generate_collection_name(&schema);
         assert_eq!(generated, "Data Records");
     }
@@ -1799,12 +1886,15 @@ mod tests {
         // the same collection name, enabling schema expansion/merging
         let state = create_mock_state();
         let schema1 = make_photo_schema("This image depicts a scenic outdoor scene on a boat");
-        let schema2 = make_photo_schema("The image depicts a woman seated at a restaurant table with wine");
+        let schema2 =
+            make_photo_schema("The image depicts a woman seated at a restaurant table with wine");
         let name1 = state.generate_collection_name(&schema1);
         let name2 = state.generate_collection_name(&schema2);
-        assert_eq!(name1, name2,
+        assert_eq!(
+            name1, name2,
             "Both photo schemas should generate the same collection name for merging: '{}' vs '{}'",
-            name1, name2);
+            name1, name2
+        );
         assert_eq!(name1, "Photography");
     }
 
@@ -1820,21 +1910,29 @@ mod tests {
     #[test]
     fn test_heuristic_rejects_long_names() {
         let long_name = "A".repeat(81);
-        assert!(!SchemaServiceState::heuristic_collection_name_check(&long_name));
+        assert!(!SchemaServiceState::heuristic_collection_name_check(
+            &long_name
+        ));
     }
 
     #[test]
     fn test_heuristic_accepts_short_collection_name() {
-        assert!(SchemaServiceState::heuristic_collection_name_check("Photography"));
+        assert!(SchemaServiceState::heuristic_collection_name_check(
+            "Photography"
+        ));
     }
 
     // ---- Duplicate schema prevention tests (same descriptive_name → expansion) ----
 
     /// Helper to create a simple schema with given name, descriptive_name, and fields.
     /// Pre-populates field_data_classifications so tests don't need ANTHROPIC_API_KEY.
-    fn make_schema(name: &str, descriptive_name: &str, fields: &[&str]) -> (Schema, HashMap<String, String>) {
-        use crate::schema::types::schema::DeclarativeSchemaType;
+    fn make_schema(
+        name: &str,
+        descriptive_name: &str,
+        fields: &[&str],
+    ) -> (Schema, HashMap<String, String>) {
         use crate::schema::types::data_classification::DataClassification;
+        use crate::schema::types::schema::DeclarativeSchemaType;
         let field_vec: Vec<String> = fields.iter().map(|f| f.to_string()).collect();
         let mut schema = Schema::new(
             name.to_string(),
@@ -1846,7 +1944,9 @@ mod tests {
         );
         schema.descriptive_name = Some(descriptive_name.to_string());
         for f in fields {
-            schema.field_descriptions.insert(f.to_string(), format!("{} description", f));
+            schema
+                .field_descriptions
+                .insert(f.to_string(), format!("{} description", f));
             // Provide classification so infer_classification skips the LLM call
             schema.field_data_classifications.insert(
                 f.to_string(),
@@ -1868,7 +1968,11 @@ mod tests {
             &["camera_model", "gps_latitude", "focal_length"],
         );
         let result1 = state.add_schema(schema1, mappers1).await;
-        assert!(result1.is_ok(), "First schema should succeed: {:?}", result1);
+        assert!(
+            result1.is_ok(),
+            "First schema should succeed: {:?}",
+            result1
+        );
         let outcome1 = result1.unwrap();
         assert!(
             matches!(outcome1, SchemaAddOutcome::Added(_, _)),
@@ -1880,10 +1984,20 @@ mod tests {
         let (schema2, mappers2) = make_schema(
             "nature_shots",
             "Nature Photography",
-            &["camera_model", "gps_latitude", "focal_length", "shutter_speed", "iso"],
+            &[
+                "camera_model",
+                "gps_latitude",
+                "focal_length",
+                "shutter_speed",
+                "iso",
+            ],
         );
         let result2 = state.add_schema(schema2, mappers2).await;
-        assert!(result2.is_ok(), "Second schema should succeed: {:?}", result2);
+        assert!(
+            result2.is_ok(),
+            "Second schema should succeed: {:?}",
+            result2
+        );
         let outcome2 = result2.unwrap();
 
         // Must be Expanded or AlreadyExists — NOT Added (which would create a duplicate)

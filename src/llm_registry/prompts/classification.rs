@@ -49,7 +49,14 @@ mod tests {
     #[test]
     fn prompt_lists_all_domains() {
         let prompt = build_classification_prompt("x", "y");
-        for domain in &["general", "financial", "medical", "identity", "behavioral", "location"] {
+        for domain in &[
+            "general",
+            "financial",
+            "medical",
+            "identity",
+            "behavioral",
+            "location",
+        ] {
             assert!(prompt.contains(domain));
         }
     }

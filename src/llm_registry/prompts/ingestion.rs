@@ -64,7 +64,6 @@ mod tests {
         assert!(PROMPT_HEADER.contains("HashRange"));
     }
 
-
     #[test]
     fn prompt_actions_requires_json() {
         assert!(PROMPT_ACTIONS.contains("valid JSON"));

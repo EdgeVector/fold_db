@@ -6,11 +6,11 @@
 
 pub mod classify;
 pub mod name_validator;
+mod nmi;
+pub mod state;
 mod state_expansion;
 mod state_fields;
 mod state_matching;
-mod nmi;
 mod state_transforms;
-pub mod state;
 pub mod transform_resolver;
 pub mod types;

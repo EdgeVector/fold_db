@@ -309,10 +309,7 @@ impl DynamoDbSchemaStore {
             .send()
             .await
             .map_err(|e| {
-                FoldDbError::Database(format!(
-                    "Failed to delete schema '{}': {}",
-                    schema_name, e
-                ))
+                FoldDbError::Database(format!("Failed to delete schema '{}': {}", schema_name, e))
             })?;
         Ok(())
     }
@@ -533,7 +530,6 @@ impl DynamoDbSchemaStore {
 
         Ok(())
     }
-
 }
 
 #[cfg(test)]

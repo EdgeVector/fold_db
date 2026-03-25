@@ -11,8 +11,8 @@ use crate::schema::types::field_value_type::FieldValueType;
 
 use super::state::{SchemaServiceState, SchemaStorage};
 use super::types::{
-    RegisterTransformRequest, SimilarTransformEntry, SimilarTransformsResponse, TransformAddOutcome,
-    TransformListEntry, TransformRecord,
+    RegisterTransformRequest, SimilarTransformEntry, SimilarTransformsResponse,
+    TransformAddOutcome, TransformListEntry, TransformRecord,
 };
 
 /// NMI leakage threshold — above this, an output field carries meaningful
@@ -68,8 +68,8 @@ impl SchemaServiceState {
             self.resolve_input_classifications(&request.input_queries)?;
 
         // Phase 2: NMI estimation (feature-gated)
-        let (output_classification, nmi_matrix, classification_verified, sample_count) =
-            self.estimate_output_classification(
+        let (output_classification, nmi_matrix, classification_verified, sample_count) = self
+            .estimate_output_classification(
                 &request.wasm_bytes,
                 &input_schema,
                 &request.output_fields,
@@ -77,7 +77,8 @@ impl SchemaServiceState {
             );
 
         // Final assignment: max(ceiling, output)
-        let assigned_classification = std::cmp::max(input_ceiling.clone(), output_classification.clone());
+        let assigned_classification =
+            std::cmp::max(input_ceiling.clone(), output_classification.clone());
 
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -208,7 +209,11 @@ impl SchemaServiceState {
             }
         }
 
-        similar.sort_by(|a, b| b.similarity.partial_cmp(&a.similarity).unwrap_or(std::cmp::Ordering::Equal));
+        similar.sort_by(|a, b| {
+            b.similarity
+                .partial_cmp(&a.similarity)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         Ok(SimilarTransformsResponse {
             query_name: name.to_string(),
@@ -258,14 +263,12 @@ impl SchemaServiceState {
                 let wasm_tree = db.open_tree("transform_wasm").map_err(|e| {
                     FoldDbError::Config(format!("Failed to open transform_wasm tree: {}", e))
                 })?;
-                wasm_tree
-                    .insert(hash.as_bytes(), wasm_bytes)
-                    .map_err(|e| {
-                        FoldDbError::Config(format!(
-                            "Failed to insert transform WASM '{}': {}",
-                            hash, e
-                        ))
-                    })?;
+                wasm_tree.insert(hash.as_bytes(), wasm_bytes).map_err(|e| {
+                    FoldDbError::Config(format!(
+                        "Failed to insert transform WASM '{}': {}",
+                        hash, e
+                    ))
+                })?;
                 db.flush()
                     .map_err(|e| FoldDbError::Config(format!("Failed to flush sled: {}", e)))?;
             }
@@ -280,10 +283,7 @@ impl SchemaServiceState {
     }
 
     /// Load transforms from sled tree into memory.
-    pub(super) fn load_transforms_from_tree(
-        &self,
-        meta_tree: &sled::Tree,
-    ) -> FoldDbResult<()> {
+    pub(super) fn load_transforms_from_tree(&self, meta_tree: &sled::Tree) -> FoldDbResult<()> {
         let mut transforms = self.transforms.write().map_err(|_| {
             FoldDbError::Config("Failed to acquire transforms write lock".to_string())
         })?;
@@ -331,9 +331,10 @@ impl SchemaServiceState {
         &self,
         input_queries: &[crate::schema::types::operations::Query],
     ) -> FoldDbResult<(HashMap<String, FieldValueType>, DataClassification)> {
-        let schemas = self.schemas.read().map_err(|_| {
-            FoldDbError::Config("Failed to acquire schemas read lock".to_string())
-        })?;
+        let schemas = self
+            .schemas
+            .read()
+            .map_err(|_| FoldDbError::Config("Failed to acquire schemas read lock".to_string()))?;
 
         let mut input_schema = HashMap::new();
         let mut max_classification = DataClassification::low();
@@ -369,9 +370,7 @@ impl SchemaServiceState {
                 input_schema.insert(qualified_name, field_type);
 
                 // Resolve classification from field_classifications
-                let classification = classify_field(
-                    schema.field_classifications.get(field_name),
-                );
+                let classification = classify_field(schema.field_classifications.get(field_name));
                 max_classification = std::cmp::max(max_classification, classification);
             }
         }
@@ -403,7 +402,12 @@ impl SchemaServiceState {
         // Without it, conservatively return the input ceiling.
         #[cfg(feature = "transform-wasm")]
         {
-            match self.run_nmi_estimation(wasm_bytes, input_schema, output_fields, input_ceiling.clone()) {
+            match self.run_nmi_estimation(
+                wasm_bytes,
+                input_schema,
+                output_fields,
+                input_ceiling.clone(),
+            ) {
                 Ok(result) => result,
                 Err(e) => {
                     log_feature!(
@@ -443,7 +447,7 @@ impl SchemaServiceState {
         bool,
         u32,
     )> {
-        use super::nmi::{SyntheticDataGenerator, estimate_nmi_matrix};
+        use super::nmi::{estimate_nmi_matrix, SyntheticDataGenerator};
 
         let sample_count: u32 = 512;
         let generator = SyntheticDataGenerator::new();

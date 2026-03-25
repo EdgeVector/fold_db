@@ -165,12 +165,8 @@ where
                     error_str,
                     e
                 );
-                let error_msg = format_dynamodb_error(
-                    "batch_write_item",
-                    table_name,
-                    None,
-                    format!("{:?}", e),
-                );
+                let error_msg =
+                    format_dynamodb_error("batch_write_item", table_name, None, format!("{:?}", e));
 
                 if retries < MAX_BATCH_RETRIES
                     && (is_retryable_error(&error_str) || is_retryable_error(&format!("{:?}", e)))

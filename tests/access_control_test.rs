@@ -1,12 +1,11 @@
 use fold_db::access::{
-    AccessContext, FieldAccessPolicy, PaymentGate,
-    SecurityLabel, TrustDistancePolicy, TrustGraph,
+    AccessContext, FieldAccessPolicy, PaymentGate, SecurityLabel, TrustDistancePolicy, TrustGraph,
 };
 use fold_db::fold_db_core::FoldDB;
 use fold_db::schema::types::field::Field;
 use fold_db::schema::types::operations::{MutationType, Query};
-use fold_db::schema::SchemaState;
 use fold_db::schema::types::{KeyValue, Mutation};
+use fold_db::schema::SchemaState;
 use serde_json::json;
 use std::collections::HashMap;
 
@@ -57,7 +56,12 @@ async fn setup_db_with_notes() -> FoldDB {
 }
 
 /// Set access policy on a field in a loaded schema
-async fn set_field_policy(db: &FoldDB, schema_name: &str, field_name: &str, policy: FieldAccessPolicy) {
+async fn set_field_policy(
+    db: &FoldDB,
+    schema_name: &str,
+    field_name: &str,
+    policy: FieldAccessPolicy,
+) {
     let mut schema = db
         .schema_manager
         .get_schema(schema_name)
@@ -71,7 +75,10 @@ async fn set_field_policy(db: &FoldDB, schema_name: &str, field_name: &str, poli
 
     // Persist and reload
     db.db_ops.store_schema(schema_name, &schema).await.unwrap();
-    db.schema_manager.load_schema_internal(schema).await.unwrap();
+    db.schema_manager
+        .load_schema_internal(schema)
+        .await
+        .unwrap();
 }
 
 // ===== Query Access Control Tests =====
@@ -80,7 +87,10 @@ async fn set_field_policy(db: &FoldDB, schema_name: &str, field_name: &str, poli
 async fn query_with_no_access_context_returns_all_fields() {
     let db = setup_db_with_notes().await;
 
-    let query = Query::new("Notes".to_string(), vec!["title".to_string(), "content".to_string()]);
+    let query = Query::new(
+        "Notes".to_string(),
+        vec!["title".to_string(), "content".to_string()],
+    );
     let results = db.query_executor.query(query).await.unwrap();
 
     assert!(results.contains_key("title"));
@@ -93,7 +103,10 @@ async fn query_with_no_policy_returns_all_fields() {
 
     // No policies set — legacy behavior, all fields accessible even for remote users
     let ctx = AccessContext::remote("bob", 5);
-    let query = Query::new("Notes".to_string(), vec!["title".to_string(), "content".to_string()]);
+    let query = Query::new(
+        "Notes".to_string(),
+        vec!["title".to_string(), "content".to_string()],
+    );
     let results = db
         .query_executor
         .query_with_access(query, &ctx, None)
@@ -121,7 +134,10 @@ async fn owner_always_has_access() {
     .await;
 
     let ctx = AccessContext::owner("owner");
-    let query = Query::new("Notes".to_string(), vec!["title".to_string(), "content".to_string()]);
+    let query = Query::new(
+        "Notes".to_string(),
+        vec!["title".to_string(), "content".to_string()],
+    );
     let results = db
         .query_executor
         .query_with_access(query, &ctx, None)
@@ -161,7 +177,10 @@ async fn remote_user_blocked_by_trust_distance() {
     .await;
 
     let ctx = AccessContext::remote("bob", 3);
-    let query = Query::new("Notes".to_string(), vec!["title".to_string(), "content".to_string()]);
+    let query = Query::new(
+        "Notes".to_string(),
+        vec!["title".to_string(), "content".to_string()],
+    );
     let results = db
         .query_executor
         .query_with_access(query, &ctx, None)
@@ -367,7 +386,7 @@ async fn trust_graph_persists_to_sled() {
 
 #[tokio::test]
 async fn audit_log_persists_to_sled() {
-    use fold_db::access::{AuditAction, AuditEvent, AccessDecision};
+    use fold_db::access::{AccessDecision, AuditAction, AuditEvent};
 
     let db = setup_db().await;
 

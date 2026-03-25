@@ -98,17 +98,26 @@ impl DataClassification {
 
     /// Convenience constructor for Low (Public, general domain).
     pub fn low() -> Self {
-        Self { sensitivity_level: PUBLIC, data_domain: "general".to_string() }
+        Self {
+            sensitivity_level: PUBLIC,
+            data_domain: "general".to_string(),
+        }
     }
 
     /// Convenience constructor for Medium (Confidential, general domain).
     pub fn medium() -> Self {
-        Self { sensitivity_level: CONFIDENTIAL, data_domain: "general".to_string() }
+        Self {
+            sensitivity_level: CONFIDENTIAL,
+            data_domain: "general".to_string(),
+        }
     }
 
     /// Convenience constructor for High (Highly Restricted, general domain).
     pub fn high() -> Self {
-        Self { sensitivity_level: HIGHLY_RESTRICTED, data_domain: "general".to_string() }
+        Self {
+            sensitivity_level: HIGHLY_RESTRICTED,
+            data_domain: "general".to_string(),
+        }
     }
 }
 
@@ -185,7 +194,10 @@ mod tests {
     fn test_deserialize_rejects_invalid_level() {
         let json = r#"{"sensitivity_level": 99, "data_domain": "general"}"#;
         let result = serde_json::from_str::<DataClassification>(json);
-        assert!(result.is_err(), "should reject sensitivity_level > 4 during deserialization");
+        assert!(
+            result.is_err(),
+            "should reject sensitivity_level > 4 during deserialization"
+        );
         let err = result.unwrap_err().to_string();
         assert!(err.contains("exceeds maximum"), "error: {}", err);
     }
@@ -194,15 +206,33 @@ mod tests {
     fn test_deserialize_rejects_empty_domain() {
         let json = r#"{"sensitivity_level": 0, "data_domain": ""}"#;
         let result = serde_json::from_str::<DataClassification>(json);
-        assert!(result.is_err(), "should reject empty data_domain during deserialization");
+        assert!(
+            result.is_err(),
+            "should reject empty data_domain during deserialization"
+        );
     }
 
     #[test]
     fn test_all_sensitivity_names() {
-        assert_eq!(DataClassification::new(0, "g").unwrap().sensitivity_name(), "Public");
-        assert_eq!(DataClassification::new(1, "g").unwrap().sensitivity_name(), "Internal");
-        assert_eq!(DataClassification::new(2, "g").unwrap().sensitivity_name(), "Confidential");
-        assert_eq!(DataClassification::new(3, "g").unwrap().sensitivity_name(), "Restricted");
-        assert_eq!(DataClassification::new(4, "g").unwrap().sensitivity_name(), "Highly Restricted");
+        assert_eq!(
+            DataClassification::new(0, "g").unwrap().sensitivity_name(),
+            "Public"
+        );
+        assert_eq!(
+            DataClassification::new(1, "g").unwrap().sensitivity_name(),
+            "Internal"
+        );
+        assert_eq!(
+            DataClassification::new(2, "g").unwrap().sensitivity_name(),
+            "Confidential"
+        );
+        assert_eq!(
+            DataClassification::new(3, "g").unwrap().sensitivity_name(),
+            "Restricted"
+        );
+        assert_eq!(
+            DataClassification::new(4, "g").unwrap().sensitivity_name(),
+            "Highly Restricted"
+        );
     }
 }

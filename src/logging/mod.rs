@@ -314,7 +314,6 @@ impl LoggingSystem {
 
         Ok(Vec::new())
     }
-
 }
 
 /// Logging system errors

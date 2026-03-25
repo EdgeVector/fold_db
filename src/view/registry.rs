@@ -190,11 +190,7 @@ impl ViewRegistry {
     pub fn get_views_with_states(&self) -> Vec<(&TransformView, ViewState)> {
         self.views
             .values()
-            .filter_map(|v| {
-                self.view_states
-                    .get(&v.name)
-                    .map(|state| (v, *state))
-            })
+            .filter_map(|v| self.view_states.get(&v.name).map(|state| (v, *state)))
             .collect()
     }
 
@@ -202,7 +198,8 @@ impl ViewRegistry {
         if !self.views.contains_key(name) {
             return Err(SchemaError::NotFound(format!("View '{}' not found", name)));
         }
-        self.view_states.insert(name.to_string(), ViewState::Approved);
+        self.view_states
+            .insert(name.to_string(), ViewState::Approved);
         Ok(())
     }
 
@@ -210,7 +207,8 @@ impl ViewRegistry {
         if !self.views.contains_key(name) {
             return Err(SchemaError::NotFound(format!("View '{}' not found", name)));
         }
-        self.view_states.insert(name.to_string(), ViewState::Blocked);
+        self.view_states
+            .insert(name.to_string(), ViewState::Blocked);
         Ok(())
     }
 
@@ -366,7 +364,10 @@ mod tests {
         );
         let result = registry.register_view(view, |_| true);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("at least one output field"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("at least one output field"));
     }
 
     #[test]
@@ -553,7 +554,10 @@ mod tests {
             SchemaType::Single,
             None,
             vec![
-                Query::new("BlogPost".to_string(), vec!["title".to_string(), "content".to_string()]),
+                Query::new(
+                    "BlogPost".to_string(),
+                    vec!["title".to_string(), "content".to_string()],
+                ),
                 Query::new("Author".to_string(), vec!["name".to_string()]),
             ],
             Some(vec![0, 1, 2]), // Placeholder WASM
@@ -563,9 +567,7 @@ mod tests {
             ]),
         );
 
-        let result = registry.register_view(view, |name| {
-            name == "BlogPost" || name == "Author"
-        });
+        let result = registry.register_view(view, |name| name == "BlogPost" || name == "Author");
         assert!(result.is_ok());
 
         let stored = registry.get_view("Dashboard").unwrap();

@@ -71,7 +71,9 @@ async fn wasm_view_query_returns_transformed_output() {
     let mut db = setup_db().await;
 
     // Setup schema with data
-    db.load_schema_from_json(blogpost_schema_json()).await.unwrap();
+    db.load_schema_from_json(blogpost_schema_json())
+        .await
+        .unwrap();
     db.schema_manager
         .set_schema_state("BlogPost", SchemaState::Approved)
         .await
@@ -121,7 +123,9 @@ async fn wasm_view_query_returns_transformed_output() {
 async fn wasm_view_output_type_validation_works() {
     let mut db = setup_db().await;
 
-    db.load_schema_from_json(blogpost_schema_json()).await.unwrap();
+    db.load_schema_from_json(blogpost_schema_json())
+        .await
+        .unwrap();
     db.schema_manager
         .set_schema_state("BlogPost", SchemaState::Approved)
         .await
@@ -169,7 +173,9 @@ async fn wasm_view_output_type_validation_works() {
 async fn wasm_view_cache_invalidation_works() {
     let mut db = setup_db().await;
 
-    db.load_schema_from_json(blogpost_schema_json()).await.unwrap();
+    db.load_schema_from_json(blogpost_schema_json())
+        .await
+        .unwrap();
     db.schema_manager
         .set_schema_state("BlogPost", SchemaState::Approved)
         .await
@@ -208,7 +214,11 @@ async fn wasm_view_cache_invalidation_works() {
     db.query_executor.query(query.clone()).await.unwrap();
 
     // Verify cached
-    let state = db.db_ops.get_view_cache_state("WasmCacheView").await.unwrap();
+    let state = db
+        .db_ops
+        .get_view_cache_state("WasmCacheView")
+        .await
+        .unwrap();
     assert!(
         matches!(state, fold_db::view::ViewCacheState::Cached { .. }),
         "View should be cached"
@@ -230,7 +240,11 @@ async fn wasm_view_cache_invalidation_works() {
         .unwrap();
 
     // Cache should be invalidated
-    let state2 = db.db_ops.get_view_cache_state("WasmCacheView").await.unwrap();
+    let state2 = db
+        .db_ops
+        .get_view_cache_state("WasmCacheView")
+        .await
+        .unwrap();
     assert!(
         matches!(state2, fold_db::view::ViewCacheState::Empty),
         "View cache should be invalidated after source mutation"

@@ -99,15 +99,9 @@ impl AuditLog {
         self.events
             .iter()
             .filter(|e| match &e.action {
-                AuditAction::Read {
-                    schema_name: s, ..
-                } => s == schema_name,
-                AuditAction::Write {
-                    schema_name: s, ..
-                } => s == schema_name,
-                AuditAction::AccessDenied {
-                    schema_name: s, ..
-                } => s == schema_name,
+                AuditAction::Read { schema_name: s, .. } => s == schema_name,
+                AuditAction::Write { schema_name: s, .. } => s == schema_name,
+                AuditAction::AccessDenied { schema_name: s, .. } => s == schema_name,
                 AuditAction::TrustGrant { .. } | AuditAction::TrustRevoke { .. } => false,
             })
             .collect()

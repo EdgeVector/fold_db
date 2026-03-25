@@ -69,13 +69,11 @@ pub async fn fetch_atoms_with_key_metadata_async(
                 // Prefer molecule per-key metadata, fall back to atom metadata
                 let (source_file_name, metadata) = match key_meta {
                     Some(km) => (
-                        km.source_file_name.or_else(|| atom.source_file_name().cloned()),
+                        km.source_file_name
+                            .or_else(|| atom.source_file_name().cloned()),
                         km.metadata.or_else(|| atom.metadata().cloned()),
                     ),
-                    None => (
-                        atom.source_file_name().cloned(),
-                        atom.metadata().cloned(),
-                    ),
+                    None => (atom.source_file_name().cloned(), atom.metadata().cloned()),
                 };
                 resolved_values.insert(
                     key,
@@ -194,7 +192,10 @@ fn insert_hash(m: &mut HashMap<KeyValue, String>, key: String, uuid: String) {
     m.insert(KeyValue::new(Some(key), None), uuid);
 }
 
-fn extend_hash<I: IntoIterator<Item = (String, String)>>(m: &mut HashMap<KeyValue, String>, iter: I) {
+fn extend_hash<I: IntoIterator<Item = (String, String)>>(
+    m: &mut HashMap<KeyValue, String>,
+    iter: I,
+) {
     for (k, v) in iter {
         insert_hash(m, k, v);
     }
@@ -230,7 +231,10 @@ fn insert_range(m: &mut HashMap<KeyValue, String>, key: String, uuid: String) {
     m.insert(KeyValue::new(None, Some(key)), uuid);
 }
 
-fn extend_range<I: IntoIterator<Item = (String, String)>>(m: &mut HashMap<KeyValue, String>, iter: I) {
+fn extend_range<I: IntoIterator<Item = (String, String)>>(
+    m: &mut HashMap<KeyValue, String>,
+    iter: I,
+) {
     for (k, v) in iter {
         insert_range(m, k, v);
     }

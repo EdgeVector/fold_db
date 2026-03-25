@@ -57,12 +57,10 @@ fn generate_test_inputs() -> Vec<Value> {
 /// Compare two JSON values with float tolerance.
 fn values_equal(a: &Value, b: &Value) -> bool {
     match (a, b) {
-        (Value::Number(na), Value::Number(nb)) => {
-            match (na.as_f64(), nb.as_f64()) {
-                (Some(fa), Some(fb)) => (fa - fb).abs() < 1e-10,
-                _ => na == nb,
-            }
-        }
+        (Value::Number(na), Value::Number(nb)) => match (na.as_f64(), nb.as_f64()) {
+            (Some(fa), Some(fb)) => (fa - fb).abs() < 1e-10,
+            _ => na == nb,
+        },
         (Value::Array(aa), Value::Array(ab)) => {
             aa.len() == ab.len() && aa.iter().zip(ab.iter()).all(|(x, y)| values_equal(x, y))
         }
@@ -87,10 +85,7 @@ mod tests {
             &serde_json::json!("hello"),
             &serde_json::json!("hello")
         ));
-        assert!(!values_equal(
-            &serde_json::json!(1),
-            &serde_json::json!(2)
-        ));
+        assert!(!values_equal(&serde_json::json!(1), &serde_json::json!(2)));
     }
 
     #[test]

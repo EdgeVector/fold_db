@@ -8,10 +8,10 @@ use crate::db_operations::DbOperations;
 use crate::schema::types::declarative_schemas::FieldMapper;
 use crate::schema::types::field::base::FieldBase;
 use crate::schema::types::field::FieldValue;
+use crate::schema::types::field::WriteContext;
 use crate::schema::types::field::{
     apply_range_filter, FilterApplicator, HashRangeFilter, HashRangeFilterResult,
 };
-use crate::schema::types::field::WriteContext;
 use crate::schema::types::key_value::KeyValue;
 use crate::schema::types::SchemaError;
 
@@ -50,7 +50,6 @@ impl RangeField {
             .map(|range| range.atom_uuids.keys().cloned().collect())
             .unwrap_or_default()
     }
-
 }
 
 impl FilterApplicator for RangeField {
@@ -96,10 +95,13 @@ impl crate::schema::types::field::Field for RangeField {
             if let Some(molecule) = &mut self.base.molecule {
                 molecule.set_atom_uuid(range_key.clone(), ctx.atom.uuid().to_string());
                 // Store per-key metadata on the molecule
-                molecule.set_key_metadata(range_key.clone(), crate::atom::KeyMetadata {
-                    source_file_name: ctx.source_file_name,
-                    metadata: ctx.metadata,
-                });
+                molecule.set_key_metadata(
+                    range_key.clone(),
+                    crate::atom::KeyMetadata {
+                        source_file_name: ctx.source_file_name,
+                        metadata: ctx.metadata,
+                    },
+                );
             }
         }
     }
@@ -120,7 +122,10 @@ impl crate::schema::types::field::Field for RangeField {
             .into_iter()
             .map(|(kv, atom_uuid)| {
                 let key_meta = kv.range.as_ref().and_then(|r| {
-                    self.base.molecule.as_ref().and_then(|m| m.get_key_metadata(r).cloned())
+                    self.base
+                        .molecule
+                        .as_ref()
+                        .and_then(|m| m.get_key_metadata(r).cloned())
                 });
                 (kv, atom_uuid, key_meta)
             })

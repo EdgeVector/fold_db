@@ -62,10 +62,7 @@ const HASH_SIZE: usize = 32;
 
 impl LogEntry {
     /// Serialize, hash, encrypt.
-    pub async fn seal(
-        &self,
-        crypto: &Arc<dyn CryptoProvider>,
-    ) -> SyncResult<SealedLogEntry> {
+    pub async fn seal(&self, crypto: &Arc<dyn CryptoProvider>) -> SyncResult<SealedLogEntry> {
         let json = serde_json::to_vec(self)?;
 
         let mut hasher = Sha256::new();
@@ -82,13 +79,11 @@ impl LogEntry {
     }
 
     /// Decrypt, verify hash, deserialize.
-    pub async fn unseal(
-        sealed: &[u8],
-        crypto: &Arc<dyn CryptoProvider>,
-    ) -> SyncResult<Self> {
-        let plaintext = crypto.decrypt(sealed).await.map_err(|e| {
-            SyncError::Crypto(format!("failed to decrypt log entry: {e}"))
-        })?;
+    pub async fn unseal(sealed: &[u8], crypto: &Arc<dyn CryptoProvider>) -> SyncResult<Self> {
+        let plaintext = crypto
+            .decrypt(sealed)
+            .await
+            .map_err(|e| SyncError::Crypto(format!("failed to decrypt log entry: {e}")))?;
 
         if plaintext.len() < HASH_SIZE {
             return Err(SyncError::CorruptEntry {
@@ -123,9 +118,9 @@ impl LogOp {
 
     /// Decode base64 key back to bytes for replay.
     pub fn decode_bytes(encoded: &str) -> SyncResult<Vec<u8>> {
-        BASE64.decode(encoded).map_err(|e| {
-            SyncError::Serialization(format!("invalid base64: {e}"))
-        })
+        BASE64
+            .decode(encoded)
+            .map_err(|e| SyncError::Serialization(format!("invalid base64: {e}")))
     }
 }
 

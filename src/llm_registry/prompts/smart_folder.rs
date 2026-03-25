@@ -161,7 +161,8 @@ mod tests {
 
     #[test]
     fn smart_folder_prompt_contains_tree_and_files() {
-        let prompt = build_smart_folder_prompt("docs/\n  notes.txt", &["docs/notes.txt".to_string()]);
+        let prompt =
+            build_smart_folder_prompt("docs/\n  notes.txt", &["docs/notes.txt".to_string()]);
         assert!(prompt.contains("docs/\n  notes.txt"));
         assert!(prompt.contains("docs/notes.txt"));
         assert!(prompt.contains("personal_data"));

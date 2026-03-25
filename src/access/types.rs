@@ -112,7 +112,10 @@ impl fmt::Display for AccessDenialReason {
                 write!(f, "payment required: {:.4}", cost)
             }
             Self::TrustDistanceUnresolvable => {
-                write!(f, "trust distance could not be resolved (no path in trust graph)")
+                write!(
+                    f,
+                    "trust distance could not be resolved (no path in trust graph)"
+                )
             }
         }
     }

@@ -19,10 +19,7 @@ impl DbOperations {
     }
 
     /// Get a transform view by name.
-    pub async fn get_view(
-        &self,
-        view_name: &str,
-    ) -> Result<Option<TransformView>, SchemaError> {
+    pub async fn get_view(&self, view_name: &str) -> Result<Option<TransformView>, SchemaError> {
         use crate::storage::traits::TypedStore;
 
         Ok(self.views_store().get_item(view_name).await?)
@@ -71,11 +68,7 @@ impl DbOperations {
         let keys = self.view_states_store().list_keys_with_prefix("").await?;
         let mut states = HashMap::new();
         for key in keys {
-            if let Some(state) = self
-                .view_states_store()
-                .get_item::<ViewState>(&key)
-                .await?
-            {
+            if let Some(state) = self.view_states_store().get_item::<ViewState>(&key).await? {
                 states.insert(key, state);
             }
         }

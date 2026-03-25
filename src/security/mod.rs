@@ -20,8 +20,8 @@ pub mod utils;
 pub use keys::*;
 pub use signing::*;
 pub use types::{
-    KeyRegistrationRequest, KeyRegistrationResponse, PublicKeyInfo,
-    SignedMessage, VerificationResult,
+    KeyRegistrationRequest, KeyRegistrationResponse, PublicKeyInfo, SignedMessage,
+    VerificationResult,
 };
 pub use utils::*;
 
@@ -75,9 +75,7 @@ pub struct SecurityConfig {
 
 impl Default for SecurityConfig {
     fn default() -> Self {
-        Self {
-            require_tls: true,
-        }
+        Self { require_tls: true }
     }
 }
 

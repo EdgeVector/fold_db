@@ -64,10 +64,9 @@ impl ExememApiStore {
             .map_err(|e| StorageError::BackendError(format!("HTTP request failed: {e}")))?;
 
         let status = response.status();
-        let text = response
-            .text()
-            .await
-            .map_err(|e| StorageError::BackendError(format!("Failed to read response body: {e}")))?;
+        let text = response.text().await.map_err(|e| {
+            StorageError::BackendError(format!("Failed to read response body: {e}"))
+        })?;
 
         let json: Value = serde_json::from_str(&text).map_err(|e| {
             StorageError::BackendError(format!(
@@ -153,13 +152,9 @@ impl KvStore for ExememApiStore {
 
         let resp = self.post("exists", body).await?;
 
-        resp.get("exists")
-            .and_then(|v| v.as_bool())
-            .ok_or_else(|| {
-                StorageError::BackendError(
-                    "Missing 'exists' field in exists response".to_string(),
-                )
-            })
+        resp.get("exists").and_then(|v| v.as_bool()).ok_or_else(|| {
+            StorageError::BackendError("Missing 'exists' field in exists response".to_string())
+        })
     }
 
     async fn scan_prefix(&self, prefix: &[u8]) -> StorageResult<Vec<(Vec<u8>, Vec<u8>)>> {
@@ -181,22 +176,12 @@ impl KvStore for ExememApiStore {
 
         let mut results = Vec::with_capacity(items.len());
         for item in items {
-            let key_b64 = item
-                .get("key")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| {
-                    StorageError::BackendError(
-                        "Missing 'key' in scan-prefix item".to_string(),
-                    )
-                })?;
-            let value_b64 = item
-                .get("value")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| {
-                    StorageError::BackendError(
-                        "Missing 'value' in scan-prefix item".to_string(),
-                    )
-                })?;
+            let key_b64 = item.get("key").and_then(|v| v.as_str()).ok_or_else(|| {
+                StorageError::BackendError("Missing 'key' in scan-prefix item".to_string())
+            })?;
+            let value_b64 = item.get("value").and_then(|v| v.as_str()).ok_or_else(|| {
+                StorageError::BackendError("Missing 'value' in scan-prefix item".to_string())
+            })?;
 
             results.push((Self::decode_value(key_b64)?, Self::decode_value(value_b64)?));
         }

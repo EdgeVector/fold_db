@@ -49,10 +49,8 @@ async fn build_stack() -> (
     ));
 
     // Stack: base → syncing → encrypting
-    let syncing = SyncingNamespacedStore::new(
-        base.clone() as Arc<dyn NamespacedStore>,
-        engine.clone(),
-    );
+    let syncing =
+        SyncingNamespacedStore::new(base.clone() as Arc<dyn NamespacedStore>, engine.clone());
     let syncing_arc = Arc::new(syncing) as Arc<dyn NamespacedStore>;
 
     let encrypting = EncryptingNamespacedStore::new(syncing_arc, crypto, false);
@@ -184,11 +182,8 @@ async fn snapshot_captures_encrypted_data_and_restores() {
 
     // The restored data is encrypted (it was stored encrypted in the base store).
     // Wrap target with EncryptingNamespacedStore to decrypt and read back.
-    let target_enc = EncryptingNamespacedStore::new(
-        Arc::new(target) as Arc<dyn NamespacedStore>,
-        crypto,
-        false,
-    );
+    let target_enc =
+        EncryptingNamespacedStore::new(Arc::new(target) as Arc<dyn NamespacedStore>, crypto, false);
 
     let restored_main = target_enc.open_namespace("main").await.unwrap();
     assert_eq!(
@@ -217,9 +212,7 @@ async fn snapshot_wrong_key_fails() {
     let main = store.open_namespace("main").await.unwrap();
     main.put(b"secret", b"data".to_vec()).await.unwrap();
 
-    let snapshot = Snapshot::create(base.as_ref(), "dev-1", 1)
-        .await
-        .unwrap();
+    let snapshot = Snapshot::create(base.as_ref(), "dev-1", 1).await.unwrap();
     let sealed = snapshot.seal(&crypto).await.unwrap();
 
     // Unseal with wrong key should fail

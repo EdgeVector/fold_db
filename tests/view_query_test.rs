@@ -78,7 +78,10 @@ async fn query_identity_view_returns_source_data() {
     let query = Query::new("ContentView".to_string(), vec!["content".to_string()]);
     let results = db.query_executor.query(query).await.unwrap();
 
-    assert!(results.contains_key("content"), "View field 'content' should be in results");
+    assert!(
+        results.contains_key("content"),
+        "View field 'content' should be in results"
+    );
     let content_values = &results["content"];
     assert!(!content_values.is_empty(), "Should have at least one value");
 
@@ -201,7 +204,10 @@ async fn identity_view_write_redirects_to_source() {
     let query = Query::new("BlogPost".to_string(), vec!["content".to_string()]);
     let results = db.query_executor.query(query).await.unwrap();
     assert!(results.contains_key("content"));
-    let values: Vec<_> = results["content"].values().map(|fv| fv.value.clone()).collect();
+    let values: Vec<_> = results["content"]
+        .values()
+        .map(|fv| fv.value.clone())
+        .collect();
     assert!(
         values.contains(&json!("written via view")),
         "BlogPost.content should contain value written via view, got {:?}",
@@ -259,7 +265,10 @@ async fn identity_view_write_invalidates_view_cache() {
 
     // Re-query view — should return fresh data including the new write
     let results = db.query_executor.query(query).await.unwrap();
-    let values: Vec<_> = results["content"].values().map(|fv| fv.value.clone()).collect();
+    let values: Vec<_> = results["content"]
+        .values()
+        .map(|fv| fv.value.clone())
+        .collect();
     assert!(
         values.contains(&json!("updated via view")),
         "View should return fresh data after write-back, got {:?}",

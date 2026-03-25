@@ -318,7 +318,6 @@ impl LogConfig {
         features.insert("database".to_string(), "WARN".to_string());
         features
     }
-
 }
 
 /// Configuration errors

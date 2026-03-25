@@ -46,7 +46,11 @@ impl DynamoDbNativeIndexStore {
     /// Get partition key (feature) for native index
     /// Format: user_id:feature
     fn get_partition_key(&self, feature: &str) -> StorageResult<String> {
-        Ok(format!("{}:{}", super::dynamodb_utils::require_user_context()?, feature))
+        Ok(format!(
+            "{}:{}",
+            super::dynamodb_utils::require_user_context()?,
+            feature
+        ))
     }
 }
 

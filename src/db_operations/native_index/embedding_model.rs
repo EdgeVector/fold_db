@@ -15,7 +15,9 @@ pub struct FastEmbedModel {
 
 impl Default for FastEmbedModel {
     fn default() -> Self {
-        Self { model: OnceCell::new() }
+        Self {
+            model: OnceCell::new(),
+        }
     }
 }
 
@@ -28,8 +30,9 @@ impl FastEmbedModel {
 impl Embedder for FastEmbedModel {
     fn embed_text(&self, text: &str) -> Result<Vec<f32>, SchemaError> {
         let model = self.model.get_or_try_init(|| {
-            TextEmbedding::try_new(InitOptions::new(EmbeddingModel::AllMiniLML6V2))
-                .map_err(|e| SchemaError::InvalidData(format!("Failed to init embedding model: {}", e)))
+            TextEmbedding::try_new(InitOptions::new(EmbeddingModel::AllMiniLML6V2)).map_err(|e| {
+                SchemaError::InvalidData(format!("Failed to init embedding model: {}", e))
+            })
         })?;
 
         let mut results = model
@@ -124,7 +127,11 @@ impl Embedder for MockEmbeddingModel {
         // Spread energy across 4 dimensions derived from the hash
         for i in 0..4 {
             let idx = ((hash >> (i * 16)) & 0xFF) as usize % 384;
-            let sign = if (hash >> (i * 8 + 4)) & 1 == 0 { 1.0 } else { -1.0 };
+            let sign = if (hash >> (i * 8 + 4)) & 1 == 0 {
+                1.0
+            } else {
+                -1.0
+            };
             vec[idx] += sign * (4.0 - i as f32); // decreasing weight
         }
         let norm: f32 = vec.iter().map(|x| x * x).sum::<f32>().sqrt();

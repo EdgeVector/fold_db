@@ -20,10 +20,7 @@ impl PaymentGate {
     pub fn cost(&self, trust_distance: u64) -> f64 {
         let tau = trust_distance as f64;
         match self {
-            PaymentGate::Linear {
-                base,
-                per_distance,
-            } => base + per_distance * tau,
+            PaymentGate::Linear { base, per_distance } => base + per_distance * tau,
             PaymentGate::Exponential { base, growth } => base * (growth * tau).exp(),
             PaymentGate::Fixed(cost) => *cost,
         }

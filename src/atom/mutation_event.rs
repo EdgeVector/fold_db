@@ -50,7 +50,9 @@ mod tests {
     #[test]
     fn test_field_key_variants() {
         let single = FieldKey::Single;
-        let range = FieldKey::Range { range: "key1".to_string() };
+        let range = FieldKey::Range {
+            range: "key1".to_string(),
+        };
         let hash_range = FieldKey::HashRange {
             hash: "h1".to_string(),
             range: "r1".to_string(),

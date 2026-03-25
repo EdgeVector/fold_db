@@ -19,9 +19,7 @@ pub struct EventMonitor {
 
 impl EventMonitor {
     /// Create a new EventMonitor that subscribes to all event types
-    pub async fn new(
-        message_bus: Arc<AsyncMessageBus>,
-    ) -> Self {
+    pub async fn new(message_bus: Arc<AsyncMessageBus>) -> Self {
         let statistics = Arc::new(Mutex::new(EventStatistics {
             monitoring_start_time: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -38,7 +36,10 @@ impl EventMonitor {
         tokio::spawn(async move {
             while let Some(event) = rx.recv().await {
                 if let Event::FieldValueSet(_) = event {
-                    stats.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).increment_field_value_sets();
+                    stats
+                        .lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner())
+                        .increment_field_value_sets();
                 }
             }
         });
@@ -49,7 +50,10 @@ impl EventMonitor {
         tokio::spawn(async move {
             while let Some(event) = rx.recv().await {
                 if let Event::AtomCreated(_) = event {
-                    stats.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).increment_atom_creations();
+                    stats
+                        .lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner())
+                        .increment_atom_creations();
                 }
             }
         });
@@ -60,7 +64,10 @@ impl EventMonitor {
         tokio::spawn(async move {
             while let Some(event) = rx.recv().await {
                 if let Event::MoleculeCreated(_) = event {
-                    stats.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).increment_molecule_creations();
+                    stats
+                        .lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner())
+                        .increment_molecule_creations();
                 }
             }
         });
@@ -71,12 +78,15 @@ impl EventMonitor {
         tokio::spawn(async move {
             while let Some(event) = rx.recv().await {
                 if let Event::QueryExecuted(e) = event {
-                    stats.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).increment_query_executions(
-                        &e.schema,
-                        &e.query_type,
-                        e.execution_time_ms,
-                        e.result_count,
-                    );
+                    stats
+                        .lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner())
+                        .increment_query_executions(
+                            &e.schema,
+                            &e.query_type,
+                            e.execution_time_ms,
+                            e.result_count,
+                        );
                 }
             }
         });
@@ -87,14 +97,15 @@ impl EventMonitor {
         tokio::spawn(async move {
             while let Some(event) = rx.recv().await {
                 if let Event::MutationExecuted(e) = event {
-                    stats.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).increment_mutation_executions(&e);
+                    stats
+                        .lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner())
+                        .increment_mutation_executions(&e);
                 }
             }
         });
 
-        Self {
-            statistics,
-        }
+        Self { statistics }
     }
 
     /// Get current event statistics
@@ -139,10 +150,7 @@ mod tests {
         let bus = AsyncMessageBus::new();
         let bus_arc = Arc::new(bus);
 
-        let monitor = EventMonitor::new(
-            Arc::clone(&bus_arc),
-        )
-        .await;
+        let monitor = EventMonitor::new(Arc::clone(&bus_arc)).await;
 
         // Publish various events
         bus_arc

@@ -182,7 +182,10 @@ mod tests {
             SchemaType::Single,
             None,
             vec![
-                Query::new("BlogPost".to_string(), vec!["title".to_string(), "content".to_string()]),
+                Query::new(
+                    "BlogPost".to_string(),
+                    vec!["title".to_string(), "content".to_string()],
+                ),
                 Query::new("Author".to_string(), vec!["name".to_string()]),
             ],
             None,
@@ -201,13 +204,21 @@ mod tests {
     #[test]
     fn test_is_identity() {
         let identity = TransformView::new(
-            "id_view", SchemaType::Single, None, vec![], None,
+            "id_view",
+            SchemaType::Single,
+            None,
+            vec![],
+            None,
             HashMap::new(),
         );
         assert!(identity.is_identity());
 
         let wasm_view = TransformView::new(
-            "wasm_view", SchemaType::Single, None, vec![], Some(vec![0, 1, 2]),
+            "wasm_view",
+            SchemaType::Single,
+            None,
+            vec![],
+            Some(vec![0, 1, 2]),
             HashMap::new(),
         );
         assert!(!wasm_view.is_identity());

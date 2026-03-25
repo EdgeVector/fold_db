@@ -2,7 +2,6 @@ use serde::{Deserialize, Serialize};
 use std::cmp::Reverse;
 use std::collections::{BinaryHeap, HashMap};
 
-
 /// Directed weighted graph for trust distance resolution.
 ///
 /// Each edge (A → B, d) means "A trusts B at distance d."
@@ -116,10 +115,7 @@ impl TrustGraph {
 
     /// List all trust assignments originating from `owner`.
     pub fn assignments_from(&self, owner: &str) -> Vec<(String, u64)> {
-        self.adjacency
-            .get(owner)
-            .cloned()
-            .unwrap_or_default()
+        self.adjacency.get(owner).cloned().unwrap_or_default()
     }
 
     /// List all overrides for `owner`.

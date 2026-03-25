@@ -149,7 +149,6 @@ impl Atom {
     pub const fn created_at(&self) -> DateTime<Utc> {
         self.created_at
     }
-
 }
 
 #[cfg(test)]

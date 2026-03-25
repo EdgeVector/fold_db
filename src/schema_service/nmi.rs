@@ -69,7 +69,10 @@ pub fn estimate_nmi_matrix(
     sample_count: u32,
 ) -> FoldDbResult<HashMap<String, HashMap<String, f32>>> {
     let engine = WasmTransformEngine::new().map_err(|e| {
-        FoldDbError::Config(format!("Failed to create WASM engine for NMI estimation: {}", e))
+        FoldDbError::Config(format!(
+            "Failed to create WASM engine for NMI estimation: {}",
+            e
+        ))
     })?;
 
     let mut nmi_matrix: HashMap<String, HashMap<String, f32>> = HashMap::new();
@@ -85,10 +88,7 @@ pub fn estimate_nmi_matrix(
 
         for sample_val in samples.iter().take(sample_count as usize) {
             // Build input with this field varied, others at baseline
-            let mut input = baseline
-                .as_object()
-                .cloned()
-                .unwrap_or_default();
+            let mut input = baseline.as_object().cloned().unwrap_or_default();
             input.insert(input_field.clone(), sample_val.clone());
 
             let input_json = serde_json::json!({ "inputs": { "data": input } });

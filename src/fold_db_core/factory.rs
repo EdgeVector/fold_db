@@ -27,24 +27,21 @@ pub async fn create_fold_db(
     e2e_keys: &E2eKeys,
 ) -> FoldDbResult<Arc<Mutex<FoldDB>>> {
     match config {
-        DatabaseConfig::Local { path } => {
-            create_local_fold_db(path, e2e_keys, None).await
-        }
+        DatabaseConfig::Local { path } => create_local_fold_db(path, e2e_keys, None).await,
         DatabaseConfig::Exemem { api_url, api_key } => {
             // Exemem mode: local Sled + S3 sync via the Exemem platform.
             // The sync auth Lambda shares the same API URL and API key.
             let path = std::path::PathBuf::from(
                 std::env::var("FOLD_STORAGE_PATH").unwrap_or_else(|_| "data".to_string()),
             );
-            let data_dir = path.to_str()
+            let data_dir = path
+                .to_str()
                 .ok_or_else(|| FoldDbError::Config("Invalid storage path".to_string()))?;
             let sync_setup = SyncSetup::from_exemem(api_url, api_key, data_dir);
             create_local_fold_db(&path, e2e_keys, Some(sync_setup)).await
         }
         #[cfg(feature = "aws-backend")]
-        DatabaseConfig::Cloud(cloud_config) => {
-            create_cloud_fold_db(cloud_config, e2e_keys).await
-        }
+        DatabaseConfig::Cloud(cloud_config) => create_cloud_fold_db(cloud_config, e2e_keys).await,
     }
 }
 
@@ -90,11 +87,7 @@ async fn create_local_fold_db(
         );
         let http = Arc::new(reqwest::Client::new());
         let s3 = crate::sync::s3::S3Client::new(http.clone());
-        let auth = crate::sync::auth::AuthClient::new(
-            http,
-            setup.auth_url,
-            setup.auth,
-        );
+        let auth = crate::sync::auth::AuthClient::new(http, setup.auth_url, setup.auth);
 
         let engine = Arc::new(crate::sync::SyncEngine::new(
             setup.device_id,
@@ -106,33 +99,21 @@ async fn create_local_fold_db(
         ));
 
         // Sled → SyncingNamespacedStore → EncryptingNamespacedStore
-        let syncing_store = crate::storage::SyncingNamespacedStore::new(
-            base_store,
-            engine.clone(),
-        );
-        let mid_store: Arc<dyn crate::storage::traits::NamespacedStore> =
-            Arc::new(syncing_store);
+        let syncing_store = crate::storage::SyncingNamespacedStore::new(base_store, engine.clone());
+        let mid_store: Arc<dyn crate::storage::traits::NamespacedStore> = Arc::new(syncing_store);
 
-        let crypto = Arc::new(
-            crate::crypto::LocalCryptoProvider::from_key(e2e_keys.encryption_key()),
-        );
-        let enc_store = crate::storage::EncryptingNamespacedStore::new(
-            mid_store,
-            crypto,
-            true,
-        );
+        let crypto = Arc::new(crate::crypto::LocalCryptoProvider::from_key(
+            e2e_keys.encryption_key(),
+        ));
+        let enc_store = crate::storage::EncryptingNamespacedStore::new(mid_store, crypto, true);
 
         (Arc::new(enc_store), Some(engine), interval_ms)
     } else {
         // No sync — Sled → EncryptingNamespacedStore
-        let crypto = Arc::new(
-            crate::crypto::LocalCryptoProvider::from_key(e2e_keys.encryption_key()),
-        );
-        let enc_store = crate::storage::EncryptingNamespacedStore::new(
-            base_store,
-            crypto,
-            true,
-        );
+        let crypto = Arc::new(crate::crypto::LocalCryptoProvider::from_key(
+            e2e_keys.encryption_key(),
+        ));
+        let enc_store = crate::storage::EncryptingNamespacedStore::new(base_store, crypto, true);
         (Arc::new(enc_store), None, 0)
     };
 
@@ -209,9 +190,10 @@ async fn create_cloud_fold_db(
 
     let resolver = TableNameResolver::Explicit(map);
 
-    let user_id = cloud_config.user_id.clone().ok_or_else(|| {
-        FoldDbError::Config("Missing user_id for Cloud config".to_string())
-    })?;
+    let user_id = cloud_config
+        .user_id
+        .clone()
+        .ok_or_else(|| FoldDbError::Config("Missing user_id for Cloud config".to_string()))?;
 
     let base_store: Arc<dyn crate::storage::traits::NamespacedStore> =
         Arc::new(crate::storage::CloudNamespacedStore::new(
@@ -220,16 +202,11 @@ async fn create_cloud_fold_db(
             cloud_config.auto_create,
         ));
 
-    let e2e_crypto = Arc::new(
-        crate::crypto::LocalCryptoProvider::from_key(e2e_keys.encryption_key()),
-    );
-    let e2e_store = crate::storage::EncryptingNamespacedStore::new(
-        base_store,
-        e2e_crypto,
-        true,
-    );
-    let final_store =
-        Arc::new(e2e_store) as Arc<dyn crate::storage::traits::NamespacedStore>;
+    let e2e_crypto = Arc::new(crate::crypto::LocalCryptoProvider::from_key(
+        e2e_keys.encryption_key(),
+    ));
+    let e2e_store = crate::storage::EncryptingNamespacedStore::new(base_store, e2e_crypto, true);
+    let final_store = Arc::new(e2e_store) as Arc<dyn crate::storage::traits::NamespacedStore>;
 
     let db_ops = Arc::new(
         DbOperations::from_namespaced_store(final_store)

@@ -83,8 +83,7 @@ pub const QUERY_ANALYSIS_PREAMBLE: &str =
     "You are a database query optimizer. Analyze the following natural language query and available schemas to create an execution plan.\n\n";
 
 /// System preamble for result summarization.
-pub const SUMMARIZATION_PREAMBLE: &str =
-    "Summarize the following query results for the user.\n\n";
+pub const SUMMARIZATION_PREAMBLE: &str = "Summarize the following query results for the user.\n\n";
 
 /// System preamble for chat follow-up answers.
 pub const CHAT_PREAMBLE: &str =
@@ -135,8 +134,7 @@ pub const AGENT_SYSTEM_PREAMBLE: &str =
     "You are a helpful database assistant with access to tools. Use the tools to query and manipulate data to answer the user's question.\n\n";
 
 /// Agent response format instruction.
-pub const AGENT_RESPONSE_FORMAT: &str =
-    "IMPORTANT: Always respond with valid JSON. Either:\n\
+pub const AGENT_RESPONSE_FORMAT: &str = "IMPORTANT: Always respond with valid JSON. Either:\n\
     - {\"tool\": \"tool_name\", \"params\": {...}} to call a tool\n\
     - {\"answer\": \"your response\"} to provide the final answer\n";
 
@@ -146,9 +144,21 @@ mod tests {
 
     #[test]
     fn filter_types_lists_all_filters() {
-        for filter in &["HashRangeKey", "HashKey", "HashRangePrefix", "HashPattern",
-                        "RangePrefix", "RangePattern", "RangeRange", "SampleN"] {
-            assert!(FILTER_TYPES_INSTRUCTION.contains(filter), "Missing filter: {}", filter);
+        for filter in &[
+            "HashRangeKey",
+            "HashKey",
+            "HashRangePrefix",
+            "HashPattern",
+            "RangePrefix",
+            "RangePattern",
+            "RangeRange",
+            "SampleN",
+        ] {
+            assert!(
+                FILTER_TYPES_INSTRUCTION.contains(filter),
+                "Missing filter: {}",
+                filter
+            );
         }
     }
 

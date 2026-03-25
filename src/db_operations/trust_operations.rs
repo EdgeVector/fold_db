@@ -10,7 +10,11 @@ const AUDIT_LOG_KEY: &str = "audit_log";
 impl DbOperations {
     /// Load the trust graph from storage. Returns empty graph if none stored.
     pub async fn load_trust_graph(&self) -> Result<TrustGraph, SchemaError> {
-        match self.permissions_store().get_item::<TrustGraph>(TRUST_GRAPH_KEY).await {
+        match self
+            .permissions_store()
+            .get_item::<TrustGraph>(TRUST_GRAPH_KEY)
+            .await
+        {
             Ok(Some(graph)) => Ok(graph),
             Ok(None) => Ok(TrustGraph::new()),
             Err(e) => Err(SchemaError::InvalidData(format!(
@@ -30,7 +34,11 @@ impl DbOperations {
 
     /// Load the audit log from storage. Returns empty log if none stored.
     pub async fn load_audit_log(&self) -> Result<AuditLog, SchemaError> {
-        match self.permissions_store().get_item::<AuditLog>(AUDIT_LOG_KEY).await {
+        match self
+            .permissions_store()
+            .get_item::<AuditLog>(AUDIT_LOG_KEY)
+            .await
+        {
             Ok(Some(log)) => Ok(log),
             Ok(None) => Ok(AuditLog::new()),
             Err(e) => Err(SchemaError::InvalidData(format!(

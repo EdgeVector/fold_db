@@ -37,9 +37,7 @@ impl DbOperations {
             .permissions_store()
             .scan_items_with_prefix(&prefix)
             .await
-            .map_err(|e| {
-                SchemaError::InvalidData(format!("Failed to load capabilities: {}", e))
-            })?;
+            .map_err(|e| SchemaError::InvalidData(format!("Failed to load capabilities: {}", e)))?;
         Ok(items.into_iter().map(|(_, c)| c).collect())
     }
 
@@ -73,11 +71,10 @@ impl DbOperations {
             "{}{}:{}:{}:{:?}",
             CAPABILITIES_PREFIX, schema_name, field_name, public_key, kind
         );
-        let cap: Option<CapabilityConstraint> = self
-            .permissions_store()
-            .get_item(&key)
-            .await
-            .map_err(|e| SchemaError::InvalidData(format!("Failed to load capability: {}", e)))?;
+        let cap: Option<CapabilityConstraint> =
+            self.permissions_store().get_item(&key).await.map_err(|e| {
+                SchemaError::InvalidData(format!("Failed to load capability: {}", e))
+            })?;
 
         match cap {
             Some(mut c) => {
@@ -128,8 +125,6 @@ impl DbOperations {
         self.permissions_store()
             .delete_item(&key)
             .await
-            .map_err(|e| {
-                SchemaError::InvalidData(format!("Failed to delete payment gate: {}", e))
-            })
+            .map_err(|e| SchemaError::InvalidData(format!("Failed to delete payment gate: {}", e)))
     }
 }

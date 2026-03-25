@@ -28,5 +28,4 @@ impl KeyConfig {
             range_field,
         }
     }
-
 }

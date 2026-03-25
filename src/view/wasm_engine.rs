@@ -62,15 +62,13 @@ impl WasmTransformEngine {
         let linker = Linker::new(&self.engine);
         let mut store = Store::new(&self.engine, ());
 
-        let instance = linker
-            .instantiate(&mut store, &module)
-            .map_err(|e| SchemaError::InvalidTransform(format!("WASM instantiation failed: {e}")))?;
+        let instance = linker.instantiate(&mut store, &module).map_err(|e| {
+            SchemaError::InvalidTransform(format!("WASM instantiation failed: {e}"))
+        })?;
 
-        let memory = instance
-            .get_memory(&mut store, "memory")
-            .ok_or_else(|| {
-                SchemaError::InvalidTransform("WASM module must export 'memory'".to_string())
-            })?;
+        let memory = instance.get_memory(&mut store, "memory").ok_or_else(|| {
+            SchemaError::InvalidTransform("WASM module must export 'memory'".to_string())
+        })?;
 
         let alloc_fn = instance
             .get_typed_func::<i32, i32>(&mut store, "alloc")
@@ -91,9 +89,7 @@ impl WasmTransformEngine {
 
         let input_ptr = alloc_fn
             .call(&mut store, input_bytes.len() as i32)
-            .map_err(|e| {
-                SchemaError::InvalidTransform(format!("WASM alloc failed: {e}"))
-            })?;
+            .map_err(|e| SchemaError::InvalidTransform(format!("WASM alloc failed: {e}")))?;
 
         memory.data_mut(&mut store)[input_ptr as usize..input_ptr as usize + input_bytes.len()]
             .copy_from_slice(&input_bytes);

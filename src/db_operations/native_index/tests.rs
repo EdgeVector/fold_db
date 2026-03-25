@@ -1,5 +1,5 @@
-use super::*;
 use super::embedding_model::MockEmbeddingModel;
+use super::*;
 use crate::schema::types::key_value::KeyValue;
 use crate::storage::{NamespacedStore, SledNamespacedStore};
 use std::sync::Arc;
@@ -63,7 +63,8 @@ async fn test_index_record_produces_one_result_per_field() {
     let results = mgr.search_all_classifications("blog").await.unwrap();
     // One IndexResult per field in the matched document
     assert_eq!(results.len(), 3);
-    let field_names: std::collections::HashSet<_> = results.iter().map(|r| r.field.as_str()).collect();
+    let field_names: std::collections::HashSet<_> =
+        results.iter().map(|r| r.field.as_str()).collect();
     assert!(field_names.contains("title"));
     assert!(field_names.contains("body"));
     assert!(field_names.contains("author"));
@@ -74,9 +75,7 @@ async fn test_upsert_replaces_existing_entry() {
     let mgr = make_manager().await;
     let key = KeyValue::new(Some("rec1".to_string()), None);
 
-    let v1 = std::collections::HashMap::from([
-        ("name".to_string(), serde_json::json!("Alice")),
-    ]);
+    let v1 = std::collections::HashMap::from([("name".to_string(), serde_json::json!("Alice"))]);
     let v2 = std::collections::HashMap::from([
         ("name".to_string(), serde_json::json!("Alice")),
         ("role".to_string(), serde_json::json!("admin")),
@@ -96,9 +95,8 @@ async fn test_results_contain_metadata_with_score() {
     let mgr = make_manager().await;
 
     let key = KeyValue::new(Some("rec1".to_string()), None);
-    let fields = std::collections::HashMap::from([
-        ("text".to_string(), serde_json::json!("some text")),
-    ]);
+    let fields =
+        std::collections::HashMap::from([("text".to_string(), serde_json::json!("some text"))]);
     mgr.index_record("Schema", &key, &fields).await.unwrap();
 
     let results = mgr.search_all_classifications("some text").await.unwrap();
@@ -117,9 +115,8 @@ async fn test_restore_from_store_loads_existing_embeddings() {
     // Index a record with manager 1
     let mgr1 = NativeIndexManager::with_model(kv.clone(), Arc::new(MockEmbeddingModel));
     let key = KeyValue::new(Some("rec1".to_string()), None);
-    let fields = std::collections::HashMap::from([
-        ("field".to_string(), serde_json::json!("value")),
-    ]);
+    let fields =
+        std::collections::HashMap::from([("field".to_string(), serde_json::json!("value"))]);
     mgr1.index_record("S", &key, &fields).await.unwrap();
 
     // Create manager 2 with same store, restore from store

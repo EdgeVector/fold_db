@@ -57,7 +57,10 @@ impl DbOperations {
             })
             .collect();
 
-        log::info!("💾 Batch storing {} atoms to DynamoDB (after dedup)", items.len());
+        log::info!(
+            "💾 Batch storing {} atoms to DynamoDB (after dedup)",
+            items.len()
+        );
 
         self.atoms_store()
             .batch_put_items(items)
@@ -89,16 +92,18 @@ impl DbOperations {
             .filter_map(|(uuid, mol_data)| {
                 let ref_key = format!("ref:{}", uuid);
                 if seen_keys.insert(ref_key.clone()) {
-                    let value = match mol_data {
-                        MoleculeData::Single(mol) => serde_json::to_value(mol)
-                            .expect("Molecule is always serializable"),
-                        MoleculeData::Hash(mol) => serde_json::to_value(mol)
-                            .expect("MoleculeHash is always serializable"),
-                        MoleculeData::Range(mol) => serde_json::to_value(mol)
-                            .expect("MoleculeRange is always serializable"),
-                        MoleculeData::HashRange(mol) => serde_json::to_value(mol)
-                            .expect("MoleculeHashRange is always serializable"),
-                    };
+                    let value =
+                        match mol_data {
+                            MoleculeData::Single(mol) => {
+                                serde_json::to_value(mol).expect("Molecule is always serializable")
+                            }
+                            MoleculeData::Hash(mol) => serde_json::to_value(mol)
+                                .expect("MoleculeHash is always serializable"),
+                            MoleculeData::Range(mol) => serde_json::to_value(mol)
+                                .expect("MoleculeRange is always serializable"),
+                            MoleculeData::HashRange(mol) => serde_json::to_value(mol)
+                                .expect("MoleculeHashRange is always serializable"),
+                        };
                     Some((ref_key, value))
                 } else {
                     None // Skip duplicate keys
@@ -106,7 +111,10 @@ impl DbOperations {
             })
             .collect();
 
-        log::info!("💾 Batch storing {} molecules to DynamoDB (after dedup)", items.len());
+        log::info!(
+            "💾 Batch storing {} molecules to DynamoDB (after dedup)",
+            items.len()
+        );
 
         self.molecules_store()
             .batch_put_items(items)
@@ -202,7 +210,9 @@ impl DbOperations {
         self.atoms_store()
             .batch_put_items(items)
             .await
-            .map_err(|e| SchemaError::InvalidData(format!("Failed to store mutation events: {}", e)))
+            .map_err(|e| {
+                SchemaError::InvalidData(format!("Failed to store mutation events: {}", e))
+            })
     }
 
     /// Load all mutation events for a molecule, sorted chronologically.
@@ -215,7 +225,9 @@ impl DbOperations {
             .atoms_store()
             .scan_items_with_prefix(&prefix)
             .await
-            .map_err(|e| SchemaError::InvalidData(format!("Failed to load mutation events: {}", e)))?;
+            .map_err(|e| {
+                SchemaError::InvalidData(format!("Failed to load mutation events: {}", e))
+            })?;
 
         // Items from scan_prefix are already in lexicographic order (= chronological due to zero-padding)
         let events: Vec<MutationEvent> = items.into_iter().map(|(_, e)| e).collect();

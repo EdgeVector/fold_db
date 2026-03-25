@@ -8,8 +8,8 @@ use crate::db_operations::DbOperations;
 use crate::schema::types::declarative_schemas::FieldMapper;
 use crate::schema::types::field::base::FieldBase;
 use crate::schema::types::field::FieldValue;
-use crate::schema::types::field::{FilterApplicator, HashRangeFilter, HashRangeFilterResult};
 use crate::schema::types::field::WriteContext;
+use crate::schema::types::field::{FilterApplicator, HashRangeFilter, HashRangeFilterResult};
 use crate::schema::types::key_value::KeyValue;
 use crate::schema::types::SchemaError;
 // Removed unused JsonValue import
@@ -51,7 +51,8 @@ impl crate::schema::types::field::Field for SingleField {
     ) {
         // Initialize molecule if needed and set molecule_uuid in FieldCommon
         if self.base.molecule.is_none() {
-            let new_molecule = crate::atom::Molecule::new(ctx.atom.uuid().to_string(), ctx.pub_key.clone());
+            let new_molecule =
+                crate::atom::Molecule::new(ctx.atom.uuid().to_string(), ctx.pub_key.clone());
             // Get the molecule's UUID and set it in FieldCommon for persistence lookup
             self.base
                 .inner

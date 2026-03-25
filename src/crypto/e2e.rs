@@ -42,9 +42,9 @@ impl E2eKeys {
     /// file does not exist. Then derive both E2E keys via [`from_secret`].
     pub async fn load_or_generate(key_path: &Path) -> CryptoResult<Self> {
         let secret = if key_path.exists() {
-            let bytes = fs::read(key_path)
-                .await
-                .map_err(|e| CryptoError::KeyError(format!("Failed to read E2E key file: {}", e)))?;
+            let bytes = fs::read(key_path).await.map_err(|e| {
+                CryptoError::KeyError(format!("Failed to read E2E key file: {}", e))
+            })?;
 
             if bytes.len() != 32 {
                 return Err(CryptoError::KeyError(format!(
@@ -67,9 +67,9 @@ impl E2eKeys {
                 })?;
             }
 
-            fs::write(key_path, &secret)
-                .await
-                .map_err(|e| CryptoError::KeyError(format!("Failed to write E2E key file: {}", e)))?;
+            fs::write(key_path, &secret).await.map_err(|e| {
+                CryptoError::KeyError(format!("Failed to write E2E key file: {}", e))
+            })?;
 
             // Restrict key file permissions to owner-only (Unix)
             #[cfg(unix)]
@@ -77,20 +77,12 @@ impl E2eKeys {
                 use std::os::unix::fs::PermissionsExt;
                 let perms = std::fs::Permissions::from_mode(0o600);
                 std::fs::set_permissions(key_path, perms).map_err(|e| {
-                    CryptoError::KeyError(format!(
-                        "Failed to set E2E key file permissions: {}",
-                        e
-                    ))
+                    CryptoError::KeyError(format!("Failed to set E2E key file permissions: {}", e))
                 })?;
             }
 
-            log::info!(
-                "Generated new E2E key at {}",
-                key_path.display()
-            );
-            log::warn!(
-                "Back up your E2E key! Without it, encrypted data cannot be recovered."
-            );
+            log::info!("Generated new E2E key at {}", key_path.display());
+            log::warn!("Back up your E2E key! Without it, encrypted data cannot be recovered.");
 
             secret
         };

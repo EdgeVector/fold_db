@@ -38,9 +38,7 @@ impl CloudConfig {
 
         let table_prefix = env::var("FOLD_DYNAMODB_TABLE_PREFIX")
             .or_else(|_| env::var("FOLD_DYNAMODB_TABLE")) // Backward compatibility
-            .map_err(|_| {
-                ConfigError::MissingVariable("FOLD_DYNAMODB_TABLE_PREFIX".to_string())
-            })?;
+            .map_err(|_| ConfigError::MissingVariable("FOLD_DYNAMODB_TABLE_PREFIX".to_string()))?;
 
         // Generate explicit table names from prefix
         let tables = ExplicitTables::from_prefix(&table_prefix);

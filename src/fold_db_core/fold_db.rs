@@ -80,7 +80,8 @@ impl FoldDB {
             log::warn!("sync flush on shutdown failed: {e}");
         }
         self.flush().await?;
-        self.close().map_err(|e| StorageError::IoError(std::io::Error::other(e.to_string())))
+        self.close()
+            .map_err(|e| StorageError::IoError(std::io::Error::other(e.to_string())))
     }
 
     /// Set the sync engine (called by the factory when sync is configured).
@@ -212,12 +213,7 @@ impl FoldDB {
         );
 
         // Create and start EventMonitor for system-wide observability
-        let event_monitor = Arc::new(
-            EventMonitor::new(
-                Arc::clone(&message_bus),
-            )
-            .await,
-        );
+        let event_monitor = Arc::new(EventMonitor::new(Arc::clone(&message_bus)).await);
         info!("Started EventMonitor for system-wide event tracking");
 
         // Create QueryExecutor for handling all query operations

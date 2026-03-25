@@ -1,6 +1,6 @@
 use super::error::{StorageError, StorageResult};
-use super::traits::{KvStore, NamespacedStore};
 use super::exemem_api_store::{ExememApiStore, ExememAuth};
+use super::traits::{KvStore, NamespacedStore};
 use async_trait::async_trait;
 use reqwest::Client;
 use std::sync::Arc;

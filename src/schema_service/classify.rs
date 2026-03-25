@@ -33,7 +33,9 @@ pub async fn classify_with_llm(
     let prompt = build_classification_prompt(field_name, description);
 
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(models::TIMEOUT_CLASSIFICATION))
+        .timeout(std::time::Duration::from_secs(
+            models::TIMEOUT_CLASSIFICATION,
+        ))
         .no_proxy()
         .build()
         .map_err(|e| format!("Failed to create HTTP client for classification: {}", e))?;
@@ -68,10 +70,12 @@ pub async fn classify_with_llm(
         ));
     }
 
-    let resp: serde_json::Value = response
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse LLM response for field '{}': {}", field_name, e))?;
+    let resp: serde_json::Value = response.json().await.map_err(|e| {
+        format!(
+            "Failed to parse LLM response for field '{}': {}",
+            field_name, e
+        )
+    })?;
 
     let text = resp
         .get("content")

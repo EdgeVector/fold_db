@@ -7,10 +7,7 @@ impl DbOperations {
     pub async fn get_schema(&self, schema_name: &str) -> Result<Option<Schema>, SchemaError> {
         use crate::storage::traits::TypedStore;
 
-        let mut schema_opt: Option<Schema> = self
-            .schemas_store()
-            .get_item(schema_name)
-            .await?;
+        let mut schema_opt: Option<Schema> = self.schemas_store().get_item(schema_name).await?;
 
         // Populate runtime_fields if schema exists
         if let Some(schema) = &mut schema_opt {
@@ -51,7 +48,9 @@ impl DbOperations {
     ) -> Result<(), SchemaError> {
         use crate::storage::traits::TypedStore;
 
-        self.schema_states_store().put_item(schema_name, state).await?;
+        self.schema_states_store()
+            .put_item(schema_name, state)
+            .await?;
         self.schema_states_store().inner().flush().await?;
         Ok(())
     }
@@ -64,12 +63,7 @@ impl DbOperations {
 
         let mut schemas = HashMap::new();
         for key in keys {
-            if let Some(mut schema) = self
-                .schemas_store()
-                .get_item::<Schema>(&key)
-                .await
-                ?
-            {
+            if let Some(mut schema) = self.schemas_store().get_item::<Schema>(&key).await? {
                 schema.populate_runtime_fields()?;
                 schemas.insert(key, schema);
             }
@@ -97,18 +91,11 @@ impl DbOperations {
     pub async fn get_all_superseded_by(&self) -> Result<HashMap<String, String>, SchemaError> {
         use crate::storage::traits::TypedStore;
 
-        let keys = self
-            .superseded_by_store()
-            .list_keys_with_prefix("")
-            .await?;
+        let keys = self.superseded_by_store().list_keys_with_prefix("").await?;
 
         let mut mappings = HashMap::new();
         for key in keys {
-            if let Some(new_name) = self
-                .superseded_by_store()
-                .get_item::<String>(&key)
-                .await?
-            {
+            if let Some(new_name) = self.superseded_by_store().get_item::<String>(&key).await? {
                 mappings.insert(key, new_name);
             }
         }
@@ -127,8 +114,7 @@ impl DbOperations {
             if let Some(state) = self
                 .schema_states_store()
                 .get_item::<SchemaState>(&key)
-                .await
-                ?
+                .await?
             {
                 states.insert(key, state);
             }
@@ -136,5 +122,4 @@ impl DbOperations {
 
         Ok(states)
     }
-
 }

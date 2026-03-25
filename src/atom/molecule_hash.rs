@@ -155,11 +155,17 @@ mod tests {
             },
         );
         assert_eq!(
-            mol.get_key_metadata("photo_a").unwrap().source_file_name.as_deref(),
+            mol.get_key_metadata("photo_a")
+                .unwrap()
+                .source_file_name
+                .as_deref(),
             Some("beach.jpg")
         );
         assert_eq!(
-            mol.get_key_metadata("photo_b").unwrap().source_file_name.as_deref(),
+            mol.get_key_metadata("photo_b")
+                .unwrap()
+                .source_file_name
+                .as_deref(),
             Some("sunset.jpg")
         );
         // But both point to the same atom
@@ -184,7 +190,11 @@ mod tests {
         let meta = deser.get_key_metadata("k1").unwrap();
         assert_eq!(meta.source_file_name.as_deref(), Some("test.txt"));
         assert_eq!(
-            meta.metadata.as_ref().unwrap().get("file_hash").map(|s| s.as_str()),
+            meta.metadata
+                .as_ref()
+                .unwrap()
+                .get("file_hash")
+                .map(|s| s.as_str()),
             Some("abc123")
         );
     }
