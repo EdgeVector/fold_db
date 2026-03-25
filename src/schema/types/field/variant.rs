@@ -7,7 +7,7 @@ use std::sync::Arc;
 use crate::atom::{FieldKey, MutationEvent};
 use crate::db_operations::DbOperations;
 use crate::schema::types::field::{
-    fetch_atoms_for_matches_async, Field, FieldCommon, FilterApplicator, HashField,
+    Field, FieldCommon, FilterApplicator, HashField,
     HashRangeField, HashRangeFilter, RangeField, SingleField, WriteContext,
 };
 use crate::schema::types::key_value::KeyValue;
@@ -101,14 +101,44 @@ impl Field for FieldVariant {
             self.rewind_to(db_ops, as_of).await?;
         }
 
-        // Fetch actual atom content from database using shared helper
+        // Apply filter then attach per-key molecule metadata to each match.
+        // This is where KeyMetadata (stored on the molecule) gets plumbed into
+        // the read path so it takes precedence over atom-level metadata.
+        use crate::schema::types::field::fetch_atoms_with_key_metadata_async;
         let results = match self {
             FieldVariant::Single(f) => f.apply_filter(filter),
             FieldVariant::Hash(f) => f.apply_filter(filter),
             FieldVariant::Range(f) => f.apply_filter(filter),
             FieldVariant::HashRange(f) => f.apply_filter(filter),
         };
-        let mut resolved = fetch_atoms_for_matches_async(db_ops, results.matches).await?;
+        let matches_with_meta: Vec<(KeyValue, String, Option<crate::atom::KeyMetadata>)> = results
+            .matches
+            .into_iter()
+            .map(|(kv, atom_uuid)| {
+                let key_meta = match self {
+                    FieldVariant::Single(f) => {
+                        f.base.molecule.as_ref().and_then(|m| m.get_key_metadata().cloned())
+                    }
+                    FieldVariant::Hash(f) => {
+                        kv.hash.as_ref().and_then(|h| {
+                            f.base.molecule.as_ref().and_then(|m| m.get_key_metadata(h).cloned())
+                        })
+                    }
+                    FieldVariant::Range(f) => {
+                        kv.range.as_ref().and_then(|r| {
+                            f.base.molecule.as_ref().and_then(|m| m.get_key_metadata(r).cloned())
+                        })
+                    }
+                    FieldVariant::HashRange(f) => {
+                        kv.hash.as_ref().zip(kv.range.as_ref()).and_then(|(h, r)| {
+                            f.base.molecule.as_ref().and_then(|m| m.get_key_metadata(h, r).cloned())
+                        })
+                    }
+                };
+                (kv, atom_uuid, key_meta)
+            })
+            .collect();
+        let mut resolved = fetch_atoms_with_key_metadata_async(db_ops, matches_with_meta).await?;
 
         // Stamp molecule info on each resolved FieldValue
         let mol_uuid = self.common().molecule_uuid().cloned();
