@@ -276,6 +276,10 @@ pub struct DeclarativeSchemaDefinition {
     /// SHA256 hash of sorted field names — unique fingerprint of schema structure
     #[serde(skip_serializing_if = "Option::is_none")]
     pub identity_hash: Option<String>,
+    /// If set, this schema has been superseded by the named schema.
+    /// Superseded schemas are excluded from active indexes and matching.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub superseded_by: Option<String>,
 
     // Runtime state fields (not serialized)
     /// Runtime field storage with molecules (for database operations)
