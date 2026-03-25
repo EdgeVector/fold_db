@@ -34,10 +34,12 @@ pub const FILTER_SELECTION_RULES: &str = r#"IMPORTANT JSON FORMATTING:
 CRITICAL FILTER SELECTION RULES:
 1. ALWAYS check the schema's Hash Key and Range Key fields to determine the correct filter
 2. If the search term matches a Hash Key field value, use HashKey or HashPattern filter
-3. If the search term matches a Range Key field value, use RangePrefix, RangePattern, or RangeRange filter
-4. Examples of when to use each:
-   - Searching for author "Jennifer Liu" on a schema with hash_field=author → use {"HashKey": "Jennifer Liu"}
-   - Searching for date "2025-09" on a schema with range_field=publish_date → use {"RangePrefix": "2025-09"}
+3. If the search term matches a Range Key field value on a Range-only schema, use RangePrefix, RangePattern, or RangeRange filter
+4. For HashRange schemas: Queries targeting the range key *must* also specify a Hash Key value using `HashRangeKey` or `HashRangePrefix`. If only the range key is specified, the `filter` MUST be `null`.
+
+5. Examples of when to use each:
+   - Searching for author "Jennifer Liu" on a schema with hash_field=author -> use {"HashKey": "Jennifer Liu"}
+   - Searching for date "2025-09" on a HashRange schema with range_field=publish_date without a hash key -> use null filter
 
 IMPORTANT NOTES:
 - For HashRange schemas, HashKey filters operate on the hash_field, Range filters operate on the range_field
@@ -60,7 +62,8 @@ pub const QUERY_RESPONSE_FORMAT: &str = r#"Respond in JSON format with:
 }
 
 IMPORTANT:
-- Return ONLY the JSON object, no additional text
+- **Return ONLY the JSON object. Do NOT include any conversational text, explanations, or markdown code block delimiters (e.g., ```json).**
+- For `sort_order`, if the user does not explicitly ask for a specific order (e.g., 'most recent', 'oldest first'), set it to `null`. Do NOT default to 'asc'.
 - Use the EXACT filter format shown above
 - For "most recent", "latest", or "newest" queries, use null filter with sort_order "desc" (NOT SampleN)
 - Prefer existing approved schemas for queries"#;
@@ -77,8 +80,7 @@ IMPORTANT: Return ONLY the JSON object, no additional text."#;
 
 /// System preamble for query analysis prompts.
 pub const QUERY_ANALYSIS_PREAMBLE: &str =
-    "You are a database query optimizer. Analyze the following natural language query \
-    and available schemas to create an execution plan.\n\n";
+    "You are a database query optimizer. Analyze the following natural language query and available schemas to create an execution plan.\n\n";
 
 /// System preamble for result summarization.
 pub const SUMMARIZATION_PREAMBLE: &str =
