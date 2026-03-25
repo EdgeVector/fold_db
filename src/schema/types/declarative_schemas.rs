@@ -325,6 +325,7 @@ impl PartialEq for DeclarativeSchemaDefinition {
             && self.ref_fields == other.ref_fields
             && self.field_types == other.field_types
             && self.identity_hash == other.identity_hash
+            && self.superseded_by == other.superseded_by
         // Exclude runtime_fields, inputs_schema_fields, source_schemas, and hash mappings
         // These are derived/runtime state and don't affect schema identity
     }
@@ -463,6 +464,7 @@ impl DeclarativeSchemaDefinition {
             ref_fields: HashMap::new(),
             field_types: HashMap::new(),
             identity_hash: None,
+            superseded_by: None,
             runtime_fields: HashMap::new(),
             inputs_schema_fields: Vec::new(),
             source_schemas: Vec::new(),
