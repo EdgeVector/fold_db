@@ -41,6 +41,8 @@ jobs:
       - name: Run cargo test
         id: cargo-test
         continue-on-error: true
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: cargo test --workspace --all-targets
 
       - name: Rust test summary
