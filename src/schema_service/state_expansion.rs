@@ -320,12 +320,24 @@ impl SchemaServiceState {
         // Persist expanded schema
         self.persist_schema(schema, mutation_mappers).await?;
 
-        // Update in-memory cache
-        {
+        // Mark the old schema as superseded in memory and grab a clone for persistence
+        let old_clone = {
             let mut schemas = self.schemas.write().map_err(|_| {
                 FoldDbError::Config("Failed to acquire schemas write lock".to_string())
             })?;
+            let clone = if let Some(old_schema) = schemas.get_mut(old_name) {
+                old_schema.superseded_by = Some(expanded_name.clone());
+                Some(old_schema.clone())
+            } else {
+                None
+            };
             schemas.insert(expanded_name.clone(), schema.clone());
+            clone
+        };
+
+        // Persist the superseded marker (outside the lock)
+        if let Some(old_schema) = old_clone {
+            self.persist_schema(&old_schema, &HashMap::new()).await?;
         }
 
         // Update descriptive_name index to point to expanded schema

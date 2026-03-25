@@ -16,10 +16,12 @@ pub const PROMPT_HEADER: &str = r#"Create a schema for this sample json data. Re
 - Hash (hash_field only, NO range_field): photos/images MUST use Hash with hash_field="source_file_name" — do NOT add date_taken as range_field.
 - Single (omit "key" entirely): for singleton config/settings (URLs, timeouts, feature flags).
 
-"name": short snake_case CONTENT TOPIC (e.g., "recipes", "journal_entries", "medical_records"). Include "descriptive_name", "field_descriptions" (EVERY field), "field_classifications" (EVERY field, always include "word" for text).
+"name": short snake_case CONTENT TOPIC (e.g., "recipes", "journal_entries", "medical_records"). Include "descriptive_name", "field_descriptions" (EVERY field).
+
+REJECTED descriptive_name values — names made entirely of structural words are rejected: "Document Collection", "Data Records", "Text Content", "File Metadata", "Record List", "General Information". Read the actual content and name the topic specifically: "Family Vacation Photos", "Technical Architecture Notes", "Weekly Meeting Minutes".
 
 Example:
-{"name": "social_media_posts", "descriptive_name": "Social Media Posts", "key": {"hash_field": "author", "range_field": "created_at"}, "fields": ["created_at", "author", "content"], "field_descriptions": {"created_at": "...", "author": "...", "content": "..."}, "field_classifications": {"created_at": ["date"], "author": ["name:person", "word"], "content": ["word"]}}"#;
+{"name": "social_media_posts", "descriptive_name": "Social Media Posts", "key": {"hash_field": "author", "range_field": "created_at"}, "fields": ["created_at", "author", "content"], "field_descriptions": {"created_at": "...", "author": "...", "content": "..."}}"#;
 
 /// Instructions appended to every ingestion prompt after the sample data.
 pub const PROMPT_ACTIONS: &str = r#"Please analyze the sample data and create a new schema definition in new_schemas with mutation_mappers.
@@ -62,14 +64,6 @@ mod tests {
         assert!(PROMPT_HEADER.contains("HashRange"));
     }
 
-    #[test]
-    fn prompt_header_mentions_key_classification_types() {
-        // The optimized prompt includes essential types in the example;
-        // the full list was removed as autoresearch proved models infer them.
-        for cls in &["word", "name:person", "date"] {
-            assert!(PROMPT_HEADER.contains(cls), "Missing classification type: {}", cls);
-        }
-    }
 
     #[test]
     fn prompt_actions_requires_json() {

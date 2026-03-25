@@ -5,6 +5,7 @@
 //! and a Global Transform Registry.
 
 pub mod classify;
+pub mod name_validator;
 mod state_expansion;
 mod state_fields;
 mod state_matching;
