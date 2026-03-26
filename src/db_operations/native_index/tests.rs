@@ -48,7 +48,7 @@ async fn test_index_record_then_search() {
 }
 
 #[tokio::test]
-async fn test_index_record_produces_one_result_per_field() {
+async fn test_per_field_fragment_indexing() {
     let mgr = make_manager().await;
 
     let key = KeyValue::new(Some("doc1".to_string()), None);
@@ -60,34 +60,58 @@ async fn test_index_record_produces_one_result_per_field() {
 
     mgr.index_record("Post", &key, &fields).await.unwrap();
 
-    let results = mgr.search_all_classifications("blog").await.unwrap();
-    // One IndexResult per field in the matched document
-    assert_eq!(results.len(), 3);
+    // Per-fragment indexing: one embedding per field (each is short text, single fragment)
+    let entries = mgr.embedding_index.entries.read().unwrap();
+    assert_eq!(entries.len(), 3, "Expected 3 fragments (one per field)");
+
     let field_names: std::collections::HashSet<_> =
-        results.iter().map(|r| r.field.as_str()).collect();
+        entries.iter().map(|e| e.field_name.as_str()).collect();
     assert!(field_names.contains("title"));
     assert!(field_names.contains("body"));
     assert!(field_names.contains("author"));
 }
 
 #[tokio::test]
-async fn test_upsert_replaces_existing_entry() {
+async fn test_search_dedup_by_record() {
+    let mgr = make_manager().await;
+
+    let key = KeyValue::new(Some("doc1".to_string()), None);
+    let fields = std::collections::HashMap::from([
+        ("title".to_string(), serde_json::json!("hello world")),
+        (
+            "body".to_string(),
+            serde_json::json!("hello world expanded"),
+        ),
+    ]);
+
+    mgr.index_record("Post", &key, &fields).await.unwrap();
+
+    // Both fields will have some similarity to "hello world"
+    // but search should deduplicate by record key
+    let results = mgr.search_all_classifications("hello world").await.unwrap();
+
+    // Should get exactly 1 result (the best-matching fragment for this record)
+    assert_eq!(results.len(), 1, "Expected dedup to 1 record");
+    assert_eq!(results[0].schema_name, "Post");
+    assert_eq!(results[0].key_value, key);
+}
+
+#[tokio::test]
+async fn test_upsert_replaces_existing_fragment() {
     let mgr = make_manager().await;
     let key = KeyValue::new(Some("rec1".to_string()), None);
 
     let v1 = std::collections::HashMap::from([("name".to_string(), serde_json::json!("Alice"))]);
-    let v2 = std::collections::HashMap::from([
-        ("name".to_string(), serde_json::json!("Alice")),
-        ("role".to_string(), serde_json::json!("admin")),
-    ]);
+    let v2 = std::collections::HashMap::from([("name".to_string(), serde_json::json!("Bob"))]);
 
     mgr.index_record("User", &key, &v1).await.unwrap();
     mgr.index_record("User", &key, &v2).await.unwrap();
 
-    // Only one document in the index (upserted, not appended)
+    // Same field + fragment_idx should be upserted, not appended
     let entries = mgr.embedding_index.entries.read().unwrap();
     assert_eq!(entries.len(), 1);
-    assert_eq!(entries[0].field_names.len(), 2);
+    assert_eq!(entries[0].field_name, "name");
+    assert_eq!(entries[0].fragment_text.as_deref(), Some("Bob"));
 }
 
 #[tokio::test]
@@ -104,6 +128,23 @@ async fn test_results_contain_metadata_with_score() {
     let meta = results[0].metadata.as_ref().unwrap();
     assert!(meta.get("score").is_some());
     assert_eq!(meta.get("match_type").unwrap(), "semantic");
+}
+
+#[tokio::test]
+async fn test_fragment_text_is_stored() {
+    let mgr = make_manager().await;
+
+    let key = KeyValue::new(Some("rec1".to_string()), None);
+    let fields = std::collections::HashMap::from([(
+        "content".to_string(),
+        serde_json::json!("hello world"),
+    )]);
+
+    mgr.index_record("Test", &key, &fields).await.unwrap();
+
+    let entries = mgr.embedding_index.entries.read().unwrap();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].fragment_text.as_deref(), Some("hello world"));
 }
 
 #[tokio::test]
@@ -126,4 +167,47 @@ async fn test_restore_from_store_loads_existing_embeddings() {
     let entries = mgr2.embedding_index.entries.read().unwrap();
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0].schema, "S");
+    assert_eq!(entries[0].field_name, "field");
+    assert_eq!(entries[0].fragment_text.as_deref(), Some("value"));
+}
+
+#[tokio::test]
+async fn test_multi_field_record_different_values() {
+    let mgr = make_manager().await;
+
+    let key = KeyValue::new(Some("rec1".to_string()), None);
+    let fields = std::collections::HashMap::from([
+        ("title".to_string(), serde_json::json!("Rust Programming")),
+        ("category".to_string(), serde_json::json!("technology")),
+    ]);
+
+    mgr.index_record("Article", &key, &fields).await.unwrap();
+
+    let entries = mgr.embedding_index.entries.read().unwrap();
+    assert_eq!(entries.len(), 2);
+
+    // Each field should have its own fragment_text
+    let texts: std::collections::HashSet<_> = entries
+        .iter()
+        .filter_map(|e| e.fragment_text.as_deref())
+        .collect();
+    assert!(texts.contains("Rust Programming"));
+    assert!(texts.contains("technology"));
+}
+
+#[tokio::test]
+async fn test_null_field_skipped() {
+    let mgr = make_manager().await;
+
+    let key = KeyValue::new(Some("rec1".to_string()), None);
+    let fields = std::collections::HashMap::from([
+        ("content".to_string(), serde_json::json!("hello")),
+        ("optional".to_string(), serde_json::Value::Null),
+    ]);
+
+    mgr.index_record("Test", &key, &fields).await.unwrap();
+
+    let entries = mgr.embedding_index.entries.read().unwrap();
+    assert_eq!(entries.len(), 1, "Null field should be skipped");
+    assert_eq!(entries[0].field_name, "content");
 }

@@ -1,5 +1,8 @@
+pub mod anonymity;
 mod embedding_index;
 mod embedding_model;
+pub mod fragmentation;
+pub mod pseudonym;
 mod types;
 
 #[cfg(test)]
@@ -14,7 +17,8 @@ pub use types::IndexResult;
 use crate::schema::types::key_value::KeyValue;
 use crate::schema::SchemaError;
 use crate::storage::traits::KvStore;
-use embedding_index::{fields_to_text, EmbeddingIndex};
+use embedding_index::{EmbeddingIndex, FragmentInfo};
+use fragmentation::value_to_fragments;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -49,24 +53,33 @@ impl NativeIndexManager {
         }
     }
 
-    /// Index all fields of a record as a single document embedding.
+    /// Index each field of a record independently, splitting into per-fragment embeddings.
     pub async fn index_record(
         &self,
         schema: &str,
         key: &KeyValue,
         fields_and_values: &HashMap<String, serde_json::Value>,
     ) -> Result<(), SchemaError> {
-        let text = fields_to_text(fields_and_values);
-        if text.trim().is_empty() {
-            return Ok(());
+        for (field_name, value) in fields_and_values {
+            let fragments = value_to_fragments(value);
+            for (idx, fragment_text) in fragments.iter().enumerate() {
+                if fragment_text.trim().is_empty() {
+                    continue;
+                }
+                let embedding = self.embedding_model.embed_text(fragment_text)?;
+                let info = FragmentInfo {
+                    schema,
+                    key,
+                    field_name,
+                    fragment_idx: idx,
+                    fragment_text: Some(fragment_text.clone()),
+                };
+                self.embedding_index
+                    .insert_fragment(&*self.store, info, embedding)
+                    .await?;
+            }
         }
-
-        let embedding = self.embedding_model.embed_text(&text)?;
-        let field_names: Vec<String> = fields_and_values.keys().cloned().collect();
-
-        self.embedding_index
-            .insert(&*self.store, schema, key, field_names, embedding)
-            .await
+        Ok(())
     }
 
     /// Get the underlying KV store (used by discovery publisher to scan embeddings).
