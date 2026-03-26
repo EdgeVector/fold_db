@@ -86,7 +86,11 @@ fn value_to_text(v: &Value) -> String {
         Value::Number(n) => n.to_string(),
         Value::Bool(b) => b.to_string(),
         Value::Array(arr) => arr.iter().map(value_to_text).collect::<Vec<_>>().join(" "),
-        Value::Object(obj) => obj.values().map(value_to_text).collect::<Vec<_>>().join(" "),
+        Value::Object(obj) => obj
+            .values()
+            .map(value_to_text)
+            .collect::<Vec<_>>()
+            .join(" "),
         Value::Null => String::new(),
     }
 }

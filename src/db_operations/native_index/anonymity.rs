@@ -392,10 +392,7 @@ mod tests {
             "contact john@example.com for more details about this",
             FieldPrivacyClass::PublishIfAnonymous,
         );
-        assert_eq!(
-            decision,
-            FragmentDecision::Reject("contains PII patterns")
-        );
+        assert_eq!(decision, FragmentDecision::Reject("contains PII patterns"));
     }
 
     #[test]

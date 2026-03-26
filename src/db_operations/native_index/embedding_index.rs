@@ -52,7 +52,10 @@ impl EmbeddingEntry {
         fragment_idx: usize,
     ) -> String {
         let key_hash = Self::key_hash(key);
-        format!("{}{}:{}:{}:{}", EMB_PREFIX, schema, key_hash, field_name, fragment_idx)
+        format!(
+            "{}{}:{}:{}:{}",
+            EMB_PREFIX, schema, key_hash, field_name, fragment_idx
+        )
     }
 
     /// Legacy storage key: emb:{schema}:{key_hash}
@@ -238,7 +241,9 @@ impl EmbeddingIndex {
                             field: field.clone(),
                             key_value: e.key.clone(),
                             value: Value::Null,
-                            metadata: Some(serde_json::json!({"score": score, "match_type": "semantic"})),
+                            metadata: Some(
+                                serde_json::json!({"score": score, "match_type": "semantic"}),
+                            ),
                             molecule_versions: None,
                         })
                         .collect::<Vec<_>>()

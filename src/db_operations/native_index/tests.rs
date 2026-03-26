@@ -78,7 +78,10 @@ async fn test_search_dedup_by_record() {
     let key = KeyValue::new(Some("doc1".to_string()), None);
     let fields = std::collections::HashMap::from([
         ("title".to_string(), serde_json::json!("hello world")),
-        ("body".to_string(), serde_json::json!("hello world expanded")),
+        (
+            "body".to_string(),
+            serde_json::json!("hello world expanded"),
+        ),
     ]);
 
     mgr.index_record("Post", &key, &fields).await.unwrap();
@@ -99,9 +102,7 @@ async fn test_upsert_replaces_existing_fragment() {
     let key = KeyValue::new(Some("rec1".to_string()), None);
 
     let v1 = std::collections::HashMap::from([("name".to_string(), serde_json::json!("Alice"))]);
-    let v2 = std::collections::HashMap::from([
-        ("name".to_string(), serde_json::json!("Bob")),
-    ]);
+    let v2 = std::collections::HashMap::from([("name".to_string(), serde_json::json!("Bob"))]);
 
     mgr.index_record("User", &key, &v1).await.unwrap();
     mgr.index_record("User", &key, &v2).await.unwrap();
@@ -134,9 +135,10 @@ async fn test_fragment_text_is_stored() {
     let mgr = make_manager().await;
 
     let key = KeyValue::new(Some("rec1".to_string()), None);
-    let fields = std::collections::HashMap::from([
-        ("content".to_string(), serde_json::json!("hello world")),
-    ]);
+    let fields = std::collections::HashMap::from([(
+        "content".to_string(),
+        serde_json::json!("hello world"),
+    )]);
 
     mgr.index_record("Test", &key, &fields).await.unwrap();
 
