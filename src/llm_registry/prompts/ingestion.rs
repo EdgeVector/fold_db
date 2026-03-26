@@ -18,7 +18,7 @@ pub const PROMPT_HEADER: &str = r#"Create a schema for this sample json data. Re
 
 "name": short snake_case CONTENT TOPIC (e.g., "recipes", "journal_entries", "medical_records"). Include "descriptive_name", "field_descriptions" (EVERY field).
 
-REJECTED descriptive_name values — names made entirely of structural words are rejected: "Document Collection", "Data Records", "Text Content", "File Metadata", "Record List", "General Information". Read the actual content and name the topic specifically: "Family Vacation Photos", "Technical Architecture Notes", "Weekly Meeting Minutes".
+REJECTED descriptive_name values — names made entirely of structural/generic words are rejected: "Document Collection", "Data Records", "Text Content", "Content Articles", "Personal Notes", "File Metadata", "Record List", "General Information". The name must identify WHAT the content is about, not just its format. Read the actual content and name the topic: "Bitcoin Macro Analysis", "Apple Notes", "Weekly Meeting Minutes", "Family Vacation Photos".
 
 Example:
 {"name": "social_media_posts", "descriptive_name": "Social Media Posts", "key": {"hash_field": "author", "range_field": "created_at"}, "fields": ["created_at", "author", "content"], "field_descriptions": {"created_at": "...", "author": "...", "content": "..."}}"#;

@@ -31,6 +31,7 @@ const GENERIC_WORDS: &[&str] = &[
     "library",
     "list",
     "log",
+    "logs",
     "metadata",
     "object",
     "objects",
@@ -39,6 +40,26 @@ const GENERIC_WORDS: &[&str] = &[
     "repository",
     "set",
     "store",
+    // Generic content-type words (describe form, not topic — "article" is a
+    // shape of writing, not what the writing is about)
+    "article",
+    "articles",
+    "blurb",
+    "blurbs",
+    "clip",
+    "clips",
+    "memo",
+    "memos",
+    "note",
+    "notes",
+    "page",
+    "pages",
+    "piece",
+    "pieces",
+    "post",
+    "posts",
+    "snippet",
+    "snippets",
     // Format / media words (describe the file type, not the content topic)
     "audio",
     "content",
@@ -67,6 +88,8 @@ const GENERIC_WORDS: &[&str] = &[
     "mixed",
     "my",
     "other",
+    "personal",
+    "various",
     // Stop words
     "the",
     "with",
@@ -192,16 +215,62 @@ mod tests {
         assert!(is_generic_name(""));
     }
 
+    // --- Names that SHOULD be rejected (generic content-type words) ---
+
+    #[test]
+    fn reject_content_articles() {
+        assert!(is_generic_name("Content Articles"));
+    }
+
+    #[test]
+    fn reject_text_notes() {
+        assert!(is_generic_name("Text Notes"));
+    }
+
+    #[test]
+    fn reject_data_posts() {
+        assert!(is_generic_name("Data Posts"));
+    }
+
+    #[test]
+    fn reject_personal_notes() {
+        // "personal" and "notes" are both generic
+        assert!(is_generic_name("Personal Notes"));
+    }
+
+    #[test]
+    fn reject_misc_articles() {
+        assert!(is_generic_name("Misc Articles"));
+    }
+
+    #[test]
+    fn reject_various_notes() {
+        assert!(is_generic_name("Various Notes"));
+    }
+
+    #[test]
+    fn reject_my_posts() {
+        assert!(is_generic_name("My Posts"));
+    }
+
     // --- Names that SHOULD be accepted (content-specific) ---
 
     #[test]
     fn accept_technical_architecture_notes() {
+        // "Technical" and "Architecture" are content-specific
         assert!(!is_generic_name("Technical Architecture Notes"));
     }
 
     #[test]
-    fn accept_personal_journal_entries() {
-        assert!(!is_generic_name("Personal Journal Entries"));
+    fn accept_apple_notes() {
+        // "Apple" is content-specific (identifies the source)
+        assert!(!is_generic_name("Apple Notes"));
+    }
+
+    #[test]
+    fn accept_journal_entries() {
+        // "Journal" is content-specific (describes the content type meaningfully)
+        assert!(!is_generic_name("Journal Entries"));
     }
 
     #[test]
@@ -215,7 +284,8 @@ mod tests {
     }
 
     #[test]
-    fn accept_meeting_notes_q1() {
+    fn accept_meeting_notes() {
+        // "Meeting" is content-specific
         assert!(!is_generic_name("Meeting Notes Q1 2026"));
     }
 
@@ -226,6 +296,7 @@ mod tests {
 
     #[test]
     fn accept_blog_posts() {
+        // "Blog" is content-specific
         assert!(!is_generic_name("Blog Posts"));
     }
 
@@ -236,7 +307,18 @@ mod tests {
 
     #[test]
     fn accept_workout_log() {
+        // "Workout" is content-specific
         assert!(!is_generic_name("Workout Log"));
+    }
+
+    #[test]
+    fn accept_travel_diary() {
+        assert!(!is_generic_name("Travel Diary"));
+    }
+
+    #[test]
+    fn accept_bitcoin_macro_analysis() {
+        assert!(!is_generic_name("Bitcoin Macro Analysis"));
     }
 
     #[test]
