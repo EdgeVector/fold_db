@@ -640,19 +640,31 @@ impl SchemaServiceState {
         // Auto-correct bad descriptive names:
         // 1. AI captions ("A photo of a sunset") → use schema.name title-cased
         // 2. Generic structural names ("Document Collection") → use schema.name title-cased
-        // The ingestion layer already rejects these with retries, so this is a
-        // last-resort safety net that auto-corrects rather than failing.
+        // 3. If title-cased name is STILL generic (e.g. "content_articles" → "Content Articles"),
+        //    fall back to generate_collection_name() which infers from field patterns.
         if let Some(ref dn) = schema.descriptive_name.clone() {
             if Self::is_caption_name(dn) || super::name_validator::is_generic_name(dn) {
                 let title_cased = Self::snake_to_title_case(&schema.name);
+                let corrected = if super::name_validator::is_generic_name(&title_cased) {
+                    // schema.name is also generic (e.g. "content_articles") — infer from fields
+                    let inferred = self.generate_collection_name(&schema);
+                    if super::name_validator::is_generic_name(&inferred) {
+                        // Last resort: use schema.name as-is (better than a circular generic)
+                        title_cased
+                    } else {
+                        inferred
+                    }
+                } else {
+                    title_cased
+                };
                 log_feature!(
                     LogFeature::Schema,
                     warn,
                     "Auto-corrected descriptive_name from '{}' to '{}' (caption or generic)",
                     &dn[..dn.len().min(60)],
-                    title_cased
+                    corrected
                 );
-                schema.descriptive_name = Some(title_cased);
+                schema.descriptive_name = Some(corrected);
             }
         }
 
