@@ -28,7 +28,7 @@ pub async fn create_fold_db(
 ) -> FoldDbResult<Arc<Mutex<FoldDB>>> {
     match config {
         DatabaseConfig::Local { path } => create_local_fold_db(path, e2e_keys, None).await,
-        DatabaseConfig::Exemem { api_url, api_key } => {
+        DatabaseConfig::Exemem { api_url, api_key, .. } => {
             // Exemem mode: local Sled + S3 sync via the Exemem platform.
             // The sync auth Lambda shares the same API URL and API key.
             let path = std::path::PathBuf::from(
