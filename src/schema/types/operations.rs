@@ -4,6 +4,50 @@ use chrono::{DateTime, Utc};
 use clap::ValueEnum;
 use serde::{Deserialize, Serialize};
 
+/// Numeric comparison filters for field values.
+///
+/// These filters are applied post-fetch on the actual field content (atom values),
+/// unlike `HashRangeFilter` which operates on key structure at the molecule level.
+/// Multiple `ValueFilter`s on a query are AND'd together.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum ValueFilter {
+    /// field value > threshold
+    GreaterThan { field: String, value: f64 },
+    /// field value < threshold
+    LessThan { field: String, value: f64 },
+    /// field value == target (exact float equality)
+    Equals { field: String, value: f64 },
+    /// min <= field value <= max
+    Between { field: String, min: f64, max: f64 },
+}
+
+impl ValueFilter {
+    /// Tests whether the given JSON value satisfies this filter condition.
+    /// Returns `false` if the value is not numeric.
+    pub fn matches(&self, field_value: &serde_json::Value) -> bool {
+        let num = match field_value.as_f64() {
+            Some(n) => n,
+            None => return false,
+        };
+        match self {
+            ValueFilter::GreaterThan { value, .. } => num > *value,
+            ValueFilter::LessThan { value, .. } => num < *value,
+            ValueFilter::Equals { value, .. } => (num - *value).abs() < f64::EPSILON,
+            ValueFilter::Between { min, max, .. } => num >= *min && num <= *max,
+        }
+    }
+
+    /// Returns the field name this filter targets.
+    pub fn field_name(&self) -> &str {
+        match self {
+            ValueFilter::GreaterThan { field, .. }
+            | ValueFilter::LessThan { field, .. }
+            | ValueFilter::Equals { field, .. }
+            | ValueFilter::Between { field, .. } => field,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum SortOrder {
     Asc,
@@ -51,6 +95,9 @@ pub struct Query {
     pub rehydrate_depth: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sort_order: Option<SortOrder>,
+    /// Post-fetch numeric filters on field values. Multiple filters are AND'd.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub value_filters: Option<Vec<ValueFilter>>,
 }
 
 impl Query {
@@ -63,6 +110,7 @@ impl Query {
             as_of: None,
             rehydrate_depth: None,
             sort_order: None,
+            value_filters: None,
         }
     }
 
@@ -79,6 +127,7 @@ impl Query {
             as_of: None,
             rehydrate_depth: None,
             sort_order: None,
+            value_filters: None,
         }
     }
 }
@@ -200,6 +249,7 @@ mod tests {
             as_of: None,
             rehydrate_depth: None,
             sort_order: Some(SortOrder::Desc),
+            value_filters: None,
         };
 
         let json = serde_json::to_value(&query).unwrap();
@@ -237,5 +287,117 @@ mod tests {
         let query = Query::new("Tweet".to_string(), vec!["text".to_string()]);
         let json = serde_json::to_value(&query).unwrap();
         assert!(json.get("sort_order").is_none());
+    }
+
+    #[test]
+    fn test_value_filter_greater_than() {
+        let filter = ValueFilter::GreaterThan {
+            field: "price".to_string(),
+            value: 500.0,
+        };
+        assert!(filter.matches(&json!(600.0)));
+        assert!(!filter.matches(&json!(500.0)));
+        assert!(!filter.matches(&json!(400.0)));
+        assert!(!filter.matches(&json!("not a number")));
+    }
+
+    #[test]
+    fn test_value_filter_less_than() {
+        let filter = ValueFilter::LessThan {
+            field: "price".to_string(),
+            value: 600.0,
+        };
+        assert!(filter.matches(&json!(500.0)));
+        assert!(!filter.matches(&json!(600.0)));
+        assert!(!filter.matches(&json!(700.0)));
+    }
+
+    #[test]
+    fn test_value_filter_equals() {
+        let filter = ValueFilter::Equals {
+            field: "score".to_string(),
+            value: 100.0,
+        };
+        assert!(filter.matches(&json!(100.0)));
+        assert!(filter.matches(&json!(100)));
+        assert!(!filter.matches(&json!(99.99)));
+    }
+
+    #[test]
+    fn test_value_filter_between() {
+        let filter = ValueFilter::Between {
+            field: "price".to_string(),
+            min: 200.0,
+            max: 600.0,
+        };
+        assert!(filter.matches(&json!(200.0)));
+        assert!(filter.matches(&json!(400.0)));
+        assert!(filter.matches(&json!(600.0)));
+        assert!(!filter.matches(&json!(199.99)));
+        assert!(!filter.matches(&json!(600.01)));
+    }
+
+    #[test]
+    fn test_value_filter_field_name() {
+        assert_eq!(
+            ValueFilter::GreaterThan {
+                field: "price".to_string(),
+                value: 0.0
+            }
+            .field_name(),
+            "price"
+        );
+        assert_eq!(
+            ValueFilter::Between {
+                field: "score".to_string(),
+                min: 0.0,
+                max: 100.0
+            }
+            .field_name(),
+            "score"
+        );
+    }
+
+    #[test]
+    fn test_value_filter_serde_round_trip() {
+        let filters = vec![
+            ValueFilter::LessThan {
+                field: "price".to_string(),
+                value: 600.0,
+            },
+            ValueFilter::GreaterThan {
+                field: "rating".to_string(),
+                value: 3.0,
+            },
+        ];
+        let json = serde_json::to_value(&filters).unwrap();
+        let deserialized: Vec<ValueFilter> = serde_json::from_value(json).unwrap();
+        assert_eq!(deserialized, filters);
+    }
+
+    #[test]
+    fn test_query_with_value_filters_round_trip() {
+        let json = json!({
+            "schema_name": "Flight",
+            "fields": ["airline", "price"],
+            "filter": null,
+            "value_filters": [
+                {"LessThan": {"field": "price", "value": 600}},
+                {"GreaterThan": {"field": "price", "value": 100}}
+            ]
+        });
+        let query: Query = serde_json::from_value(json).unwrap();
+        assert_eq!(query.value_filters.as_ref().unwrap().len(), 2);
+
+        let serialized = serde_json::to_value(&query).unwrap();
+        assert!(serialized.get("value_filters").is_some());
+    }
+
+    #[test]
+    fn test_query_value_filters_none_by_default() {
+        let query = Query::new("Test".to_string(), vec![]);
+        assert!(query.value_filters.is_none());
+        let json = serde_json::to_value(&query).unwrap();
+        assert!(json.get("value_filters").is_none());
     }
 }
