@@ -97,6 +97,33 @@ pub async fn handle_query(
 - `StorageError` (`src/storage/error.rs`): Storage backend errors
 - `HandlerError` (`src/handlers/response.rs`): API response errors
 
+## Pre-PR Checklist
+
+Before every push, first fetch and rebase on the latest base branch:
+```bash
+git fetch origin
+git rebase origin/<base-branch>   # e.g. origin/mainline
+```
+
+Then run CI checks:
+```bash
+cargo clippy --workspace --all-targets -- -D warnings
+cargo check --workspace --features aws-backend
+cargo test --workspace --all-targets
+```
+
+After creating the PR, enable auto-merge:
+```bash
+gh pr merge --auto --squash <PR_URL>
+```
+
+**Monitor the PR until it merges — your task is NOT done until the PR is merged.**
+Poll CI status (`gh pr view <PR_URL> --json state,statusCheckRollup,mergeStateStatus`) every 30-60 seconds.
+- CI failing: read logs (`gh pr checks`), fix the code, push.
+- Branch out of date: `git fetch origin && git rebase origin/<base-branch> && git push --force-with-lease`.
+- Review comments: fix, push, resolve threads.
+- Only done when `state: MERGED`.
+
 ## Coding Standards
 
 - No silent failures - throw errors if anything goes wrong
