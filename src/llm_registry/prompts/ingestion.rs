@@ -20,8 +20,10 @@ pub const PROMPT_HEADER: &str = r#"Create a schema for this sample json data. Re
 
 REJECTED descriptive_name values — names made entirely of structural/generic words are rejected: "Document Collection", "Data Records", "Text Content", "Content Articles", "Personal Notes", "File Metadata", "Record List", "General Information". The name must identify WHAT the content is about, not just its format. Read the actual content and name the topic: "Bitcoin Macro Analysis", "Apple Notes", "Weekly Meeting Minutes", "Family Vacation Photos".
 
+Array fields (e.g., tags, interests, items) MUST be included in both "fields" and "mutation_mappers" — they are stored as arrays, not flattened. Include ALL top-level JSON keys in "mutation_mappers", including arrays.
+
 Example:
-{"name": "social_media_posts", "descriptive_name": "Social Media Posts", "key": {"hash_field": "author", "range_field": "created_at"}, "fields": ["created_at", "author", "content"], "field_descriptions": {"created_at": "...", "author": "...", "content": "..."}}"#;
+{"name": "social_media_posts", "descriptive_name": "Social Media Posts", "key": {"hash_field": "author", "range_field": "created_at"}, "fields": ["created_at", "author", "content", "tags"], "field_descriptions": {"created_at": "...", "author": "...", "content": "...", "tags": "topic tags"}, "mutation_mappers": {"created_at": "created_at", "author": "author", "content": "content", "tags": "tags"}}"#;
 
 /// Instructions appended to every ingestion prompt after the sample data.
 pub const PROMPT_ACTIONS: &str = r#"Please analyze the sample data and create a new schema definition in new_schemas with mutation_mappers.
@@ -67,6 +69,13 @@ mod tests {
     #[test]
     fn prompt_actions_requires_json() {
         assert!(PROMPT_ACTIONS.contains("valid JSON"));
+    }
+
+    #[test]
+    fn prompt_header_mentions_array_fields() {
+        assert!(PROMPT_HEADER.contains("Array fields"));
+        assert!(PROMPT_HEADER.contains("mutation_mappers"));
+        assert!(PROMPT_HEADER.contains("tags"));
     }
 
     #[test]
