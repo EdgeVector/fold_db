@@ -250,5 +250,8 @@ async fn store_with_data_detected_as_non_empty() {
 
     let namespaces = base.list_namespaces().await.unwrap();
     let has_user_data = namespaces.iter().any(|ns| ns != "__sled__default");
-    assert!(has_user_data, "store with data should be detected as non-empty");
+    assert!(
+        has_user_data,
+        "store with data should be detected as non-empty"
+    );
 }
