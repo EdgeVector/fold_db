@@ -222,6 +222,7 @@ impl ViewResolver {
                     metadata: None,
                     molecule_uuid: None,
                     molecule_version: None,
+                    source_pub_key: None,
                 };
                 field_entries.insert(key, fv);
             }
@@ -269,6 +270,7 @@ mod tests {
             metadata: None,
             molecule_uuid: None,
             molecule_version: None,
+            source_pub_key: None,
         }
     }
 
