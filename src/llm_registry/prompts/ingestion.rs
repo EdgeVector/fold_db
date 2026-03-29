@@ -12,7 +12,7 @@
 /// See autoresearch-ingestion repo for experiment log.
 pub const PROMPT_HEADER: &str = r#"Create a schema for this sample json data. Return JSON with "new_schemas" (single schema) and "mutation_mappers" (top-level JSON keys only, e.g., {"id": "id"}). Keep nested objects as single fields — do NOT flatten.
 
-- HashRange: hash_field for grouping (e.g., "author", "category", "source_file"), range_field for ordering (prefer date/timestamp, else "id"). Use dot-notation for nested values (e.g., "departure.date") but parent must be in "fields" and "mutation_mappers".
+- HashRange: If data has a unique ID field (e.g., "flight_id", "hotel_id", "order_id", "booking_id", "id", "uuid"), use it as hash_field — unique IDs prevent key collisions. Otherwise use a grouping field (e.g., "author", "category", "source_file"). range_field for ordering (prefer date/timestamp, else "id"). Use dot-notation for nested values (e.g., "departure.date") but parent must be in "fields" and "mutation_mappers".
 - Hash (hash_field only, NO range_field): photos/images MUST use Hash with hash_field="source_file_name" — do NOT add date_taken as range_field.
 - Single (omit "key" entirely): for singleton config/settings (URLs, timeouts, feature flags).
 
