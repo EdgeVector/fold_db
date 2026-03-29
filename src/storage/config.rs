@@ -146,6 +146,12 @@ pub enum DatabaseConfig {
         api_url: String,
         /// API key for authentication
         api_key: String,
+        /// Session token for authenticated API access
+        #[serde(default)]
+        session_token: Option<String>,
+        /// User hash derived from email or credentials
+        #[serde(default)]
+        user_hash: Option<String>,
     },
 }
 
@@ -223,7 +229,12 @@ impl DatabaseConfig {
                     .map_err(|_| ConfigError::MissingVariable("EXEMEM_API_URL".to_string()))?;
                 let api_key = env::var("EXEMEM_API_KEY")
                     .map_err(|_| ConfigError::MissingVariable("EXEMEM_API_KEY".to_string()))?;
-                Ok(DatabaseConfig::Exemem { api_url, api_key })
+                Ok(DatabaseConfig::Exemem {
+                    api_url,
+                    api_key,
+                    session_token: std::env::var("EXEMEM_SESSION_TOKEN").ok(),
+                    user_hash: std::env::var("EXEMEM_USER_HASH").ok(),
+                })
             }
             _ => Err(ConfigError::InvalidValue(format!(
                 "Invalid FOLD_STORAGE_MODE: '{}'. Must be 'local', 'exemem'{}",
