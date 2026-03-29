@@ -23,7 +23,15 @@ Filters for Range schemas (have Range Key only):
 
 Universal filters (work on any schema type):
 - SampleN: {"SampleN": 100} - return N RANDOM records (NOT sorted)
-- null - no filter (return all records)"#;
+- null - no filter (return all records)
+
+NUMERIC VALUE FILTERS (applied to field values AFTER key-based filtering):
+Use the "value_filters" parameter (separate from "filter") to compare numeric field values.
+Multiple value_filters are AND'd together.
+- GreaterThan: {"GreaterThan": {"field": "price", "value": 600}} - field value > threshold
+- LessThan: {"LessThan": {"field": "price", "value": 600}} - field value < threshold
+- Equals: {"Equals": {"field": "score", "value": 100}} - field value == target
+- Between: {"Between": {"field": "price", "min": 200, "max": 600}} - min <= field value <= max"#;
 
 /// Critical rules for selecting the right filter type.
 pub const FILTER_SELECTION_RULES: &str = r#"IMPORTANT JSON FORMATTING:
@@ -47,7 +55,9 @@ IMPORTANT NOTES:
 - For Range schemas, Range filters operate on the range_field
 - SampleN returns RANDOM records, NOT sorted or ordered
 - For "most recent" or "latest" queries, use null filter with sort_order "desc" to get results sorted newest-first by range key
-- Range keys are stored as strings and compared lexicographically"#;
+- Range keys are stored as strings and compared lexicographically
+- For numeric comparisons on field values (e.g., "price < 600", "score above 90"), use value_filters instead of filter. value_filters work on any schema type and can be combined with key-based filters.
+- value_filters only work on numeric fields — non-numeric field values will not match"#;
 
 /// JSON response format expected from query analysis.
 pub const QUERY_RESPONSE_FORMAT: &str = r#"Respond in JSON format with:
@@ -56,7 +66,8 @@ pub const QUERY_RESPONSE_FORMAT: &str = r#"Respond in JSON format with:
     "schema_name": "string",
     "fields": ["field1", "field2"],
     "filter": null or one of the filter types above,
-    "sort_order": "asc" or "desc" or null
+    "sort_order": "asc" or "desc" or null,
+    "value_filters": null or array of numeric filters, e.g. [{"LessThan": {"field": "price", "value": 600}}]
   },
   "reasoning": "your analysis"
 }
@@ -66,13 +77,14 @@ IMPORTANT:
 - For `sort_order`, if the user does not explicitly ask for a specific order (e.g., 'most recent', 'oldest first'), set it to `null`. Do NOT default to 'asc'.
 - Use the EXACT filter format shown above
 - For "most recent", "latest", or "newest" queries, use null filter with sort_order "desc" (NOT SampleN)
-- Prefer existing approved schemas for queries"#;
+- Prefer existing approved schemas for queries
+- For numeric comparisons (e.g., "price under 600"), use value_filters — do NOT try to use key-based filters for value comparisons"#;
 
 /// JSON response format for followup analysis.
 pub const FOLLOWUP_RESPONSE_FORMAT: &str = r#"Respond in JSON format:
 {
   "needs_query": true/false,
-  "query": null or {"schema_name": "...", "fields": [...], "filter": ..., "sort_order": "asc" or "desc" or null},
+  "query": null or {"schema_name": "...", "fields": [...], "filter": ..., "sort_order": "asc" or "desc" or null, "value_filters": null or [...]},
   "reasoning": "explanation"
 }
 
@@ -153,6 +165,10 @@ mod tests {
             "RangePattern",
             "RangeRange",
             "SampleN",
+            "GreaterThan",
+            "LessThan",
+            "Equals",
+            "Between",
         ] {
             assert!(
                 FILTER_TYPES_INSTRUCTION.contains(filter),

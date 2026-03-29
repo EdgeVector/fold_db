@@ -17,6 +17,6 @@ pub use field_value_type::FieldValueType;
 pub use key_config::KeyConfig;
 pub use key_value::KeyValue;
 pub use mutation::Mutation;
-pub use operations::{MutationType, Operation, Query, SortOrder};
+pub use operations::{MutationType, Operation, Query, SortOrder, ValueFilter};
 pub use schema::{DeclarativeSchemaType as SchemaType, Schema};
 pub use transform::Transform;
