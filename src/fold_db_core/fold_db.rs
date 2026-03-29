@@ -146,6 +146,20 @@ impl FoldDB {
         }
     }
 
+    /// Get the number of pending (unsynced) log entries.
+    /// Returns None if sync is not configured.
+    pub async fn sync_pending_count(&self) -> Option<usize> {
+        match &self.sync_engine {
+            Some(engine) => Some(engine.pending_count().await),
+            None => None,
+        }
+    }
+
+    /// Returns true if the sync engine is configured.
+    pub fn is_sync_enabled(&self) -> bool {
+        self.sync_engine.is_some()
+    }
+
     /// Creates a new FoldDB instance with the specified storage path.
     /// All initializations happen here. This is the main entry point for the FoldDB system.
     /// Do not initialize anywhere else.
