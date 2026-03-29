@@ -100,6 +100,18 @@ async fn create_local_fold_db(
             sync_config,
         ));
 
+        // Bootstrap from B2 if the local database is empty (new device connecting
+        // to an existing user database — like a password manager on a new device).
+        let namespaces = base_store.list_namespaces().await.unwrap_or_default();
+        let has_user_data = namespaces.iter().any(|ns| ns != "__sled__default");
+        if !has_user_data {
+            log::info!("empty local database with sync enabled — bootstrapping from cloud");
+            match engine.bootstrap().await {
+                Ok(seq) => log::info!("bootstrap complete: restored to seq {seq}"),
+                Err(e) => log::warn!("bootstrap failed (starting fresh): {e}"),
+            }
+        }
+
         // Sled → SyncingNamespacedStore → EncryptingNamespacedStore
         let syncing_store = crate::storage::SyncingNamespacedStore::new(base_store, engine.clone());
         let mid_store: Arc<dyn crate::storage::traits::NamespacedStore> = Arc::new(syncing_store);
