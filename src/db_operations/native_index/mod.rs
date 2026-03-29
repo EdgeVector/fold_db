@@ -87,6 +87,11 @@ impl NativeIndexManager {
         &self.store
     }
 
+    /// Get the embedding model (used by interest detection to embed seed phrases).
+    pub fn embedder(&self) -> &Arc<dyn Embedder> {
+        &self.embedding_model
+    }
+
     /// Embed a text query into a vector. Used by discovery to generate search embeddings.
     pub fn embed_text(&self, text: &str) -> Result<Vec<f32>, SchemaError> {
         self.embedding_model.embed_text(text)
