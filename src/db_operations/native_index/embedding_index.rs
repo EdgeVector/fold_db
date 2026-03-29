@@ -238,6 +238,7 @@ impl EmbeddingIndex {
                         .iter()
                         .map(|field| IndexResult {
                             schema_name: e.schema.clone(),
+                            schema_display_name: None,
                             field: field.clone(),
                             key_value: e.key.clone(),
                             value: Value::Null,
@@ -251,6 +252,7 @@ impl EmbeddingIndex {
                     // Per-fragment: one result for the matched field+fragment
                     vec![IndexResult {
                         schema_name: e.schema.clone(),
+                        schema_display_name: None,
                         field: e.field_name.clone(),
                         key_value: e.key.clone(),
                         value: Value::Null,

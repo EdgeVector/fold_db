@@ -6,6 +6,8 @@ use std::collections::HashSet;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
 pub struct IndexResult {
     pub schema_name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub schema_display_name: Option<String>,
     pub field: String,
     pub key_value: KeyValue,
     pub value: Value,
