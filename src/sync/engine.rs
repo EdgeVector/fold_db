@@ -5,11 +5,13 @@ use super::s3::S3Client;
 use super::snapshot::Snapshot;
 use crate::crypto::CryptoProvider;
 use crate::storage::traits::NamespacedStore;
+use serde::Serialize;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
 /// Sync engine state.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum SyncState {
     /// No unsynced changes.
     Idle,
@@ -19,6 +21,19 @@ pub enum SyncState {
     Syncing,
     /// Network unavailable, will retry.
     Offline,
+}
+
+/// Snapshot of sync engine status for external consumers.
+#[derive(Debug, Clone, Serialize)]
+pub struct SyncStatus {
+    /// Current state of the sync engine.
+    pub state: SyncState,
+    /// Number of pending (unsynced) log entries.
+    pub pending_count: usize,
+    /// Unix timestamp (seconds) of last successful sync, if any.
+    pub last_sync_at: Option<u64>,
+    /// Last sync error message, if the most recent sync failed.
+    pub last_error: Option<String>,
 }
 
 /// Configuration for the sync engine.
@@ -86,6 +101,10 @@ pub struct SyncEngine {
     config: SyncConfig,
     /// Optional callback for status changes.
     status_callback: Option<StatusCallback>,
+    /// Unix timestamp (seconds) of last successful sync.
+    last_sync_at: Arc<Mutex<Option<u64>>>,
+    /// Last sync error message (cleared on success).
+    last_error: Arc<Mutex<Option<String>>>,
 }
 
 impl SyncEngine {
@@ -108,6 +127,8 @@ impl SyncEngine {
             store,
             config,
             status_callback: None,
+            last_sync_at: Arc::new(Mutex::new(None)),
+            last_error: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -129,6 +150,16 @@ impl SyncEngine {
     /// Get the number of pending (unsynced) log entries.
     pub async fn pending_count(&self) -> usize {
         self.pending.lock().await.len()
+    }
+
+    /// Get a full status snapshot of the sync engine.
+    pub async fn status(&self) -> SyncStatus {
+        SyncStatus {
+            state: *self.state.lock().await,
+            pending_count: self.pending.lock().await.len(),
+            last_sync_at: *self.last_sync_at.lock().await,
+            last_error: self.last_error.lock().await.clone(),
+        }
     }
 
     async fn set_state(&self, new_state: SyncState, message: Option<&str>) {
@@ -242,11 +273,20 @@ impl SyncEngine {
 
         match self.do_sync().await {
             Ok(synced) => {
+                if synced {
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs();
+                    *self.last_sync_at.lock().await = Some(now);
+                    *self.last_error.lock().await = None;
+                }
                 self.set_state(SyncState::Idle, None).await;
                 Ok(synced)
             }
             Err(e) => {
                 let msg = e.to_string();
+                *self.last_error.lock().await = Some(msg.clone());
                 match &e {
                     SyncError::Network(_) => {
                         self.set_state(SyncState::Offline, Some(&msg)).await;

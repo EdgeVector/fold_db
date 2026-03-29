@@ -138,6 +138,14 @@ impl FoldDB {
         }
     }
 
+    /// Get a full sync status snapshot, if sync is configured.
+    pub async fn sync_status(&self) -> Option<crate::sync::SyncStatus> {
+        match &self.sync_engine {
+            Some(engine) => Some(engine.status().await),
+            None => None,
+        }
+    }
+
     /// Creates a new FoldDB instance with the specified storage path.
     /// All initializations happen here. This is the main entry point for the FoldDB system.
     /// Do not initialize anywhere else.
