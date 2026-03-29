@@ -138,6 +138,14 @@ impl FoldDB {
         }
     }
 
+    /// Get a full sync status snapshot, if sync is configured.
+    pub async fn sync_status(&self) -> Option<crate::sync::SyncStatus> {
+        match &self.sync_engine {
+            Some(engine) => Some(engine.status().await),
+            None => None,
+        }
+    }
+
     /// Get the number of pending (unsynced) log entries.
     /// Returns None if sync is not configured.
     pub async fn sync_pending_count(&self) -> Option<usize> {

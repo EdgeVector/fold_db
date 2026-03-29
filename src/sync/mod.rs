@@ -55,7 +55,7 @@ pub mod log;
 pub mod s3;
 pub mod snapshot;
 
-pub use engine::{SyncConfig, SyncEngine, SyncState};
+pub use engine::{SyncConfig, SyncEngine, SyncState, SyncStatus};
 pub use error::{SyncError, SyncResult};
 
 /// Configuration needed to enable S3 sync.
