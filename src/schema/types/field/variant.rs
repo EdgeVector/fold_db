@@ -38,6 +38,8 @@ pub struct FieldValue {
     pub molecule_uuid: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub molecule_version: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_pub_key: Option<String>,
 }
 
 // Macro to reduce boilerplate for Field trait implementation
