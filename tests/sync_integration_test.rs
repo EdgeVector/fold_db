@@ -233,3 +233,25 @@ async fn list_namespaces_works_through_stack() {
     assert!(namespaces.contains(&"metadata".to_string()));
     assert!(namespaces.contains(&"schemas".to_string()));
 }
+
+#[tokio::test]
+async fn empty_store_has_no_user_data() {
+    let base = Arc::new(InMemoryNamespacedStore::new());
+    let namespaces = base.list_namespaces().await.unwrap();
+    let has_user_data = namespaces.iter().any(|ns| ns != "__sled__default");
+    assert!(!has_user_data, "fresh store should have no user data");
+}
+
+#[tokio::test]
+async fn store_with_data_detected_as_non_empty() {
+    let base = Arc::new(InMemoryNamespacedStore::new());
+    let main = base.open_namespace("main").await.unwrap();
+    main.put(b"key", b"val".to_vec()).await.unwrap();
+
+    let namespaces = base.list_namespaces().await.unwrap();
+    let has_user_data = namespaces.iter().any(|ns| ns != "__sled__default");
+    assert!(
+        has_user_data,
+        "store with data should be detected as non-empty"
+    );
+}
