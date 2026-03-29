@@ -118,11 +118,12 @@ gh pr merge --auto --squash <PR_URL>
 ```
 
 **Monitor the PR until it merges — your task is NOT done until the PR is merged.**
-Poll CI status (`gh pr view <PR_URL> --json state,statusCheckRollup,mergeStateStatus`) every 30-60 seconds.
+Loop every 5 minutes: `gh pr view <PR_URL> --json state,statusCheckRollup,mergeStateStatus`
 - CI failing: read logs (`gh pr checks`), fix the code, push.
 - Branch out of date: `git fetch origin && git rebase origin/<base-branch> && git push --force-with-lease`.
 - Review comments: fix, push, resolve threads.
-- Only done when `state: MERGED`.
+- CI passing / waiting: sleep 5 minutes, check again.
+- Merged: move kanban task to trash (task complete).
 
 ## Coding Standards
 
