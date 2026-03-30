@@ -217,7 +217,14 @@ fn has_address(text: &str) -> bool {
     // Check every occurrence of each street suffix for a preceding digit
     for suffix in &street_suffixes {
         let mut search_from = 0;
-        while let Some(rel) = lower[search_from..].find(suffix) {
+        loop {
+            // Ensure search_from is on a char boundary
+            if search_from >= lower.len() || !lower.is_char_boundary(search_from) {
+                break;
+            }
+            let Some(rel) = lower[search_from..].find(suffix) else {
+                break;
+            };
             let pos = search_from + rel;
             // Walk backwards up to ~30 chars, staying on a char boundary
             let start = lower[..pos]
@@ -229,7 +236,12 @@ fn has_address(text: &str) -> bool {
             if preceding.chars().any(|c| c.is_ascii_digit()) {
                 return true;
             }
-            search_from = pos + suffix.len();
+            let next = pos + suffix.len();
+            // Advance to the next char boundary after the suffix
+            search_from = lower[next..]
+                .char_indices()
+                .next()
+                .map_or(lower.len(), |(i, _)| next + i);
         }
     }
     false
