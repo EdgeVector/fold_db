@@ -1,6 +1,6 @@
 # FoldDB
 
-[![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](https://github.com/shiba4life/fold_db)
+[![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](https://github.com/EdgeVector/fold_db)
 
 **Your personal database with AI that organizes everything for you.**
 
@@ -9,7 +9,7 @@ Drop in files, JSON, or social media exports — FoldDB detects schemas, extract
 **Try it now** — install with one command and have a working database in under a minute:
 
 ```bash
-brew tap shiba4life/fold_db && brew install folddb
+brew tap EdgeVector/fold_db && brew install folddb
 folddb_server --port 9001
 # Open http://localhost:9001 — drag in a JSON file, ask a question
 ```
@@ -18,21 +18,21 @@ folddb_server --port 9001
 
 ### Option A: Desktop App (macOS)
 
-Download the latest `.dmg` from [GitHub Releases](https://github.com/shiba4life/fold_db/releases), open it, and drag **FoldDB.app** to Applications. Double-click to launch — no terminal needed.
+Download the latest `.dmg` from [GitHub Releases](https://github.com/EdgeVector/fold_db/releases), open it, and drag **FoldDB.app** to Applications. Double-click to launch — no terminal needed.
 
 > **First launch:** macOS will block the unsigned app. Right-click the app → **Open** → click **Open** in the dialog, or go to **System Settings → Privacy & Security → Open Anyway**.
 
 ### Option B: Install via Homebrew
 
 ```bash
-brew tap shiba4life/fold_db
+brew tap EdgeVector/fold_db
 brew install folddb
 ```
 
 ### Option C: Install from Source
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/shiba4life/fold_db/master/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/EdgeVector/fold_db/master/install.sh | sh
 ```
 
 ### Run
@@ -169,7 +169,7 @@ Run `folddb --help` for the full command reference.
 ### Building from Source
 
 ```bash
-git clone https://github.com/shiba4life/fold_db.git
+git clone https://github.com/EdgeVector/fold_db.git
 cd fold_db
 cargo build --release --workspace
 cargo test --workspace
@@ -187,7 +187,7 @@ cargo test --workspace
 ### Install from Source (alternative)
 
 ```bash
-cargo install --git https://github.com/shiba4life/fold_db.git --bin folddb
+cargo install --git https://github.com/EdgeVector/fold_db.git --bin folddb
 ```
 
 ## Configuration
@@ -349,5 +349,5 @@ Dual-licensed under [MIT](LICENSE-MIT) or [Apache 2.0](LICENSE-APACHE), at your 
 
 ## Community
 
-- **[GitHub Issues](https://github.com/shiba4life/fold_db/issues)** — Report bugs and request features
-- **[GitHub Discussions](https://github.com/shiba4life/fold_db/discussions)** — Questions and community discussion
+- **[GitHub Issues](https://github.com/EdgeVector/fold_db/issues)** — Report bugs and request features
+- **[GitHub Discussions](https://github.com/EdgeVector/fold_db/discussions)** — Questions and community discussion
