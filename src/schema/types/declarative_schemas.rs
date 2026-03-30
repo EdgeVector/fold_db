@@ -127,6 +127,8 @@ impl<'de> serde::Deserialize<'de> for DeclarativeSchemaDefinition {
             #[serde(default)]
             field_data_classifications: HashMap<String, DataClassification>,
             #[serde(default)]
+            field_interest_categories: HashMap<String, String>,
+            #[serde(default)]
             ref_fields: HashMap<String, String>,
             #[serde(default)]
             field_types: HashMap<String, crate::schema::types::field_value_type::FieldValueType>,
@@ -207,9 +209,10 @@ impl<'de> serde::Deserialize<'de> for DeclarativeSchemaDefinition {
                 .insert(field_name, classifications);
         }
 
-        // Preserve field_descriptions, field_data_classifications, ref_fields, field_types and identity_hash
+        // Preserve field_descriptions, field_data_classifications, field_interest_categories, ref_fields, field_types and identity_hash
         schema.field_descriptions = helper.field_descriptions;
         schema.field_data_classifications = helper.field_data_classifications;
+        schema.field_interest_categories = helper.field_interest_categories;
         schema.ref_fields = helper.ref_fields;
         schema.field_types = helper.field_types;
         schema.identity_hash = helper.identity_hash;
@@ -267,6 +270,11 @@ pub struct DeclarativeSchemaDefinition {
     /// Maps field_name -> DataClassification. Required for new fields at schema creation.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub field_data_classifications: HashMap<String, DataClassification>,
+    /// Interest categories for each field (e.g. "Photography", "Cooking", "Running").
+    /// Assigned by the schema service from the canonical field registry.
+    /// Maps field_name -> interest category string.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub field_interest_categories: HashMap<String, String>,
     /// Reference fields that point to child schemas
     /// Maps field_name -> child_schema_name
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
@@ -324,6 +332,7 @@ impl PartialEq for DeclarativeSchemaDefinition {
             && self.field_molecule_uuids == other.field_molecule_uuids
             && self.field_classifications == other.field_classifications
             && self.field_data_classifications == other.field_data_classifications
+            && self.field_interest_categories == other.field_interest_categories
             && self.ref_fields == other.ref_fields
             && self.field_types == other.field_types
             && self.identity_hash == other.identity_hash
@@ -463,6 +472,7 @@ impl DeclarativeSchemaDefinition {
             field_classifications: HashMap::new(),
             field_descriptions: HashMap::new(),
             field_data_classifications: HashMap::new(),
+            field_interest_categories: HashMap::new(),
             ref_fields: HashMap::new(),
             field_types: HashMap::new(),
             identity_hash: None,

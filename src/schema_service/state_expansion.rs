@@ -211,6 +211,12 @@ impl SchemaServiceState {
                     .entry(canonical.clone())
                     .or_insert(data_classification);
             }
+            if let Some(interest_category) = schema.field_interest_categories.remove(old_name) {
+                schema
+                    .field_interest_categories
+                    .entry(canonical.clone())
+                    .or_insert(interest_category);
+            }
             // Add mutation_mapper: old_name → canonical so AI mutations still work
             mutation_mappers
                 .entry(old_name.clone())
@@ -300,6 +306,14 @@ impl SchemaServiceState {
                 .or_insert_with(|| classification.clone());
         }
 
+        // Merge field_interest_categories (keep existing, add new)
+        for (field, category) in &existing.field_interest_categories {
+            schema
+                .field_interest_categories
+                .entry(field.clone())
+                .or_insert_with(|| category.clone());
+        }
+
         // Merge ref_fields (keep existing references)
         for (field, target) in &existing.ref_fields {
             schema
@@ -359,9 +373,10 @@ impl SchemaServiceState {
         // Fails if classification cannot be determined (no ANTHROPIC_API_KEY for new fields).
         self.register_canonical_fields(schema).await?;
 
-        // Propagate canonical field types and classifications to the expanded schema
+        // Propagate canonical field types, classifications, and interest categories to the expanded schema
         self.apply_canonical_types(schema);
         self.apply_canonical_classifications(schema);
+        self.apply_canonical_interest_categories(schema);
 
         log_feature!(
             LogFeature::Schema,
