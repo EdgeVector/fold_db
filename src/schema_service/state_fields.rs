@@ -383,8 +383,7 @@ impl SchemaServiceState {
 
         let mut backfilled = 0usize;
         for (field_name, description) in &fields_to_backfill {
-            let category =
-                super::classify::infer_interest_category(field_name, description).await;
+            let category = super::classify::infer_interest_category(field_name, description).await;
 
             if let Some(ref cat) = category {
                 let mut fields = match self.canonical_fields.write() {

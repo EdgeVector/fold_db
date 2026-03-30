@@ -115,7 +115,8 @@ mod tests {
 
     #[test]
     fn interest_prompt_contains_field_name_and_description() {
-        let prompt = build_interest_category_prompt("photo_album", "the album containing the photo");
+        let prompt =
+            build_interest_category_prompt("photo_album", "the album containing the photo");
         assert!(prompt.contains("photo_album"));
         assert!(prompt.contains("the album containing the photo"));
         assert!(prompt.contains("interest_category"));

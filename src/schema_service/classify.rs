@@ -148,7 +148,12 @@ pub async fn classify_interest_category_with_llm(
         ))
         .no_proxy()
         .build()
-        .map_err(|e| format!("Failed to create HTTP client for interest classification: {}", e))?;
+        .map_err(|e| {
+            format!(
+                "Failed to create HTTP client for interest classification: {}",
+                e
+            )
+        })?;
 
     let request_body = serde_json::json!({
         "model": models::ANTHROPIC_HAIKU,
@@ -247,10 +252,7 @@ pub async fn classify_interest_category_with_llm(
 /// Infer interest category for a new canonical field.
 /// Returns `Ok(None)` for structural fields or when the API key is missing.
 /// Interest category is best-effort — missing it doesn't block schema creation.
-pub async fn infer_interest_category(
-    field_name: &str,
-    description: &str,
-) -> Option<String> {
+pub async fn infer_interest_category(field_name: &str, description: &str) -> Option<String> {
     match classify_interest_category_with_llm(field_name, description).await {
         Ok(category) => category,
         Err(e) => {
