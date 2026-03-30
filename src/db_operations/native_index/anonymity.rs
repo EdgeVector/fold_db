@@ -214,15 +214,22 @@ fn has_address(text: &str) -> bool {
         " parkway",
     ];
     let lower = text.to_lowercase();
-    // Also do a simpler check: number followed by street suffix anywhere
+    // Check every occurrence of each street suffix for a preceding digit
     for suffix in &street_suffixes {
-        if let Some(pos) = lower.find(suffix) {
-            // Check if there's a number before this suffix (within ~30 chars)
-            let start = pos.saturating_sub(30);
+        let mut search_from = 0;
+        while let Some(rel) = lower[search_from..].find(suffix) {
+            let pos = search_from + rel;
+            // Walk backwards up to ~30 chars, staying on a char boundary
+            let start = lower[..pos]
+                .char_indices()
+                .rev()
+                .nth(30)
+                .map_or(0, |(i, _)| i);
             let preceding = &lower[start..pos];
             if preceding.chars().any(|c| c.is_ascii_digit()) {
                 return true;
             }
+            search_from = pos + suffix.len();
         }
     }
     false
@@ -499,6 +506,13 @@ mod tests {
         assert!(contains_named_entities("office is 456 Oak Avenue"));
         assert!(contains_named_entities("send to 789 Elm Blvd."));
         assert!(!contains_named_entities("no address information here"));
+        // Second occurrence has the digit (first "Main St" has no number)
+        assert!(contains_named_entities(
+            "Main St is nice but 123 Elm St is better"
+        ));
+        // Unicode preceding the suffix must not panic
+        assert!(contains_named_entities("café résumé 42 Oak Dr in town"));
+        assert!(!contains_named_entities("café résumé naïve über straße"));
     }
 
     #[test]
