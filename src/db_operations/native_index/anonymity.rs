@@ -24,7 +24,7 @@ pub enum FragmentDecision {
 }
 
 /// Minimum Shannon entropy (bits per character) for a fragment to be publishable.
-const MIN_ENTROPY_BITS: f64 = 2.0;
+const MIN_ENTROPY_BITS: f64 = 1.5;
 /// Minimum word count for a fragment to be publishable.
 const MIN_WORD_COUNT: usize = 3;
 
@@ -120,7 +120,7 @@ pub fn default_privacy_class(field_name: &str) -> FieldPrivacyClass {
 /// Check whether text contains named entities (PII patterns).
 /// Returns true if any PII pattern is detected.
 pub fn contains_named_entities(text: &str) -> bool {
-    has_email(text) || has_phone(text) || has_url(text) || has_id_pattern(text)
+    has_email(text) || has_phone(text) || has_url(text) || has_id_pattern(text) || has_address(text)
 }
 
 fn has_email(text: &str) -> bool {
@@ -139,7 +139,7 @@ fn has_phone(text: &str) -> bool {
         // Check for phone-like patterns: sequences of digits with separators
         let mut consecutive_phone_chars = 0;
         for ch in text.chars() {
-            if ch.is_ascii_digit() || ch == '-' || ch == '(' || ch == ')' || ch == ' ' || ch == '+'
+            if ch.is_ascii_digit() || ch == '-' || ch == '(' || ch == ')' || ch == ' ' || ch == '+' || ch == '.'
             {
                 consecutive_phone_chars += 1;
             } else {
@@ -174,17 +174,42 @@ fn has_id_pattern(text: &str) -> bool {
     false
 }
 
-/// Calculate Shannon entropy (bits per character) of text.
+fn has_address(text: &str) -> bool {
+    // Look for patterns like "123 Main St" or "456 Oak Avenue"
+    let street_suffixes = [
+        " st", " st.", " street", " ave", " ave.", " avenue", " blvd", " blvd.",
+        " boulevard", " dr", " dr.", " drive", " rd", " rd.", " road", " ln",
+        " ln.", " lane", " ct", " ct.", " court", " pl", " pl.", " place",
+        " way", " cir", " circle", " pkwy", " parkway",
+    ];
+    let lower = text.to_lowercase();
+    // Also do a simpler check: number followed by street suffix anywhere
+    for suffix in &street_suffixes {
+        if let Some(pos) = lower.find(suffix) {
+            // Check if there's a number before this suffix (within ~30 chars)
+            let start = pos.saturating_sub(30);
+            let preceding = &lower[start..pos];
+            if preceding.chars().any(|c| c.is_ascii_digit()) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// Calculate Shannon entropy (bits per token) of text.
 pub fn token_entropy(text: &str) -> f64 {
-    if text.is_empty() {
+    let tokens: Vec<&str> = text.split_whitespace().collect();
+    if tokens.is_empty() {
         return 0.0;
     }
 
     let mut freq = std::collections::HashMap::new();
-    let total = text.len() as f64;
+    let total = tokens.len() as f64;
 
-    for byte in text.bytes() {
-        *freq.entry(byte).or_insert(0u64) += 1;
+    for token in &tokens {
+        let lower = token.to_lowercase();
+        *freq.entry(lower).or_insert(0u64) += 1;
     }
 
     freq.values()
@@ -336,8 +361,8 @@ mod tests {
 
     #[test]
     fn test_entropy_too_low() {
-        // Very short, repetitive text has low entropy
-        let entropy = token_entropy("aaa");
+        // Repetitive tokens have low entropy
+        let entropy = token_entropy("the the the");
         assert!(entropy < MIN_ENTROPY_BITS, "entropy was {}", entropy);
     }
 
@@ -421,5 +446,32 @@ mod tests {
             decision,
             FragmentDecision::Reject("field name suggests PII")
         );
+    }
+
+    #[test]
+    fn test_entropy_token_level_unicode() {
+        // Unicode text should get same entropy as ASCII with same token diversity
+        let ascii_entropy = token_entropy("hello world foo bar baz");
+        let unicode_entropy = token_entropy("café résumé naïve über straße");
+        // Both have 5 unique tokens, so entropy should be similar
+        assert!(
+            (ascii_entropy - unicode_entropy).abs() < 0.1,
+            "ascii={}, unicode={} — should be similar for same token count",
+            ascii_entropy,
+            unicode_entropy
+        );
+    }
+
+    #[test]
+    fn test_ner_detects_address() {
+        assert!(contains_named_entities("lives at 123 Main St in town"));
+        assert!(contains_named_entities("office is 456 Oak Avenue"));
+        assert!(contains_named_entities("send to 789 Elm Blvd."));
+        assert!(!contains_named_entities("no address information here"));
+    }
+
+    #[test]
+    fn test_ner_detects_phone_with_dots() {
+        assert!(contains_named_entities("call 555.123.4567 for info"));
     }
 }
