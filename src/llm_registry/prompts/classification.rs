@@ -25,6 +25,58 @@ Return format: {{"sensitivity_level": <0-4>, "data_domain": "<domain>"}}"#
     )
 }
 
+/// Valid interest categories for field-to-category mapping.
+/// This is the single source of truth — used by the LLM prompt, the schema service,
+/// and downstream discovery features.
+pub const INTEREST_CATEGORIES: &[&str] = &[
+    "Photography",
+    "Cooking",
+    "Running",
+    "Software Engineering",
+    "Music",
+    "Travel",
+    "Fitness",
+    "Reading",
+    "Gaming",
+    "Finance",
+    "Gardening",
+    "Art & Design",
+    "Parenting",
+    "Health & Wellness",
+    "Sports",
+    "Movies & TV",
+    "Science",
+    "Writing",
+    "Fashion",
+    "Home Improvement",
+    "Pets",
+    "Automotive",
+    "Productivity",
+    "Social Media",
+    "Education",
+];
+
+/// Build the interest category classification prompt for a single field.
+///
+/// The LLM should return a JSON object with `interest_category` (one of the valid
+/// categories, or null if the field doesn't map to a user interest).
+pub fn build_interest_category_prompt(field_name: &str, description: &str) -> String {
+    let categories = INTEREST_CATEGORIES.join(", ");
+    format!(
+        r#"Classify this database field into a user interest category. Return ONLY a JSON object with one field, no explanation.
+
+Field name: "{field_name}"
+Description: "{description}"
+
+Valid interest categories: {categories}
+
+If this field clearly relates to one of the above interests, return that category.
+If this field is a structural/metadata field (like id, hash, timestamp, source, content_hash) or doesn't map to any interest, return null.
+
+Return format: {{"interest_category": "<category>" | null}}"#
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -58,6 +110,31 @@ mod tests {
             "location",
         ] {
             assert!(prompt.contains(domain));
+        }
+    }
+
+    #[test]
+    fn interest_prompt_contains_field_name_and_description() {
+        let prompt =
+            build_interest_category_prompt("photo_album", "the album containing the photo");
+        assert!(prompt.contains("photo_album"));
+        assert!(prompt.contains("the album containing the photo"));
+        assert!(prompt.contains("interest_category"));
+    }
+
+    #[test]
+    fn interest_prompt_lists_all_categories() {
+        let prompt = build_interest_category_prompt("x", "y");
+        for category in INTEREST_CATEGORIES {
+            assert!(prompt.contains(category), "Missing category: {}", category);
+        }
+    }
+
+    #[test]
+    fn interest_categories_are_non_empty() {
+        assert!(!INTEREST_CATEGORIES.is_empty());
+        for cat in INTEREST_CATEGORIES {
+            assert!(!cat.is_empty());
         }
     }
 }

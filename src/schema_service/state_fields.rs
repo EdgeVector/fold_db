@@ -107,6 +107,10 @@ impl SchemaServiceState {
                     .await
                     .map_err(FoldDbError::Config)?;
 
+            // Interest category is best-effort — doesn't block schema creation
+            let interest_category =
+                super::classify::infer_interest_category(field_name, &desc).await;
+
             let embed_text = Self::build_embedding_text(field_name, &desc);
             let embedding = self.embedder.embed_text(&embed_text).ok();
 
@@ -116,6 +120,7 @@ impl SchemaServiceState {
                     description: desc,
                     field_type,
                     classification: Some(classification),
+                    interest_category,
                 },
                 embedding,
             ));
@@ -277,6 +282,7 @@ impl SchemaServiceState {
                         description: desc,
                         field_type: FieldValueType::Any,
                         classification: None,
+                        interest_category: None,
                     }
                 };
 
@@ -325,12 +331,15 @@ impl SchemaServiceState {
                         embeddings.insert(field_name.clone(), vec);
                     }
                     let classification = schema.field_data_classifications.get(field_name).cloned();
+                    let interest_category =
+                        schema.field_interest_categories.get(field_name).cloned();
                     fields.insert(
                         field_name.clone(),
                         CanonicalField {
                             description: desc,
                             field_type,
                             classification,
+                            interest_category,
                         },
                     );
                 }
@@ -342,6 +351,59 @@ impl SchemaServiceState {
             info,
             "Rebuilt {} canonical fields from schemas",
             fields.len()
+        );
+    }
+
+    /// Backfill interest categories for existing canonical fields that don't have one.
+    /// Called on startup after loading canonical fields from storage.
+    /// Best-effort: failures are logged but don't block startup.
+    pub(super) async fn backfill_interest_categories(&self) {
+        let fields_to_backfill: Vec<(String, String)> = {
+            let fields = match self.canonical_fields.read() {
+                Ok(f) => f,
+                Err(_) => return,
+            };
+            fields
+                .iter()
+                .filter(|(_, cf)| cf.interest_category.is_none())
+                .map(|(name, cf)| (name.clone(), cf.description.clone()))
+                .collect()
+        };
+
+        if fields_to_backfill.is_empty() {
+            return;
+        }
+
+        log_feature!(
+            LogFeature::Schema,
+            info,
+            "Backfilling interest categories for {} canonical fields",
+            fields_to_backfill.len()
+        );
+
+        let mut backfilled = 0usize;
+        for (field_name, description) in &fields_to_backfill {
+            let category = super::classify::infer_interest_category(field_name, description).await;
+
+            if let Some(ref cat) = category {
+                let mut fields = match self.canonical_fields.write() {
+                    Ok(f) => f,
+                    Err(_) => continue,
+                };
+                if let Some(canonical) = fields.get_mut(field_name) {
+                    canonical.interest_category = Some(cat.clone());
+                    self.persist_canonical_field(field_name, canonical);
+                    backfilled += 1;
+                }
+            }
+        }
+
+        log_feature!(
+            LogFeature::Schema,
+            info,
+            "Backfilled interest categories: {}/{} fields classified",
+            backfilled,
+            fields_to_backfill.len()
         );
     }
 
@@ -405,6 +467,29 @@ impl SchemaServiceState {
                     schema
                         .field_data_classifications
                         .insert(field_name.clone(), classification.clone());
+                }
+            }
+        }
+    }
+
+    /// Populate a schema's `field_interest_categories` map from the canonical field registry.
+    /// Called after canonicalization to propagate interest categories from the registry to the schema.
+    /// Only fills in fields that don't already have an interest category declared.
+    pub(super) fn apply_canonical_interest_categories(&self, schema: &mut Schema) {
+        let fields = match self.canonical_fields.read() {
+            Ok(f) => f,
+            Err(_) => return,
+        };
+
+        for field_name in schema.fields.as_deref().unwrap_or(&[]) {
+            if schema.field_interest_categories.contains_key(field_name) {
+                continue;
+            }
+            if let Some(canonical) = fields.get(field_name) {
+                if let Some(ref category) = canonical.interest_category {
+                    schema
+                        .field_interest_categories
+                        .insert(field_name.clone(), category.clone());
                 }
             }
         }

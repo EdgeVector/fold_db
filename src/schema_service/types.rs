@@ -9,7 +9,8 @@ use crate::schema::types::Schema;
 
 /// A canonical field entry in the global field registry.
 /// Carries description (for semantic matching), type (for enforcement),
-/// and optional data classification (for sensitivity labeling).
+/// optional data classification (for sensitivity labeling), and optional
+/// interest category (for discovery/social features).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CanonicalField {
     pub description: String,
@@ -18,6 +19,11 @@ pub struct CanonicalField {
     /// that were registered before classification was required.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub classification: Option<DataClassification>,
+    /// Interest category for discovery (e.g. "Photography", "Cooking", "Running").
+    /// Assigned by LLM at field registration time. `None` for fields that don't
+    /// map to a user interest (e.g. content_hash, source, id fields).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub interest_category: Option<String>,
 }
 
 /// Response containing a list of available schema names

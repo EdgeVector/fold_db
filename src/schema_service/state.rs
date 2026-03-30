@@ -620,6 +620,80 @@ impl SchemaServiceState {
         Ok(state)
     }
 
+    /// Backfill interest categories for canonical fields that were registered
+    /// before interest category classification was added. Best-effort: failures
+    /// are logged but don't block startup. Call after construction.
+    ///
+    /// After backfilling canonical fields, propagates interest categories to
+    /// all existing schemas and persists the updated schemas.
+    pub async fn run_interest_category_backfill(&self) {
+        self.backfill_interest_categories().await;
+
+        // Propagate to existing schemas
+        let schema_names: Vec<String> = {
+            let schemas = match self.schemas.read() {
+                Ok(s) => s,
+                Err(_) => return,
+            };
+            schemas
+                .iter()
+                .filter(|(_, s)| s.superseded_by.is_none())
+                .map(|(name, _)| name.clone())
+                .collect()
+        };
+
+        let mut updated = 0usize;
+        for name in &schema_names {
+            // Read canonical fields first
+            let canonical_fields = match self.canonical_fields.read() {
+                Ok(f) => f,
+                Err(_) => continue,
+            };
+
+            let mut schemas = match self.schemas.write() {
+                Ok(s) => s,
+                Err(_) => return,
+            };
+            if let Some(schema) = schemas.get_mut(name) {
+                let before = schema.field_interest_categories.len();
+                for field_name in schema.fields.clone().as_deref().unwrap_or(&[]) {
+                    if schema.field_interest_categories.contains_key(field_name) {
+                        continue;
+                    }
+                    if let Some(canonical) = canonical_fields.get(field_name) {
+                        if let Some(ref category) = canonical.interest_category {
+                            schema
+                                .field_interest_categories
+                                .insert(field_name.clone(), category.clone());
+                        }
+                    }
+                }
+                if schema.field_interest_categories.len() > before {
+                    // Persist to Sled directly (backfill doesn't need the full async persist)
+                    match &self.storage {
+                        SchemaStorage::Sled { schemas_tree, .. } => {
+                            if let Ok(bytes) = serde_json::to_vec(&*schema) {
+                                let _ = schemas_tree.insert(schema.name.as_bytes(), bytes);
+                            }
+                        }
+                        #[cfg(feature = "aws-backend")]
+                        SchemaStorage::Cloud { .. } => {}
+                    }
+                    updated += 1;
+                }
+            }
+        }
+
+        if updated > 0 {
+            log_feature!(
+                LogFeature::Schema,
+                info,
+                "Backfill: updated interest categories on {} schemas",
+                updated
+            );
+        }
+    }
+
     pub async fn add_schema(
         &self,
         mut schema: Schema,
@@ -1039,9 +1113,10 @@ impl SchemaServiceState {
         // Fails if classification cannot be determined (no ANTHROPIC_API_KEY for new fields).
         self.register_canonical_fields(&schema).await?;
 
-        // Propagate canonical field types and classifications to the schema
+        // Propagate canonical field types, classifications, and interest categories to the schema
         self.apply_canonical_types(&mut schema);
         self.apply_canonical_classifications(&mut schema);
+        self.apply_canonical_interest_categories(&mut schema);
 
         log_feature!(
             LogFeature::Schema,
