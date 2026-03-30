@@ -139,7 +139,13 @@ fn has_phone(text: &str) -> bool {
         // Check for phone-like patterns: sequences of digits with separators
         let mut consecutive_phone_chars = 0;
         for ch in text.chars() {
-            if ch.is_ascii_digit() || ch == '-' || ch == '(' || ch == ')' || ch == ' ' || ch == '+' || ch == '.'
+            if ch.is_ascii_digit()
+                || ch == '-'
+                || ch == '('
+                || ch == ')'
+                || ch == ' '
+                || ch == '+'
+                || ch == '.'
             {
                 consecutive_phone_chars += 1;
             } else {
@@ -177,10 +183,35 @@ fn has_id_pattern(text: &str) -> bool {
 fn has_address(text: &str) -> bool {
     // Look for patterns like "123 Main St" or "456 Oak Avenue"
     let street_suffixes = [
-        " st", " st.", " street", " ave", " ave.", " avenue", " blvd", " blvd.",
-        " boulevard", " dr", " dr.", " drive", " rd", " rd.", " road", " ln",
-        " ln.", " lane", " ct", " ct.", " court", " pl", " pl.", " place",
-        " way", " cir", " circle", " pkwy", " parkway",
+        " st",
+        " st.",
+        " street",
+        " ave",
+        " ave.",
+        " avenue",
+        " blvd",
+        " blvd.",
+        " boulevard",
+        " dr",
+        " dr.",
+        " drive",
+        " rd",
+        " rd.",
+        " road",
+        " ln",
+        " ln.",
+        " lane",
+        " ct",
+        " ct.",
+        " court",
+        " pl",
+        " pl.",
+        " place",
+        " way",
+        " cir",
+        " circle",
+        " pkwy",
+        " parkway",
     ];
     let lower = text.to_lowercase();
     // Also do a simpler check: number followed by street suffix anywhere
