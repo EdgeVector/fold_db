@@ -312,4 +312,95 @@ impl AuthClient {
 
         Ok(())
     }
+
+    // =========================================================================
+    // Org sync operations
+    // =========================================================================
+
+    /// Request presigned URLs for uploading org log entries.
+    ///
+    /// The Lambda scopes URLs to `/{org_hash}/log/{member_id}/{seq}.enc`.
+    pub async fn presign_org_log_upload(
+        &self,
+        org_hash: &str,
+        member_id: &str,
+        seq_numbers: &[u64],
+    ) -> SyncResult<Vec<PresignedUrl>> {
+        let body = serde_json::json!({
+            "action": "presign_org_log_upload",
+            "org_hash": org_hash,
+            "member_id": member_id,
+            "seq_numbers": seq_numbers,
+        });
+
+        let resp = self.post("/api/sync/presign", body).await?;
+        let parsed: PresignedResponse = serde_json::from_value(resp)?;
+
+        if !parsed.ok {
+            return Err(SyncError::Auth(
+                parsed
+                    .error
+                    .unwrap_or_else(|| "org presign upload failed".to_string()),
+            ));
+        }
+
+        Ok(parsed.urls)
+    }
+
+    /// Request presigned URLs for downloading org log entries from a specific member.
+    pub async fn presign_org_log_download(
+        &self,
+        org_hash: &str,
+        member_id: &str,
+        seq_numbers: &[u64],
+    ) -> SyncResult<Vec<PresignedUrl>> {
+        let body = serde_json::json!({
+            "action": "presign_org_log_download",
+            "org_hash": org_hash,
+            "member_id": member_id,
+            "seq_numbers": seq_numbers,
+        });
+
+        let resp = self.post("/api/sync/presign", body).await?;
+        let parsed: PresignedResponse = serde_json::from_value(resp)?;
+
+        if !parsed.ok {
+            return Err(SyncError::Auth(
+                parsed
+                    .error
+                    .unwrap_or_else(|| "org presign download failed".to_string()),
+            ));
+        }
+
+        Ok(parsed.urls)
+    }
+
+    /// List objects in an org's S3 prefix.
+    ///
+    /// The prefix is relative to `/{org_hash}/`, so `"log/"` lists all log entries
+    /// across all members.
+    pub async fn list_org_objects(
+        &self,
+        org_hash: &str,
+        prefix: &str,
+    ) -> SyncResult<Vec<S3ObjectInfo>> {
+        let body = serde_json::json!({
+            "action": "list_objects",
+            "org_hash": org_hash,
+            "prefix": prefix,
+        });
+
+        let resp = self.post("/api/sync/list", body).await?;
+        let parsed: ListObjectsResponse = serde_json::from_value(resp)?;
+
+        if !parsed.ok {
+            return Err(SyncError::Auth(
+                parsed
+                    .error
+                    .unwrap_or_else(|| "org list failed".to_string()),
+            ));
+        }
+
+        Ok(parsed.objects)
+    }
 }
