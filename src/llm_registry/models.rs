@@ -64,16 +64,22 @@ pub const TEMPERATURE_CREATIVE: f32 = 0.8;
 
 // ---- Token Limits ----
 
-/// Max output tokens for classification tasks (small JSON responses).
+/// Max output tokens for classification tasks — cloud APIs (small JSON responses).
 pub const MAX_TOKENS_CLASSIFICATION: u32 = 100;
+
+/// Max output tokens for Ollama classification — local tokenizers vary, so allow more headroom.
+pub const MAX_TOKENS_CLASSIFICATION_OLLAMA: u32 = 256;
 
 /// Max output tokens for ingestion / query analysis (large JSON + reasoning).
 pub const MAX_TOKENS_ANALYSIS: u32 = 16_000;
 
 // ---- Timeout Presets (seconds) ----
 
-/// Quick LLM calls (classification, small structured output).
+/// Quick LLM calls — cloud APIs (classification, small structured output).
 pub const TIMEOUT_CLASSIFICATION: u64 = 15;
+
+/// Ollama classification — local models need longer for cold starts.
+pub const TIMEOUT_CLASSIFICATION_OLLAMA: u64 = 60;
 
 /// Standard LLM calls (ingestion, query planning).
 pub const TIMEOUT_STANDARD: u64 = 300;
