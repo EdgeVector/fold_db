@@ -28,6 +28,9 @@ pub struct FoldDB {
     pub schema_manager: Arc<SchemaCore>,
     /// Shared database operations with storage abstraction
     pub db_ops: Arc<DbOperations>,
+    /// Raw sled database handle for direct tree access (e.g., org operations).
+    /// Only present when using the Sled backend.
+    sled_db: Option<sled::Db>,
     /// Query executor for handling all query operations
     pub query_executor: QueryExecutor,
     /// Message bus for event-driven communication (held for Arc lifetime)
@@ -55,6 +58,12 @@ impl FoldDB {
             .get_node_id()
             .await
             .map_err(|e| crate::storage::StorageError::BackendError(e.to_string()))
+    }
+
+    /// Returns a reference to the raw sled database, if available.
+    /// This is used by modules that need direct sled tree access (e.g., org operations).
+    pub fn sled_db(&self) -> Option<&sled::Db> {
+        self.sled_db.as_ref()
     }
 
     /// Properly close and flush the database to release all file locks
@@ -207,15 +216,33 @@ impl FoldDB {
             .open_tree("progress")
             .map_err(|e| StorageError::IoError(std::io::Error::other(e.to_string())))?;
         let job_store: ProgressTracker = crate::progress::create_tracker_with_sled(progress_tree);
-        Self::initialize_from_db_ops(db_ops, db_path, Some(job_store), "local".to_string()).await
+        Self::initialize_from_db_ops_with_sled(
+            db_ops,
+            db_path,
+            Some(job_store),
+            "local".to_string(),
+            Some(db),
+        )
+        .await
     }
 
     /// Common initialization logic that creates all FoldDB components from DbOperations
     pub async fn initialize_from_db_ops(
         db_ops: Arc<DbOperations>,
+        db_path: &str,
+        job_store: Option<Arc<dyn JobStore>>,
+        user_id: String,
+    ) -> Result<Self, StorageError> {
+        Self::initialize_from_db_ops_with_sled(db_ops, db_path, job_store, user_id, None).await
+    }
+
+    /// Internal initializer that optionally retains the raw sled handle.
+    async fn initialize_from_db_ops_with_sled(
+        db_ops: Arc<DbOperations>,
         _db_path: &str,
         job_store: Option<Arc<dyn JobStore>>,
         user_id: String,
+        sled_db: Option<sled::Db>,
     ) -> Result<Self, StorageError> {
         // Initialize message bus
         let message_bus = Arc::new(AsyncMessageBus::new());
@@ -282,6 +309,7 @@ impl FoldDB {
         Ok(Self {
             schema_manager,
             db_ops,
+            sled_db,
             query_executor,
             message_bus,
             event_monitor,
