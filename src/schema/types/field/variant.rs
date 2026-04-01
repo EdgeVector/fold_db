@@ -106,7 +106,8 @@ impl Field for FieldVariant {
         // Apply filter then attach per-key molecule metadata to each match.
         // This is where KeyMetadata (stored on the molecule) gets plumbed into
         // the read path so it takes precedence over atom-level metadata.
-        use crate::schema::types::field::fetch_atoms_with_key_metadata_async;
+        use crate::schema::types::field::fetch_atoms_with_key_metadata_async_with_org;
+        let org_hash_owned: Option<String> = self.common().org_hash.clone();
         let results = match self {
             FieldVariant::Single(f) => f.apply_filter(filter),
             FieldVariant::Hash(f) => f.apply_filter(filter),
@@ -147,7 +148,12 @@ impl Field for FieldVariant {
                 (kv, atom_uuid, key_meta)
             })
             .collect();
-        let mut resolved = fetch_atoms_with_key_metadata_async(db_ops, matches_with_meta).await?;
+        let mut resolved = fetch_atoms_with_key_metadata_async_with_org(
+            db_ops,
+            matches_with_meta,
+            org_hash_owned.as_deref(),
+        )
+        .await?;
 
         // Stamp molecule info on each resolved FieldValue
         let mol_uuid = self.common().molecule_uuid().cloned();
@@ -227,7 +233,7 @@ impl FieldVariant {
         };
 
         let events = db_ops
-            .get_mutation_events(&mol_uuid)
+            .get_mutation_events(&mol_uuid, self.common().org_hash())
             .await
             .map_err(|e| SchemaError::InvalidData(format!("Failed to load history: {}", e)))?;
 
@@ -379,7 +385,10 @@ mod tests {
                 version: 0,
             },
         ];
-        db_ops.batch_store_mutation_events(events).await.unwrap();
+        db_ops
+            .batch_store_mutation_events(events, None)
+            .await
+            .unwrap();
 
         // Current state: molecule points to atom-v2
         let mut field = make_single_field("atom-v2", mol_uuid);
@@ -419,7 +428,10 @@ mod tests {
             new_atom_uuid: "atom-v1".to_string(),
             version: 0,
         }];
-        db_ops.batch_store_mutation_events(events).await.unwrap();
+        db_ops
+            .batch_store_mutation_events(events, None)
+            .await
+            .unwrap();
 
         let mut field = make_single_field("atom-v1", mol_uuid);
 
@@ -472,7 +484,10 @@ mod tests {
                 version: 0,
             },
         ];
-        db_ops.batch_store_mutation_events(events).await.unwrap();
+        db_ops
+            .batch_store_mutation_events(events, None)
+            .await
+            .unwrap();
 
         // Current state: both keys exist
         let mut field = make_range_field(&[("key1", "atom-k1"), ("key2", "atom-k2")], mol_uuid);
@@ -531,7 +546,10 @@ mod tests {
                 version: 0,
             },
         ];
-        db_ops.batch_store_mutation_events(events).await.unwrap();
+        db_ops
+            .batch_store_mutation_events(events, None)
+            .await
+            .unwrap();
 
         let mut field = make_hash_range_field(&[("h1", "r1", "atom-v2")], mol_uuid);
 
@@ -593,7 +611,10 @@ mod tests {
                 version: 0,
             },
         ];
-        db_ops.batch_store_mutation_events(events).await.unwrap();
+        db_ops
+            .batch_store_mutation_events(events, None)
+            .await
+            .unwrap();
 
         // Current state: "hello" (atom-hello)
         let mut field = make_single_field("atom-hello", mol_uuid);

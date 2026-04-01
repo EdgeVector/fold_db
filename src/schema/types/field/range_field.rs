@@ -130,6 +130,11 @@ impl crate::schema::types::field::Field for RangeField {
                 (kv, atom_uuid, key_meta)
             })
             .collect();
-        super::fetch_atoms_with_key_metadata_async(db_ops, matches_with_meta.into_iter()).await
+        super::fetch_atoms_with_key_metadata_async_with_org(
+            db_ops,
+            matches_with_meta.into_iter(),
+            self.base.inner.org_hash(),
+        )
+        .await
     }
 }

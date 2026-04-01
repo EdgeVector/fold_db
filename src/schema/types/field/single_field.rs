@@ -81,9 +81,10 @@ impl crate::schema::types::field::Field for SingleField {
         if let Some(molecule) = &self.base.molecule {
             let uuid = molecule.get_atom_uuid().clone();
             let key_meta = molecule.get_key_metadata().cloned();
-            let result = super::fetch_atoms_with_key_metadata_async(
+            let result = super::fetch_atoms_with_key_metadata_async_with_org(
                 db_ops,
                 vec![(KeyValue::new(None, None), uuid, key_meta)].into_iter(),
+                self.base.inner.org_hash(),
             )
             .await?;
             Ok(result)

@@ -61,6 +61,7 @@ async fn test_atom_deduplication_in_db() {
             content.clone(),
             None,
             None,
+            None,
         )
         .await
         .expect("Failed to create atom1");
@@ -71,6 +72,7 @@ async fn test_atom_deduplication_in_db() {
             "TestSchema",
             "user2",
             content.clone(),
+            None,
             None,
             None,
         )

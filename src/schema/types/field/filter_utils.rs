@@ -41,10 +41,19 @@ pub async fn fetch_atoms_for_matches_async(
     db_ops: &Arc<DbOperations>,
     matches: impl IntoIterator<Item = (KeyValue, String)>,
 ) -> Result<HashMap<KeyValue, FieldValue>, SchemaError> {
-    // Delegate to the metadata-aware version with None metadata
-    fetch_atoms_with_key_metadata_async(
+    fetch_atoms_for_matches_async_with_org(db_ops, matches, None).await
+}
+
+/// Resolve atom UUID matches with org_hash prefix support.
+pub async fn fetch_atoms_for_matches_async_with_org(
+    db_ops: &Arc<DbOperations>,
+    matches: impl IntoIterator<Item = (KeyValue, String)>,
+    org_hash: Option<&str>,
+) -> Result<HashMap<KeyValue, FieldValue>, SchemaError> {
+    fetch_atoms_with_key_metadata_async_with_org(
         db_ops,
         matches.into_iter().map(|(kv, uuid)| (kv, uuid, None)),
+        org_hash,
     )
     .await
 }
@@ -56,13 +65,24 @@ pub async fn fetch_atoms_with_key_metadata_async(
     db_ops: &Arc<DbOperations>,
     matches: impl IntoIterator<Item = (KeyValue, String, Option<crate::atom::KeyMetadata>)>,
 ) -> Result<HashMap<KeyValue, FieldValue>, SchemaError> {
+    fetch_atoms_with_key_metadata_async_with_org(db_ops, matches, None).await
+}
+
+/// Resolve atom UUID matches into concrete FieldValue map with org_hash prefix support.
+pub async fn fetch_atoms_with_key_metadata_async_with_org(
+    db_ops: &Arc<DbOperations>,
+    matches: impl IntoIterator<Item = (KeyValue, String, Option<crate::atom::KeyMetadata>)>,
+    org_hash: Option<&str>,
+) -> Result<HashMap<KeyValue, FieldValue>, SchemaError> {
     let mut resolved_values: HashMap<KeyValue, FieldValue> = HashMap::new();
 
     use crate::storage::traits::TypedStore;
     for (key, atom_uuid, key_meta) in matches.into_iter() {
+        let base_key = format!("atom:{}", atom_uuid);
+        let storage_key = super::build_storage_key(org_hash, &base_key);
         match db_ops
             .atoms_store()
-            .get_item::<crate::atom::Atom>(&format!("atom:{}", atom_uuid))
+            .get_item::<crate::atom::Atom>(&storage_key)
             .await
         {
             Ok(Some(atom)) => {

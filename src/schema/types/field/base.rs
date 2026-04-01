@@ -43,7 +43,8 @@ where
     pub async fn refresh_from_db(&mut self, db_ops: &DbOperations) {
         // If we have a molecule_uuid, look up the corresponding Molecule
         if let Some(molecule_uuid) = self.inner.molecule_uuid() {
-            let ref_key = format!("ref:{}", molecule_uuid);
+            let base_key = format!("ref:{}", molecule_uuid);
+            let ref_key = self.inner.storage_key(&base_key);
             use crate::storage::traits::TypedStore;
             match db_ops.atoms_store().get_item::<M>(&ref_key).await {
                 Ok(Some(molecule)) => {
