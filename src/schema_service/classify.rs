@@ -92,7 +92,12 @@ async fn call_ollama_with(
         ))
         .no_proxy()
         .build()
-        .map_err(|e| format!("Failed to create HTTP client for Ollama classification: {}", e))?;
+        .map_err(|e| {
+            format!(
+                "Failed to create HTTP client for Ollama classification: {}",
+                e
+            )
+        })?;
 
     let request = OllamaClassifyRequest {
         model: model.to_string(),
@@ -247,10 +252,7 @@ fn strip_markdown_fences(text: &str) -> &str {
 }
 
 /// Parse a DataClassification from LLM text output.
-fn parse_classification_json(
-    field_name: &str,
-    text: &str,
-) -> Result<DataClassification, String> {
+fn parse_classification_json(field_name: &str, text: &str) -> Result<DataClassification, String> {
     serde_json::from_str(text)
         .or_else(|_| serde_json::from_str(strip_markdown_fences(text)))
         .map_err(|e| {
@@ -263,10 +265,7 @@ fn parse_classification_json(
 
 /// Parse an interest category from LLM text output.
 /// Returns `Ok(None)` if the LLM returned null or an unrecognized category.
-fn parse_interest_category_json(
-    field_name: &str,
-    text: &str,
-) -> Result<Option<String>, String> {
+fn parse_interest_category_json(field_name: &str, text: &str) -> Result<Option<String>, String> {
     let parsed: serde_json::Value = serde_json::from_str(text)
         .or_else(|_| serde_json::from_str(strip_markdown_fences(text)))
         .map_err(|e| {
@@ -442,10 +441,7 @@ mod tests {
             strip_markdown_fences("```json\n{\"a\": 1}\n```"),
             "{\"a\": 1}"
         );
-        assert_eq!(
-            strip_markdown_fences("```\n{\"a\": 1}\n```"),
-            "{\"a\": 1}"
-        );
+        assert_eq!(strip_markdown_fences("```\n{\"a\": 1}\n```"), "{\"a\": 1}");
     }
 
     #[test]
@@ -582,8 +578,7 @@ mod tests {
     async fn call_ollama_non_success_status() {
         let (url, handle) = mock_http_server(404, r#"{"error": "model not found"}"#);
 
-        let result =
-            call_ollama_with("test prompt", "test_field", &url, "nonexistent-model").await;
+        let result = call_ollama_with("test prompt", "test_field", &url, "nonexistent-model").await;
         let err = result.unwrap_err();
         assert!(err.contains("status 404"), "got: {}", err);
         assert!(err.contains("test_field"), "got: {}", err);
@@ -592,9 +587,13 @@ mod tests {
 
     #[tokio::test]
     async fn call_ollama_connection_refused() {
-        let result =
-            call_ollama_with("test prompt", "test_field", "http://127.0.0.1:1", "test-model")
-                .await;
+        let result = call_ollama_with(
+            "test prompt",
+            "test_field",
+            "http://127.0.0.1:1",
+            "test-model",
+        )
+        .await;
         let err = result.unwrap_err();
         assert!(
             err.contains("not reachable") || err.contains("Ollama"),
@@ -798,8 +797,7 @@ mod tests {
     #[serial]
     async fn infer_interest_category_returns_none_without_llm() {
         // Without a running LLM, should return None (non-blocking)
-        let result =
-            infer_interest_category("photo_album", "the album containing the photo").await;
+        let result = infer_interest_category("photo_album", "the album containing the photo").await;
         // Either returns a valid category (if LLM is available) or None
         if let Some(ref cat) = result {
             assert!(
