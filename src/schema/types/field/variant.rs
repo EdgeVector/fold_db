@@ -385,7 +385,10 @@ mod tests {
                 version: 0,
             },
         ];
-        db_ops.batch_store_mutation_events(events, None).await.unwrap();
+        db_ops
+            .batch_store_mutation_events(events, None)
+            .await
+            .unwrap();
 
         // Current state: molecule points to atom-v2
         let mut field = make_single_field("atom-v2", mol_uuid);
@@ -425,7 +428,10 @@ mod tests {
             new_atom_uuid: "atom-v1".to_string(),
             version: 0,
         }];
-        db_ops.batch_store_mutation_events(events, None).await.unwrap();
+        db_ops
+            .batch_store_mutation_events(events, None)
+            .await
+            .unwrap();
 
         let mut field = make_single_field("atom-v1", mol_uuid);
 
@@ -478,7 +484,10 @@ mod tests {
                 version: 0,
             },
         ];
-        db_ops.batch_store_mutation_events(events, None).await.unwrap();
+        db_ops
+            .batch_store_mutation_events(events, None)
+            .await
+            .unwrap();
 
         // Current state: both keys exist
         let mut field = make_range_field(&[("key1", "atom-k1"), ("key2", "atom-k2")], mol_uuid);
@@ -537,7 +546,10 @@ mod tests {
                 version: 0,
             },
         ];
-        db_ops.batch_store_mutation_events(events, None).await.unwrap();
+        db_ops
+            .batch_store_mutation_events(events, None)
+            .await
+            .unwrap();
 
         let mut field = make_hash_range_field(&[("h1", "r1", "atom-v2")], mol_uuid);
 
@@ -599,7 +611,10 @@ mod tests {
                 version: 0,
             },
         ];
-        db_ops.batch_store_mutation_events(events, None).await.unwrap();
+        db_ops
+            .batch_store_mutation_events(events, None)
+            .await
+            .unwrap();
 
         // Current state: "hello" (atom-hello)
         let mut field = make_single_field("atom-hello", mol_uuid);

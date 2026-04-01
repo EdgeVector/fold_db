@@ -7,7 +7,9 @@ use fold_db::access::AccessContext;
 use fold_db::fold_db_core::FoldDB;
 use fold_db::schema::types::field::{build_storage_key, Field};
 use fold_db::schema::types::operations::{MutationType, Query};
-use fold_db::schema::types::{DeclarativeSchemaDefinition, KeyConfig, KeyValue, Mutation, SchemaType};
+use fold_db::schema::types::{
+    DeclarativeSchemaDefinition, KeyConfig, KeyValue, Mutation, SchemaType,
+};
 use fold_db::schema::SchemaState;
 use serde_json::json;
 use std::collections::HashMap;
@@ -189,18 +191,18 @@ async fn test_personal_and_org_data_do_not_collide() {
 
     // Register personal schema
     register_schema(&mut db, "notes", None).await;
-    write_mutation(&mut db, "notes", "personal-key", "2026-01-01", "personal body").await;
+    write_mutation(
+        &mut db,
+        "notes",
+        "personal-key",
+        "2026-01-01",
+        "personal body",
+    )
+    .await;
 
     // Register org schema with different name
     register_schema(&mut db, "org_notes", Some(ORG_HASH)).await;
-    write_mutation(
-        &mut db,
-        "org_notes",
-        "org-key",
-        "2026-01-01",
-        "org body",
-    )
-    .await;
+    write_mutation(&mut db, "org_notes", "org-key", "2026-01-01", "org body").await;
 
     let access = AccessContext::owner("test-owner");
 
@@ -252,7 +254,9 @@ async fn test_personal_and_org_data_do_not_collide() {
     // Personal keys should NOT have the org prefix
     let personal_keys: Vec<&String> = all_keys
         .iter()
-        .filter(|k| !k.starts_with(&org_prefix) && (k.starts_with("atom:") || k.starts_with("ref:")))
+        .filter(|k| {
+            !k.starts_with(&org_prefix) && (k.starts_with("atom:") || k.starts_with("ref:"))
+        })
         .collect();
     assert!(
         !personal_keys.is_empty(),
@@ -260,7 +264,10 @@ async fn test_personal_and_org_data_do_not_collide() {
     );
 
     // Org keys should have the org prefix
-    let org_keys: Vec<&String> = all_keys.iter().filter(|k| k.starts_with(&org_prefix)).collect();
+    let org_keys: Vec<&String> = all_keys
+        .iter()
+        .filter(|k| k.starts_with(&org_prefix))
+        .collect();
     assert!(!org_keys.is_empty(), "Expected org-prefixed keys");
 }
 
