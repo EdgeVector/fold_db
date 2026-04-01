@@ -166,11 +166,7 @@ pub fn strip_org_prefix(key: &str) -> Option<(&str, &str)> {
     // followed by a colon.
     if key.len() > 65 {
         let potential_hash = &key[..64];
-        if key.as_bytes()[64] == b':'
-            && potential_hash
-                .chars()
-                .all(|c| c.is_ascii_hexdigit())
-        {
+        if key.as_bytes()[64] == b':' && potential_hash.chars().all(|c| c.is_ascii_hexdigit()) {
             return Some((&key[..64], &key[65..]));
         }
     }
@@ -306,7 +302,7 @@ mod tests {
         let pk = b"test-public-key-bytes";
         let id = member_id_from_public_key(pk);
         assert_eq!(id.len(), 8); // 4 bytes = 8 hex chars
-        // Deterministic
+                                 // Deterministic
         assert_eq!(id, member_id_from_public_key(pk));
         // Different key gives different ID
         assert_ne!(id, member_id_from_public_key(b"other-key"));

@@ -659,10 +659,7 @@ impl SyncEngine {
                     personal_entries.push(entry.clone());
                 }
                 SyncDestination::Org { org_hash, .. } => {
-                    org_entries
-                        .entry(org_hash)
-                        .or_default()
-                        .push(entry.clone());
+                    org_entries.entry(org_hash).or_default().push(entry.clone());
                 }
             }
         }
@@ -748,10 +745,9 @@ impl SyncEngine {
     /// Classify a single log entry by examining its key.
     fn classify_entry(partitioner: &SyncPartitioner, entry: &LogEntry) -> SyncDestination {
         match &entry.op {
-            LogOp::Put {
-                namespace, key, ..
+            LogOp::Put { namespace, key, .. } | LogOp::Delete { namespace, key } => {
+                partitioner.partition_log_key(namespace, key)
             }
-            | LogOp::Delete { namespace, key } => partitioner.partition_log_key(namespace, key),
             LogOp::BatchPut {
                 namespace, items, ..
             } => {
@@ -799,9 +795,7 @@ impl SyncEngine {
         let mut total_replayed: u64 = 0;
 
         for org_hash in &org_hashes {
-            let replayed = self
-                .download_org_entries(org_hash, &member_id)
-                .await?;
+            let replayed = self.download_org_entries(org_hash, &member_id).await?;
             total_replayed += replayed;
         }
 
@@ -809,11 +803,7 @@ impl SyncEngine {
     }
 
     /// Download and replay entries for a single org from all other members.
-    async fn download_org_entries(
-        &self,
-        org_hash: &str,
-        my_member_id: &str,
-    ) -> SyncResult<u64> {
+    async fn download_org_entries(&self, org_hash: &str, my_member_id: &str) -> SyncResult<u64> {
         // List all objects under the org's log prefix
         let all_objects = self.auth.list_org_objects(org_hash, "log/").await?;
 
@@ -839,7 +829,10 @@ impl SyncEngine {
         let crypto = match org_crypto.get(org_hash) {
             Some(c) => c.clone(),
             None => {
-                log::warn!("no CryptoProvider for org_hash={}, skipping download", org_hash);
+                log::warn!(
+                    "no CryptoProvider for org_hash={}, skipping download",
+                    org_hash
+                );
                 return Ok(0);
             }
         };
