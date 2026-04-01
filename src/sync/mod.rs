@@ -52,11 +52,13 @@ pub mod auth;
 pub mod engine;
 pub mod error;
 pub mod log;
+pub mod org_sync;
 pub mod s3;
 pub mod snapshot;
 
 pub use engine::{SyncConfig, SyncEngine, SyncState, SyncStatus};
 pub use error::{SyncError, SyncResult};
+pub use org_sync::{SyncDestination, SyncPartitioner};
 
 /// Configuration needed to enable S3 sync.
 ///

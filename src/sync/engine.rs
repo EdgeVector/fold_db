@@ -1,6 +1,7 @@
 use super::auth::AuthClient;
 use super::error::{SyncError, SyncResult};
 use super::log::{LogEntry, LogOp};
+use super::org_sync::{SyncDestination, SyncPartitioner};
 use super::s3::S3Client;
 use super::snapshot::Snapshot;
 use crate::crypto::CryptoProvider;
@@ -105,6 +106,20 @@ pub struct SyncEngine {
     last_sync_at: Arc<Mutex<Option<u64>>>,
     /// Last sync error message (cleared on success).
     last_error: Arc<Mutex<Option<String>>>,
+    /// Optional partitioner for routing org-prefixed keys to org S3 prefixes.
+    /// When set, pending entries are partitioned at upload time:
+    /// - Personal keys -> personal sync path (as today)
+    /// - Org-prefixed keys -> `/{org_hash}/log/{member_id}/{seq}.enc`
+    partitioner: Arc<Mutex<Option<SyncPartitioner>>>,
+    /// Short member ID for org sync (first 8 hex chars of SHA256 of node public key).
+    /// Only needed when partitioner is set.
+    member_id: Arc<Mutex<Option<String>>>,
+    /// Org-specific crypto providers keyed by org_hash.
+    /// Each org has its own E2E key for encrypting org data.
+    org_crypto: Arc<Mutex<std::collections::HashMap<String, Arc<dyn CryptoProvider>>>>,
+    /// Tracks the last downloaded sequence per org member for incremental download.
+    /// Maps `{org_hash}:{member_id}` -> last_seq downloaded from that member.
+    org_member_cursors: Arc<Mutex<std::collections::HashMap<String, u64>>>,
 }
 
 impl SyncEngine {
@@ -129,6 +144,10 @@ impl SyncEngine {
             status_callback: None,
             last_sync_at: Arc::new(Mutex::new(None)),
             last_error: Arc::new(Mutex::new(None)),
+            partitioner: Arc::new(Mutex::new(None)),
+            member_id: Arc::new(Mutex::new(None)),
+            org_crypto: Arc::new(Mutex::new(std::collections::HashMap::new())),
+            org_member_cursors: Arc::new(Mutex::new(std::collections::HashMap::new())),
         }
     }
 
@@ -304,11 +323,34 @@ impl SyncEngine {
     }
 
     async fn do_sync(&self) -> SyncResult<bool> {
+        let has_pending = !self.pending.lock().await.is_empty();
+        if !has_pending {
+            // Even with no pending entries, we may need to download org entries
+            let org_downloaded = self.sync_org_download().await.unwrap_or(0);
+            return Ok(org_downloaded > 0);
+        }
+
+        // If org sync is configured, use partitioned upload
+        let has_partitioner = self.partitioner.lock().await.is_some();
+        if has_partitioner {
+            let uploaded = self.sync_org_entries().await?;
+            // Also download from org members
+            let downloaded = self.sync_org_download().await.unwrap_or(0);
+
+            // Check if compaction is needed (personal entries only)
+            let current_seq = *self.seq.lock().await;
+            if current_seq > 0 && current_seq % self.config.compaction_threshold == 0 {
+                if let Err(e) = self.compact(current_seq).await {
+                    log::warn!("compaction failed (non-fatal): {e}");
+                }
+            }
+
+            return Ok(uploaded > 0 || downloaded > 0);
+        }
+
+        // Standard personal-only sync path (no partitioner)
         let entries = {
             let pending = self.pending.lock().await;
-            if pending.is_empty() {
-                return Ok(false);
-            }
             pending.clone()
         };
 
@@ -545,6 +587,343 @@ impl SyncEngine {
             .renew_lock(&self.device_id, self.config.lock_ttl_secs)
             .await
     }
+
+    // =========================================================================
+    // Org sync configuration
+    // =========================================================================
+
+    /// Configure org sync partitioning.
+    ///
+    /// Once set, the sync engine will partition pending entries at upload time:
+    /// personal-keyed entries sync as today, org-prefixed entries encrypt with the
+    /// org's E2E key and upload to `/{org_hash}/log/{member_id}/{seq}.enc`.
+    ///
+    /// # Arguments
+    /// - `partitioner`: routes keys to personal or org destinations
+    /// - `member_id`: this node's short ID (first 8 hex chars of SHA256 of public key)
+    /// - `org_crypto`: map of org_hash -> CryptoProvider initialized with that org's E2E key
+    pub async fn configure_org_sync(
+        &self,
+        partitioner: SyncPartitioner,
+        member_id: String,
+        org_crypto: std::collections::HashMap<String, Arc<dyn CryptoProvider>>,
+    ) {
+        *self.partitioner.lock().await = Some(partitioner);
+        *self.member_id.lock().await = Some(member_id);
+        *self.org_crypto.lock().await = org_crypto;
+    }
+
+    /// Check if org sync is configured.
+    pub async fn has_org_sync(&self) -> bool {
+        self.partitioner.lock().await.is_some()
+    }
+
+    // =========================================================================
+    // Org sync: upload org-partitioned entries
+    // =========================================================================
+
+    /// Upload org-partitioned pending entries.
+    ///
+    /// Called as part of `do_sync` when a partitioner is configured.
+    /// Partitions pending entries into personal and org buckets, then:
+    /// - Personal entries: uploaded as normal (existing path)
+    /// - Org entries: sealed with org E2E key, uploaded to org S3 prefix
+    ///
+    /// Returns the number of entries uploaded (personal + org).
+    async fn sync_org_entries(&self) -> SyncResult<usize> {
+        let entries = {
+            let pending = self.pending.lock().await;
+            if pending.is_empty() {
+                return Ok(0);
+            }
+            pending.clone()
+        };
+
+        let partitioner = self.partitioner.lock().await;
+        let partitioner = match partitioner.as_ref() {
+            Some(p) => p,
+            None => return Ok(0), // No partitioner, nothing to do here
+        };
+
+        let member_id = self.member_id.lock().await.clone().unwrap_or_default();
+
+        // Partition entries by destination
+        let mut personal_entries: Vec<LogEntry> = Vec::new();
+        let mut org_entries: std::collections::HashMap<String, Vec<LogEntry>> =
+            std::collections::HashMap::new();
+
+        for entry in &entries {
+            let dest = Self::classify_entry(partitioner, entry);
+            match dest {
+                SyncDestination::Personal => {
+                    personal_entries.push(entry.clone());
+                }
+                SyncDestination::Org { org_hash, .. } => {
+                    org_entries.entry(org_hash).or_default().push(entry.clone());
+                }
+            }
+        }
+
+        let mut uploaded = 0;
+
+        // Upload personal entries via existing path
+        if !personal_entries.is_empty() {
+            let mut sealed = Vec::with_capacity(personal_entries.len());
+            for entry in &personal_entries {
+                let s = entry.seal(&self.crypto).await?;
+                sealed.push((entry.seq, s));
+            }
+
+            let seq_numbers: Vec<u64> = sealed.iter().map(|(seq, _)| *seq).collect();
+            let urls = self.auth.presign_log_upload(&seq_numbers).await?;
+
+            if urls.len() != sealed.len() {
+                return Err(SyncError::Auth(format!(
+                    "expected {} presigned URLs, got {}",
+                    sealed.len(),
+                    urls.len()
+                )));
+            }
+
+            for ((_seq, s), url) in sealed.into_iter().zip(urls.iter()) {
+                self.s3.upload(url, s.bytes).await?;
+            }
+            uploaded += personal_entries.len();
+        }
+
+        // Upload org entries
+        let org_crypto = self.org_crypto.lock().await;
+        for (org_hash, entries) in &org_entries {
+            let crypto = match org_crypto.get(org_hash) {
+                Some(c) => c,
+                None => {
+                    log::warn!(
+                        "no CryptoProvider for org_hash={}, skipping {} entries",
+                        org_hash,
+                        entries.len()
+                    );
+                    continue;
+                }
+            };
+
+            let mut sealed = Vec::with_capacity(entries.len());
+            for entry in entries {
+                let s = entry.seal(crypto).await?;
+                sealed.push((entry.seq, s));
+            }
+
+            let seq_numbers: Vec<u64> = sealed.iter().map(|(seq, _)| *seq).collect();
+            let urls = self
+                .auth
+                .presign_org_log_upload(org_hash, &member_id, &seq_numbers)
+                .await?;
+
+            if urls.len() != sealed.len() {
+                return Err(SyncError::Auth(format!(
+                    "expected {} org presigned URLs, got {}",
+                    sealed.len(),
+                    urls.len()
+                )));
+            }
+
+            for ((_seq, s), url) in sealed.into_iter().zip(urls.iter()) {
+                self.s3.upload(url, s.bytes).await?;
+            }
+            uploaded += entries.len();
+        }
+
+        // Clear all uploaded entries from pending
+        {
+            let mut pending = self.pending.lock().await;
+            let count = entries.len().min(pending.len());
+            pending.drain(..count);
+        }
+
+        Ok(uploaded)
+    }
+
+    /// Classify a single log entry by examining its key.
+    fn classify_entry(partitioner: &SyncPartitioner, entry: &LogEntry) -> SyncDestination {
+        match &entry.op {
+            LogOp::Put { namespace, key, .. } | LogOp::Delete { namespace, key } => {
+                partitioner.partition_log_key(namespace, key)
+            }
+            LogOp::BatchPut {
+                namespace, items, ..
+            } => {
+                // Use the first item's key to classify the batch
+                // (batches within a single schema always share the same org prefix)
+                if let Some((key, _)) = items.first() {
+                    partitioner.partition_log_key(namespace, key)
+                } else {
+                    SyncDestination::Personal
+                }
+            }
+            LogOp::BatchDelete {
+                namespace, keys, ..
+            } => {
+                if let Some(key) = keys.first() {
+                    partitioner.partition_log_key(namespace, key)
+                } else {
+                    SyncDestination::Personal
+                }
+            }
+        }
+    }
+
+    // =========================================================================
+    // Org sync: download from other members
+    // =========================================================================
+
+    /// Download and replay org log entries from all members of all orgs.
+    ///
+    /// For each org the node belongs to, lists `/{org_hash}/log/*/` to discover
+    /// member sub-prefixes, then downloads new entries from each member.
+    ///
+    /// Returns the total number of entries replayed.
+    pub async fn sync_org_download(&self) -> SyncResult<u64> {
+        let org_hashes = {
+            let partitioner = self.partitioner.lock().await;
+            match partitioner.as_ref() {
+                Some(p) => p.org_hashes(),
+                None => return Ok(0),
+            }
+        };
+
+        let member_id = self.member_id.lock().await.clone().unwrap_or_default();
+
+        let mut total_replayed: u64 = 0;
+
+        for org_hash in &org_hashes {
+            let replayed = self.download_org_entries(org_hash, &member_id).await?;
+            total_replayed += replayed;
+        }
+
+        Ok(total_replayed)
+    }
+
+    /// Download and replay entries for a single org from all other members.
+    async fn download_org_entries(&self, org_hash: &str, my_member_id: &str) -> SyncResult<u64> {
+        // List all objects under the org's log prefix
+        let all_objects = self.auth.list_org_objects(org_hash, "log/").await?;
+
+        // Group objects by member_id.
+        // Keys look like: log/{member_id}/{seq}.enc
+        let mut member_entries: std::collections::HashMap<String, Vec<u64>> =
+            std::collections::HashMap::new();
+
+        for obj in &all_objects {
+            if let Some(parsed) = parse_org_log_key(&obj.key) {
+                // Skip our own entries
+                if parsed.member_id == my_member_id {
+                    continue;
+                }
+                member_entries
+                    .entry(parsed.member_id)
+                    .or_default()
+                    .push(parsed.seq);
+            }
+        }
+
+        let org_crypto = self.org_crypto.lock().await;
+        let crypto = match org_crypto.get(org_hash) {
+            Some(c) => c.clone(),
+            None => {
+                log::warn!(
+                    "no CryptoProvider for org_hash={}, skipping download",
+                    org_hash
+                );
+                return Ok(0);
+            }
+        };
+        drop(org_crypto);
+
+        let mut total_replayed: u64 = 0;
+        let mut cursors = self.org_member_cursors.lock().await;
+
+        for (remote_member_id, mut seqs) in member_entries {
+            seqs.sort();
+
+            // Filter to only new entries
+            let cursor_key = format!("{org_hash}:{remote_member_id}");
+            let cursor = cursors.get(&cursor_key).copied().unwrap_or(0);
+            let new_seqs: Vec<u64> = seqs.into_iter().filter(|s| *s > cursor).collect();
+
+            if new_seqs.is_empty() {
+                continue;
+            }
+
+            let urls = self
+                .auth
+                .presign_org_log_download(org_hash, &remote_member_id, &new_seqs)
+                .await?;
+
+            for (seq, url) in new_seqs.iter().zip(urls.iter()) {
+                let data = self.s3.download(url).await?;
+                match data {
+                    Some(bytes) => match LogEntry::unseal(&bytes, &crypto).await {
+                        Ok(entry) => {
+                            self.replay_entry(&entry).await?;
+                            total_replayed += 1;
+                        }
+                        Err(e) => {
+                            log::warn!(
+                                "skipping corrupt org log entry org={} member={} seq={}: {}",
+                                org_hash,
+                                remote_member_id,
+                                seq,
+                                e
+                            );
+                        }
+                    },
+                    None => {
+                        log::warn!(
+                            "org log entry not found: org={} member={} seq={}",
+                            org_hash,
+                            remote_member_id,
+                            seq
+                        );
+                    }
+                }
+            }
+
+            // Update cursor
+            if let Some(max_seq) = new_seqs.last() {
+                cursors.insert(cursor_key, *max_seq);
+            }
+        }
+
+        Ok(total_replayed)
+    }
+}
+
+/// Parsed components of an org log S3 key.
+struct ParsedOrgLogKey {
+    member_id: String,
+    seq: u64,
+}
+
+/// Parse an S3 object key like `log/{member_id}/{seq}.enc` into its components.
+fn parse_org_log_key(key: &str) -> Option<ParsedOrgLogKey> {
+    // Key format: log/{member_id}/{seq}.enc
+    // The key may or may not have the org_hash prefix stripped by the auth Lambda
+    let parts: Vec<&str> = key.split('/').collect();
+
+    // Try matching from the end: .../{member_id}/{seq}.enc
+    if parts.len() < 2 {
+        return None;
+    }
+
+    let filename = parts[parts.len() - 1];
+    let member_id = parts[parts.len() - 2];
+
+    let seq_str = filename.strip_suffix(".enc")?;
+    let seq = seq_str.parse::<u64>().ok()?;
+
+    Some(ParsedOrgLogKey {
+        member_id: member_id.to_string(),
+        seq,
+    })
 }
 
 #[cfg(test)]
@@ -558,5 +937,92 @@ mod tests {
         assert_eq!(config.compaction_threshold, 100);
         assert_eq!(config.lock_ttl_secs, 300);
         assert_eq!(config.max_retries, 2);
+    }
+
+    #[test]
+    fn test_parse_org_log_key() {
+        let parsed = parse_org_log_key("log/a1b2c3d4/42.enc").unwrap();
+        assert_eq!(parsed.member_id, "a1b2c3d4");
+        assert_eq!(parsed.seq, 42);
+
+        // With org_hash prefix (as it might appear in full S3 key)
+        let parsed2 = parse_org_log_key("org_abc/log/e5f6a7b8/1.enc").unwrap();
+        assert_eq!(parsed2.member_id, "e5f6a7b8");
+        assert_eq!(parsed2.seq, 1);
+
+        // Invalid
+        assert!(parse_org_log_key("log/a1b2c3d4/not_a_number.enc").is_none());
+        assert!(parse_org_log_key("single").is_none());
+    }
+
+    #[test]
+    fn test_classify_entry_personal() {
+        use crate::org::OrgMembership;
+
+        let memberships = vec![OrgMembership {
+            org_name: "Test".to_string(),
+            org_hash: "org_abc".to_string(),
+            org_public_key: "pk".to_string(),
+            org_secret_key: None,
+            org_e2e_secret: "secret".to_string(),
+            role: crate::org::OrgRole::Member,
+            members: vec![],
+            created_at: 0,
+            joined_at: 0,
+        }];
+        let partitioner = SyncPartitioner::new(&memberships);
+
+        let entry = LogEntry {
+            seq: 1,
+            timestamp_ms: 1000,
+            device_id: "dev".to_string(),
+            op: LogOp::Put {
+                namespace: "main".to_string(),
+                key: LogOp::encode_bytes(b"atom:uuid-1"),
+                value: LogOp::encode_bytes(b"data"),
+            },
+        };
+
+        assert_eq!(
+            SyncEngine::classify_entry(&partitioner, &entry),
+            SyncDestination::Personal
+        );
+    }
+
+    #[test]
+    fn test_classify_entry_org() {
+        use crate::org::OrgMembership;
+
+        let memberships = vec![OrgMembership {
+            org_name: "Test".to_string(),
+            org_hash: "org_abc".to_string(),
+            org_public_key: "pk".to_string(),
+            org_secret_key: None,
+            org_e2e_secret: "secret".to_string(),
+            role: crate::org::OrgRole::Member,
+            members: vec![],
+            created_at: 0,
+            joined_at: 0,
+        }];
+        let partitioner = SyncPartitioner::new(&memberships);
+
+        let entry = LogEntry {
+            seq: 1,
+            timestamp_ms: 1000,
+            device_id: "dev".to_string(),
+            op: LogOp::Put {
+                namespace: "main".to_string(),
+                key: LogOp::encode_bytes(b"org_abc:atom:uuid-1"),
+                value: LogOp::encode_bytes(b"data"),
+            },
+        };
+
+        assert_eq!(
+            SyncEngine::classify_entry(&partitioner, &entry),
+            SyncDestination::Org {
+                org_hash: "org_abc".to_string(),
+                org_e2e_secret: "secret".to_string(),
+            }
+        );
     }
 }
