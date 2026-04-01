@@ -169,6 +169,13 @@ impl FoldDB {
         self.sync_engine.is_some()
     }
 
+    /// Returns a reference to the sync engine, if configured.
+    ///
+    /// Used by fold_db_node to call `configure_org_sync()` after node startup.
+    pub fn sync_engine(&self) -> Option<&Arc<crate::sync::SyncEngine>> {
+        self.sync_engine.as_ref()
+    }
+
     /// Creates a new FoldDB instance with the specified storage path.
     /// All initializations happen here. This is the main entry point for the FoldDB system.
     /// Do not initialize anywhere else.
