@@ -32,6 +32,7 @@ pub mod error;
 pub mod fold_db_core;
 pub mod llm_registry;
 pub mod logging;
+pub mod org;
 pub mod progress;
 pub mod schema;
 pub mod schema_service;
