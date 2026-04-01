@@ -1,5 +1,6 @@
 use super::core::DbOperations;
 use crate::atom::{Atom, Molecule, MoleculeHash, MoleculeHashRange, MoleculeRange, MutationEvent};
+use crate::schema::types::field::build_storage_key;
 use crate::schema::SchemaError;
 use crate::storage::traits::TypedStore;
 use serde_json::Value;
@@ -37,7 +38,13 @@ impl DbOperations {
     /// Batch store multiple atoms efficiently.
     /// Uses DynamoDB BatchWriteItem to store up to 25 atoms per API call.
     /// Deduplicates by key since atoms with identical content have the same UUID.
-    pub async fn batch_store_atoms(&self, atoms: Vec<Atom>) -> Result<(), SchemaError> {
+    ///
+    /// When `org_hash` is `Some`, all keys are prefixed with `{org_hash}:`.
+    pub async fn batch_store_atoms(
+        &self,
+        atoms: Vec<Atom>,
+        org_hash: Option<&str>,
+    ) -> Result<(), SchemaError> {
         if atoms.is_empty() {
             return Ok(());
         }
@@ -48,7 +55,8 @@ impl DbOperations {
         let items: Vec<(String, Atom)> = atoms
             .into_iter()
             .filter_map(|atom| {
-                let key = format!("atom:{}", atom.uuid());
+                let base_key = format!("atom:{}", atom.uuid());
+                let key = build_storage_key(org_hash, &base_key);
                 if seen_keys.insert(key.clone()) {
                     Some((key, atom))
                 } else {
@@ -77,9 +85,12 @@ impl DbOperations {
     /// Batch store multiple molecules efficiently.
     /// Accepts a vector of (molecule_uuid, molecule_data) tuples.
     /// Deduplicates by key to prevent DynamoDB batch_write_item errors.
+    ///
+    /// When `org_hash` is `Some`, all keys are prefixed with `{org_hash}:`.
     pub async fn batch_store_molecules(
         &self,
         molecules: Vec<(String, MoleculeData)>,
+        org_hash: Option<&str>,
     ) -> Result<(), SchemaError> {
         if molecules.is_empty() {
             return Ok(());
@@ -90,7 +101,8 @@ impl DbOperations {
         let items: Vec<(String, serde_json::Value)> = molecules
             .into_iter()
             .filter_map(|(uuid, mol_data)| {
-                let ref_key = format!("ref:{}", uuid);
+                let base_key = format!("ref:{}", uuid);
+                let ref_key = build_storage_key(org_hash, &base_key);
                 if seen_keys.insert(ref_key.clone()) {
                     let value =
                         match mol_data {
@@ -133,6 +145,8 @@ impl DbOperations {
     /// returns the existing atom instead of creating a duplicate.
     ///
     /// This is the async V2 version for use with DbOperations.
+    ///
+    /// When `org_hash` is `Some`, all keys are prefixed with `{org_hash}:`.
     pub async fn create_and_store_atom_for_mutation_deferred(
         &self,
         schema_name: &str,
@@ -140,6 +154,7 @@ impl DbOperations {
         value: Value,
         source_file_name: Option<String>,
         metadata: Option<HashMap<String, String>>,
+        org_hash: Option<&str>,
     ) -> Result<Atom, SchemaError> {
         let mut new_atom = Atom::new(schema_name.to_string(), pub_key.to_string(), value);
 
@@ -154,7 +169,8 @@ impl DbOperations {
         }
 
         // Check if atom with this content-based UUID already exists
-        let atom_key = format!("atom:{}", new_atom.uuid());
+        let base_key = format!("atom:{}", new_atom.uuid());
+        let atom_key = build_storage_key(org_hash, &base_key);
 
         log::debug!("🔍 Checking for existing atom: {}", atom_key);
         if let Some(existing_atom) = self
@@ -190,9 +206,12 @@ impl DbOperations {
 
     /// Batch store mutation events for point-in-time query support.
     /// Events are stored with zero-padded nanosecond timestamps for lexicographic ordering.
+    ///
+    /// When `org_hash` is `Some`, all keys are prefixed with `{org_hash}:`.
     pub async fn batch_store_mutation_events(
         &self,
         events: Vec<MutationEvent>,
+        org_hash: Option<&str>,
     ) -> Result<(), SchemaError> {
         if events.is_empty() {
             return Ok(());
@@ -202,7 +221,8 @@ impl DbOperations {
             .into_iter()
             .map(|e| {
                 let ts = e.timestamp.timestamp_nanos_opt().unwrap_or(0);
-                let key = format!("history:{}:{:020}", e.molecule_uuid, ts);
+                let base_key = format!("history:{}:{:020}", e.molecule_uuid, ts);
+                let key = build_storage_key(org_hash, &base_key);
                 (key, e)
             })
             .collect();
@@ -216,11 +236,15 @@ impl DbOperations {
     }
 
     /// Load all mutation events for a molecule, sorted chronologically.
+    ///
+    /// When `org_hash` is `Some`, the scan prefix is `{org_hash}:history:{mol}:`.
     pub async fn get_mutation_events(
         &self,
         molecule_uuid: &str,
+        org_hash: Option<&str>,
     ) -> Result<Vec<MutationEvent>, SchemaError> {
-        let prefix = format!("history:{}:", molecule_uuid);
+        let base_prefix = format!("history:{}:", molecule_uuid);
+        let prefix = build_storage_key(org_hash, &base_prefix);
         let items: Vec<(String, MutationEvent)> = self
             .atoms_store()
             .scan_items_with_prefix(&prefix)

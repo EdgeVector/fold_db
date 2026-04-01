@@ -569,7 +569,9 @@ impl MutationManager {
         // Batch store all atoms at once
         if !atoms_to_store.is_empty() {
             log::info!("💾 Batch storing {} atoms", atoms_to_store.len());
-            self.db_ops.batch_store_atoms(atoms_to_store).await?;
+            self.db_ops
+                .batch_store_atoms(atoms_to_store, schema.org_hash.as_deref())
+                .await?;
         }
 
         Ok((mutation_key_values, atom_results))
@@ -719,7 +721,7 @@ impl MutationManager {
         if !molecules_to_store.is_empty() {
             log::info!("💾 Batch storing {} molecules", molecules_to_store.len());
             self.db_ops
-                .batch_store_molecules(molecules_to_store)
+                .batch_store_molecules(molecules_to_store, schema.org_hash.as_deref())
                 .await?;
         }
 
@@ -728,7 +730,7 @@ impl MutationManager {
             let phase4_start = std::time::Instant::now();
             log::debug!("💾 Storing {} mutation events", mutation_events.len());
             self.db_ops
-                .batch_store_mutation_events(mutation_events)
+                .batch_store_mutation_events(mutation_events, schema.org_hash.as_deref())
                 .await?;
             *timing_breakdown
                 .entry("  - store_mutation_events")

@@ -69,6 +69,10 @@ pub struct FieldCommon {
     /// Per-field access control policy. None = legacy behavior (no access checks).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub access_policy: Option<FieldAccessPolicy>,
+    /// Org hash inherited from the parent schema.
+    /// When set, all Sled keys for this field's data are prefixed with `{org_hash}:`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub org_hash: Option<String>,
 }
 
 fn default_writable() -> bool {
@@ -83,6 +87,7 @@ impl FieldCommon {
             transform: None,
             writable: true,
             access_policy: None,
+            org_hash: None,
         }
     }
 
@@ -109,6 +114,33 @@ impl FieldCommon {
 
     pub fn writable(&self) -> bool {
         self.writable
+    }
+
+    /// Build a storage key, prepending the org_hash prefix when present.
+    ///
+    /// - Personal: `base_key` (e.g. `atom:{uuid}`, `ref:{uuid}`)
+    /// - Org: `{org_hash}:{base_key}` (e.g. `{org_hash}:atom:{uuid}`)
+    pub fn storage_key(&self, base_key: &str) -> String {
+        build_storage_key(self.org_hash.as_deref(), base_key)
+    }
+
+    pub fn org_hash(&self) -> Option<&str> {
+        self.org_hash.as_deref()
+    }
+
+    pub fn set_org_hash(&mut self, org_hash: Option<String>) {
+        self.org_hash = org_hash;
+    }
+}
+
+/// Build a storage key, prepending the org_hash prefix when present.
+///
+/// - Personal: `base_key` (e.g. `atom:{uuid}`, `ref:{uuid}`)
+/// - Org: `{org_hash}:{base_key}` (e.g. `{org_hash}:atom:{uuid}`)
+pub fn build_storage_key(org_hash: Option<&str>, base_key: &str) -> String {
+    match org_hash {
+        Some(hash) => format!("{hash}:{base_key}"),
+        None => base_key.to_string(),
     }
 }
 

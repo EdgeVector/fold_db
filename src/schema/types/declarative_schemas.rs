@@ -418,6 +418,14 @@ impl DeclarativeSchemaDefinition {
             }
         }
 
+        // Propagate org_hash from the schema to each field's FieldCommon
+        // so that field-level storage key construction includes the org prefix.
+        if self.org_hash.is_some() {
+            for field in self.runtime_fields.values_mut() {
+                field.common_mut().set_org_hash(self.org_hash.clone());
+            }
+        }
+
         // Regenerate transform metadata that isn't persisted (marked with #[serde(skip)])
         // This is needed when schemas are loaded from the database
         self.regenerate_metadata();
