@@ -134,6 +134,8 @@ impl<'de> serde::Deserialize<'de> for DeclarativeSchemaDefinition {
             field_types: HashMap<String, crate::schema::types::field_value_type::FieldValueType>,
             #[serde(skip_serializing_if = "Option::is_none")]
             identity_hash: Option<String>,
+            #[serde(skip_serializing_if = "Option::is_none", default)]
+            org_hash: Option<String>,
         }
 
         // Deserialize into the helper struct
@@ -216,6 +218,7 @@ impl<'de> serde::Deserialize<'de> for DeclarativeSchemaDefinition {
         schema.ref_fields = helper.ref_fields;
         schema.field_types = helper.field_types;
         schema.identity_hash = helper.identity_hash;
+        schema.org_hash = helper.org_hash;
 
         Ok(schema)
     }
@@ -290,6 +293,10 @@ pub struct DeclarativeSchemaDefinition {
     /// Superseded schemas are excluded from active indexes and matching.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub superseded_by: Option<String>,
+    /// If set, this schema belongs to an organization and its molecules sync to all org members.
+    /// Value is the hex-encoded SHA256 hash of the org's Ed25519 public key.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub org_hash: Option<String>,
 
     // Runtime state fields (not serialized)
     /// Runtime field storage with molecules (for database operations)
@@ -337,6 +344,7 @@ impl PartialEq for DeclarativeSchemaDefinition {
             && self.field_types == other.field_types
             && self.identity_hash == other.identity_hash
             && self.superseded_by == other.superseded_by
+            && self.org_hash == other.org_hash
         // Exclude runtime_fields, inputs_schema_fields, source_schemas, and hash mappings
         // These are derived/runtime state and don't affect schema identity
     }
@@ -477,6 +485,7 @@ impl DeclarativeSchemaDefinition {
             field_types: HashMap::new(),
             identity_hash: None,
             superseded_by: None,
+            org_hash: None,
             runtime_fields: HashMap::new(),
             inputs_schema_fields: Vec::new(),
             source_schemas: Vec::new(),
