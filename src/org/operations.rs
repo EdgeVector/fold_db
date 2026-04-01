@@ -33,8 +33,9 @@ pub fn create_org(
     creator_public_key: &str,
     creator_display_name: &str,
 ) -> Result<OrgMembership, FoldDbError> {
-    let keypair = Ed25519KeyPair::generate()
-        .map_err(|e| FoldDbError::SecurityError(format!("Failed to generate org keypair: {}", e)))?;
+    let keypair = Ed25519KeyPair::generate().map_err(|e| {
+        FoldDbError::SecurityError(format!("Failed to generate org keypair: {}", e))
+    })?;
 
     // Generate random 32-byte E2E secret
     let mut e2e_bytes = [0u8; 32];
@@ -85,9 +86,9 @@ pub fn join_org(
     my_display_name: &str,
 ) -> Result<OrgMembership, FoldDbError> {
     // Derive org_hash from the invite's public key
-    let pub_bytes = STANDARD.decode(&invite.org_public_key).map_err(|e| {
-        FoldDbError::SecurityError(format!("Invalid org public key base64: {}", e))
-    })?;
+    let pub_bytes = STANDARD
+        .decode(&invite.org_public_key)
+        .map_err(|e| FoldDbError::SecurityError(format!("Invalid org public key base64: {}", e)))?;
     let mut hasher = Sha256::new();
     hasher.update(&pub_bytes);
     let org_hash = format!("{:x}", hasher.finalize());
@@ -171,11 +172,7 @@ pub fn get_org(db: &sled::Db, org_hash: &str) -> Result<Option<OrgMembership>, F
 }
 
 /// Add a member to an existing organization. Only admins should call this.
-pub fn add_member(
-    db: &sled::Db,
-    org_hash: &str,
-    member: OrgMemberInfo,
-) -> Result<(), FoldDbError> {
+pub fn add_member(db: &sled::Db, org_hash: &str, member: OrgMemberInfo) -> Result<(), FoldDbError> {
     let tree = org_tree(db)?;
     let key = org_key(org_hash);
 
@@ -247,10 +244,7 @@ pub fn remove_member(
 }
 
 /// Generate an invite bundle for an organization. Requires admin access (has org_secret_key).
-pub fn generate_invite(
-    db: &sled::Db,
-    org_hash: &str,
-) -> Result<OrgInviteBundle, FoldDbError> {
+pub fn generate_invite(db: &sled::Db, org_hash: &str) -> Result<OrgInviteBundle, FoldDbError> {
     let membership = get_org(db, org_hash)?.ok_or_else(|| {
         FoldDbError::Database(format!("Organization with hash '{}' not found", org_hash))
     })?;

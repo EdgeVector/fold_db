@@ -42,8 +42,7 @@ fn test_join_org() {
 
     // Bob joins using a separate db (simulating a different node)
     let db_bob = temp_db();
-    let bob_membership =
-        operations::join_org(&db_bob, &invite, "pubkey_bob", "Bob").unwrap();
+    let bob_membership = operations::join_org(&db_bob, &invite, "pubkey_bob", "Bob").unwrap();
 
     assert_eq!(bob_membership.org_name, "Edge Vector Foundation");
     assert_eq!(bob_membership.role, OrgRole::Member);
