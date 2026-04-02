@@ -1,19 +1,19 @@
 use super::core::DbOperations;
 use crate::schema::SchemaError;
-use crate::storage::traits::{TypedStore, KvStore};
+use crate::storage::traits::{KvStore, TypedStore};
 use crate::storage::TypedKvStore;
 use std::sync::Arc;
 
 impl DbOperations {
     /// Securely purges all organization-prefixed data from the local database.
-    /// 
+    ///
     /// This method iterates through every namespace store and performs a prefix scan
     /// for `{org_hash}:`. It then batch deletes those keys, effectively removing all
     /// schemas, atoms, molecules, and history events that were synced under this org's
     /// encrypted shared prefix.
-    /// 
+    ///
     /// Personal data (which lacks the prefix) will remain completely untouched.
-    /// 
+    ///
     /// Returns the total number of keys purged.
     pub async fn purge_org_data(&self, org_hash: &str) -> Result<usize, SchemaError> {
         let prefix = format!("{}:", org_hash);
@@ -45,16 +45,19 @@ impl DbOperations {
             if !keys_to_delete.is_empty() {
                 let count = keys_to_delete.len();
                 // Batch delete them
-                store
-                    .batch_delete_keys(keys_to_delete)
-                    .await
-                    .map_err(|e| SchemaError::InvalidData(format!("Failed to batch delete keys: {}", e)))?;
-                
+                store.batch_delete_keys(keys_to_delete).await.map_err(|e| {
+                    SchemaError::InvalidData(format!("Failed to batch delete keys: {}", e))
+                })?;
+
                 total_deleted += count;
             }
         }
 
-        log::info!("successfully purged {} keys for org {}", total_deleted, org_hash);
+        log::info!(
+            "successfully purged {} keys for org {}",
+            total_deleted,
+            org_hash
+        );
 
         Ok(total_deleted)
     }
@@ -63,8 +66,8 @@ impl DbOperations {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::{NamespacedStore, SledNamespacedStore};
     use crate::storage::traits::TypedStore;
+    use crate::storage::{NamespacedStore, SledNamespacedStore};
     use std::sync::Arc;
 
     #[tokio::test]
@@ -79,13 +82,19 @@ mod tests {
 
         // Put a mix of personal and org data
         let atoms_store = ops.atoms_store();
-        
+
         let personal_key = "atom:uuid-personal";
         let org_key = format!("{}atom:uuid-org", prefix);
 
         // Store some dummy data (String instead of Atom to simply test dbops)
-        atoms_store.put_item(personal_key, &"personal_data".to_string()).await.unwrap();
-        atoms_store.put_item(&org_key, &"org_data".to_string()).await.unwrap();
+        atoms_store
+            .put_item(personal_key, &"personal_data".to_string())
+            .await
+            .unwrap();
+        atoms_store
+            .put_item(&org_key, &"org_data".to_string())
+            .await
+            .unwrap();
 
         // Verify both exist
         let val_p: Option<String> = atoms_store.get_item(personal_key).await.unwrap();
@@ -100,7 +109,7 @@ mod tests {
         // Verify personal remains, org is gone
         let val_p_after: Option<String> = atoms_store.get_item(personal_key).await.unwrap();
         assert!(val_p_after.is_some());
-        
+
         let val_o_after: Option<String> = atoms_store.get_item(&org_key).await.unwrap();
         assert!(val_o_after.is_none());
     }
