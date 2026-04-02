@@ -17,6 +17,9 @@ pub enum SyncError {
     #[error("auth error: {0}")]
     Auth(String),
 
+    #[error("org membership revoked for org: {0}")]
+    OrgMembershipRevoked(String),
+
     #[error("S3 error: {0}")]
     S3(String),
 
