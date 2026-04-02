@@ -105,10 +105,16 @@ impl AuthClient {
         })?;
 
         let status = response.status();
-        if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
+        if status == reqwest::StatusCode::UNAUTHORIZED {
             return Err(SyncError::Auth(
                 "authentication failed — re-authenticate".to_string(),
             ));
+        }
+
+        // Let HTTP 403 pass through to be handled by the caller, so we can discern
+        // if it's a global ban vs an organizational-level ban.
+        if status == reqwest::StatusCode::FORBIDDEN {
+            // we try to parse it as JSON if it has an error payload, otherwise bubble it
         }
 
         if status.is_server_error() {
@@ -173,6 +179,57 @@ impl AuthClient {
         let body = serde_json::json!({
             "action": "presign_snapshot_download",
             "snapshot_name": snapshot_name,
+        });
+
+        let resp = self.post("/api/sync/presign", body).await?;
+        let parsed: PresignedResponse = serde_json::from_value(resp)?;
+
+        if !parsed.ok {
+            return Err(SyncError::Auth(
+                parsed.error.unwrap_or_else(|| "presign failed".to_string()),
+            ));
+        }
+
+        parsed
+            .urls
+            .into_iter()
+            .next()
+            .ok_or_else(|| SyncError::Auth("no presigned URL returned".to_string()))
+    }
+
+    /// Request a presigned URL to upload to another user's inbox
+    pub async fn presign_inbox_upload(
+        &self,
+        target_user_hash: &str,
+        file_name: &str,
+    ) -> SyncResult<PresignedUrl> {
+        let body = serde_json::json!({
+            "action": "presign_inbox_upload",
+            "target_user_hash": target_user_hash,
+            "snapshot_name": file_name,
+        });
+
+        let resp = self.post("/api/sync/presign", body).await?;
+        let parsed: PresignedResponse = serde_json::from_value(resp)?;
+
+        if !parsed.ok {
+            return Err(SyncError::Auth(
+                parsed.error.unwrap_or_else(|| "presign failed".to_string()),
+            ));
+        }
+
+        parsed
+            .urls
+            .into_iter()
+            .next()
+            .ok_or_else(|| SyncError::Auth("no presigned URL returned".to_string()))
+    }
+
+    /// Request a presigned URL to download an item from your own inbox
+    pub async fn presign_inbox_download(&self, file_name: &str) -> SyncResult<PresignedUrl> {
+        let body = serde_json::json!({
+            "action": "presign_inbox_download",
+            "snapshot_name": file_name,
         });
 
         let resp = self.post("/api/sync/presign", body).await?;
@@ -337,11 +394,17 @@ impl AuthClient {
         let parsed: PresignedResponse = serde_json::from_value(resp)?;
 
         if !parsed.ok {
-            return Err(SyncError::Auth(
-                parsed
-                    .error
-                    .unwrap_or_else(|| "org presign upload failed".to_string()),
-            ));
+            let err_msg = parsed
+                .error
+                .unwrap_or_else(|| "org presign upload failed".to_string());
+            let err_lower = err_msg.to_lowercase();
+            if err_lower.contains("forbidden")
+                || err_lower.contains("unauth")
+                || err_lower.contains("not a member")
+            {
+                return Err(SyncError::OrgMembershipRevoked(org_hash.to_string()));
+            }
+            return Err(SyncError::Auth(err_msg));
         }
 
         Ok(parsed.urls)
@@ -365,11 +428,17 @@ impl AuthClient {
         let parsed: PresignedResponse = serde_json::from_value(resp)?;
 
         if !parsed.ok {
-            return Err(SyncError::Auth(
-                parsed
-                    .error
-                    .unwrap_or_else(|| "org presign download failed".to_string()),
-            ));
+            let err_msg = parsed
+                .error
+                .unwrap_or_else(|| "org presign download failed".to_string());
+            let err_lower = err_msg.to_lowercase();
+            if err_lower.contains("forbidden")
+                || err_lower.contains("unauth")
+                || err_lower.contains("not a member")
+            {
+                return Err(SyncError::OrgMembershipRevoked(org_hash.to_string()));
+            }
+            return Err(SyncError::Auth(err_msg));
         }
 
         Ok(parsed.urls)
@@ -394,13 +463,106 @@ impl AuthClient {
         let parsed: ListObjectsResponse = serde_json::from_value(resp)?;
 
         if !parsed.ok {
-            return Err(SyncError::Auth(
-                parsed
-                    .error
-                    .unwrap_or_else(|| "org list failed".to_string()),
-            ));
+            let err_msg = parsed
+                .error
+                .unwrap_or_else(|| "org list failed".to_string());
+            let err_lower = err_msg.to_lowercase();
+            if err_lower.contains("forbidden")
+                || err_lower.contains("unauth")
+                || err_lower.contains("not a member")
+            {
+                return Err(SyncError::OrgMembershipRevoked(org_hash.to_string()));
+            }
+            return Err(SyncError::Auth(err_msg));
         }
 
         Ok(parsed.objects)
+    }
+
+    // =========================================================================
+    // Org membership management
+    // =========================================================================
+
+    pub async fn create_org(&self, org_hash: &str) -> SyncResult<()> {
+        let body = serde_json::json!({
+            "action": "create_org",
+            "org_hash": org_hash,
+        });
+        let resp = self.post("/api/sync/org", body).await?;
+        let ok = resp.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
+        if !ok {
+            let err = resp
+                .get("error")
+                .and_then(|v| v.as_str())
+                .unwrap_or("create_org failed");
+            return Err(SyncError::Auth(err.to_string()));
+        }
+        Ok(())
+    }
+
+    pub async fn add_member(
+        &self,
+        org_hash: &str,
+        target_user_hash: &str,
+        role: &str,
+    ) -> SyncResult<()> {
+        let body = serde_json::json!({
+            "action": "add_member",
+            "org_hash": org_hash,
+            "target_user_hash": target_user_hash,
+            "role": role,
+        });
+        let resp = self.post("/api/sync/org", body).await?;
+        let ok = resp.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
+        if !ok {
+            let err = resp
+                .get("error")
+                .and_then(|v| v.as_str())
+                .unwrap_or("add_member failed");
+            return Err(SyncError::Auth(err.to_string()));
+        }
+        Ok(())
+    }
+
+    pub async fn remove_member(&self, org_hash: &str, target_user_hash: &str) -> SyncResult<()> {
+        let body = serde_json::json!({
+            "action": "remove_member",
+            "org_hash": org_hash,
+            "target_user_hash": target_user_hash,
+        });
+        let resp = self.post("/api/sync/org", body).await?;
+        let ok = resp.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
+        if !ok {
+            let err = resp
+                .get("error")
+                .and_then(|v| v.as_str())
+                .unwrap_or("remove_member failed");
+            return Err(SyncError::Auth(err.to_string()));
+        }
+        Ok(())
+    }
+
+    pub async fn update_role(
+        &self,
+        org_hash: &str,
+        target_user_hash: &str,
+        role: &str,
+    ) -> SyncResult<()> {
+        let body = serde_json::json!({
+            "action": "update_role",
+            "org_hash": org_hash,
+            "target_user_hash": target_user_hash,
+            "role": role,
+        });
+        let resp = self.post("/api/sync/org", body).await?;
+        let ok = resp.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
+        if !ok {
+            let err = resp
+                .get("error")
+                .and_then(|v| v.as_str())
+                .unwrap_or("update_role failed");
+            return Err(SyncError::Auth(err.to_string()));
+        }
+        Ok(())
     }
 }

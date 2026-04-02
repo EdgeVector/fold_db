@@ -117,6 +117,9 @@ pub trait TypedStore: Send + Sync {
         items: Vec<(String, T)>,
     ) -> StorageResult<()>;
 
+    /// Batch delete keys
+    async fn batch_delete_keys(&self, keys: Vec<String>) -> StorageResult<()>;
+
     /// Check if key exists
     async fn exists_item(&self, key: &str) -> StorageResult<bool>;
 }
@@ -203,6 +206,11 @@ impl<S: KvStore + ?Sized + 'static> TypedStore for TypedKvStore<S> {
             .collect();
 
         self.inner.batch_put(serialized?).await
+    }
+
+    async fn batch_delete_keys(&self, keys: Vec<String>) -> StorageResult<()> {
+        let keys_bytes = keys.into_iter().map(|k| k.into_bytes()).collect();
+        self.inner.batch_delete(keys_bytes).await
     }
 
     async fn exists_item(&self, key: &str) -> StorageResult<bool> {
