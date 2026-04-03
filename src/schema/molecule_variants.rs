@@ -34,19 +34,14 @@ impl MoleculeVariant {
         }
     }
 
-    /// Returns the atom UUID for this molecule variant
-    /// Note: For Range and HashRange, this returns the molecule's own UUID, not a contained atom UUID
+    /// Returns the atom UUID for this molecule variant.
+    /// For Single, returns the referenced atom UUID.
+    /// For Range and HashRange, returns the molecule's own UUID (not a contained atom UUID).
     pub fn get_atom_uuid(&self) -> &String {
         match self {
             MoleculeVariant::Single(m) => m.get_atom_uuid(),
-            MoleculeVariant::Range(m) => {
-                static RANGE_UUID: std::sync::OnceLock<String> = std::sync::OnceLock::new();
-                RANGE_UUID.get_or_init(|| m.uuid().to_string())
-            }
-            MoleculeVariant::HashRange(m) => {
-                static HASH_RANGE_UUID: std::sync::OnceLock<String> = std::sync::OnceLock::new();
-                HASH_RANGE_UUID.get_or_init(|| m.uuid().to_string())
-            }
+            MoleculeVariant::Range(m) => m.uuid_string(),
+            MoleculeVariant::HashRange(m) => m.uuid_string(),
         }
     }
 }

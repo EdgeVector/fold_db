@@ -35,6 +35,12 @@ impl MoleculeRange {
         &self.uuid
     }
 
+    /// Returns the UUID as a `&String` reference.
+    #[must_use]
+    pub fn uuid_string(&self) -> &String {
+        &self.uuid
+    }
+
     /// Returns the timestamp of the last update.
     #[must_use]
     pub fn updated_at(&self) -> DateTime<Utc> {
