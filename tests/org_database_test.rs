@@ -192,13 +192,18 @@ async fn test_full_org_lifecycle() {
         "Expected org-prefixed keys in sled"
     );
 
-    // Purge org data
+    // Purge org data + schemas
     let db_ops = db.get_db_ops();
     let purged = db_ops.purge_org_data(org_hash).await.unwrap();
     assert!(purged > 0, "Expected to purge at least 1 key");
+    let removed_schemas = db.schema_manager.purge_org_schemas(org_hash).await.unwrap();
+    assert_eq!(removed_schemas, vec!["corp_notes"]);
 
-    // Verify purge at sled level (can't query via schema — schema still has
-    // in-memory molecule references to now-deleted atoms)
+    // Schema should be gone from the manager
+    let schema = db.schema_manager.get_schema("corp_notes").await.unwrap();
+    assert!(schema.is_none(), "Schema should be purged");
+
+    // No org-prefixed keys remain
     assert_eq!(
         count_org_prefixed_keys(&db, org_hash),
         0,
@@ -268,13 +273,20 @@ async fn test_multi_org_data_isolation() {
     assert!(count_org_prefixed_keys(&db, &org_alpha.org_hash) > 0);
     assert!(count_org_prefixed_keys(&db, &org_beta.org_hash) > 0);
 
-    // Purge alpha
+    // Purge alpha (data + schemas)
     let db_ops = db.get_db_ops();
     db_ops.purge_org_data(&org_alpha.org_hash).await.unwrap();
+    db.schema_manager
+        .purge_org_schemas(&org_alpha.org_hash)
+        .await
+        .unwrap();
 
-    // Alpha data is gone at sled level (can't query via schema — schema still has
-    // in-memory molecule references to now-deleted atoms)
+    // Alpha is fully purged — sled keys gone and schema removed
     assert_eq!(count_org_prefixed_keys(&db, &org_alpha.org_hash), 0);
+    assert!(
+        db.schema_manager.get_schema("alpha_notes").await.unwrap().is_none(),
+        "Alpha schema should be purged"
+    );
 
     // Beta is untouched — both at sled level and via query
     assert!(count_org_prefixed_keys(&db, &org_beta.org_hash) > 0);
