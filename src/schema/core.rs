@@ -273,6 +273,47 @@ impl SchemaCore {
         Arc::clone(&self.message_bus)
     }
 
+    /// Remove all schemas belonging to the given org from both in-memory cache
+    /// and persistent storage. Returns the names of removed schemas.
+    ///
+    /// This should be called alongside `DbOperations::purge_org_data` when
+    /// purging an organization — `purge_org_data` only removes org-prefixed
+    /// atom/molecule/history keys, but schemas are stored by name (not prefixed).
+    pub async fn purge_org_schemas(&self, org_hash: &str) -> Result<Vec<String>, SchemaError> {
+        use crate::storage::traits::TypedStore;
+
+        // Find schemas with matching org_hash in the in-memory cache
+        let names_to_remove: Vec<String> = {
+            let schemas = lock_map(&self.schemas, "schemas")?;
+            schemas
+                .iter()
+                .filter(|(_, schema)| schema.org_hash.as_deref() == Some(org_hash))
+                .map(|(name, _)| name.clone())
+                .collect()
+        };
+
+        // Remove from in-memory caches and persistent stores
+        for name in &names_to_remove {
+            lock_map(&self.schemas, "schemas")?.remove(name);
+            lock_map(&self.schema_states, "schema_states")?.remove(name);
+
+            // Delete from persistent stores (ignore errors on missing keys)
+            let _ = self.db_ops.schemas_store().delete_item(name).await;
+            let _ = self.db_ops.schema_states_store().delete_item(name).await;
+        }
+
+        if !names_to_remove.is_empty() {
+            log::info!(
+                "purged {} org schemas for org {}: {:?}",
+                names_to_remove.len(),
+                org_hash,
+                names_to_remove
+            );
+        }
+
+        Ok(names_to_remove)
+    }
+
     /// Update an existing schema in both the database and in-memory cache.
     /// Used by ingestion to add Reference topologies after child schemas are resolved.
     pub async fn update_schema(&self, schema: &Schema) -> Result<(), SchemaError> {
