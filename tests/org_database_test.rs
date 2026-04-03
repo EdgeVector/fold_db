@@ -96,11 +96,7 @@ async fn write_mutation_update(
 }
 
 /// Query a schema and return all values for a given field.
-async fn query_field_values(
-    db: &FoldDB,
-    schema_name: &str,
-    field: &str,
-) -> Vec<serde_json::Value> {
+async fn query_field_values(db: &FoldDB, schema_name: &str, field: &str) -> Vec<serde_json::Value> {
     let query = Query::new(schema_name.to_string(), vec![field.to_string()]);
     let access = AccessContext::owner("test-owner");
     let result = db
@@ -163,15 +159,21 @@ async fn test_full_org_lifecycle() {
     let sled_db = db.sled_db().cloned().unwrap();
 
     // Create org
-    let membership =
-        org_ops::create_org(&sled_db, "Test Corp", "pubkey_alice", "Alice").unwrap();
+    let membership = org_ops::create_org(&sled_db, "Test Corp", "pubkey_alice", "Alice").unwrap();
     let org_hash = &membership.org_hash;
 
     // Register org schema
     register_schema(&mut db, "corp_notes", Some(org_hash)).await;
 
     // Write initial data
-    write_mutation(&mut db, "corp_notes", "meeting", "2026-01-15", "initial notes").await;
+    write_mutation(
+        &mut db,
+        "corp_notes",
+        "meeting",
+        "2026-01-15",
+        "initial notes",
+    )
+    .await;
 
     // Query — should return 1 record
     let bodies = query_field_values(&db, "corp_notes", "body").await;
@@ -179,7 +181,14 @@ async fn test_full_org_lifecycle() {
     assert_eq!(bodies[0], json!("initial notes"));
 
     // Update same record
-    write_mutation_update(&mut db, "corp_notes", "meeting", "2026-01-15", "updated notes").await;
+    write_mutation_update(
+        &mut db,
+        "corp_notes",
+        "meeting",
+        "2026-01-15",
+        "updated notes",
+    )
+    .await;
 
     // Query — should return updated value
     let bodies = query_field_values(&db, "corp_notes", "body").await;
@@ -229,10 +238,8 @@ async fn test_multi_org_data_isolation() {
     let sled_db = db.sled_db().cloned().unwrap();
 
     // Create two orgs
-    let org_alpha =
-        org_ops::create_org(&sled_db, "Org Alpha", "pubkey_alice", "Alice").unwrap();
-    let org_beta =
-        org_ops::create_org(&sled_db, "Org Beta", "pubkey_bob", "Bob").unwrap();
+    let org_alpha = org_ops::create_org(&sled_db, "Org Alpha", "pubkey_alice", "Alice").unwrap();
+    let org_beta = org_ops::create_org(&sled_db, "Org Beta", "pubkey_bob", "Bob").unwrap();
 
     // Register schemas
     register_schema(&mut db, "alpha_notes", Some(&org_alpha.org_hash)).await;
@@ -261,13 +268,19 @@ async fn test_multi_org_data_isolation() {
     // Alpha query returns only alpha data
     let alpha_bodies = query_field_values(&db, "alpha_notes", "body").await;
     assert_eq!(alpha_bodies.len(), 3);
-    assert!(alpha_bodies.iter().all(|v| v.as_str().unwrap().contains("alpha")));
-    assert!(!alpha_bodies.iter().any(|v| v.as_str().unwrap().contains("beta")));
+    assert!(alpha_bodies
+        .iter()
+        .all(|v| v.as_str().unwrap().contains("alpha")));
+    assert!(!alpha_bodies
+        .iter()
+        .any(|v| v.as_str().unwrap().contains("beta")));
 
     // Beta query returns only beta data
     let beta_bodies = query_field_values(&db, "beta_notes", "body").await;
     assert_eq!(beta_bodies.len(), 3);
-    assert!(beta_bodies.iter().all(|v| v.as_str().unwrap().contains("beta")));
+    assert!(beta_bodies
+        .iter()
+        .all(|v| v.as_str().unwrap().contains("beta")));
 
     // Both orgs have prefixed keys
     assert!(count_org_prefixed_keys(&db, &org_alpha.org_hash) > 0);
@@ -284,7 +297,11 @@ async fn test_multi_org_data_isolation() {
     // Alpha is fully purged — sled keys gone and schema removed
     assert_eq!(count_org_prefixed_keys(&db, &org_alpha.org_hash), 0);
     assert!(
-        db.schema_manager.get_schema("alpha_notes").await.unwrap().is_none(),
+        db.schema_manager
+            .get_schema("alpha_notes")
+            .await
+            .unwrap()
+            .is_none(),
         "Alpha schema should be purged"
     );
 
@@ -365,7 +382,10 @@ async fn test_org_and_personal_coexistence_at_scale() {
         .iter()
         .filter(|k| k.starts_with(&org_prefix) && k.contains(":atom:"))
         .collect();
-    assert!(!personal_atom_keys.is_empty(), "Expected personal atom keys");
+    assert!(
+        !personal_atom_keys.is_empty(),
+        "Expected personal atom keys"
+    );
     assert!(!org_atom_keys.is_empty(), "Expected org-prefixed atom keys");
 }
 
@@ -465,7 +485,13 @@ async fn test_org_query_with_sort_order() {
     register_schema(&mut db, "org_events", Some(&org.org_hash)).await;
 
     // Write 5 records with out-of-order dates
-    let dates = ["2026-05-03", "2026-05-01", "2026-05-05", "2026-05-02", "2026-05-04"];
+    let dates = [
+        "2026-05-03",
+        "2026-05-01",
+        "2026-05-05",
+        "2026-05-02",
+        "2026-05-04",
+    ];
     for (i, date) in dates.iter().enumerate() {
         write_mutation(
             &mut db,
@@ -483,10 +509,7 @@ async fn test_org_query_with_sort_order() {
     assert_eq!(body_map.len(), 5);
 
     // Extract range keys and verify they can be sorted
-    let mut range_values: Vec<String> = body_map
-        .keys()
-        .filter_map(|kv| kv.range.clone())
-        .collect();
+    let mut range_values: Vec<String> = body_map.keys().filter_map(|kv| kv.range.clone()).collect();
     range_values.sort();
     assert_eq!(
         range_values,
@@ -616,7 +639,14 @@ async fn test_sync_partitioner_routes_org_writes() {
     register_schema(&mut db, "shared_docs", Some(&org.org_hash)).await;
 
     // Write 1 record to each
-    write_mutation(&mut db, "my_docs", "personal-doc", "2026-01-01", "personal content").await;
+    write_mutation(
+        &mut db,
+        "my_docs",
+        "personal-doc",
+        "2026-01-01",
+        "personal content",
+    )
+    .await;
     write_mutation(
         &mut db,
         "shared_docs",
@@ -662,10 +692,7 @@ async fn test_sync_partitioner_routes_org_writes() {
         }
     }
 
-    assert!(
-        routed_to_org > 0,
-        "Expected at least 1 key routed to Org"
-    );
+    assert!(routed_to_org > 0, "Expected at least 1 key routed to Org");
     assert!(
         routed_to_personal > 0,
         "Expected at least 1 key routed to Personal"
@@ -742,11 +769,7 @@ async fn test_org_member_operations_during_data_lifecycle() {
 
     // Data survives member removal — all 5 records still accessible
     let bodies = query_field_values(&db, "team_notes", "body").await;
-    assert_eq!(
-        bodies.len(),
-        5,
-        "All data should survive member removal"
-    );
+    assert_eq!(bodies.len(), 5, "All data should survive member removal");
 
     // Org-prefixed keys still intact
     assert!(
