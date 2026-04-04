@@ -47,6 +47,27 @@
 //! - Server sees only opaque encrypted blobs
 //! - Presigned URLs expire after 15 minutes
 //! - No AWS credentials on the client
+//!
+//! ## Why there is no conflict resolution
+//!
+//! FoldDB's data model makes sync conflicts structurally impossible:
+//!
+//! - **Atoms** are content-addressed (content → deterministic UUID). Two nodes
+//!   creating different atoms produce different keys. No collision.
+//! - **Mutation history** is append-only with unique timestamps. Both sides'
+//!   events coexist without overwriting each other.
+//! - **Ref pointers** (`ref:{mol_uuid}`) are the only shared mutable state.
+//!   They cache "which atom is current" — derivable from the history.
+//!
+//! After sync, every node has the complete set of atoms and mutation events
+//! from all writers. The ref pointer converges deterministically via LWW
+//! (highest `(timestamp_ms, device_id)` wins). All nodes reach the same
+//! state regardless of replay order.
+//!
+//! This applies to both personal multi-device sync and org sync — the
+//! convergence model is identical. **Do not add conflict resolution
+//! machinery** — it is unnecessary and would add complexity for a problem
+//! that does not exist in this architecture.
 
 pub mod auth;
 pub mod engine;

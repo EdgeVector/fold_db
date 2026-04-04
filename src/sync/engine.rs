@@ -6,7 +6,7 @@ use super::s3::S3Client;
 use super::snapshot::Snapshot;
 use crate::crypto::CryptoProvider;
 use crate::storage::traits::NamespacedStore;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -576,18 +576,20 @@ impl SyncEngine {
         Ok(final_seq)
     }
 
-    /// Replay a single log entry by executing the operation against the local store.
-    async fn replay_entry(&self, entry: &LogEntry) -> SyncResult<()> {
+    /// Replay a single log entry with convergent ref handling.
+    ///
+    /// Non-ref keys (atoms, history) are written unconditionally.
+    /// Ref keys (`ref:` or `{org_hash}:ref:`) use LWW timestamps so all
+    /// nodes converge to the same "current" pointer regardless of replay order.
+    pub async fn replay_entry(&self, entry: &LogEntry) -> SyncResult<()> {
         match &entry.op {
             LogOp::Put {
                 namespace,
                 key,
                 value,
             } => {
-                let kv = self.store.open_namespace(namespace).await?;
-                let key_bytes = LogOp::decode_bytes(key)?;
-                let value_bytes = LogOp::decode_bytes(value)?;
-                kv.put(&key_bytes, value_bytes).await?;
+                self.replay_put(namespace, key, value, entry.timestamp_ms, &entry.device_id)
+                    .await?;
             }
             LogOp::Delete { namespace, key } => {
                 let kv = self.store.open_namespace(namespace).await?;
@@ -595,12 +597,10 @@ impl SyncEngine {
                 kv.delete(&key_bytes).await?;
             }
             LogOp::BatchPut { namespace, items } => {
-                let kv = self.store.open_namespace(namespace).await?;
-                let decoded: Vec<(Vec<u8>, Vec<u8>)> = items
-                    .iter()
-                    .map(|(k, v)| Ok((LogOp::decode_bytes(k)?, LogOp::decode_bytes(v)?)))
-                    .collect::<SyncResult<Vec<_>>>()?;
-                kv.batch_put(decoded).await?;
+                for (key, value) in items {
+                    self.replay_put(namespace, key, value, entry.timestamp_ms, &entry.device_id)
+                        .await?;
+                }
             }
             LogOp::BatchDelete { namespace, keys } => {
                 let kv = self.store.open_namespace(namespace).await?;
@@ -611,6 +611,76 @@ impl SyncEngine {
                 kv.batch_delete(decoded).await?;
             }
         }
+        Ok(())
+    }
+
+    /// Replay a single put. Ref keys use LWW; everything else is unconditional.
+    async fn replay_put(
+        &self,
+        namespace: &str,
+        key_b64: &str,
+        value_b64: &str,
+        timestamp_ms: u64,
+        device_id: &str,
+    ) -> SyncResult<()> {
+        let key_bytes = LogOp::decode_bytes(key_b64)?;
+        let value_bytes = LogOp::decode_bytes(value_b64)?;
+
+        let is_ref_key = key_bytes.starts_with(b"ref:")
+            || std::str::from_utf8(&key_bytes)
+                .ok()
+                .is_some_and(|s| s.contains(":ref:"));
+
+        if is_ref_key {
+            let meta_key = format!("ref_ts:{namespace}:{key_b64}");
+            let existing = self.read_ref_timestamp(&meta_key).await?;
+
+            let dominated = match existing {
+                Some(ref local) => {
+                    (timestamp_ms, device_id) <= (local.timestamp_ms, local.device_id.as_str())
+                }
+                None => false,
+            };
+
+            if dominated {
+                return Ok(());
+            }
+
+            let kv = self.store.open_namespace(namespace).await?;
+            kv.put(&key_bytes, value_bytes).await?;
+            self.write_ref_timestamp(
+                &meta_key,
+                &RefTimestamp {
+                    timestamp_ms,
+                    device_id: device_id.to_string(),
+                },
+            )
+            .await?;
+        } else {
+            let kv = self.store.open_namespace(namespace).await?;
+            kv.put(&key_bytes, value_bytes).await?;
+        }
+
+        Ok(())
+    }
+
+    /// Read the last-write timestamp for a ref key.
+    async fn read_ref_timestamp(&self, meta_key: &str) -> SyncResult<Option<RefTimestamp>> {
+        let kv = self.store.open_namespace("ref_timestamps").await?;
+        match kv.get(meta_key.as_bytes()).await? {
+            Some(bytes) => {
+                let ts: RefTimestamp = serde_json::from_slice(&bytes)?;
+                Ok(Some(ts))
+            }
+            None => Ok(None),
+        }
+    }
+
+    /// Write the last-write timestamp for a ref key.
+    async fn write_ref_timestamp(&self, meta_key: &str, ts: &RefTimestamp) -> SyncResult<()> {
+        let kv = self.store.open_namespace("ref_timestamps").await?;
+        let bytes = serde_json::to_vec(ts)?;
+        kv.put(meta_key.as_bytes(), bytes).await?;
         Ok(())
     }
 
@@ -949,6 +1019,13 @@ impl SyncEngine {
 
         Ok(total_replayed)
     }
+}
+
+/// Tracks the timestamp of the last write to a ref key for LWW convergence.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct RefTimestamp {
+    timestamp_ms: u64,
+    device_id: String,
 }
 
 /// Parsed components of an org log S3 key.
