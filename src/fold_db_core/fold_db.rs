@@ -49,6 +49,8 @@ pub struct FoldDB {
     sync_engine: Option<Arc<crate::sync::SyncEngine>>,
     /// Handle for the background sync timer task.
     sync_task: Option<tokio::task::JoinHandle<()>>,
+    /// Optional reference to the encrypting store for org crypto registration.
+    encrypting_store: Option<Arc<crate::storage::EncryptingNamespacedStore>>,
 }
 
 impl FoldDB {
@@ -202,6 +204,23 @@ impl FoldDB {
         self.sync_engine.as_ref()
     }
 
+    /// Register a crypto provider for org-scoped data encryption.
+    ///
+    /// After this call, storage keys starting with `{org_hash}:` will be
+    /// encrypted/decrypted with this provider instead of the node's personal key.
+    /// This enables org members to read each other's shared data.
+    pub async fn register_org_crypto(
+        &self,
+        org_hash: &str,
+        crypto: Arc<dyn crate::crypto::CryptoProvider>,
+    ) {
+        if let Some(enc_store) = &self.encrypting_store {
+            enc_store
+                .register_org_crypto(org_hash.to_string(), crypto)
+                .await;
+        }
+    }
+
     /// Creates a new FoldDB instance with the specified storage path.
     /// All initializations happen here. This is the main entry point for the FoldDB system.
     /// Do not initialize anywhere else.
@@ -255,6 +274,7 @@ impl FoldDB {
             Some(job_store),
             "local".to_string(),
             Some(db),
+            None,
         )
         .await
     }
@@ -266,7 +286,7 @@ impl FoldDB {
         job_store: Option<Arc<dyn JobStore>>,
         user_id: String,
     ) -> Result<Self, StorageError> {
-        Self::initialize_from_db_ops_with_sled(db_ops, db_path, job_store, user_id, None).await
+        Self::initialize_from_db_ops_with_sled(db_ops, db_path, job_store, user_id, None, None).await
     }
 
     /// Internal initializer that optionally retains the raw sled handle.
@@ -277,6 +297,7 @@ impl FoldDB {
         job_store: Option<Arc<dyn JobStore>>,
         user_id: String,
         sled_db: Option<sled::Db>,
+        encrypting_store: Option<Arc<crate::storage::EncryptingNamespacedStore>>,
     ) -> Result<Self, StorageError> {
         // Initialize message bus
         let message_bus = Arc::new(AsyncMessageBus::new());
@@ -352,6 +373,7 @@ impl FoldDB {
             progress_tracker,
             sync_engine: None,
             sync_task: None,
+            encrypting_store,
         })
     }
 

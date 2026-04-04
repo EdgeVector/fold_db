@@ -81,10 +81,12 @@ async fn create_local_fold_db(
         Arc::new(crate::storage::SledNamespacedStore::new(db));
 
     // Build the store stack, optionally inserting sync layer
-    let (store, sync_engine, sync_interval_ms): (
+    #[allow(clippy::type_complexity)]
+    let (store, sync_engine, sync_interval_ms, enc_store_ref): (
         Arc<dyn crate::storage::traits::NamespacedStore>,
         Option<Arc<crate::sync::SyncEngine>>,
         u64,
+        Option<Arc<crate::storage::EncryptingNamespacedStore>>,
     ) = if let Some(setup) = sync_setup {
         let sync_config = setup.config.unwrap_or_default();
         let interval_ms = sync_config.sync_interval_ms;
@@ -124,16 +126,18 @@ async fn create_local_fold_db(
         let crypto = Arc::new(crate::crypto::LocalCryptoProvider::from_key(
             e2e_keys.encryption_key(),
         ));
-        let enc_store = crate::storage::EncryptingNamespacedStore::new(mid_store, crypto, true);
+        let enc_store =
+            Arc::new(crate::storage::EncryptingNamespacedStore::new(mid_store, crypto, true));
 
-        (Arc::new(enc_store), Some(engine), interval_ms)
+        (enc_store.clone() as Arc<dyn crate::storage::traits::NamespacedStore>, Some(engine), interval_ms, Some(enc_store))
     } else {
         // No sync — Sled → EncryptingNamespacedStore
         let crypto = Arc::new(crate::crypto::LocalCryptoProvider::from_key(
             e2e_keys.encryption_key(),
         ));
-        let enc_store = crate::storage::EncryptingNamespacedStore::new(base_store, crypto, true);
-        (Arc::new(enc_store), None, 0)
+        let enc_store =
+            Arc::new(crate::storage::EncryptingNamespacedStore::new(base_store, crypto, true));
+        (enc_store.clone() as Arc<dyn crate::storage::traits::NamespacedStore>, None, 0, Some(enc_store))
     };
 
     let db_ops = DbOperations::from_namespaced_store(store)
@@ -148,6 +152,7 @@ async fn create_local_fold_db(
         Some(job_store),
         "local".to_string(),
         Some(raw_sled),
+        enc_store_ref,
     )
     .await
     .map_err(|e| FoldDbError::Config(e.to_string()))?;
