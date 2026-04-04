@@ -19,8 +19,10 @@ pub const ANTHROPIC_SONNET_OPENROUTER: &str = "anthropic/claude-sonnet-4-2025051
 // ---- Ollama Models ----
 
 /// Default Ollama model for general text tasks (ingestion, queries).
-/// Used by: `fold_db_node` Ollama backend.
-pub const OLLAMA_DEFAULT: &str = "llama3.3";
+/// Used by: `fold_db_node` Ollama backend, `fold_db` schema service classification.
+/// Must be a model that works on most hardware (8B params).
+/// The ingestion config in `fold_db_node` upgrades to larger models based on system RAM.
+pub const OLLAMA_DEFAULT: &str = "llama3.1:8b";
 
 /// Vision model for image captioning and classification.
 /// Used by: `file_to_markdown` image extraction.
