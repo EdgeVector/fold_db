@@ -1,5 +1,4 @@
 use super::auth::AuthClient;
-use super::conflict::{lww_wins, ConflictRecord, ConflictResolution, ConflictSide, WriteMeta};
 use super::error::{SyncError, SyncResult};
 use super::log::{LogEntry, LogOp};
 use super::org_sync::{SyncDestination, SyncPartitioner};
@@ -7,7 +6,7 @@ use super::s3::S3Client;
 use super::snapshot::Snapshot;
 use crate::crypto::CryptoProvider;
 use crate::storage::traits::NamespacedStore;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -577,18 +576,20 @@ impl SyncEngine {
         Ok(final_seq)
     }
 
-    /// Replay a single log entry by executing the operation against the local store.
-    async fn replay_entry(&self, entry: &LogEntry) -> SyncResult<()> {
+    /// Replay a single log entry with convergent ref handling.
+    ///
+    /// Non-ref keys (atoms, history) are written unconditionally.
+    /// Ref keys (`ref:` or `{org_hash}:ref:`) use LWW timestamps so all
+    /// nodes converge to the same "current" pointer regardless of replay order.
+    pub async fn replay_entry(&self, entry: &LogEntry) -> SyncResult<()> {
         match &entry.op {
             LogOp::Put {
                 namespace,
                 key,
                 value,
             } => {
-                let kv = self.store.open_namespace(namespace).await?;
-                let key_bytes = LogOp::decode_bytes(key)?;
-                let value_bytes = LogOp::decode_bytes(value)?;
-                kv.put(&key_bytes, value_bytes).await?;
+                self.replay_put(namespace, key, value, entry.timestamp_ms, &entry.device_id)
+                    .await?;
             }
             LogOp::Delete { namespace, key } => {
                 let kv = self.store.open_namespace(namespace).await?;
@@ -596,12 +597,10 @@ impl SyncEngine {
                 kv.delete(&key_bytes).await?;
             }
             LogOp::BatchPut { namespace, items } => {
-                let kv = self.store.open_namespace(namespace).await?;
-                let decoded: Vec<(Vec<u8>, Vec<u8>)> = items
-                    .iter()
-                    .map(|(k, v)| Ok((LogOp::decode_bytes(k)?, LogOp::decode_bytes(v)?)))
-                    .collect::<SyncResult<Vec<_>>>()?;
-                kv.batch_put(decoded).await?;
+                for (key, value) in items {
+                    self.replay_put(namespace, key, value, entry.timestamp_ms, &entry.device_id)
+                        .await?;
+                }
             }
             LogOp::BatchDelete { namespace, keys } => {
                 let kv = self.store.open_namespace(namespace).await?;
@@ -612,6 +611,76 @@ impl SyncEngine {
                 kv.batch_delete(decoded).await?;
             }
         }
+        Ok(())
+    }
+
+    /// Replay a single put. Ref keys use LWW; everything else is unconditional.
+    async fn replay_put(
+        &self,
+        namespace: &str,
+        key_b64: &str,
+        value_b64: &str,
+        timestamp_ms: u64,
+        device_id: &str,
+    ) -> SyncResult<()> {
+        let key_bytes = LogOp::decode_bytes(key_b64)?;
+        let value_bytes = LogOp::decode_bytes(value_b64)?;
+
+        let is_ref_key = key_bytes.starts_with(b"ref:")
+            || std::str::from_utf8(&key_bytes)
+                .ok()
+                .is_some_and(|s| s.contains(":ref:"));
+
+        if is_ref_key {
+            let meta_key = format!("ref_ts:{namespace}:{key_b64}");
+            let existing = self.read_ref_timestamp(&meta_key).await?;
+
+            let dominated = match existing {
+                Some(ref local) => {
+                    (timestamp_ms, device_id) <= (local.timestamp_ms, local.device_id.as_str())
+                }
+                None => false,
+            };
+
+            if dominated {
+                return Ok(());
+            }
+
+            let kv = self.store.open_namespace(namespace).await?;
+            kv.put(&key_bytes, value_bytes).await?;
+            self.write_ref_timestamp(
+                &meta_key,
+                &RefTimestamp {
+                    timestamp_ms,
+                    device_id: device_id.to_string(),
+                },
+            )
+            .await?;
+        } else {
+            let kv = self.store.open_namespace(namespace).await?;
+            kv.put(&key_bytes, value_bytes).await?;
+        }
+
+        Ok(())
+    }
+
+    /// Read the last-write timestamp for a ref key.
+    async fn read_ref_timestamp(&self, meta_key: &str) -> SyncResult<Option<RefTimestamp>> {
+        let kv = self.store.open_namespace("ref_timestamps").await?;
+        match kv.get(meta_key.as_bytes()).await? {
+            Some(bytes) => {
+                let ts: RefTimestamp = serde_json::from_slice(&bytes)?;
+                Ok(Some(ts))
+            }
+            None => Ok(None),
+        }
+    }
+
+    /// Write the last-write timestamp for a ref key.
+    async fn write_ref_timestamp(&self, meta_key: &str, ts: &RefTimestamp) -> SyncResult<()> {
+        let kv = self.store.open_namespace("ref_timestamps").await?;
+        let bytes = serde_json::to_vec(ts)?;
+        kv.put(meta_key.as_bytes(), bytes).await?;
         Ok(())
     }
 
@@ -914,7 +983,7 @@ impl SyncEngine {
                 match data {
                     Some(bytes) => match LogEntry::unseal(&bytes, &crypto).await {
                         Ok(entry) => {
-                            self.replay_org_entry(&entry, org_hash).await?;
+                            self.replay_entry(&entry).await?;
                             total_replayed += 1;
                         }
                         Err(e) => {
@@ -951,325 +1020,13 @@ impl SyncEngine {
         Ok(total_replayed)
     }
 
-    // =========================================================================
-    // Conflict-aware org replay
-    // =========================================================================
+}
 
-    /// Replay a single org log entry with LWW conflict detection.
-    ///
-    /// For each key in the entry, checks if a different device has already written
-    /// to that key. If so, compares `(timestamp_ms, device_id)` and applies LWW.
-    /// All conflicts are recorded in the `org_conflicts` namespace.
-    pub async fn replay_org_entry(&self, entry: &LogEntry, org_hash: &str) -> SyncResult<()> {
-        match &entry.op {
-            LogOp::Put {
-                namespace,
-                key,
-                value,
-            } => {
-                self.replay_put_with_conflict(
-                    namespace,
-                    key,
-                    Some(value),
-                    entry.timestamp_ms,
-                    &entry.device_id,
-                    entry.seq,
-                    org_hash,
-                )
-                .await?;
-            }
-            LogOp::Delete { namespace, key } => {
-                self.replay_put_with_conflict(
-                    namespace,
-                    key,
-                    None,
-                    entry.timestamp_ms,
-                    &entry.device_id,
-                    entry.seq,
-                    org_hash,
-                )
-                .await?;
-            }
-            LogOp::BatchPut { namespace, items } => {
-                for (key, value) in items {
-                    self.replay_put_with_conflict(
-                        namespace,
-                        key,
-                        Some(value),
-                        entry.timestamp_ms,
-                        &entry.device_id,
-                        entry.seq,
-                        org_hash,
-                    )
-                    .await?;
-                }
-            }
-            LogOp::BatchDelete { namespace, keys } => {
-                for key in keys {
-                    self.replay_put_with_conflict(
-                        namespace,
-                        key,
-                        None,
-                        entry.timestamp_ms,
-                        &entry.device_id,
-                        entry.seq,
-                        org_hash,
-                    )
-                    .await?;
-                }
-            }
-        }
-        Ok(())
-    }
-
-    /// Apply a single key write with LWW conflict detection.
-    ///
-    /// `value` is `Some(base64)` for puts, `None` for deletes.
-    #[allow(clippy::too_many_arguments)]
-    async fn replay_put_with_conflict(
-        &self,
-        namespace: &str,
-        key_b64: &str,
-        value_b64: Option<&String>,
-        timestamp_ms: u64,
-        device_id: &str,
-        seq: u64,
-        org_hash: &str,
-    ) -> SyncResult<()> {
-        let meta_key = format!("meta:{namespace}:{key_b64}");
-        let existing_meta = self.read_write_meta(&meta_key).await?;
-
-        let should_apply = match &existing_meta {
-            Some(local) if local.device_id != device_id => {
-                let incoming_wins =
-                    lww_wins(timestamp_ms, device_id, local.timestamp_ms, &local.device_id);
-
-                let (winner, loser) = if incoming_wins {
-                    (
-                        ConflictSide {
-                            timestamp_ms,
-                            device_id: device_id.to_string(),
-                            value: value_b64.cloned(),
-                            seq,
-                        },
-                        ConflictSide {
-                            timestamp_ms: local.timestamp_ms,
-                            device_id: local.device_id.clone(),
-                            value: None, // local value not captured in meta
-                            seq: local.seq,
-                        },
-                    )
-                } else {
-                    (
-                        ConflictSide {
-                            timestamp_ms: local.timestamp_ms,
-                            device_id: local.device_id.clone(),
-                            value: None,
-                            seq: local.seq,
-                        },
-                        ConflictSide {
-                            timestamp_ms,
-                            device_id: device_id.to_string(),
-                            value: value_b64.cloned(),
-                            seq,
-                        },
-                    )
-                };
-
-                let record = ConflictRecord {
-                    id: uuid::Uuid::new_v4().to_string(),
-                    namespace: namespace.to_string(),
-                    key: key_b64.to_string(),
-                    winner,
-                    loser,
-                    resolution: ConflictResolution::LastWriteWins,
-                    detected_at_ms: std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_millis() as u64,
-                    org_hash: Some(org_hash.to_string()),
-                };
-
-                self.record_conflict(&record).await?;
-
-                log::info!(
-                    "conflict detected: namespace={} org={} key={}.. winner_device={} (ts={})",
-                    namespace,
-                    org_hash,
-                    &key_b64[..key_b64.len().min(20)],
-                    record.winner.device_id,
-                    record.winner.timestamp_ms,
-                );
-
-                incoming_wins
-            }
-            // Same device or no prior write: always apply
-            _ => true,
-        };
-
-        if should_apply {
-            let kv = self.store.open_namespace(namespace).await?;
-            let key_bytes = LogOp::decode_bytes(key_b64)?;
-            match value_b64 {
-                Some(v) => {
-                    let value_bytes = LogOp::decode_bytes(v)?;
-                    kv.put(&key_bytes, value_bytes).await?;
-                }
-                None => {
-                    kv.delete(&key_bytes).await?;
-                }
-            }
-            self.write_write_meta(
-                &meta_key,
-                &WriteMeta {
-                    timestamp_ms,
-                    device_id: device_id.to_string(),
-                    seq,
-                },
-            )
-            .await?;
-        }
-
-        Ok(())
-    }
-
-    /// Read per-key write metadata from the org_write_meta namespace.
-    async fn read_write_meta(&self, meta_key: &str) -> SyncResult<Option<WriteMeta>> {
-        let kv = self.store.open_namespace("org_write_meta").await?;
-        match kv.get(meta_key.as_bytes()).await? {
-            Some(bytes) => {
-                let meta: WriteMeta = serde_json::from_slice(&bytes)?;
-                Ok(Some(meta))
-            }
-            None => Ok(None),
-        }
-    }
-
-    /// Write per-key write metadata to the org_write_meta namespace.
-    async fn write_write_meta(&self, meta_key: &str, meta: &WriteMeta) -> SyncResult<()> {
-        let kv = self.store.open_namespace("org_write_meta").await?;
-        let bytes = serde_json::to_vec(meta)?;
-        kv.put(meta_key.as_bytes(), bytes).await?;
-        Ok(())
-    }
-
-    /// Persist a conflict record to the org_conflicts namespace.
-    async fn record_conflict(&self, record: &ConflictRecord) -> SyncResult<()> {
-        let kv = self.store.open_namespace("org_conflicts").await?;
-        let key = format!("conflict:{}", record.id);
-        let bytes = serde_json::to_vec(record)?;
-        kv.put(key.as_bytes(), bytes).await?;
-        Ok(())
-    }
-
-    // =========================================================================
-    // Conflict query and resolution API
-    // =========================================================================
-
-    /// List conflict records, optionally filtered by org_hash.
-    pub async fn list_conflicts(
-        &self,
-        org_hash: Option<&str>,
-        limit: usize,
-        offset: usize,
-    ) -> SyncResult<Vec<ConflictRecord>> {
-        let kv = self.store.open_namespace("org_conflicts").await?;
-        let all_entries = kv.scan_prefix(b"conflict:").await?;
-
-        let mut records: Vec<ConflictRecord> = all_entries
-            .into_iter()
-            .filter_map(|(_, v)| serde_json::from_slice::<ConflictRecord>(&v).ok())
-            .filter(|r| match org_hash {
-                Some(h) => r.org_hash.as_deref() == Some(h),
-                None => true,
-            })
-            .collect();
-
-        // Sort by detected_at_ms descending (newest first)
-        records.sort_by(|a, b| b.detected_at_ms.cmp(&a.detected_at_ms));
-
-        Ok(records.into_iter().skip(offset).take(limit).collect())
-    }
-
-    /// Get a single conflict record by ID.
-    pub async fn get_conflict(&self, conflict_id: &str) -> SyncResult<Option<ConflictRecord>> {
-        let kv = self.store.open_namespace("org_conflicts").await?;
-        let key = format!("conflict:{conflict_id}");
-        match kv.get(key.as_bytes()).await? {
-            Some(bytes) => {
-                let record: ConflictRecord = serde_json::from_slice(&bytes)?;
-                Ok(Some(record))
-            }
-            None => Ok(None),
-        }
-    }
-
-    /// Manually resolve a conflict by applying the loser's value.
-    ///
-    /// Writes the loser's value to storage, updates write metadata,
-    /// and marks the ConflictRecord as ManualOverride.
-    pub async fn resolve_conflict(&self, conflict_id: &str) -> SyncResult<ConflictRecord> {
-        let kv = self.store.open_namespace("org_conflicts").await?;
-        let key = format!("conflict:{conflict_id}");
-        let bytes = kv.get(key.as_bytes()).await?.ok_or_else(|| {
-            SyncError::Storage(format!("conflict {conflict_id} not found"))
-        })?;
-
-        let mut record: ConflictRecord = serde_json::from_slice(&bytes)?;
-
-        // Swap winner and loser
-        std::mem::swap(&mut record.winner, &mut record.loser);
-
-        // Apply the new winner's value to storage
-        let data_kv = self.store.open_namespace(&record.namespace).await?;
-        let key_bytes = LogOp::decode_bytes(&record.key)?;
-        match &record.winner.value {
-            Some(v) => {
-                let value_bytes = LogOp::decode_bytes(v)?;
-                data_kv.put(&key_bytes, value_bytes).await?;
-            }
-            None => {
-                data_kv.delete(&key_bytes).await?;
-            }
-        }
-
-        // Update write metadata
-        let meta_key = format!("meta:{}:{}", record.namespace, record.key);
-        self.write_write_meta(
-            &meta_key,
-            &WriteMeta {
-                timestamp_ms: record.winner.timestamp_ms,
-                device_id: record.winner.device_id.clone(),
-                seq: record.winner.seq,
-            },
-        )
-        .await?;
-
-        // Mark as manually resolved
-        let now_ms = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis() as u64;
-        record.resolution = ConflictResolution::ManualOverride {
-            resolved_at_ms: now_ms,
-        };
-
-        // Persist updated record
-        let conflict_kv = self.store.open_namespace("org_conflicts").await?;
-        let conflict_key = format!("conflict:{conflict_id}");
-        let updated_bytes = serde_json::to_vec(&record)?;
-        conflict_kv
-            .put(conflict_key.as_bytes(), updated_bytes)
-            .await?;
-
-        log::info!(
-            "conflict {} manually resolved: new winner device={}",
-            conflict_id,
-            record.winner.device_id
-        );
-
-        Ok(record)
-    }
+/// Tracks the timestamp of the last write to a ref key for LWW convergence.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct RefTimestamp {
+    timestamp_ms: u64,
+    device_id: String,
 }
 
 /// Parsed components of an org log S3 key.
