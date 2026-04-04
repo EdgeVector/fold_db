@@ -1,9 +1,12 @@
 use super::error::{StorageError, StorageResult};
 use super::traits::{ExecutionModel, FlushBehavior, KvStore};
 use crate::crypto::CryptoProvider;
+use crate::sync::org_sync::strip_org_prefix;
 use async_trait::async_trait;
 use base64::{engine::general_purpose::STANDARD as B64, Engine};
+use std::collections::HashMap;
 use std::sync::Arc;
+use tokio::sync::RwLock;
 
 /// Prefix marker for encrypted values.
 /// On write: `ENC:` + base64(ciphertext) → valid UTF-8 string for DynamoDB `S` attributes.
@@ -36,6 +39,9 @@ pub struct EncryptingKvStore {
     /// When true, if decryption fails, assume data is plaintext and return as-is.
     /// This enables gradual migration from unencrypted to encrypted storage.
     migration_mode: bool,
+    /// Per-org crypto providers. When a key starts with `{org_hash}:`, the
+    /// corresponding provider is used instead of the default `crypto`.
+    org_crypto: Arc<RwLock<HashMap<String, Arc<dyn CryptoProvider>>>>,
 }
 
 impl EncryptingKvStore {
@@ -52,7 +58,40 @@ impl EncryptingKvStore {
             inner,
             crypto,
             migration_mode,
+            org_crypto: Arc::new(RwLock::new(HashMap::new())),
         }
+    }
+
+    /// Create with org crypto routing support.
+    pub fn with_org_crypto(
+        inner: Arc<dyn KvStore>,
+        crypto: Arc<dyn CryptoProvider>,
+        migration_mode: bool,
+        org_crypto: Arc<RwLock<HashMap<String, Arc<dyn CryptoProvider>>>>,
+    ) -> Self {
+        Self {
+            inner,
+            crypto,
+            migration_mode,
+            org_crypto,
+        }
+    }
+
+    /// Select the right crypto provider for a key.
+    ///
+    /// If the key starts with a 64-char hex org_hash followed by `:`,
+    /// and we have a registered provider for that org, use it.
+    /// Otherwise fall back to the default (personal) provider.
+    async fn select_crypto(&self, key: &[u8]) -> Arc<dyn CryptoProvider> {
+        if let Ok(key_str) = std::str::from_utf8(key) {
+            if let Some((org_hash, _)) = strip_org_prefix(key_str) {
+                let org_map = self.org_crypto.read().await;
+                if let Some(provider) = org_map.get(org_hash) {
+                    return Arc::clone(provider);
+                }
+            }
+        }
+        Arc::clone(&self.crypto)
     }
 
     /// Encode ciphertext bytes into a UTF-8-safe string with the `ENC:` prefix.
@@ -61,17 +100,21 @@ impl EncryptingKvStore {
         encoded.into_bytes()
     }
 
-    /// Attempt to decrypt stored data. If data has the `ENC:` prefix, decode and
-    /// decrypt. Otherwise fall back to plaintext if in migration mode.
-    async fn decrypt_or_passthrough(&self, data: Vec<u8>) -> StorageResult<Vec<u8>> {
+    /// Attempt to decrypt stored data using the given crypto provider.
+    /// If data has the `ENC:` prefix, decode and decrypt.
+    /// Otherwise fall back to plaintext if in migration mode.
+    async fn decrypt_or_passthrough(
+        &self,
+        data: Vec<u8>,
+        crypto: &dyn CryptoProvider,
+    ) -> StorageResult<Vec<u8>> {
         // Check for the ENC: prefix
         if data.starts_with(ENCRYPTED_PREFIX.as_bytes()) {
             let b64_part = &data[ENCRYPTED_PREFIX.len()..];
             let ciphertext = B64.decode(b64_part).map_err(|e| {
                 StorageError::EncryptionError(format!("Base64 decode failed: {}", e))
             })?;
-            return self
-                .crypto
+            return crypto
                 .decrypt(&ciphertext)
                 .await
                 .map_err(|e| StorageError::EncryptionError(e.to_string()));
@@ -94,7 +137,8 @@ impl KvStore for EncryptingKvStore {
     async fn get(&self, key: &[u8]) -> StorageResult<Option<Vec<u8>>> {
         match self.inner.get(key).await? {
             Some(stored) => {
-                let plaintext = self.decrypt_or_passthrough(stored).await?;
+                let crypto = self.select_crypto(key).await;
+                let plaintext = self.decrypt_or_passthrough(stored, crypto.as_ref()).await?;
                 Ok(Some(plaintext))
             }
             None => Ok(None),
@@ -102,8 +146,8 @@ impl KvStore for EncryptingKvStore {
     }
 
     async fn put(&self, key: &[u8], value: Vec<u8>) -> StorageResult<()> {
-        let ciphertext = self
-            .crypto
+        let crypto = self.select_crypto(key).await;
+        let ciphertext = crypto
             .encrypt(&value)
             .await
             .map_err(|e| StorageError::EncryptionError(e.to_string()))?;
@@ -124,7 +168,8 @@ impl KvStore for EncryptingKvStore {
         let mut decrypted_results = Vec::with_capacity(results.len());
 
         for (key, stored) in results {
-            let plaintext = self.decrypt_or_passthrough(stored).await?;
+            let crypto = self.select_crypto(&key).await;
+            let plaintext = self.decrypt_or_passthrough(stored, crypto.as_ref()).await?;
             decrypted_results.push((key, plaintext));
         }
 
@@ -135,8 +180,8 @@ impl KvStore for EncryptingKvStore {
         let mut encrypted_items = Vec::with_capacity(items.len());
 
         for (key, value) in items {
-            let ciphertext = self
-                .crypto
+            let crypto = self.select_crypto(&key).await;
+            let ciphertext = crypto
                 .encrypt(&value)
                 .await
                 .map_err(|e| StorageError::EncryptionError(e.to_string()))?;

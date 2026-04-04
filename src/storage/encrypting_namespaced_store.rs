@@ -3,8 +3,9 @@ use super::error::StorageResult;
 use super::traits::{KvStore, NamespacedStore};
 use crate::crypto::CryptoProvider;
 use async_trait::async_trait;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+use tokio::sync::RwLock;
 
 /// Namespaces that contain personal data and are encrypted via E2E encryption.
 ///
@@ -23,6 +24,10 @@ pub struct EncryptingNamespacedStore {
     crypto: Arc<dyn CryptoProvider>,
     encrypted_namespaces: HashSet<String>,
     migration_mode: bool,
+    /// Per-org crypto providers keyed by org_hash. When a storage key starts
+    /// with `{org_hash}:`, the corresponding provider is used instead of the
+    /// default `crypto`. Shared with all child `EncryptingKvStore` instances.
+    org_crypto: Arc<RwLock<HashMap<String, Arc<dyn CryptoProvider>>>>,
 }
 
 impl EncryptingNamespacedStore {
@@ -42,6 +47,7 @@ impl EncryptingNamespacedStore {
             crypto,
             encrypted_namespaces,
             migration_mode,
+            org_crypto: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -57,7 +63,22 @@ impl EncryptingNamespacedStore {
             crypto,
             encrypted_namespaces: namespaces.into_iter().collect(),
             migration_mode,
+            org_crypto: Arc::new(RwLock::new(HashMap::new())),
         }
+    }
+
+    /// Register a crypto provider for an organization.
+    ///
+    /// After this call, any storage key starting with `{org_hash}:` in an
+    /// encrypted namespace will use this provider instead of the default.
+    /// This allows org members to share data encrypted with the org's E2E key.
+    pub async fn register_org_crypto(&self, org_hash: String, crypto: Arc<dyn CryptoProvider>) {
+        self.org_crypto.write().await.insert(org_hash, crypto);
+    }
+
+    /// Remove a crypto provider for an organization (e.g. after leaving).
+    pub async fn remove_org_crypto(&self, org_hash: &str) {
+        self.org_crypto.write().await.remove(org_hash);
     }
 
     /// Check if a namespace should be encrypted.
@@ -72,10 +93,11 @@ impl NamespacedStore for EncryptingNamespacedStore {
         let inner_store = self.inner.open_namespace(name).await?;
 
         if self.should_encrypt(name) {
-            Ok(Arc::new(EncryptingKvStore::new(
+            Ok(Arc::new(EncryptingKvStore::with_org_crypto(
                 inner_store,
                 self.crypto.clone(),
                 self.migration_mode,
+                self.org_crypto.clone(),
             )))
         } else {
             // Non-sensitive namespaces: pass through without encryption
