@@ -456,3 +456,13 @@ impl FoldDB {
         Arc::clone(&self.message_bus)
     }
 }
+
+impl Drop for FoldDB {
+    fn drop(&mut self) {
+        // Abort the background sync task to prevent tokio panic:
+        // "Cannot drop a runtime in a context where blocking is not allowed"
+        if let Some(handle) = self.sync_task.take() {
+            handle.abort();
+        }
+    }
+}
