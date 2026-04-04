@@ -1019,7 +1019,6 @@ impl SyncEngine {
 
         Ok(total_replayed)
     }
-
 }
 
 /// Tracks the timestamp of the last write to a ref key for LWW convergence.

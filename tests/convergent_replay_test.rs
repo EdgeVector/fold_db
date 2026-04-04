@@ -58,8 +58,14 @@ async fn atoms_always_accepted() {
     engine.replay_entry(&e2).await.unwrap();
 
     let kv = store.open_namespace("main").await.unwrap();
-    assert_eq!(kv.get(b"atom:uuid-aaa").await.unwrap().unwrap(), b"atom-data-a");
-    assert_eq!(kv.get(b"atom:uuid-bbb").await.unwrap().unwrap(), b"atom-data-b");
+    assert_eq!(
+        kv.get(b"atom:uuid-aaa").await.unwrap().unwrap(),
+        b"atom-data-a"
+    );
+    assert_eq!(
+        kv.get(b"atom:uuid-bbb").await.unwrap().unwrap(),
+        b"atom-data-b"
+    );
 }
 
 #[tokio::test]
