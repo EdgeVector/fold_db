@@ -151,6 +151,56 @@ impl SyncEngine {
         }
     }
 
+    /// Load persisted org member cursors from storage.
+    /// Called on startup to resume incremental downloads.
+    pub async fn load_org_cursors(&self) {
+        let kv = match self.store.open_namespace("org_sync_cursors").await {
+            Ok(kv) => kv,
+            Err(e) => {
+                log::warn!("Failed to open org_sync_cursors namespace: {}", e);
+                return;
+            }
+        };
+        let entries = match kv.scan_prefix(b"").await {
+            Ok(entries) => entries,
+            Err(e) => {
+                log::warn!("Failed to scan org cursor keys: {}", e);
+                return;
+            }
+        };
+        let mut cursors = self.org_member_cursors.lock().await;
+        for (key_bytes, val_bytes) in entries {
+            if let (Ok(key), Ok(val_str)) = (
+                std::str::from_utf8(&key_bytes),
+                std::str::from_utf8(&val_bytes),
+            ) {
+                if let Ok(seq) = val_str.parse::<u64>() {
+                    cursors.insert(key.to_string(), seq);
+                }
+            }
+        }
+        if !cursors.is_empty() {
+            log::info!("Loaded {} org member cursors from storage", cursors.len());
+        }
+    }
+
+    /// Persist a single org member cursor to storage.
+    async fn save_org_cursor(&self, cursor_key: &str, seq: u64) {
+        let kv = match self.store.open_namespace("org_sync_cursors").await {
+            Ok(kv) => kv,
+            Err(e) => {
+                log::warn!("Failed to open org_sync_cursors namespace: {}", e);
+                return;
+            }
+        };
+        if let Err(e) = kv
+            .put(cursor_key.as_bytes(), seq.to_string().into_bytes())
+            .await
+        {
+            log::warn!("Failed to persist org cursor {}: {}", cursor_key, e);
+        }
+    }
+
     /// Set a callback that fires on state changes.
     pub fn set_status_callback(&mut self, cb: StatusCallback) {
         self.status_callback = Some(cb);
@@ -887,9 +937,13 @@ impl SyncEngine {
                 }
             }
 
-            // Update cursor
+            // Update cursor in memory and persist to storage
             if let Some(max_seq) = new_seqs.last() {
-                cursors.insert(cursor_key, *max_seq);
+                cursors.insert(cursor_key.clone(), *max_seq);
+                // Persist outside the lock
+                drop(cursors);
+                self.save_org_cursor(&cursor_key, *max_seq).await;
+                cursors = self.org_member_cursors.lock().await;
             }
         }
 
