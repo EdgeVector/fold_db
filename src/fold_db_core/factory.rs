@@ -72,6 +72,11 @@ async fn create_local_fold_db(
         .open_tree("progress")
         .map_err(|e| FoldDbError::Config(format!("Failed to open progress tree: {}", e)))?;
 
+    // Retain the raw sled handle so FoldDB::sled_db() can return it.
+    // This is needed by org operations (which store memberships directly in
+    // Sled trees) and by configure_org_sync_if_needed().
+    let raw_sled = db.clone();
+
     let base_store: Arc<dyn crate::storage::traits::NamespacedStore> =
         Arc::new(crate::storage::SledNamespacedStore::new(db));
 
@@ -137,11 +142,12 @@ async fn create_local_fold_db(
 
     let job_store = crate::progress::create_tracker_with_sled(progress_tree);
 
-    let mut fold_db = FoldDB::initialize_from_db_ops(
+    let mut fold_db = FoldDB::initialize_from_db_ops_with_sled(
         Arc::new(db_ops),
         path_str,
         Some(job_store),
         "local".to_string(),
+        Some(raw_sled),
     )
     .await
     .map_err(|e| FoldDbError::Config(e.to_string()))?;

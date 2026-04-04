@@ -270,7 +270,8 @@ impl FoldDB {
     }
 
     /// Internal initializer that optionally retains the raw sled handle.
-    async fn initialize_from_db_ops_with_sled(
+    /// The raw handle is needed by org operations and org sync configuration.
+    pub async fn initialize_from_db_ops_with_sled(
         db_ops: Arc<DbOperations>,
         _db_path: &str,
         job_store: Option<Arc<dyn JobStore>>,

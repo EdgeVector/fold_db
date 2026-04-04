@@ -405,6 +405,16 @@ impl SchemaCore {
     }
 
     pub async fn load_schema_internal(&self, schema: Schema) -> Result<(), SchemaError> {
+        // Ensure runtime_fields are populated. Schemas arriving from the schema
+        // service have runtime_fields empty (it's #[serde(skip)]). Without this
+        // call, mutations fail with "Field not found in runtime_fields".
+        // Only populate if empty — callers like interpret_declarative_schema may
+        // have already populated and set additional state (molecule UUIDs, policies).
+        let mut schema = schema;
+        if schema.runtime_fields.is_empty() {
+            schema.populate_runtime_fields()?;
+        }
+
         let name = schema.name.clone();
 
         // Check if schema exists in database
