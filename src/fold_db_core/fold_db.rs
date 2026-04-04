@@ -114,7 +114,11 @@ impl FoldDB {
             let interval = tokio::time::Duration::from_millis(interval_ms);
             loop {
                 tokio::time::sleep(interval).await;
-                if engine.state().await == crate::sync::SyncState::Dirty {
+                // Always run sync — even without pending writes, we need to
+                // download org data from other members.
+                let has_pending = engine.state().await == crate::sync::SyncState::Dirty;
+                let has_orgs = engine.has_org_sync().await;
+                if has_pending || has_orgs {
                     if let Err(e) = engine.sync().await {
                         if let crate::sync::SyncError::OrgMembershipRevoked(org_hash) = &e {
                             log::warn!("🚨 SYSTEM ALERT: You have been removed from organization (hash: {}) by an administrator. Proceeding to securely purge all locally cached copies of its data and schema to prevent orphans.", org_hash);
