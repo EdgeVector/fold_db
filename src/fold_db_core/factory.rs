@@ -126,18 +126,30 @@ async fn create_local_fold_db(
         let crypto = Arc::new(crate::crypto::LocalCryptoProvider::from_key(
             e2e_keys.encryption_key(),
         ));
-        let enc_store =
-            Arc::new(crate::storage::EncryptingNamespacedStore::new(mid_store, crypto, true));
+        let enc_store = Arc::new(crate::storage::EncryptingNamespacedStore::new(
+            mid_store, crypto, true,
+        ));
 
-        (enc_store.clone() as Arc<dyn crate::storage::traits::NamespacedStore>, Some(engine), interval_ms, Some(enc_store))
+        (
+            enc_store.clone() as Arc<dyn crate::storage::traits::NamespacedStore>,
+            Some(engine),
+            interval_ms,
+            Some(enc_store),
+        )
     } else {
         // No sync — Sled → EncryptingNamespacedStore
         let crypto = Arc::new(crate::crypto::LocalCryptoProvider::from_key(
             e2e_keys.encryption_key(),
         ));
-        let enc_store =
-            Arc::new(crate::storage::EncryptingNamespacedStore::new(base_store, crypto, true));
-        (enc_store.clone() as Arc<dyn crate::storage::traits::NamespacedStore>, None, 0, Some(enc_store))
+        let enc_store = Arc::new(crate::storage::EncryptingNamespacedStore::new(
+            base_store, crypto, true,
+        ));
+        (
+            enc_store.clone() as Arc<dyn crate::storage::traits::NamespacedStore>,
+            None,
+            0,
+            Some(enc_store),
+        )
     };
 
     let db_ops = DbOperations::from_namespaced_store(store)

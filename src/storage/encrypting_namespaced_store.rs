@@ -72,11 +72,7 @@ impl EncryptingNamespacedStore {
     /// After this call, any storage key starting with `{org_hash}:` in an
     /// encrypted namespace will use this provider instead of the default.
     /// This allows org members to share data encrypted with the org's E2E key.
-    pub async fn register_org_crypto(
-        &self,
-        org_hash: String,
-        crypto: Arc<dyn CryptoProvider>,
-    ) {
+    pub async fn register_org_crypto(&self, org_hash: String, crypto: Arc<dyn CryptoProvider>) {
         self.org_crypto.write().await.insert(org_hash, crypto);
     }
 
