@@ -328,10 +328,20 @@ impl SyncEngine {
     /// Returns Ok(true) if all pending entries were uploaded,
     /// Ok(false) if there was nothing to sync.
     pub async fn sync(&self) -> SyncResult<bool> {
+        // Check org sync before acquiring state lock to avoid holding state
+        // across an await on the partitioner lock.
+        let has_orgs = self.has_org_sync().await;
+
         // Atomic check-and-set: hold the lock for both the state check and transition
         {
             let mut state = self.state.lock().await;
-            if *state == SyncState::Syncing || *state == SyncState::Idle {
+            if *state == SyncState::Syncing {
+                return Ok(false);
+            }
+            // When Idle with no pending writes, we still need to proceed if org
+            // sync is configured — other members may have uploaded data we need
+            // to download. Skip only when Idle AND no org memberships.
+            if *state == SyncState::Idle && !has_orgs {
                 return Ok(false);
             }
             *state = SyncState::Syncing;
