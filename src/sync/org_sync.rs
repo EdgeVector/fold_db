@@ -17,7 +17,6 @@
 
 use crate::crypto::CryptoProvider;
 use crate::org::OrgMembership;
-use sha2::{Digest, Sha256};
 use std::sync::Arc;
 
 /// A sync target — one R2 prefix with its own encryption key.
@@ -43,7 +42,7 @@ pub struct SyncTarget {
 pub enum SyncDestination {
     /// Personal data — sync to `/{user_hash}/log/{seq}.enc`
     Personal,
-    /// Org data — sync to `/{org_hash}/log/{member_id}/{seq}.enc`
+    /// Org data — sync to `/{org_hash}/log/{seq}.enc`
     /// with the org's E2E key for encryption.
     Org {
         org_hash: String,
@@ -151,22 +150,6 @@ impl SyncPartitioner {
     pub fn has_orgs(&self) -> bool {
         !self.org_memberships.is_empty()
     }
-}
-
-/// Derive a short member ID from a node's public key.
-///
-/// Uses the first 8 hex characters of the SHA-256 hash of the public key bytes.
-/// This gives 4 bytes = 2^32 possibilities, which is sufficient for org membership
-/// sizes (collisions are astronomically unlikely for orgs < 1000 members).
-pub fn member_id_from_public_key(public_key_bytes: &[u8]) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(public_key_bytes);
-    let hash = hasher.finalize();
-    // First 4 bytes -> 8 hex chars
-    hash[..4]
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect::<String>()
 }
 
 /// Build an org-prefixed key from a base key and org_hash.
@@ -315,17 +298,6 @@ mod tests {
 
         // Short key
         assert_eq!(strip_org_prefix("abc:def"), None);
-    }
-
-    #[test]
-    fn test_member_id_from_public_key() {
-        let pk = b"test-public-key-bytes";
-        let id = member_id_from_public_key(pk);
-        assert_eq!(id.len(), 8); // 4 bytes = 8 hex chars
-                                 // Deterministic
-        assert_eq!(id, member_id_from_public_key(pk));
-        // Different key gives different ID
-        assert_ne!(id, member_id_from_public_key(b"other-key"));
     }
 
     #[test]

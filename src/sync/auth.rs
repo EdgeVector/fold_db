@@ -376,7 +376,7 @@ impl AuthClient {
 
     /// Request presigned URLs for uploading org log entries.
     ///
-    /// The Lambda scopes URLs to `/{org_hash}/log/{member_id}/{seq}.enc`.
+    /// The Lambda scopes URLs to `/{org_hash}/log/{seq}.enc`.
     pub async fn presign_org_log_upload(
         &self,
         org_hash: &str,
