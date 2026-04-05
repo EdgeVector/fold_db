@@ -394,6 +394,15 @@ impl SyncEngine {
 
             // Upload each bucket with its target's crypto
             for (target_idx, bucket) in &buckets {
+                log::info!(
+                    "uploading {} entries to target {} ('{}')",
+                    bucket.len(),
+                    target_idx,
+                    targets
+                        .get(*target_idx)
+                        .map(|t| t.label.as_str())
+                        .unwrap_or("?")
+                );
                 let target = &targets[*target_idx];
                 match self.upload_entries(target, bucket).await {
                     Ok(n) => uploaded += n,
