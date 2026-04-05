@@ -11,7 +11,8 @@
 
 use crate::llm_registry::models;
 use crate::llm_registry::prompts::classification::{
-    build_classification_prompt, build_interest_category_prompt, INTEREST_CATEGORIES,
+    build_batch_classification_prompt, build_classification_prompt, build_interest_category_prompt,
+    INTEREST_CATEGORIES,
 };
 use crate::schema::types::data_classification::DataClassification;
 use serde::{Deserialize, Serialize};
@@ -379,6 +380,164 @@ pub async fn infer_classification(
     }
 
     classify_with_llm(field_name, description).await
+}
+
+/// Batch result for a single field from [`classify_fields_batch`].
+pub struct BatchFieldClassification {
+    pub classification: DataClassification,
+    pub interest_category: Option<String>,
+}
+
+/// Classify multiple fields in a single LLM call.
+///
+/// Combines sensitivity + interest category into one prompt for all fields.
+/// Falls back to serial per-field classification if batch parsing fails.
+///
+/// Each entry in `fields` is `(field_name, description, caller_provided_classification)`.
+pub async fn classify_fields_batch(
+    fields: &[(&str, &str, Option<&DataClassification>)],
+) -> Result<Vec<(String, BatchFieldClassification)>, String> {
+    if fields.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // Separate caller-provided from needs-LLM
+    let mut results: Vec<(String, BatchFieldClassification)> = Vec::new();
+    let mut needs_llm: Vec<(&str, &str)> = Vec::new();
+
+    for &(name, desc, caller) in fields {
+        if let Some(c) = caller {
+            results.push((
+                name.to_string(),
+                BatchFieldClassification {
+                    classification: c.clone(),
+                    interest_category: None, // caller-provided don't need interest category
+                },
+            ));
+        } else {
+            needs_llm.push((name, desc));
+        }
+    }
+
+    if needs_llm.is_empty() {
+        return Ok(results);
+    }
+
+    // Try batch LLM call
+    let prompt = build_batch_classification_prompt(&needs_llm);
+    match call_llm(&prompt, "batch").await {
+        Ok(text) => {
+            let cleaned = strip_markdown_fences(&text);
+            match serde_json::from_str::<serde_json::Value>(cleaned) {
+                Ok(parsed) if parsed.is_object() => {
+                    let obj = parsed.as_object().unwrap();
+                    for (name, desc) in &needs_llm {
+                        if let Some(entry) = obj.get(*name) {
+                            let sl = entry
+                                .get("sensitivity_level")
+                                .and_then(|v| v.as_u64())
+                                .unwrap_or(1) as u8;
+                            let dd = entry
+                                .get("data_domain")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("general")
+                                .to_string();
+                            let ic = entry
+                                .get("interest_category")
+                                .and_then(|v| v.as_str())
+                                .filter(|cat| {
+                                    INTEREST_CATEGORIES
+                                        .iter()
+                                        .any(|valid| valid.eq_ignore_ascii_case(cat))
+                                })
+                                .map(|s| s.to_string());
+
+                            results.push((
+                                name.to_string(),
+                                BatchFieldClassification {
+                                    classification: DataClassification {
+                                        sensitivity_level: sl.min(4),
+                                        data_domain: dd,
+                                    },
+                                    interest_category: ic,
+                                },
+                            ));
+                        } else {
+                            // Field missing from batch response — fall back to serial
+                            crate::log_feature!(
+                                crate::logging::features::LogFeature::Schema,
+                                warn,
+                                "Batch classification missing field '{}', falling back to serial",
+                                name
+                            );
+                            let classification = classify_with_llm(name, desc)
+                                .await
+                                .unwrap_or_else(|_| DataClassification {
+                                    sensitivity_level: 1,
+                                    data_domain: "general".to_string(),
+                                });
+                            let interest_category = infer_interest_category(name, desc).await;
+                            results.push((
+                                name.to_string(),
+                                BatchFieldClassification {
+                                    classification,
+                                    interest_category,
+                                },
+                            ));
+                        }
+                    }
+                    Ok(results)
+                }
+                _ => {
+                    // Batch parse failed — fall back to serial
+                    crate::log_feature!(
+                        crate::logging::features::LogFeature::Schema,
+                        warn,
+                        "Batch classification parse failed, falling back to serial for {} fields",
+                        needs_llm.len()
+                    );
+                    for (name, desc) in &needs_llm {
+                        let classification = classify_with_llm(name, desc).await.map_err(|e| {
+                            format!("Serial fallback failed for field '{}': {}", name, e)
+                        })?;
+                        let interest_category = infer_interest_category(name, desc).await;
+                        results.push((
+                            name.to_string(),
+                            BatchFieldClassification {
+                                classification,
+                                interest_category,
+                            },
+                        ));
+                    }
+                    Ok(results)
+                }
+            }
+        }
+        Err(e) => {
+            // LLM call failed entirely — fall back to serial
+            crate::log_feature!(
+                crate::logging::features::LogFeature::Schema,
+                warn,
+                "Batch LLM call failed ({}), falling back to serial for {} fields",
+                e,
+                needs_llm.len()
+            );
+            for (name, desc) in &needs_llm {
+                let classification = classify_with_llm(name, desc)
+                    .await
+                    .map_err(|e| format!("Serial fallback failed for field '{}': {}", name, e))?;
+                let interest_category = infer_interest_category(name, desc).await;
+                results.push((
+                    name.to_string(),
+                    BatchFieldClassification {
+                        classification,
+                        interest_category,
+                    },
+                ));
+            }
+            Ok(results)
+        }
+    }
 }
 
 #[cfg(test)]

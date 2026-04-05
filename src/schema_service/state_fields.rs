@@ -4,6 +4,7 @@ use crate::db_operations::native_index::cosine_similarity;
 use crate::error::{FoldDbError, FoldDbResult};
 use crate::log_feature;
 use crate::logging::features::LogFeature;
+use crate::schema::types::data_classification::DataClassification;
 use crate::schema::types::field_value_type::FieldValueType;
 use crate::schema::types::Schema;
 
@@ -94,31 +95,58 @@ impl SchemaServiceState {
             return Ok(());
         }
 
-        // Phase 2: Build canonical entries with inferred classifications (no locks held)
+        // Phase 2: Batch classify all new fields in a single LLM call (no locks held).
+        // Previously this was 2 serial LLM calls per field (sensitivity + interest category).
+        // Batch reduces N fields from 2N calls to 1 call.
+        // Collect field metadata before the batch LLM call
+        let field_meta: Vec<(String, String, FieldValueType)> = new_fields
+            .iter()
+            .map(|f| {
+                let desc = Self::build_field_description(f, schema);
+                let ft = Self::infer_field_type(f, schema);
+                (f.clone(), desc, ft)
+            })
+            .collect();
+
+        let batch_input: Vec<(&str, &str, Option<&DataClassification>)> = field_meta
+            .iter()
+            .map(|(name, desc, _ft)| {
+                let caller = schema.field_data_classifications.get(name.as_str());
+                (name.as_str(), desc.as_str(), caller)
+            })
+            .collect();
+
+        let batch_results = super::classify::classify_fields_batch(&batch_input)
+            .await
+            .map_err(FoldDbError::Config)?;
+
+        // Build canonical entries from batch results
+        let batch_map: std::collections::HashMap<
+            String,
+            super::classify::BatchFieldClassification,
+        > = batch_results.into_iter().collect();
+
         let mut entries: Vec<(String, CanonicalField, Option<Vec<f32>>)> = Vec::new();
 
-        for field_name in &new_fields {
-            let desc = Self::build_field_description(field_name, schema);
-            let field_type = Self::infer_field_type(field_name, schema);
-            let caller_provided = schema.field_data_classifications.get(field_name);
-
+        for (field_name, desc, field_type) in &field_meta {
+            let batch = batch_map.get(field_name);
             let classification =
-                super::classify::infer_classification(field_name, &desc, caller_provided)
-                    .await
-                    .map_err(FoldDbError::Config)?;
+                batch
+                    .map(|b| b.classification.clone())
+                    .unwrap_or_else(|| DataClassification {
+                        sensitivity_level: 1,
+                        data_domain: "general".to_string(),
+                    });
+            let interest_category = batch.and_then(|b| b.interest_category.clone());
 
-            // Interest category is best-effort — doesn't block schema creation
-            let interest_category =
-                super::classify::infer_interest_category(field_name, &desc).await;
-
-            let embed_text = Self::build_embedding_text(field_name, &desc);
+            let embed_text = Self::build_embedding_text(field_name, desc);
             let embedding = self.embedder.embed_text(&embed_text).ok();
 
             entries.push((
                 field_name.clone(),
                 CanonicalField {
-                    description: desc,
-                    field_type,
+                    description: desc.clone(),
+                    field_type: field_type.clone(),
                     classification: Some(classification),
                     interest_category,
                 },
