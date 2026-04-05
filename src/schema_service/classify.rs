@@ -11,8 +11,8 @@
 
 use crate::llm_registry::models;
 use crate::llm_registry::prompts::classification::{
-    build_batch_classification_prompt, build_classification_prompt,
-    build_interest_category_prompt, INTEREST_CATEGORIES,
+    build_batch_classification_prompt, build_classification_prompt, build_interest_category_prompt,
+    INTEREST_CATEGORIES,
 };
 use crate::schema::types::data_classification::DataClassification;
 use serde::{Deserialize, Serialize};
@@ -470,15 +470,13 @@ pub async fn classify_fields_batch(
                                 "Batch classification missing field '{}', falling back to serial",
                                 name
                             );
-                            let classification =
-                                classify_with_llm(name, desc).await.unwrap_or_else(|_| {
-                                    DataClassification {
-                                        sensitivity_level: 1,
-                                        data_domain: "general".to_string(),
-                                    }
+                            let classification = classify_with_llm(name, desc)
+                                .await
+                                .unwrap_or_else(|_| DataClassification {
+                                    sensitivity_level: 1,
+                                    data_domain: "general".to_string(),
                                 });
-                            let interest_category =
-                                infer_interest_category(name, desc).await;
+                            let interest_category = infer_interest_category(name, desc).await;
                             results.push((
                                 name.to_string(),
                                 BatchFieldClassification {
@@ -499,12 +497,10 @@ pub async fn classify_fields_batch(
                         needs_llm.len()
                     );
                     for (name, desc) in &needs_llm {
-                        let classification =
-                            classify_with_llm(name, desc).await.map_err(|e| {
-                                format!("Serial fallback failed for field '{}': {}", name, e)
-                            })?;
-                        let interest_category =
-                            infer_interest_category(name, desc).await;
+                        let classification = classify_with_llm(name, desc).await.map_err(|e| {
+                            format!("Serial fallback failed for field '{}': {}", name, e)
+                        })?;
+                        let interest_category = infer_interest_category(name, desc).await;
                         results.push((
                             name.to_string(),
                             BatchFieldClassification {
@@ -527,9 +523,9 @@ pub async fn classify_fields_batch(
                 needs_llm.len()
             );
             for (name, desc) in &needs_llm {
-                let classification = classify_with_llm(name, desc).await.map_err(|e| {
-                    format!("Serial fallback failed for field '{}': {}", name, e)
-                })?;
+                let classification = classify_with_llm(name, desc)
+                    .await
+                    .map_err(|e| format!("Serial fallback failed for field '{}': {}", name, e))?;
                 let interest_category = infer_interest_category(name, desc).await;
                 results.push((
                     name.to_string(),

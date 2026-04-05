@@ -121,19 +121,22 @@ impl SchemaServiceState {
             .map_err(FoldDbError::Config)?;
 
         // Build canonical entries from batch results
-        let batch_map: std::collections::HashMap<String, super::classify::BatchFieldClassification> =
-            batch_results.into_iter().collect();
+        let batch_map: std::collections::HashMap<
+            String,
+            super::classify::BatchFieldClassification,
+        > = batch_results.into_iter().collect();
 
         let mut entries: Vec<(String, CanonicalField, Option<Vec<f32>>)> = Vec::new();
 
         for (field_name, desc, field_type) in &field_meta {
             let batch = batch_map.get(field_name);
-            let classification = batch
-                .map(|b| b.classification.clone())
-                .unwrap_or_else(|| DataClassification {
-                    sensitivity_level: 1,
-                    data_domain: "general".to_string(),
-                });
+            let classification =
+                batch
+                    .map(|b| b.classification.clone())
+                    .unwrap_or_else(|| DataClassification {
+                        sensitivity_level: 1,
+                        data_domain: "general".to_string(),
+                    });
             let interest_category = batch.and_then(|b| b.interest_category.clone());
 
             let embed_text = Self::build_embedding_text(field_name, desc);
