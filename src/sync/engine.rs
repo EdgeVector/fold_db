@@ -386,7 +386,13 @@ impl SyncEngine {
         let has_pending = !self.pending.lock().await.is_empty();
         if !has_pending {
             // Even with no pending entries, we may need to download org entries
-            let org_downloaded = self.sync_org_download().await.unwrap_or(0);
+            let org_downloaded = match self.sync_org_download().await {
+                Ok(n) => n,
+                Err(e) => {
+                    log::warn!("org download failed: {e}");
+                    0
+                }
+            };
             return Ok(org_downloaded > 0);
         }
 
@@ -395,7 +401,13 @@ impl SyncEngine {
         if has_partitioner {
             let uploaded = self.sync_org_entries().await?;
             // Also download from org members
-            let downloaded = self.sync_org_download().await.unwrap_or(0);
+            let downloaded = match self.sync_org_download().await {
+                Ok(n) => n,
+                Err(e) => {
+                    log::warn!("org download failed: {e}");
+                    0
+                }
+            };
 
             // Check if compaction is needed (personal entries only)
             let current_seq = *self.seq.lock().await;
