@@ -170,6 +170,36 @@ async fn create_local_fold_db(
     .map_err(|e| FoldDbError::Config(e.to_string()))?;
 
     if let Some(engine) = sync_engine {
+        // Wire schema replay callback so org sync updates the in-memory cache.
+        // When a schema is replayed from another org member, the SchemaCore
+        // needs to load it — same as what happens after a local mutation.
+        let schema_mgr = Arc::clone(&fold_db.schema_manager);
+        engine
+            .set_on_schema_replayed(Box::new(move |schema_name, schema_bytes| {
+                let mgr = Arc::clone(&schema_mgr);
+                tokio::spawn(async move {
+                    match serde_json::from_slice::<crate::schema::Schema>(&schema_bytes) {
+                        Ok(schema) => {
+                            if let Err(e) = mgr.load_schema_internal(schema).await {
+                                log::warn!(
+                                    "Failed to reload replayed schema '{}': {}",
+                                    schema_name,
+                                    e
+                                );
+                            }
+                        }
+                        Err(e) => {
+                            log::warn!(
+                                "Failed to deserialize replayed schema '{}': {}",
+                                schema_name,
+                                e
+                            );
+                        }
+                    }
+                });
+            }))
+            .await;
+
         fold_db.set_sync_engine(engine);
         fold_db.start_sync(sync_interval_ms);
     }

@@ -120,7 +120,15 @@ pub struct SyncEngine {
     /// Tracks the last downloaded sequence per org member for incremental download.
     /// Maps `{org_hash}:{member_id}` -> last_seq downloaded from that member.
     org_member_cursors: Arc<Mutex<std::collections::HashMap<String, u64>>>,
+    /// Optional callback fired when a schema is replayed from sync.
+    /// The FoldDB wires this to `schema_manager.load_schema_internal()` so
+    /// the in-memory cache stays up to date after org sync downloads.
+    on_schema_replayed: Arc<Mutex<Option<SchemaReplayCallback>>>,
 }
+
+/// Callback type for schema replay notifications.
+/// Receives the schema name and serialized schema bytes.
+pub type SchemaReplayCallback = Box<dyn Fn(String, Vec<u8>) + Send + Sync>;
 
 impl SyncEngine {
     pub fn new(
@@ -148,6 +156,7 @@ impl SyncEngine {
             member_id: Arc::new(Mutex::new(None)),
             org_crypto: Arc::new(Mutex::new(std::collections::HashMap::new())),
             org_member_cursors: Arc::new(Mutex::new(std::collections::HashMap::new())),
+            on_schema_replayed: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -204,6 +213,12 @@ impl SyncEngine {
     /// Set a callback that fires on state changes.
     pub fn set_status_callback(&mut self, cb: StatusCallback) {
         self.status_callback = Some(cb);
+    }
+
+    /// Set a callback that fires when a schema is replayed from sync.
+    /// Used by FoldDB to update the in-memory schema cache after org sync.
+    pub async fn set_on_schema_replayed(&self, cb: SchemaReplayCallback) {
+        *self.on_schema_replayed.lock().await = Some(cb);
     }
 
     /// Get the device identifier.
@@ -683,12 +698,19 @@ impl SyncEngine {
             kv.put(&key_bytes, value_bytes.clone()).await?;
 
             // For org-prefixed keys in the "schemas" namespace, also write under
-            // the non-prefixed key so local schema lookups find the replayed data.
-            // This mirrors how store_schema writes both keys on the originating node.
+            // the non-prefixed key so local schema lookups find the replayed data,
+            // and notify the schema manager to update its in-memory cache.
             if namespace == "schemas" {
                 if let Ok(key_str) = std::str::from_utf8(&key_bytes) {
                     if let Some((_, base_key)) = crate::sync::org_sync::strip_org_prefix(key_str) {
-                        kv.put(base_key.as_bytes(), value_bytes).await?;
+                        kv.put(base_key.as_bytes(), value_bytes.clone()).await?;
+
+                        // Notify the schema manager so the in-memory cache
+                        // gets the updated schema (with molecule UUIDs).
+                        let cb = self.on_schema_replayed.lock().await;
+                        if let Some(callback) = cb.as_ref() {
+                            callback(base_key.to_string(), value_bytes);
+                        }
                     }
                 }
             }
