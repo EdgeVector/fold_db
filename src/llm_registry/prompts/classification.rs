@@ -77,6 +77,39 @@ Return format: {{"interest_category": "<category>" | null}}"#
     )
 }
 
+/// Build a batch classification prompt for multiple fields at once.
+///
+/// Combines sensitivity classification and interest category into a single LLM call.
+/// Returns a prompt that asks the LLM for a JSON object mapping field names to their
+/// classification and interest category.
+pub fn build_batch_classification_prompt(fields: &[(&str, &str)]) -> String {
+    let categories = INTEREST_CATEGORIES.join(", ");
+
+    let field_list: String = fields
+        .iter()
+        .map(|(name, desc)| format!("  - \"{name}\": \"{desc}\""))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    format!(
+        r#"Classify each database field's sensitivity and interest category. Return ONLY a JSON object, no explanation.
+
+Fields (name: description):
+{field_list}
+
+For each field, return an entry with:
+- "sensitivity_level": 0-4 (0=Public, 1=Internal, 2=Confidential, 3=Restricted/PII, 4=Highly Restricted/regulated)
+- "data_domain": one of "general", "financial", "medical", "identity", "behavioral", "location"
+- "interest_category": one of [{categories}] or null if structural/metadata field
+
+Return format:
+{{
+  "<field_name>": {{"sensitivity_level": <0-4>, "data_domain": "<domain>", "interest_category": "<category>" | null}},
+  ...
+}}"#
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
