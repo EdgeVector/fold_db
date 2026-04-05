@@ -480,6 +480,54 @@ impl AuthClient {
     }
 
     // =========================================================================
+    // Unified sync operations (transition wrappers)
+    //
+    // These dispatch to the old per-type endpoints during the backend
+    // transition. After the backend is updated to use flat paths and
+    // server-assigned seqs, these become the only presign methods.
+    // =========================================================================
+
+    /// Unified presign for log upload.
+    pub async fn presign_upload(
+        &self,
+        target: &super::org_sync::SyncTarget,
+        seq_numbers: &[u64],
+    ) -> SyncResult<Vec<PresignedUrl>> {
+        if target.is_org {
+            self.presign_org_log_upload(&target.prefix, "_", seq_numbers)
+                .await
+        } else {
+            self.presign_log_upload(seq_numbers).await
+        }
+    }
+
+    /// Unified presign for log download.
+    pub async fn presign_download(
+        &self,
+        target: &super::org_sync::SyncTarget,
+        seq_numbers: &[u64],
+    ) -> SyncResult<Vec<PresignedUrl>> {
+        if target.is_org {
+            self.presign_org_log_download(&target.prefix, "_", seq_numbers)
+                .await
+        } else {
+            self.presign_log_download(seq_numbers).await
+        }
+    }
+
+    /// Unified list log objects for a sync target.
+    pub async fn list_log_objects(
+        &self,
+        target: &super::org_sync::SyncTarget,
+    ) -> SyncResult<Vec<S3ObjectInfo>> {
+        if target.is_org {
+            self.list_org_objects(&target.prefix, "log/").await
+        } else {
+            self.list_objects("log/").await
+        }
+    }
+
+    // =========================================================================
     // Org membership management
     // =========================================================================
 
