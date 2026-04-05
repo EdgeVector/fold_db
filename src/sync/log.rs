@@ -11,9 +11,10 @@ use std::sync::Arc;
 /// along with its sequence number for ordered replay.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LogEntry {
-    /// Monotonically increasing sequence number.
+    /// Timestamp-based ID (nanos since epoch). Used as the R2 object key.
+    /// Not sequential — just unique enough to avoid collisions.
     pub seq: u64,
-    /// Client timestamp (millis since epoch).
+    /// Client timestamp (millis since epoch). Used for LWW conflict resolution.
     pub timestamp_ms: u64,
     /// Device ID that produced this entry.
     pub device_id: String,

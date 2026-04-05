@@ -15,8 +15,28 @@
 //! The org_hash prefix is added at write time when a schema has `org_hash = Some(hash)`.
 //! The sync layer just reads it back.
 
+use crate::crypto::CryptoProvider;
 use crate::org::OrgMembership;
 use sha2::{Digest, Sha256};
+use std::sync::Arc;
+
+/// A sync target — one R2 prefix with its own encryption key.
+///
+/// Personal sync and org sync are the same mechanism: upload/download
+/// encrypted log entries to/from `/{prefix}/log/{seq}.enc`. The only
+/// differences are the prefix and the crypto provider.
+#[derive(Clone)]
+pub struct SyncTarget {
+    /// Human-readable label for logging ("personal" or org name).
+    pub label: String,
+    /// R2 prefix hash: `user_hash` for personal, `org_hash` for org.
+    pub prefix: String,
+    /// Crypto provider for sealing/unsealing entries on this prefix.
+    pub crypto: Arc<dyn CryptoProvider>,
+    /// Transition flag: org targets use old backend presign endpoints
+    /// that require `member_id`. Removed after backend migration.
+    pub is_org: bool,
+}
 
 /// Where a log entry should be synced to.
 #[derive(Debug, Clone, PartialEq, Eq)]
