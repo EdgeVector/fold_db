@@ -122,7 +122,7 @@ impl FoldDB {
                 let has_orgs = engine.has_org_sync().await;
                 if has_pending || has_orgs {
                     if let Err(e) = engine.sync().await {
-                        if let crate::sync::SyncError::OrgMembershipRevoked(org_hash) = &e {
+                        if let crate::sync::SyncError::OrgMembershipRevoked(ref org_hash) = e {
                             log::warn!("🚨 SYSTEM ALERT: You have been removed from organization (hash: {}) by an administrator. Proceeding to securely purge all locally cached copies of its data and schema to prevent orphans.", org_hash);
 
                             // 1. Delete membership structure locally (if running on Sled backend)
@@ -137,9 +137,6 @@ impl FoldDB {
                                 .purge_org_data(org_hash)
                                 .await
                                 .map_err(|err| log::error!("Failed to purge org data: {}", err));
-
-                            // Note: Node will naturally purge the sync engine configs upon next restart or manual query,
-                            // but the heavy local data footprint is immediately destroyed here.
                         } else {
                             log::warn!("sync cycle failed: {e}");
                         }

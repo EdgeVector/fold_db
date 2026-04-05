@@ -680,7 +680,18 @@ impl SyncEngine {
             .await?;
         } else {
             let kv = self.store.open_namespace(namespace).await?;
-            kv.put(&key_bytes, value_bytes).await?;
+            kv.put(&key_bytes, value_bytes.clone()).await?;
+
+            // For org-prefixed keys in the "schemas" namespace, also write under
+            // the non-prefixed key so local schema lookups find the replayed data.
+            // This mirrors how store_schema writes both keys on the originating node.
+            if namespace == "schemas" {
+                if let Ok(key_str) = std::str::from_utf8(&key_bytes) {
+                    if let Some((_, base_key)) = crate::sync::org_sync::strip_org_prefix(key_str) {
+                        kv.put(base_key.as_bytes(), value_bytes).await?;
+                    }
+                }
+            }
         }
 
         Ok(())
