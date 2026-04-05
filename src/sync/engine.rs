@@ -697,21 +697,24 @@ impl SyncEngine {
             let kv = self.store.open_namespace(namespace).await?;
             kv.put(&key_bytes, value_bytes.clone()).await?;
 
-            // For org-prefixed keys in the "schemas" namespace, also write under
-            // the non-prefixed key so local schema lookups find the replayed data,
-            // and notify the schema manager to update its in-memory cache.
+            // When a schema is replayed (from personal sync between devices
+            // OR from org sync), update the in-memory SchemaCore cache so
+            // queries see the latest molecule UUIDs.
             if namespace == "schemas" {
+                let mut schema_name = String::from_utf8(key_bytes.clone()).unwrap_or_default();
+
+                // Org-prefixed keys: also write under the bare key so
+                // get_schema finds them by name.
                 if let Ok(key_str) = std::str::from_utf8(&key_bytes) {
                     if let Some((_, base_key)) = crate::sync::org_sync::strip_org_prefix(key_str) {
                         kv.put(base_key.as_bytes(), value_bytes.clone()).await?;
-
-                        // Notify the schema manager so the in-memory cache
-                        // gets the updated schema (with molecule UUIDs).
-                        let cb = self.on_schema_replayed.lock().await;
-                        if let Some(callback) = cb.as_ref() {
-                            callback(base_key.to_string(), value_bytes);
-                        }
+                        schema_name = base_key.to_string();
                     }
+                }
+
+                let cb = self.on_schema_replayed.lock().await;
+                if let Some(callback) = cb.as_ref() {
+                    callback(schema_name, value_bytes);
                 }
             }
         }
