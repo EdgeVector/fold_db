@@ -150,7 +150,6 @@ impl SyncEngine {
                 label: "personal".to_string(),
                 prefix: String::new(),
                 crypto,
-                is_org: false,
             }])),
             download_cursors: Arc::new(Mutex::new(std::collections::HashMap::new())),
             on_schema_replayed: Arc::new(Mutex::new(None)),
@@ -422,7 +421,7 @@ impl SyncEngine {
 
         // Download from all org targets
         for target in &targets {
-            if target.is_org {
+            if !target.prefix.is_empty() {
                 match self.download_entries(target).await {
                     Ok(n) => downloaded += n,
                     Err(e) => log::warn!("download from '{}' failed: {e}", target.label),
@@ -454,7 +453,7 @@ impl SyncEngine {
             if let SyncDestination::Org { org_hash, .. } = dest {
                 // Find the target with matching prefix
                 for (i, t) in targets.iter().enumerate() {
-                    if t.is_org && t.prefix == org_hash {
+                    if !t.prefix.is_empty() && t.prefix == org_hash {
                         return i;
                     }
                 }
@@ -496,24 +495,32 @@ impl SyncEngine {
 
     /// Download new entries from a sync target.
     ///
-    /// Lists `/{prefix}/log/{seq}.enc`, filters by local cursor,
+    /// Lists `/{prefix}/log/{seq}.enc` starting after the local cursor,
     /// downloads, unseals with the target's crypto, and replays.
     async fn download_entries(&self, target: &SyncTarget) -> SyncResult<u64> {
-        let all_objects = self.auth.list_log_objects(target).await?;
-
-        // Parse flat log keys: log/{seq}.enc
-        let mut seqs: Vec<u64> = all_objects
-            .iter()
-            .filter_map(|obj| parse_flat_log_key(&obj.key))
-            .collect();
-        seqs.sort();
-
-        // Filter by cursor
         let cursor = {
             let cursors = self.download_cursors.lock().await;
             cursors.get(&target.prefix).copied().unwrap_or(0)
         };
-        let new_seqs: Vec<u64> = seqs.into_iter().filter(|s| *s > cursor).collect();
+
+        // Use start_after to filter server-side instead of listing everything
+        let start_after = if cursor > 0 {
+            Some(format!("log/{cursor}.enc"))
+        } else {
+            None
+        };
+        let objects = self
+            .auth
+            .list_log_objects_after(target, start_after.as_deref())
+            .await?;
+
+        // Parse flat log keys: log/{seq}.enc
+        let mut new_seqs: Vec<u64> = objects
+            .iter()
+            .filter_map(|obj| parse_flat_log_key(&obj.key))
+            .filter(|s| *s > cursor)
+            .collect();
+        new_seqs.sort();
 
         if new_seqs.is_empty() {
             return Ok(0);
@@ -592,7 +599,8 @@ impl SyncEngine {
 
         // Delete old log entries that were compacted into this snapshot.
         // List objects and delete those with seq <= last_seq.
-        match self.auth.list_objects("log/").await {
+        let personal = self.targets.lock().await[0].clone();
+        match self.auth.list_log_objects(&personal).await {
             Ok(objects) => {
                 let old_seqs: Vec<u64> = objects
                     .iter()
@@ -662,7 +670,8 @@ impl SyncEngine {
         };
 
         // List and replay log entries after the snapshot
-        let log_objects = self.auth.list_objects("log/").await?;
+        let personal = self.targets.lock().await[0].clone();
+        let log_objects = self.auth.list_log_objects(&personal).await?;
         let mut log_seqs: Vec<u64> = log_objects
             .iter()
             .filter_map(|obj| {
@@ -685,7 +694,7 @@ impl SyncEngine {
                 log_seqs[log_seqs.len() - 1]
             );
 
-            let urls = self.auth.presign_log_download(&log_seqs).await?;
+            let urls = self.auth.presign_download(&personal, &log_seqs).await?;
 
             for (seq, url) in log_seqs.iter().zip(urls.iter()) {
                 let data = self.s3.download(url).await?;
