@@ -132,23 +132,23 @@ impl AuthClient {
         Ok(json)
     }
 
-    /// Request presigned URLs for uploading log entries.
-    pub async fn presign_log_upload(&self, seq_numbers: &[u64]) -> SyncResult<Vec<PresignedUrl>> {
+    /// List objects in the user's S3 prefix.
+    pub async fn list_objects(&self, prefix: &str) -> SyncResult<Vec<S3ObjectInfo>> {
         let body = serde_json::json!({
-            "action": "presign_log_upload",
-            "seq_numbers": seq_numbers,
+            "action": "list_objects",
+            "prefix": prefix,
         });
 
-        let resp = self.post("/api/sync/presign", body).await?;
-        let parsed: PresignedResponse = serde_json::from_value(resp)?;
+        let resp = self.post("/api/sync/list", body).await?;
+        let parsed: ListObjectsResponse = serde_json::from_value(resp)?;
 
         if !parsed.ok {
             return Err(SyncError::Auth(
-                parsed.error.unwrap_or_else(|| "presign failed".to_string()),
+                parsed.error.unwrap_or_else(|| "list failed".to_string()),
             ));
         }
 
-        Ok(parsed.urls)
+        Ok(parsed.objects)
     }
 
     /// Request a presigned URL for uploading a snapshot.
@@ -267,44 +267,6 @@ impl AuthClient {
         Ok(parsed.urls)
     }
 
-    /// Request presigned URLs for downloading log entries.
-    pub async fn presign_log_download(&self, seq_numbers: &[u64]) -> SyncResult<Vec<PresignedUrl>> {
-        let body = serde_json::json!({
-            "action": "presign_log_download",
-            "seq_numbers": seq_numbers,
-        });
-
-        let resp = self.post("/api/sync/presign", body).await?;
-        let parsed: PresignedResponse = serde_json::from_value(resp)?;
-
-        if !parsed.ok {
-            return Err(SyncError::Auth(
-                parsed.error.unwrap_or_else(|| "presign failed".to_string()),
-            ));
-        }
-
-        Ok(parsed.urls)
-    }
-
-    /// List objects in the user's S3 prefix.
-    pub async fn list_objects(&self, prefix: &str) -> SyncResult<Vec<S3ObjectInfo>> {
-        let body = serde_json::json!({
-            "action": "list_objects",
-            "prefix": prefix,
-        });
-
-        let resp = self.post("/api/sync/list", body).await?;
-        let parsed: ListObjectsResponse = serde_json::from_value(resp)?;
-
-        if !parsed.ok {
-            return Err(SyncError::Auth(
-                parsed.error.unwrap_or_else(|| "list failed".to_string()),
-            ));
-        }
-
-        Ok(parsed.objects)
-    }
-
     /// Acquire the device lock.
     pub async fn acquire_lock(&self, device_id: &str, ttl_secs: u64) -> SyncResult<bool> {
         let body = serde_json::json!({
@@ -371,160 +333,93 @@ impl AuthClient {
     }
 
     // =========================================================================
-    // Org sync operations
+    // Sync operations
     // =========================================================================
 
-    /// Request presigned URLs for uploading org log entries.
-    ///
-    /// The Lambda scopes URLs to `/{org_hash}/log/{seq}.enc`.
-    pub async fn presign_org_log_upload(
-        &self,
-        org_hash: &str,
-        member_id: &str,
-        seq_numbers: &[u64],
-    ) -> SyncResult<Vec<PresignedUrl>> {
-        let body = serde_json::json!({
-            "action": "presign_org_log_upload",
-            "org_hash": org_hash,
-            "member_id": member_id,
-            "seq_numbers": seq_numbers,
-        });
-
-        let resp = self.post("/api/sync/presign", body).await?;
-        let parsed: PresignedResponse = serde_json::from_value(resp)?;
-
-        if !parsed.ok {
-            let err_msg = parsed
-                .error
-                .unwrap_or_else(|| "org presign upload failed".to_string());
-            let err_lower = err_msg.to_lowercase();
-            if err_lower.contains("forbidden")
-                || err_lower.contains("unauth")
-                || err_lower.contains("not a member")
-            {
-                return Err(SyncError::OrgMembershipRevoked(org_hash.to_string()));
-            }
-            return Err(SyncError::Auth(err_msg));
-        }
-
-        Ok(parsed.urls)
-    }
-
-    /// Request presigned URLs for downloading org log entries from a specific member.
-    pub async fn presign_org_log_download(
-        &self,
-        org_hash: &str,
-        member_id: &str,
-        seq_numbers: &[u64],
-    ) -> SyncResult<Vec<PresignedUrl>> {
-        let body = serde_json::json!({
-            "action": "presign_org_log_download",
-            "org_hash": org_hash,
-            "member_id": member_id,
-            "seq_numbers": seq_numbers,
-        });
-
-        let resp = self.post("/api/sync/presign", body).await?;
-        let parsed: PresignedResponse = serde_json::from_value(resp)?;
-
-        if !parsed.ok {
-            let err_msg = parsed
-                .error
-                .unwrap_or_else(|| "org presign download failed".to_string());
-            let err_lower = err_msg.to_lowercase();
-            if err_lower.contains("forbidden")
-                || err_lower.contains("unauth")
-                || err_lower.contains("not a member")
-            {
-                return Err(SyncError::OrgMembershipRevoked(org_hash.to_string()));
-            }
-            return Err(SyncError::Auth(err_msg));
-        }
-
-        Ok(parsed.urls)
-    }
-
-    /// List objects in an org's S3 prefix.
-    ///
-    /// The prefix is relative to `/{org_hash}/`, so `"log/"` lists all log entries
-    /// across all members.
-    pub async fn list_org_objects(
-        &self,
-        org_hash: &str,
-        prefix: &str,
-    ) -> SyncResult<Vec<S3ObjectInfo>> {
-        let body = serde_json::json!({
-            "action": "list_objects",
-            "org_hash": org_hash,
-            "prefix": prefix,
-        });
-
-        let resp = self.post("/api/sync/list", body).await?;
-        let parsed: ListObjectsResponse = serde_json::from_value(resp)?;
-
-        if !parsed.ok {
-            let err_msg = parsed
-                .error
-                .unwrap_or_else(|| "org list failed".to_string());
-            let err_lower = err_msg.to_lowercase();
-            if err_lower.contains("forbidden")
-                || err_lower.contains("unauth")
-                || err_lower.contains("not a member")
-            {
-                return Err(SyncError::OrgMembershipRevoked(org_hash.to_string()));
-            }
-            return Err(SyncError::Auth(err_msg));
-        }
-
-        Ok(parsed.objects)
-    }
-
-    // =========================================================================
-    // Unified sync operations (transition wrappers)
-    //
-    // These dispatch to the old per-type endpoints during the backend
-    // transition. After the backend is updated to use flat paths and
-    // server-assigned seqs, these become the only presign methods.
-    // =========================================================================
-
-    /// Unified presign for log upload.
+    /// Presign URLs for uploading log entries to a sync target.
     pub async fn presign_upload(
         &self,
         target: &super::org_sync::SyncTarget,
         seq_numbers: &[u64],
     ) -> SyncResult<Vec<PresignedUrl>> {
-        if target.is_org {
-            self.presign_org_log_upload(&target.prefix, "_", seq_numbers)
-                .await
-        } else {
-            self.presign_log_upload(seq_numbers).await
+        let mut body = serde_json::json!({
+            "action": "presign_log_upload",
+            "seq_numbers": seq_numbers,
+        });
+        if !target.prefix.is_empty() {
+            body["org_hash"] = serde_json::Value::String(target.prefix.clone());
         }
+        let resp = self.post("/api/sync/presign", body).await?;
+        let parsed: PresignedResponse = serde_json::from_value(resp)?;
+        if !parsed.ok {
+            return Err(SyncError::Auth(
+                parsed
+                    .error
+                    .unwrap_or_else(|| "presign upload failed".to_string()),
+            ));
+        }
+        Ok(parsed.urls)
     }
 
-    /// Unified presign for log download.
+    /// Presign URLs for downloading log entries from a sync target.
     pub async fn presign_download(
         &self,
         target: &super::org_sync::SyncTarget,
         seq_numbers: &[u64],
     ) -> SyncResult<Vec<PresignedUrl>> {
-        if target.is_org {
-            self.presign_org_log_download(&target.prefix, "_", seq_numbers)
-                .await
-        } else {
-            self.presign_log_download(seq_numbers).await
+        let mut body = serde_json::json!({
+            "action": "presign_log_download",
+            "seq_numbers": seq_numbers,
+        });
+        if !target.prefix.is_empty() {
+            body["org_hash"] = serde_json::Value::String(target.prefix.clone());
         }
+        let resp = self.post("/api/sync/presign", body).await?;
+        let parsed: PresignedResponse = serde_json::from_value(resp)?;
+        if !parsed.ok {
+            return Err(SyncError::Auth(
+                parsed
+                    .error
+                    .unwrap_or_else(|| "presign download failed".to_string()),
+            ));
+        }
+        Ok(parsed.urls)
     }
 
-    /// Unified list log objects for a sync target.
+    /// List log objects for a sync target.
     pub async fn list_log_objects(
         &self,
         target: &super::org_sync::SyncTarget,
     ) -> SyncResult<Vec<S3ObjectInfo>> {
-        if target.is_org {
-            self.list_org_objects(&target.prefix, "log/").await
-        } else {
-            self.list_objects("log/").await
+        self.list_log_objects_after(target, None).await
+    }
+
+    /// List log objects for a sync target, optionally starting after a given key.
+    pub async fn list_log_objects_after(
+        &self,
+        target: &super::org_sync::SyncTarget,
+        start_after: Option<&str>,
+    ) -> SyncResult<Vec<S3ObjectInfo>> {
+        let mut body = serde_json::json!({
+            "action": "list_objects",
+            "prefix": "log/",
+        });
+        if !target.prefix.is_empty() {
+            body["org_hash"] = serde_json::Value::String(target.prefix.clone());
         }
+        if let Some(cursor) = start_after {
+            body["start_after"] = serde_json::Value::String(cursor.to_string());
+        }
+        let resp = self.post("/api/sync/list", body).await?;
+        let parsed: ListObjectsResponse = serde_json::from_value(resp)?;
+        if !parsed.ok {
+            return Err(SyncError::Auth(
+                parsed
+                    .error
+                    .unwrap_or_else(|| "list log objects failed".to_string()),
+            ));
+        }
+        Ok(parsed.objects)
     }
 
     // =========================================================================

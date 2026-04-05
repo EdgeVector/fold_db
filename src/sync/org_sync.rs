@@ -32,9 +32,6 @@ pub struct SyncTarget {
     pub prefix: String,
     /// Crypto provider for sealing/unsealing entries on this prefix.
     pub crypto: Arc<dyn CryptoProvider>,
-    /// Transition flag: org targets use old backend presign endpoints
-    /// that require `member_id`. Removed after backend migration.
-    pub is_org: bool,
 }
 
 /// Where a log entry should be synced to.
