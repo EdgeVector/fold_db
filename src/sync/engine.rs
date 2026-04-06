@@ -229,10 +229,7 @@ impl SyncEngine {
     /// Register a callback that reloads the SchemaCore cache after sync
     /// replays schema entries into Sled. The callback returns the number
     /// of newly added schemas, or an error string.
-    pub async fn set_schema_reloader(
-        &self,
-        reloader: SchemaReloadCallback,
-    ) {
+    pub async fn set_schema_reloader(&self, reloader: SchemaReloadCallback) {
         *self.schema_reloader.lock().await = Some(reloader);
     }
 
