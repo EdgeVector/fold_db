@@ -434,9 +434,8 @@ impl SyncEngine {
                                     }
                                     Err(retry_err) => {
                                         let msg = retry_err.to_string();
-                                        log::warn!(
-                                            "sync retry after token refresh failed: {msg}"
-                                        );
+                                        log::warn!("sync retry after token refresh failed: {msg}");
+
                                         *self.last_error.lock().await = Some(msg.clone());
                                         self.set_state(SyncState::Dirty, Some(&msg)).await;
                                         return Err(retry_err);
