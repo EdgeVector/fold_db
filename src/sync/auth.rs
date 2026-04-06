@@ -248,6 +248,28 @@ impl AuthClient {
             .ok_or_else(|| SyncError::Auth("no presigned URL returned".to_string()))
     }
 
+    /// Presign a DELETE URL for removing an inbox object (e.g., accepted/declined invite).
+    pub async fn presign_inbox_delete(&self, file_name: &str) -> SyncResult<PresignedUrl> {
+        let body = serde_json::json!({
+            "action": "presign_inbox_delete",
+            "snapshot_name": file_name,
+        });
+        let resp = self.post("/api/sync/presign", body).await?;
+        let parsed: PresignedResponse = serde_json::from_value(resp)?;
+        if !parsed.ok {
+            return Err(SyncError::Auth(
+                parsed
+                    .error
+                    .unwrap_or_else(|| "presign inbox delete failed".to_string()),
+            ));
+        }
+        parsed
+            .urls
+            .into_iter()
+            .next()
+            .ok_or_else(|| SyncError::Auth("no presigned URL returned".to_string()))
+    }
+
     /// Request presigned URLs for deleting log entries.
     pub async fn presign_log_delete(&self, seq_numbers: &[u64]) -> SyncResult<Vec<PresignedUrl>> {
         let body = serde_json::json!({
@@ -504,6 +526,42 @@ impl AuthClient {
                 .get("error")
                 .and_then(|v| v.as_str())
                 .unwrap_or("update_role failed");
+            return Err(SyncError::Auth(err.to_string()));
+        }
+        Ok(())
+    }
+
+    /// Notify the cloud that this user accepted an org invite (status -> active).
+    pub async fn accept_invite(&self, org_hash: &str) -> SyncResult<()> {
+        let body = serde_json::json!({
+            "action": "accept_invite",
+            "org_hash": org_hash,
+        });
+        let resp = self.post("/api/sync/org", body).await?;
+        let ok = resp.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
+        if !ok {
+            let err = resp
+                .get("error")
+                .and_then(|v| v.as_str())
+                .unwrap_or("accept_invite failed");
+            return Err(SyncError::Auth(err.to_string()));
+        }
+        Ok(())
+    }
+
+    /// Notify the cloud that this user declined an org invite (status -> declined).
+    pub async fn decline_invite(&self, org_hash: &str) -> SyncResult<()> {
+        let body = serde_json::json!({
+            "action": "decline_invite",
+            "org_hash": org_hash,
+        });
+        let resp = self.post("/api/sync/org", body).await?;
+        let ok = resp.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
+        if !ok {
+            let err = resp
+                .get("error")
+                .and_then(|v| v.as_str())
+                .unwrap_or("decline_invite failed");
             return Err(SyncError::Auth(err.to_string()));
         }
         Ok(())
