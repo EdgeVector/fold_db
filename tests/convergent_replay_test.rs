@@ -208,3 +208,135 @@ async fn ref_non_molecule_bytes_uses_incoming() {
     let stored = kv.get(b"ref:mol-raw").await.unwrap().unwrap();
     assert_eq!(stored, b"also-not-json");
 }
+
+#[tokio::test]
+async fn merge_conflict_stored_as_sync_conflict() {
+    // When two molecules have different atoms for the same key, a SyncConflict record is stored
+    use fold_db::sync::SyncConflict;
+
+    let store = Arc::new(InMemoryNamespacedStore::new());
+    let engine = make_engine(store.clone());
+
+    // Create two Molecule values pointing to different atoms for the same ref key
+    let mol_a = Molecule::new("atom-aaa".to_string(), "S", "f");
+    std::thread::sleep(std::time::Duration::from_millis(2));
+    let mol_b = Molecule::new("atom-bbb".to_string(), "S", "f");
+
+    let val_a = serde_json::to_vec(&mol_a).unwrap();
+    let val_b = serde_json::to_vec(&mol_b).unwrap();
+
+    let mol_uuid = mol_a.uuid().to_string();
+    let ref_key = format!("ref:{}", mol_uuid);
+
+    let e1 = put_entry(1, 100, "dev-a", ref_key.as_bytes(), &val_a);
+    engine.replay_entry(&e1).await.unwrap();
+
+    let e2 = put_entry(2, 200, "dev-b", ref_key.as_bytes(), &val_b);
+    engine.replay_entry(&e2).await.unwrap();
+
+    // Verify the merge result: mol_b (later written_at) should win
+    let kv = store.open_namespace("main").await.unwrap();
+    let stored = kv.get(ref_key.as_bytes()).await.unwrap().unwrap();
+    let result: Molecule = serde_json::from_slice(&stored).unwrap();
+    assert_eq!(result.get_atom_uuid(), "atom-bbb");
+
+    // Verify a SyncConflict record was stored at conflict:{mol_uuid}:*
+    let conflict_prefix = format!("conflict:{}:", mol_uuid);
+    let keys = kv
+        .scan_prefix(conflict_prefix.as_bytes())
+        .await
+        .unwrap();
+    assert_eq!(keys.len(), 1, "expected exactly one conflict record");
+
+    let conflict_bytes = &keys[0].1;
+    let conflict: SyncConflict = serde_json::from_slice(conflict_bytes).unwrap();
+
+    assert_eq!(conflict.molecule_uuid, mol_uuid);
+    assert_eq!(conflict.winner_atom, "atom-bbb");
+    assert_eq!(conflict.loser_atom, "atom-aaa");
+    assert!(!conflict.resolved);
+}
+
+#[tokio::test]
+async fn merge_no_conflict_for_same_atom() {
+    // When both sides have the same atom, no conflict record should be stored
+    let store = Arc::new(InMemoryNamespacedStore::new());
+    let engine = make_engine(store.clone());
+
+    let mol_a = Molecule::new("atom-same".to_string(), "S", "f");
+    let mol_b = Molecule::new("atom-same".to_string(), "S", "f");
+
+    let val_a = serde_json::to_vec(&mol_a).unwrap();
+    let val_b = serde_json::to_vec(&mol_b).unwrap();
+
+    let mol_uuid = mol_a.uuid().to_string();
+    let ref_key = format!("ref:{}", mol_uuid);
+
+    let e1 = put_entry(1, 100, "dev-a", ref_key.as_bytes(), &val_a);
+    engine.replay_entry(&e1).await.unwrap();
+
+    let e2 = put_entry(2, 200, "dev-b", ref_key.as_bytes(), &val_b);
+    engine.replay_entry(&e2).await.unwrap();
+
+    // No conflict should be stored
+    let kv = store.open_namespace("main").await.unwrap();
+    let conflict_prefix = format!("conflict:{}:", mol_uuid);
+    let entries = kv
+        .scan_prefix(conflict_prefix.as_bytes())
+        .await
+        .unwrap();
+    assert!(entries.is_empty(), "no conflict expected for same atom");
+}
+
+#[tokio::test]
+async fn hash_molecule_merge_conflict_stored() {
+    // MoleculeHash with same key but different atoms should produce a conflict
+    use fold_db::sync::SyncConflict;
+
+    let store = Arc::new(InMemoryNamespacedStore::new());
+    let engine = make_engine(store.clone());
+
+    let mut mol_a = MoleculeHash::new("S", "f");
+    mol_a.set_atom_uuid("shared_key".to_string(), "atom-old".to_string());
+
+    std::thread::sleep(std::time::Duration::from_millis(2));
+
+    let mut mol_b = MoleculeHash::new("S", "f");
+    mol_b.set_atom_uuid("shared_key".to_string(), "atom-new".to_string());
+
+    let val_a = serde_json::to_vec(&mol_a).unwrap();
+    let val_b = serde_json::to_vec(&mol_b).unwrap();
+
+    let mol_uuid = mol_a.uuid().to_string();
+    let ref_key = format!("ref:{}", mol_uuid);
+
+    let e1 = put_entry(1, 100, "dev-a", ref_key.as_bytes(), &val_a);
+    engine.replay_entry(&e1).await.unwrap();
+
+    let e2 = put_entry(2, 200, "dev-b", ref_key.as_bytes(), &val_b);
+    engine.replay_entry(&e2).await.unwrap();
+
+    // Verify merge result
+    let kv = store.open_namespace("main").await.unwrap();
+    let stored = kv.get(ref_key.as_bytes()).await.unwrap().unwrap();
+    let result: MoleculeHash = serde_json::from_slice(&stored).unwrap();
+    assert_eq!(
+        result.get_atom_uuid("shared_key"),
+        Some(&"atom-new".to_string())
+    );
+
+    // Verify conflict record
+    let conflict_prefix = format!("conflict:{}:", mol_uuid);
+    let entries = kv
+        .scan_prefix(conflict_prefix.as_bytes())
+        .await
+        .unwrap();
+    assert_eq!(entries.len(), 1);
+
+    let conflict_bytes = &entries[0].1;
+    let conflict: SyncConflict = serde_json::from_slice(conflict_bytes).unwrap();
+    assert_eq!(conflict.molecule_uuid, mol_uuid);
+    assert_eq!(conflict.winner_atom, "atom-new");
+    assert_eq!(conflict.loser_atom, "atom-old");
+    assert_eq!(conflict.conflict_key, "shared_key");
+}

@@ -42,6 +42,31 @@ pub struct SyncStatus {
     pub last_error: Option<String>,
 }
 
+/// A merge conflict detected during sync replay.
+/// Stored at key `conflict:{mol_uuid}:{ts}` for efficient scanning.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SyncConflict {
+    /// Unique ID: "{mol_uuid}:{ts_nanos_padded}"
+    pub id: String,
+    /// The molecule where the conflict occurred.
+    pub molecule_uuid: String,
+    /// The key within the molecule (e.g. "single", hash key, "hash:range").
+    pub conflict_key: String,
+    /// The atom UUID that won (later written_at).
+    pub winner_atom: String,
+    /// The atom UUID that lost.
+    pub loser_atom: String,
+    /// Winner's write timestamp (nanos since epoch).
+    pub winner_written_at: u64,
+    /// Loser's write timestamp (nanos since epoch).
+    pub loser_written_at: u64,
+    /// When the conflict was detected.
+    #[serde(with = "chrono::serde::ts_milliseconds")]
+    pub detected_at: chrono::DateTime<chrono::Utc>,
+    /// Whether this conflict has been acknowledged/resolved by the user.
+    pub resolved: bool,
+}
+
 /// Configuration for the sync engine.
 #[derive(Debug, Clone)]
 pub struct SyncConfig {
@@ -777,6 +802,14 @@ impl SyncEngine {
                 .is_some_and(|s| s.contains(":ref:"));
 
         if is_ref_key {
+            // Extract molecule UUID from the ref key (e.g. "ref:{uuid}" or "{org}:ref:{uuid}")
+            let key_str = std::str::from_utf8(&key_bytes).unwrap_or("");
+            let mol_uuid = key_str
+                .rsplit_once("ref:")
+                .map(|(_, uuid)| uuid)
+                .unwrap_or(key_str)
+                .to_string();
+
             let kv = self.store.open_namespace(namespace).await?;
             let local_bytes = kv.get(&key_bytes).await?;
 
@@ -786,9 +819,9 @@ impl SyncEngine {
                     let (merged_bytes, conflicts) = Self::merge_molecules(&local, &value_bytes)?;
                     kv.put(&key_bytes, merged_bytes).await?;
 
-                    // Store any merge conflicts as MutationEvents
+                    // Store any merge conflicts
                     if !conflicts.is_empty() {
-                        Self::store_merge_conflicts(&kv, &conflicts).await?;
+                        Self::store_merge_conflicts(&kv, &mol_uuid, &conflicts).await?;
                     }
                 }
                 None => {
@@ -866,27 +899,62 @@ impl SyncEngine {
         Ok((incoming_bytes.to_vec(), Vec::new()))
     }
 
-    /// Store merge conflicts as MutationEvent entries in the same namespace.
+    /// Store merge conflicts as MutationEvent entries in the atoms namespace
+    /// and as dedicated conflict records for efficient scanning.
     async fn store_merge_conflicts(
         kv: &Arc<dyn crate::storage::traits::KvStore>,
+        mol_uuid: &str,
         conflicts: &[MergeConflict],
     ) -> SyncResult<()> {
         let now = Utc::now();
-        for conflict in conflicts {
-            let ts_nanos = now.timestamp_nanos_opt().unwrap_or(0);
+        for (i, conflict) in conflicts.iter().enumerate() {
+            let ts_nanos = now.timestamp_nanos_opt().unwrap_or(0) + i as i64;
+
+            // Parse conflict.key into a proper FieldKey
+            let field_key = if conflict.key == "single" {
+                FieldKey::Single
+            } else if let Some((hash, range)) = conflict.key.split_once(':') {
+                FieldKey::HashRange {
+                    hash: hash.to_string(),
+                    range: range.to_string(),
+                }
+            } else {
+                // Could be either Hash or Range — store as Hash since we can't tell
+                FieldKey::Hash {
+                    hash: conflict.key.clone(),
+                }
+            };
+
+            // Store as mutation event in history
             let event = MutationEvent {
-                molecule_uuid: conflict.key.clone(),
+                molecule_uuid: mol_uuid.to_string(),
                 timestamp: now,
-                field_key: FieldKey::Single,
+                field_key,
                 old_atom_uuid: Some(conflict.loser_atom.clone()),
                 new_atom_uuid: conflict.winner_atom.clone(),
                 version: 0,
                 is_conflict: true,
                 conflict_loser_atom: Some(conflict.loser_atom.clone()),
             };
-            let event_key = format!("history:{}:{:020}", conflict.key, ts_nanos);
+            let event_key = format!("history:{}:{:020}", mol_uuid, ts_nanos);
             let event_bytes = serde_json::to_vec(&event)?;
             kv.put(event_key.as_bytes(), event_bytes).await?;
+
+            // Also store in dedicated conflict index for efficient scanning
+            let conflict_record = SyncConflict {
+                id: format!("{}:{:020}", mol_uuid, ts_nanos),
+                molecule_uuid: mol_uuid.to_string(),
+                conflict_key: conflict.key.clone(),
+                winner_atom: conflict.winner_atom.clone(),
+                loser_atom: conflict.loser_atom.clone(),
+                winner_written_at: conflict.winner_written_at,
+                loser_written_at: conflict.loser_written_at,
+                detected_at: now,
+                resolved: false,
+            };
+            let conflict_key = format!("conflict:{}:{:020}", mol_uuid, ts_nanos);
+            let conflict_bytes = serde_json::to_vec(&conflict_record)?;
+            kv.put(conflict_key.as_bytes(), conflict_bytes).await?;
         }
         Ok(())
     }
