@@ -28,11 +28,6 @@ impl DbOperations {
     }
 
     /// Store a schema.
-    ///
-    /// For org-scoped schemas, also writes the schema under an org-prefixed key
-    /// in the "schemas" namespace. The sync partitioner routes org-prefixed keys
-    /// to the org R2 prefix, so other org members receive the schema (including
-    /// `field_molecule_uuids`) during normal org sync — no special post-sync step.
     pub async fn store_schema(
         &self,
         schema_name: &str,
@@ -40,15 +35,7 @@ impl DbOperations {
     ) -> Result<(), SchemaError> {
         use crate::storage::traits::TypedStore;
 
-        // Local lookup key (always)
         self.schemas_store().put_item(schema_name, schema).await?;
-
-        // Org-prefixed key for sync routing (partitioner sees org prefix → org R2)
-        if let Some(org_hash) = &schema.org_hash {
-            let org_key = format!("{}:{}", org_hash, schema_name);
-            self.schemas_store().put_item(&org_key, schema).await?;
-        }
-
         self.schemas_store().inner().flush().await?;
         Ok(())
     }

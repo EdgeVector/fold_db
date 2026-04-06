@@ -656,6 +656,8 @@ impl MutationManager {
                     pub_key: mutation.pub_key.clone(),
                     source_file_name: mutation.source_file_name.clone(),
                     metadata: mutation.metadata.clone(),
+                    schema_name: mutation.schema_name.clone(),
+                    field_name: field_name.clone(),
                 },
             );
 
@@ -683,6 +685,8 @@ impl MutationManager {
                         old_atom_uuid,
                         new_atom_uuid: atom.uuid().to_string(),
                         version: schema_field.molecule_version().unwrap_or(0),
+                        is_conflict: false,
+                        conflict_loser_atom: None,
                     });
                 }
             }

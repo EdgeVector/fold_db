@@ -13,7 +13,7 @@ mod tests {
         );
 
         // Test single molecule
-        let molecule = Molecule::new(atom.uuid().to_string(), "test_key".to_string());
+        let molecule = Molecule::new(atom.uuid().to_string(), "test_schema", "test_key");
         assert_eq!(molecule.get_atom_uuid(), &atom.uuid().to_string());
 
         let new_atom = Atom::new(
@@ -41,7 +41,7 @@ mod tests {
             })
             .collect();
 
-        let mut range = MoleculeRange::new("test_key".to_string());
+        let mut range = MoleculeRange::new("test_schema", "test_key");
         range.set_atom_uuid("a".to_string(), atoms[0].uuid().to_string());
         range.set_atom_uuid("b".to_string(), atoms[1].uuid().to_string());
         range.set_atom_uuid("c".to_string(), atoms[2].uuid().to_string());
@@ -74,7 +74,7 @@ mod tests {
             })
             .collect();
 
-        let mut range = MoleculeRange::new("test_key".to_string());
+        let mut range = MoleculeRange::new("test_schema", "test_key");
 
         // Add atoms to different keys - each key can only store one atom UUID
         range.set_atom_uuid("user_123".to_string(), atoms[0].uuid().to_string());

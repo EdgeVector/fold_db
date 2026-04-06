@@ -8,7 +8,8 @@ use crate::schema::types::key_value::KeyValue;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
-use uuid::Uuid;
+
+use super::{deterministic_molecule_uuid, now_nanos, AtomEntry, MergeConflict};
 
 /// A hash-range-based collection of atom references stored in a nested HashMap<BTreeMap> structure.
 ///
@@ -16,14 +17,14 @@ use uuid::Uuid;
 /// - Hash field: Groups related atoms together
 /// - Range field: Provides ordered access within each hash group
 ///
-/// Structure: HashMap<hash_value, BTreeMap<range_value, atom_uuid>>
+/// Structure: HashMap<hash_value, BTreeMap<range_value, AtomEntry>>
 #[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct MoleculeHashRange {
     /// Unique identifier for this molecule
     uuid: String,
-    /// Atom UUIDs organized by hash and range values
-    /// Structure: HashMap<hash_value, BTreeMap<range_value, atom_uuid>>
-    atom_uuids: HashMap<String, BTreeMap<String, String>>,
+    /// Atom entries organized by hash and range values
+    /// Structure: HashMap<hash_value, BTreeMap<range_value, AtomEntry>>
+    atom_uuids: HashMap<String, BTreeMap<String, AtomEntry>>,
     /// Timestamp when this molecule was last updated
     #[schema(value_type = String, format = "date-time")]
     updated_at: DateTime<Utc>,
@@ -40,11 +41,11 @@ pub struct MoleculeHashRange {
 }
 
 impl MoleculeHashRange {
-    /// Creates a new empty MoleculeHashRange.
+    /// Creates a new empty MoleculeHashRange with a deterministic UUID.
     #[must_use]
-    pub fn new(_source_pub_key: String) -> Self {
+    pub fn new(schema_name: &str, field_name: &str) -> Self {
         Self {
-            uuid: Uuid::new_v4().to_string(),
+            uuid: deterministic_molecule_uuid(schema_name, field_name),
             atom_uuids: HashMap::new(),
             updated_at: Utc::now(),
             update_order: vec![],
@@ -56,9 +57,11 @@ impl MoleculeHashRange {
     /// Creates a new MoleculeHashRange with existing atom UUIDs.
     #[must_use]
     pub fn with_atoms(
-        _source_pub_key: String,
+        schema_name: &str,
+        field_name: &str,
         atom_uuids: HashMap<String, BTreeMap<String, String>>,
     ) -> Self {
+        let ts = now_nanos();
         let update_order = atom_uuids
             .iter()
             .flat_map(|(hash_value, range_map)| {
@@ -68,9 +71,28 @@ impl MoleculeHashRange {
             })
             .collect();
 
+        let entries: HashMap<String, BTreeMap<String, AtomEntry>> = atom_uuids
+            .into_iter()
+            .map(|(hash, range_map)| {
+                let entry_map: BTreeMap<String, AtomEntry> = range_map
+                    .into_iter()
+                    .map(|(range, atom_uuid)| {
+                        (
+                            range,
+                            AtomEntry {
+                                atom_uuid,
+                                written_at: ts,
+                            },
+                        )
+                    })
+                    .collect();
+                (hash, entry_map)
+            })
+            .collect();
+
         Self {
-            uuid: Uuid::new_v4().to_string(),
-            atom_uuids,
+            uuid: deterministic_molecule_uuid(schema_name, field_name),
+            atom_uuids: entries,
             updated_at: Utc::now(),
             update_order,
             version: 0,
@@ -113,10 +135,13 @@ impl MoleculeHashRange {
             );
             self.update_order.push(key_value);
         }
-        self.atom_uuids
-            .entry(hash)
-            .or_default()
-            .insert(range, atom_uuid);
+        self.atom_uuids.entry(hash).or_default().insert(
+            range,
+            AtomEntry {
+                atom_uuid,
+                written_at: now_nanos(),
+            },
+        );
         self.updated_at = Utc::now();
     }
 
@@ -134,10 +159,13 @@ impl MoleculeHashRange {
             let key_value = KeyValue::new(Some(hash_value.clone()), Some(range_value.clone()));
             self.update_order.push(key_value);
         }
-        self.atom_uuids
-            .entry(hash_value)
-            .or_default()
-            .insert(range_value, atom_uuid);
+        self.atom_uuids.entry(hash_value).or_default().insert(
+            range_value,
+            AtomEntry {
+                atom_uuid,
+                written_at: now_nanos(),
+            },
+        );
         self.updated_at = Utc::now();
     }
 
@@ -147,12 +175,26 @@ impl MoleculeHashRange {
         self.atom_uuids
             .get(hash_value)
             .and_then(|range_map| range_map.get(range_value))
+            .map(|e| &e.atom_uuid)
+    }
+
+    /// Returns the full AtomEntry at the specified hash and range values, if present.
+    #[must_use]
+    pub fn get_atom_entry(&self, hash_value: &str, range_value: &str) -> Option<&AtomEntry> {
+        self.atom_uuids
+            .get(hash_value)
+            .and_then(|range_map| range_map.get(range_value))
     }
 
     /// Returns all atom UUIDs for a given hash value.
     #[must_use]
-    pub fn get_atoms_for_hash(&self, hash_value: &str) -> Option<&BTreeMap<String, String>> {
-        self.atom_uuids.get(hash_value)
+    pub fn get_atoms_for_hash(&self, hash_value: &str) -> Option<BTreeMap<String, String>> {
+        self.atom_uuids.get(hash_value).map(|range_map| {
+            range_map
+                .iter()
+                .map(|(k, e)| (k.clone(), e.atom_uuid.clone()))
+                .collect()
+        })
     }
 
     /// Removes the reference at the specified hash and range values.
@@ -160,15 +202,16 @@ impl MoleculeHashRange {
     pub fn remove_atom_uuid(&mut self, hash_value: &str, range_value: &str) -> Option<String> {
         if let Some(range_map) = self.atom_uuids.get_mut(hash_value) {
             let result = range_map.remove(range_value);
-            if result.is_some() {
+            if let Some(entry) = result {
                 self.version += 1;
                 self.updated_at = Utc::now();
+                // Clean up empty hash entries
+                if range_map.is_empty() {
+                    self.atom_uuids.remove(hash_value);
+                }
+                return Some(entry.atom_uuid);
             }
-            // Clean up empty hash entries
-            if range_map.is_empty() {
-                self.atom_uuids.remove(hash_value);
-            }
-            result
+            None
         } else {
             None
         }
@@ -207,7 +250,7 @@ impl MoleculeHashRange {
         self.atom_uuids.iter().flat_map(|(hash_value, range_map)| {
             range_map
                 .iter()
-                .map(move |(range_value, atom_uuid)| (hash_value, range_value, atom_uuid))
+                .map(move |(range_value, entry)| (hash_value, range_value, &entry.atom_uuid))
         })
     }
 
@@ -244,6 +287,55 @@ impl MoleculeHashRange {
             .get(hash)
             .and_then(|range_map| range_map.get(range))
     }
+
+    /// Merges another MoleculeHashRange into this one using last-writer-wins per key.
+    /// Returns a list of conflicts where both sides had different atoms for the same key.
+    pub fn merge(&mut self, other: &MoleculeHashRange) -> Vec<MergeConflict> {
+        let mut conflicts = Vec::new();
+        for (hash, other_range_map) in &other.atom_uuids {
+            for (range, other_entry) in other_range_map {
+                let self_entry = self.atom_uuids.get(hash).and_then(|rm| rm.get(range));
+
+                match self_entry {
+                    None => {
+                        self.atom_uuids
+                            .entry(hash.clone())
+                            .or_default()
+                            .insert(range.clone(), other_entry.clone());
+                        self.version += 1;
+                    }
+                    Some(se) => {
+                        if se.atom_uuid == other_entry.atom_uuid {
+                            continue;
+                        }
+                        let (winner, loser) = if other_entry.written_at >= se.written_at {
+                            (other_entry, se)
+                        } else {
+                            (se, other_entry)
+                        };
+                        conflicts.push(MergeConflict {
+                            key: format!("{}:{}", hash, range),
+                            winner_atom: winner.atom_uuid.clone(),
+                            loser_atom: loser.atom_uuid.clone(),
+                            winner_written_at: winner.written_at,
+                            loser_written_at: loser.written_at,
+                        });
+                        if other_entry.written_at >= se.written_at {
+                            self.atom_uuids
+                                .entry(hash.clone())
+                                .or_default()
+                                .insert(range.clone(), other_entry.clone());
+                            self.version += 1;
+                        }
+                    }
+                }
+            }
+        }
+        if !conflicts.is_empty() {
+            self.updated_at = Utc::now();
+        }
+        conflicts
+    }
 }
 
 #[cfg(test)]
@@ -252,20 +344,20 @@ mod tests {
 
     #[test]
     fn test_version_starts_at_zero() {
-        let mol = MoleculeHashRange::new("key".to_string());
+        let mol = MoleculeHashRange::new("schema", "field");
         assert_eq!(mol.version(), 0);
     }
 
     #[test]
     fn test_version_bumps_on_insert() {
-        let mut mol = MoleculeHashRange::new("key".to_string());
+        let mut mol = MoleculeHashRange::new("schema", "field");
         mol.set_atom_uuid_from_values("h1".to_string(), "r1".to_string(), "atom-1".to_string());
         assert_eq!(mol.version(), 1);
     }
 
     #[test]
     fn test_version_no_bump_on_same_value() {
-        let mut mol = MoleculeHashRange::new("key".to_string());
+        let mut mol = MoleculeHashRange::new("schema", "field");
         mol.set_atom_uuid_from_values("h1".to_string(), "r1".to_string(), "atom-1".to_string());
         mol.set_atom_uuid_from_values("h1".to_string(), "r1".to_string(), "atom-1".to_string());
         assert_eq!(mol.version(), 1);
@@ -273,7 +365,7 @@ mod tests {
 
     #[test]
     fn test_version_bumps_on_remove() {
-        let mut mol = MoleculeHashRange::new("key".to_string());
+        let mut mol = MoleculeHashRange::new("schema", "field");
         mol.set_atom_uuid_from_values("h1".to_string(), "r1".to_string(), "atom-1".to_string());
         assert_eq!(mol.version(), 1);
         mol.remove_atom_uuid("h1", "r1");
@@ -282,7 +374,7 @@ mod tests {
 
     #[test]
     fn test_version_no_bump_on_remove_missing() {
-        let mut mol = MoleculeHashRange::new("key".to_string());
+        let mut mol = MoleculeHashRange::new("schema", "field");
         mol.remove_atom_uuid("h1", "r1");
         assert_eq!(mol.version(), 0);
     }
@@ -290,12 +382,53 @@ mod tests {
     #[test]
     fn test_with_atoms_starts_at_zero() {
         let mol = MoleculeHashRange::with_atoms(
-            "key".to_string(),
+            "schema",
+            "field",
             HashMap::from([(
                 "h1".to_string(),
                 std::collections::BTreeMap::from([("r1".to_string(), "a1".to_string())]),
             )]),
         );
         assert_eq!(mol.version(), 0);
+    }
+
+    #[test]
+    fn test_deterministic_uuid() {
+        let mol1 = MoleculeHashRange::new("my_schema", "my_field");
+        let mol2 = MoleculeHashRange::new("my_schema", "my_field");
+        assert_eq!(mol1.uuid(), mol2.uuid());
+    }
+
+    #[test]
+    fn test_merge_new_keys() {
+        let mut mol1 = MoleculeHashRange::new("s", "f");
+        mol1.set_atom_uuid_from_values("h1".to_string(), "r1".to_string(), "atom-1".to_string());
+
+        let mut mol2 = MoleculeHashRange::new("s", "f");
+        mol2.set_atom_uuid_from_values("h2".to_string(), "r2".to_string(), "atom-2".to_string());
+
+        let conflicts = mol1.merge(&mol2);
+        assert!(conflicts.is_empty());
+        assert_eq!(mol1.get_atom_uuid("h1", "r1"), Some(&"atom-1".to_string()));
+        assert_eq!(mol1.get_atom_uuid("h2", "r2"), Some(&"atom-2".to_string()));
+    }
+
+    #[test]
+    fn test_merge_conflict_later_wins() {
+        let mut mol1 = MoleculeHashRange::new("s", "f");
+        mol1.set_atom_uuid_from_values("h1".to_string(), "r1".to_string(), "atom-old".to_string());
+
+        std::thread::sleep(std::time::Duration::from_millis(1));
+
+        let mut mol2 = MoleculeHashRange::new("s", "f");
+        mol2.set_atom_uuid_from_values("h1".to_string(), "r1".to_string(), "atom-new".to_string());
+
+        let conflicts = mol1.merge(&mol2);
+        assert_eq!(conflicts.len(), 1);
+        assert_eq!(conflicts[0].winner_atom, "atom-new");
+        assert_eq!(
+            mol1.get_atom_uuid("h1", "r1"),
+            Some(&"atom-new".to_string())
+        );
     }
 }

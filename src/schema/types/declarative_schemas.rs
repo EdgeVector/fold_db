@@ -409,13 +409,10 @@ impl DeclarativeSchemaDefinition {
             }
         }
 
-        // Restore molecule_uuids from persisted field_molecule_uuids
-        if let Some(molecule_uuids) = &self.field_molecule_uuids {
-            for (field_name, molecule_uuid) in molecule_uuids {
-                if let Some(field) = self.runtime_fields.get_mut(field_name) {
-                    field.common_mut().set_molecule_uuid(molecule_uuid.clone());
-                }
-            }
+        // Derive molecule UUIDs deterministically from schema name + field name
+        for (field_name, field) in self.runtime_fields.iter_mut() {
+            let mol_uuid = crate::atom::deterministic_molecule_uuid(&self.name, field_name);
+            field.common_mut().set_molecule_uuid(mol_uuid);
         }
 
         // Propagate org_hash from the schema to each field's FieldCommon
@@ -441,18 +438,9 @@ impl DeclarativeSchemaDefinition {
         self.fetch_source_schemas();
     }
 
-    /// Syncs molecule UUIDs from runtime_fields to the persisted field_molecule_uuids
-    /// Call this after mutations to ensure molecule_uuids are persisted
+    /// No-op: molecule UUIDs are now derived deterministically in `populate_runtime_fields`.
     pub fn sync_molecule_uuids(&mut self) {
-        let mut molecule_uuids = HashMap::new();
-        for (field_name, field) in &self.runtime_fields {
-            if let Some(uuid) = field.common().molecule_uuid() {
-                molecule_uuids.insert(field_name.clone(), uuid.clone());
-            }
-        }
-        if !molecule_uuids.is_empty() {
-            self.field_molecule_uuids = Some(molecule_uuids);
-        }
+        // Intentionally empty — UUIDs are derived from schema_name + field_name.
     }
 
     /// Creates a new DeclarativeSchemaDefinition and generates all hash mappings.

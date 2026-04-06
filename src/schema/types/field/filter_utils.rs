@@ -442,7 +442,7 @@ impl HashOperations for MoleculeHash {
     fn get_all_atoms(&self) -> Vec<(String, String)> {
         self.atom_uuids
             .iter()
-            .map(|(key, uuid)| (key.clone(), uuid.clone()))
+            .map(|(key, entry)| (key.clone(), entry.atom_uuid.clone()))
             .collect()
     }
 }
@@ -456,14 +456,14 @@ impl RangeOperations for MoleculeRange {
     fn get_all_atoms(&self) -> Vec<(String, String)> {
         self.atom_uuids
             .iter()
-            .map(|(key, uuid)| (key.clone(), uuid.clone()))
+            .map(|(key, entry)| (key.clone(), entry.atom_uuid.clone()))
             .collect()
     }
 
     fn get_atoms_in_range(&self, start: &str, end: &str) -> Vec<(String, String)> {
         self.atom_uuids
             .range(start.to_string()..end.to_string())
-            .map(|(key, uuid)| (key.clone(), uuid.clone()))
+            .map(|(key, entry)| (key.clone(), entry.atom_uuid.clone()))
             .collect()
     }
 
@@ -471,7 +471,7 @@ impl RangeOperations for MoleculeRange {
         let prefix_end = FilterUtils::create_prefix_end(prefix);
         self.atom_uuids
             .range(prefix.to_string()..prefix_end)
-            .map(|(key, uuid)| (key.clone(), uuid.clone()))
+            .map(|(key, entry)| (key.clone(), entry.atom_uuid.clone()))
             .collect()
     }
 }

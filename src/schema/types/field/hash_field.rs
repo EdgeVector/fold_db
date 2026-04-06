@@ -58,7 +58,7 @@ impl crate::schema::types::field::Field for HashField {
     ) {
         // Initialize molecule if needed and set molecule_uuid in FieldCommon
         if self.base.molecule.is_none() {
-            let new_molecule = crate::atom::MoleculeHash::new(ctx.pub_key.clone());
+            let new_molecule = crate::atom::MoleculeHash::new(&ctx.schema_name, &ctx.field_name);
             self.base
                 .inner
                 .set_molecule_uuid(new_molecule.uuid().to_string());

@@ -21,6 +21,8 @@ pub struct WriteContext {
     pub pub_key: String,
     pub source_file_name: Option<String>,
     pub metadata: Option<std::collections::HashMap<String, String>>,
+    pub schema_name: String,
+    pub field_name: String,
 }
 
 /// Common interface for all schema fields.
