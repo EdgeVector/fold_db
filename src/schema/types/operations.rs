@@ -150,7 +150,9 @@ impl<'de> Deserialize<'de> for MutationType {
             "create" => Ok(MutationType::Create),
             "update" => Ok(MutationType::Update),
             "delete" => Ok(MutationType::Delete),
-            _ => Err(serde::de::Error::custom("unknown mutation type")),
+            _ => Err(serde::de::Error::custom(
+                "unknown mutation type, expected one of: create, update, delete",
+            )),
         }
     }
 }
