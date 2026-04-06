@@ -94,6 +94,14 @@ impl Default for SyncConfig {
 /// Callback for sync status changes.
 pub type StatusCallback = Box<dyn Fn(SyncState, Option<&str>) + Send + Sync>;
 
+/// Callback that reloads schemas from the persistent store into the in-memory cache.
+/// Returns the number of newly added schemas, or an error string.
+pub type SchemaReloadCallback = Arc<
+    dyn Fn() -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<usize, String>> + Send>>
+        + Send
+        + Sync,
+>;
+
 /// The sync engine manages replication of a local Sled database to S3.
 ///
 /// Architecture:
@@ -143,6 +151,9 @@ pub struct SyncEngine {
     targets: Arc<Mutex<Vec<SyncTarget>>>,
     /// Per-prefix download cursor: maps prefix -> last_seq_downloaded.
     download_cursors: Arc<Mutex<std::collections::HashMap<String, u64>>>,
+    /// Optional callback invoked after sync replay writes schemas to Sled.
+    /// This lets the SchemaCore cache refresh without a hard dependency.
+    schema_reloader: Arc<Mutex<Option<SchemaReloadCallback>>>,
 }
 
 impl SyncEngine {
@@ -174,6 +185,7 @@ impl SyncEngine {
                 crypto,
             }])),
             download_cursors: Arc::new(Mutex::new(std::collections::HashMap::new())),
+            schema_reloader: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -212,6 +224,16 @@ impl SyncEngine {
     /// Set a callback that fires on state changes.
     pub fn set_status_callback(&mut self, cb: StatusCallback) {
         self.status_callback = Some(cb);
+    }
+
+    /// Register a callback that reloads the SchemaCore cache after sync
+    /// replays schema entries into Sled. The callback returns the number
+    /// of newly added schemas, or an error string.
+    pub async fn set_schema_reloader(
+        &self,
+        reloader: SchemaReloadCallback,
+    ) {
+        *self.schema_reloader.lock().await = Some(reloader);
     }
 
     /// Get the device identifier.
@@ -568,11 +590,15 @@ impl SyncEngine {
 
         let mut total_replayed = 0u64;
         let mut max_seq = cursor;
+        let mut schemas_replayed = false;
 
         for (seq, url) in new_seqs.iter().zip(urls.iter()) {
             match self.s3.download(url).await? {
                 Some(bytes) => match LogEntry::unseal(&bytes, &target.crypto).await {
                     Ok(entry) => {
+                        if entry.op.namespace() == "schemas" {
+                            schemas_replayed = true;
+                        }
                         self.replay_entry(&entry).await?;
                         total_replayed += 1;
                         if *seq > max_seq {
@@ -590,6 +616,26 @@ impl SyncEngine {
                 },
                 None => {
                     log::warn!("entry not found in '{}' seq={}", target.label, seq);
+                }
+            }
+        }
+
+        // Reload SchemaCore cache if any schema entries were replayed
+        if schemas_replayed {
+            if let Some(reloader) = self.schema_reloader.lock().await.as_ref() {
+                match reloader().await {
+                    Ok(count) => {
+                        if count > 0 {
+                            log::info!(
+                                "schema reloader added {} schema(s) after sync from '{}'",
+                                count,
+                                target.label
+                            );
+                        }
+                    }
+                    Err(e) => {
+                        log::warn!("failed to reload schemas after sync: {}", e);
+                    }
                 }
             }
         }
