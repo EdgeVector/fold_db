@@ -99,6 +99,18 @@ fn copy_prefixed_keys(src_tree: &sled::Tree, dst_tree: &sled::Tree, prefix: &str
     count
 }
 
+/// Copy a specific key from one sled tree to another.
+fn copy_key(src_tree: &sled::Tree, dst_tree: &sled::Tree, key: &str) -> bool {
+    if let Some(value) = src_tree.get(key.as_bytes()).unwrap() {
+        dst_tree
+            .insert(key.as_bytes(), value)
+            .expect("Failed to insert key");
+        true
+    } else {
+        false
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Test: Node 1 writes org data → simulated sync → Node 2 reads it
 // ---------------------------------------------------------------------------
@@ -156,37 +168,24 @@ async fn test_org_data_sync_between_two_nodes() {
         "Expected org-prefixed keys in main namespace"
     );
 
-    // 2. Copy org-prefixed schema from "schemas" namespace
+    // 2. Copy the schema (stored under bare key) to node2
     let schemas_tree1 = sled1.open_tree("schemas").unwrap();
     let schemas_tree2 = sled2.open_tree("schemas").unwrap();
-    let schema_count = copy_prefixed_keys(&schemas_tree1, &schemas_tree2, &org_prefix);
     assert!(
-        schema_count > 0,
-        "Expected org-prefixed schema key in schemas namespace"
+        copy_key(&schemas_tree1, &schemas_tree2, "sync_notes"),
+        "Schema should exist under bare key"
     );
 
-    // 3. Also write the schema under the bare key (local lookup key)
-    //    This is what the sync replay does — the schema is stored under both
-    //    `{org_hash}:sync_notes` (for sync routing) and `sync_notes` (for local queries).
-    let org_schema_key = format!("{}:sync_notes", org_hash);
-    let schema_bytes = schemas_tree1
-        .get(org_schema_key.as_bytes())
-        .unwrap()
-        .expect("Org-prefixed schema key should exist on node1");
-    schemas_tree2
-        .insert("sync_notes".as_bytes(), schema_bytes.clone())
-        .unwrap();
-
-    // 4. Copy the schema state so node2 sees it as Approved
+    // 3. Copy the schema state so node2 sees it as Approved
     let states_tree1 = sled1.open_tree("schema_states").unwrap();
     let states_tree2 = sled2.open_tree("schema_states").unwrap();
-    if let Some(state_bytes) = states_tree1.get("sync_notes".as_bytes()).unwrap() {
-        states_tree2
-            .insert("sync_notes".as_bytes(), state_bytes)
-            .unwrap();
-    }
+    copy_key(&states_tree1, &states_tree2, "sync_notes");
 
-    // 5. Load the schema into node2's in-memory SchemaManager cache
+    // 4. Load the schema into node2's in-memory SchemaManager cache
+    let schema_bytes = schemas_tree1
+        .get("sync_notes".as_bytes())
+        .unwrap()
+        .expect("Schema should exist on node1");
     let schema: fold_db::schema::Schema =
         serde_json::from_slice(&schema_bytes).expect("Failed to deserialize schema");
     node2
@@ -292,11 +291,9 @@ async fn test_org_sync_with_updates() {
 
     let schemas1 = sled1.open_tree("schemas").unwrap();
     let schemas2 = sled2.open_tree("schemas").unwrap();
-    copy_prefixed_keys(&schemas1, &schemas2, &org_prefix);
 
-    let org_schema_key = format!("{}:update_notes", org_hash);
     let schema_bytes = schemas1
-        .get(org_schema_key.as_bytes())
+        .get("update_notes".as_bytes())
         .unwrap()
         .expect("Schema key should exist");
     schemas2
@@ -400,11 +397,9 @@ async fn test_org_sync_does_not_leak_personal_data() {
     // Set up the org schema on node2 so we can query
     let schemas1 = sled1.open_tree("schemas").unwrap();
     let schemas2 = sled2.open_tree("schemas").unwrap();
-    copy_prefixed_keys(&schemas1, &schemas2, &org_prefix);
 
-    let org_schema_key = format!("{}:org_shared", org_hash);
     let schema_bytes = schemas1
-        .get(org_schema_key.as_bytes())
+        .get("org_shared".as_bytes())
         .unwrap()
         .expect("Schema should exist");
     schemas2

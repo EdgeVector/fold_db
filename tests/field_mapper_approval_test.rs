@@ -1,3 +1,4 @@
+use fold_db::atom::deterministic_molecule_uuid;
 use fold_db::schema::types::field::Field;
 use fold_db::schema::{SchemaCore, SchemaState};
 
@@ -9,10 +10,6 @@ fn user_schema_json() -> String {
             "id": {},
             "name": {},
             "created_at": {}
-        },
-        "field_molecule_uuids": {
-            "id": "uuid-user-id",
-            "name": "uuid-user-name"
         }
     }"#
     .to_string()
@@ -52,13 +49,19 @@ async fn approving_schema_applies_field_mappers() {
         .expect("fetch schema")
         .expect("schema exists");
 
-    assert!(
-        initial_target_schema
-            .runtime_fields
-            .get("id")
-            .and_then(|field| field.common().molecule_uuid())
-            .is_none(),
-        "target id field should not have molecule before approval"
+    // Before approval, the id field has its OWN deterministic molecule UUID
+    let pre_approval_id_uuid = initial_target_schema
+        .runtime_fields
+        .get("id")
+        .and_then(|field| field.common().molecule_uuid())
+        .cloned()
+        .expect("id should have a deterministic molecule uuid");
+
+    // It should be UserPublic's own deterministic UUID, not User's
+    assert_eq!(
+        pre_approval_id_uuid,
+        deterministic_molecule_uuid("UserPublic", "id"),
+        "before approval, id should have UserPublic's own deterministic UUID"
     );
 
     core.set_schema_state("UserPublic", SchemaState::Approved)
@@ -83,6 +86,15 @@ async fn approving_schema_applies_field_mappers() {
         .cloned()
         .expect("display_name molecule uuid");
 
-    assert_eq!(id_uuid, "uuid-user-id");
-    assert_eq!(display_uuid, "uuid-user-name");
+    // After approval, mapped fields should point to the SOURCE schema's molecule UUID
+    assert_eq!(
+        id_uuid,
+        deterministic_molecule_uuid("User", "id"),
+        "id should map to User.id's molecule"
+    );
+    assert_eq!(
+        display_uuid,
+        deterministic_molecule_uuid("User", "name"),
+        "display_name should map to User.name's molecule"
+    );
 }

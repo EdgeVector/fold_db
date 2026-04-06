@@ -798,10 +798,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn reload_schema_from_json_preserves_molecule_uuids() {
-        // Simulate the bug: load a schema, set molecule UUIDs (as mutation_manager does),
-        // then reload from JSON (as ingestion does for each file). The molecule UUIDs
-        // on the cached schema should survive the reload.
+    async fn reload_schema_derives_deterministic_molecule_uuids() {
+        // Molecule UUIDs are now derived deterministically from schema_name + field_name.
+        // Verify that after load, reload, the UUIDs are always the expected deterministic value.
         let core = SchemaCore::new_for_testing().await.expect("init core");
 
         // Load schema for the first time
@@ -809,20 +808,21 @@ mod tests {
             .await
             .expect("load blogpost");
 
-        // Simulate what mutation_manager does: set molecule_uuid on a runtime field
-        // and sync to field_molecule_uuids
-        {
-            let mut schemas = core.schemas.lock().unwrap();
-            let schema = schemas.get_mut("BlogPost").expect("schema exists");
-            let field = schema.runtime_fields.get_mut("title").expect("title field");
-            field
-                .common_mut()
-                .set_molecule_uuid("mol-uuid-title".to_string());
-            schema.sync_molecule_uuids();
+        let expected_uuid = crate::atom::deterministic_molecule_uuid("BlogPost", "title");
 
-            // Persist to DB so load_schema_internal sees it exists
+        // Check molecule UUID after first load
+        {
+            let schemas = core.schemas.lock().unwrap();
+            let schema = schemas.get("BlogPost").expect("schema exists");
+            let field = schema.runtime_fields.get("title").expect("title field");
+            assert_eq!(
+                field.common().molecule_uuid(),
+                Some(&expected_uuid),
+                "molecule UUID should be deterministic after first load"
+            );
         }
-        // Also store to DB
+
+        // Store to DB so load_schema_internal sees it exists
         let schema = {
             let schemas = core.schemas.lock().unwrap();
             schemas.get("BlogPost").unwrap().clone()
@@ -832,26 +832,19 @@ mod tests {
             .await
             .expect("store schema");
 
-        // Now reload from JSON (simulates what ingestion does for each file)
-        // The JSON from the schema service does NOT have field_molecule_uuids
+        // Reload from JSON (simulates what ingestion does for each file)
         core.load_schema_from_json(&blogpost_schema_json())
             .await
             .expect("reload blogpost");
 
-        // Verify the molecule UUID survived the reload
+        // Verify the deterministic molecule UUID is still correct after reload
         let schemas = core.get_schemas().expect("get_schemas");
         let schema = schemas.get("BlogPost").expect("BlogPost exists");
-
-        // The persisted field_molecule_uuids should still have our molecule UUID
-        // because load_schema_internal should preserve existing state
-        let mol_uuids = schema
-            .field_molecule_uuids
-            .as_ref()
-            .expect("field_molecule_uuids should exist");
+        let field = schema.runtime_fields.get("title").expect("title field");
         assert_eq!(
-            mol_uuids.get("title"),
-            Some(&"mol-uuid-title".to_string()),
-            "molecule UUID for title should survive schema reload"
+            field.common().molecule_uuid(),
+            Some(&expected_uuid),
+            "molecule UUID should remain deterministic after schema reload"
         );
     }
 

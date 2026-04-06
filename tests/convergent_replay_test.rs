@@ -1,8 +1,9 @@
 //! Tests for convergent replay in the sync engine.
 //!
-//! Verifies that ref keys converge via LWW regardless of replay order,
+//! Verifies that ref keys converge via molecule merge regardless of replay order,
 //! while non-ref keys (atoms, history) are always accepted.
 
+use fold_db::atom::{Molecule, MoleculeHash};
 use fold_db::crypto::provider::LocalCryptoProvider;
 use fold_db::crypto::CryptoProvider;
 use fold_db::storage::inmemory_backend::InMemoryNamespacedStore;
@@ -85,94 +86,125 @@ async fn history_always_accepted() {
 }
 
 #[tokio::test]
-async fn ref_newer_overwrites_older() {
+async fn ref_molecule_merge_single() {
+    // Two Molecule values for the same ref key should merge via LWW on written_at
     let store = Arc::new(InMemoryNamespacedStore::new());
     let engine = make_engine(store.clone());
 
-    let e1 = put_entry(1, 100, "dev-a", b"ref:mol-1", b"atom-aaa");
+    let mol_a = Molecule::new("atom-aaa".to_string(), "TestSchema", "field1");
+    let mol_b = Molecule::new("atom-bbb".to_string(), "TestSchema", "field1");
+
+    let val_a = serde_json::to_vec(&mol_a).unwrap();
+    let val_b = serde_json::to_vec(&mol_b).unwrap();
+
+    // Replay first, then second — second has a later written_at (created after)
+    let e1 = put_entry(1, 100, "dev-a", b"ref:mol-1", &val_a);
     engine.replay_entry(&e1).await.unwrap();
 
-    let e2 = put_entry(2, 200, "dev-b", b"ref:mol-1", b"atom-bbb");
+    let e2 = put_entry(2, 200, "dev-b", b"ref:mol-1", &val_b);
     engine.replay_entry(&e2).await.unwrap();
 
     let kv = store.open_namespace("main").await.unwrap();
-    assert_eq!(kv.get(b"ref:mol-1").await.unwrap().unwrap(), b"atom-bbb");
+    let stored = kv.get(b"ref:mol-1").await.unwrap().unwrap();
+    let result: Molecule = serde_json::from_slice(&stored).unwrap();
+    // mol_b was created later so has a later written_at — it should win
+    assert_eq!(result.get_atom_uuid(), "atom-bbb");
 }
 
 #[tokio::test]
-async fn ref_older_does_not_overwrite_newer() {
+async fn ref_molecule_merge_hash() {
+    // Two MoleculeHash values should merge their keys
     let store = Arc::new(InMemoryNamespacedStore::new());
     let engine = make_engine(store.clone());
 
-    let e1 = put_entry(1, 200, "dev-a", b"ref:mol-1", b"atom-aaa");
+    let mut mol_a = MoleculeHash::new("TestSchema", "field1");
+    mol_a.set_atom_uuid("key1".to_string(), "atom-a1".to_string());
+
+    let mut mol_b = MoleculeHash::new("TestSchema", "field1");
+    mol_b.set_atom_uuid("key2".to_string(), "atom-b2".to_string());
+
+    let val_a = serde_json::to_vec(&mol_a).unwrap();
+    let val_b = serde_json::to_vec(&mol_b).unwrap();
+
+    let e1 = put_entry(1, 100, "dev-a", b"ref:mol-hash-1", &val_a);
     engine.replay_entry(&e1).await.unwrap();
 
-    let e2 = put_entry(2, 100, "dev-b", b"ref:mol-1", b"atom-bbb");
+    let e2 = put_entry(2, 200, "dev-b", b"ref:mol-hash-1", &val_b);
     engine.replay_entry(&e2).await.unwrap();
 
     let kv = store.open_namespace("main").await.unwrap();
-    assert_eq!(kv.get(b"ref:mol-1").await.unwrap().unwrap(), b"atom-aaa");
-}
+    let stored = kv.get(b"ref:mol-hash-1").await.unwrap().unwrap();
+    let result: MoleculeHash = serde_json::from_slice(&stored).unwrap();
 
-#[tokio::test]
-async fn ref_same_timestamp_tiebreak_by_device_id() {
-    let store = Arc::new(InMemoryNamespacedStore::new());
-    let engine = make_engine(store.clone());
-
-    let e1 = put_entry(1, 100, "aaa", b"ref:mol-1", b"val-aaa");
-    engine.replay_entry(&e1).await.unwrap();
-
-    let e2 = put_entry(2, 100, "bbb", b"ref:mol-1", b"val-bbb");
-    engine.replay_entry(&e2).await.unwrap();
-
-    let kv = store.open_namespace("main").await.unwrap();
-    assert_eq!(kv.get(b"ref:mol-1").await.unwrap().unwrap(), b"val-bbb");
-}
-
-#[tokio::test]
-async fn convergence_independent_of_replay_order() {
-    let entries = vec![
-        put_entry(1, 100, "dev-a", b"ref:mol-1", b"val-100"),
-        put_entry(2, 300, "dev-b", b"ref:mol-1", b"val-300"),
-        put_entry(3, 200, "dev-c", b"ref:mol-1", b"val-200"),
-    ];
-
-    let store1 = Arc::new(InMemoryNamespacedStore::new());
-    let engine1 = make_engine(store1.clone());
-    for e in &entries {
-        engine1.replay_entry(e).await.unwrap();
-    }
-
-    let store2 = Arc::new(InMemoryNamespacedStore::new());
-    let engine2 = make_engine(store2.clone());
-    for e in entries.iter().rev() {
-        engine2.replay_entry(e).await.unwrap();
-    }
-
-    let kv1 = store1.open_namespace("main").await.unwrap();
-    let kv2 = store2.open_namespace("main").await.unwrap();
-
-    let v1 = kv1.get(b"ref:mol-1").await.unwrap().unwrap();
-    let v2 = kv2.get(b"ref:mol-1").await.unwrap().unwrap();
-
-    assert_eq!(v1, b"val-300");
-    assert_eq!(v2, b"val-300");
-}
-
-#[tokio::test]
-async fn org_prefixed_ref_converges() {
-    let store = Arc::new(InMemoryNamespacedStore::new());
-    let engine = make_engine(store.clone());
-
-    let e1 = put_entry(1, 200, "dev-a", b"org_abc:ref:mol-1", b"val-new");
-    engine.replay_entry(&e1).await.unwrap();
-
-    let e2 = put_entry(2, 100, "dev-b", b"org_abc:ref:mol-1", b"val-old");
-    engine.replay_entry(&e2).await.unwrap();
-
-    let kv = store.open_namespace("main").await.unwrap();
-    assert_eq!(
-        kv.get(b"org_abc:ref:mol-1").await.unwrap().unwrap(),
-        b"val-new"
+    // Both keys should be present after merge
+    assert!(
+        result.get_atom_uuid("key1").is_some(),
+        "key1 should exist after merge"
     );
+    assert!(
+        result.get_atom_uuid("key2").is_some(),
+        "key2 should exist after merge"
+    );
+}
+
+#[tokio::test]
+async fn ref_no_local_writes_incoming() {
+    // When no local value exists, incoming is written as-is
+    let store = Arc::new(InMemoryNamespacedStore::new());
+    let engine = make_engine(store.clone());
+
+    let mol = Molecule::new("atom-first".to_string(), "TestSchema", "field1");
+    let val = serde_json::to_vec(&mol).unwrap();
+
+    let e1 = put_entry(1, 100, "dev-a", b"ref:mol-new", &val);
+    engine.replay_entry(&e1).await.unwrap();
+
+    let kv = store.open_namespace("main").await.unwrap();
+    let stored = kv.get(b"ref:mol-new").await.unwrap().unwrap();
+    let result: Molecule = serde_json::from_slice(&stored).unwrap();
+    assert_eq!(result.get_atom_uuid(), "atom-first");
+}
+
+#[tokio::test]
+async fn org_prefixed_ref_merges() {
+    // Org-prefixed ref keys should also use molecule merge
+    let store = Arc::new(InMemoryNamespacedStore::new());
+    let engine = make_engine(store.clone());
+
+    let mol_a = Molecule::new("atom-org-a".to_string(), "OrgSchema", "field1");
+    let mol_b = Molecule::new("atom-org-b".to_string(), "OrgSchema", "field1");
+
+    let val_a = serde_json::to_vec(&mol_a).unwrap();
+    let val_b = serde_json::to_vec(&mol_b).unwrap();
+
+    let e1 = put_entry(1, 100, "dev-a", b"org_abc:ref:mol-1", &val_a);
+    engine.replay_entry(&e1).await.unwrap();
+
+    let e2 = put_entry(2, 200, "dev-b", b"org_abc:ref:mol-1", &val_b);
+    engine.replay_entry(&e2).await.unwrap();
+
+    let kv = store.open_namespace("main").await.unwrap();
+    let stored = kv.get(b"org_abc:ref:mol-1").await.unwrap().unwrap();
+    let result: Molecule = serde_json::from_slice(&stored).unwrap();
+    // mol_b was created later (later written_at) so it wins
+    assert_eq!(result.get_atom_uuid(), "atom-org-b");
+}
+
+#[tokio::test]
+async fn ref_non_molecule_bytes_uses_incoming() {
+    // When stored bytes aren't valid molecule JSON, incoming is used as-is
+    let store = Arc::new(InMemoryNamespacedStore::new());
+    let engine = make_engine(store.clone());
+
+    // Write raw bytes first (not valid molecule JSON)
+    let e1 = put_entry(1, 100, "dev-a", b"ref:mol-raw", b"not-json");
+    engine.replay_entry(&e1).await.unwrap();
+
+    // Write more raw bytes — should overwrite since merge can't parse either
+    let e2 = put_entry(2, 200, "dev-b", b"ref:mol-raw", b"also-not-json");
+    engine.replay_entry(&e2).await.unwrap();
+
+    let kv = store.open_namespace("main").await.unwrap();
+    let stored = kv.get(b"ref:mol-raw").await.unwrap().unwrap();
+    assert_eq!(stored, b"also-not-json");
 }

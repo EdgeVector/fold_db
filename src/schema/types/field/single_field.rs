@@ -51,8 +51,11 @@ impl crate::schema::types::field::Field for SingleField {
     ) {
         // Initialize molecule if needed and set molecule_uuid in FieldCommon
         if self.base.molecule.is_none() {
-            let new_molecule =
-                crate::atom::Molecule::new(ctx.atom.uuid().to_string(), ctx.pub_key.clone());
+            let new_molecule = crate::atom::Molecule::new(
+                ctx.atom.uuid().to_string(),
+                &ctx.schema_name,
+                &ctx.field_name,
+            );
             // Get the molecule's UUID and set it in FieldCommon for persistence lookup
             self.base
                 .inner

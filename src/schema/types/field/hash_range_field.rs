@@ -61,7 +61,8 @@ impl crate::schema::types::field::Field for HashRangeField {
     ) {
         // Initialize molecule if needed and set molecule_uuid in FieldCommon
         if self.base.molecule.is_none() {
-            let new_molecule = crate::atom::MoleculeHashRange::new(ctx.pub_key.clone());
+            let new_molecule =
+                crate::atom::MoleculeHashRange::new(&ctx.schema_name, &ctx.field_name);
             // Get the molecule's UUID and set it in FieldCommon for persistence lookup
             self.base
                 .inner

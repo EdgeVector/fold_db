@@ -187,7 +187,7 @@ mod tests {
         );
 
         // Test single molecule
-        let molecule = Molecule::new(atom.uuid().to_string(), "test_key".to_string());
+        let molecule = Molecule::new(atom.uuid().to_string(), "test_schema", "test_key");
         assert_eq!(molecule.get_atom_uuid(), &atom.uuid().to_string());
 
         let new_atom = Atom::new(

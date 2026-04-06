@@ -35,9 +35,9 @@ impl RangeField {
     }
 
     /// Initializes the MoleculeRange if it doesn't exist
-    pub fn ensure_molecule(&mut self, source_pub_key: String) -> &mut MoleculeRange {
+    pub fn ensure_molecule(&mut self, schema_name: &str, field_name: &str) -> &mut MoleculeRange {
         if self.base.molecule.is_none() {
-            self.base.molecule = Some(MoleculeRange::new(source_pub_key));
+            self.base.molecule = Some(MoleculeRange::new(schema_name, field_name));
         }
         self.base.molecule.as_mut().unwrap()
     }
@@ -83,7 +83,7 @@ impl crate::schema::types::field::Field for RangeField {
     ) {
         // Initialize molecule if needed and set molecule_uuid in FieldCommon
         if self.base.molecule.is_none() {
-            self.ensure_molecule(ctx.pub_key.clone());
+            self.ensure_molecule(&ctx.schema_name, &ctx.field_name);
             // After creating the molecule, get its UUID and set it in FieldCommon
             if let Some(mol) = &self.base.molecule {
                 self.base.inner.set_molecule_uuid(mol.uuid().to_string());

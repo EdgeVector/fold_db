@@ -316,7 +316,7 @@ mod tests {
 
     // Helper to create a SingleField with a molecule pointing to a given atom_uuid
     fn make_single_field(atom_uuid: &str, mol_uuid: &str) -> FieldVariant {
-        let mol = Molecule::new(atom_uuid.to_string(), "test_key".to_string());
+        let mol = Molecule::new(atom_uuid.to_string(), "test_schema", "test_key");
         // Override the molecule UUID to a known value for event matching
         // We can't set it directly, so we use FieldCommon to track it
         let mut field = SingleField::new(HashMap::<String, FieldMapper>::new(), Some(mol));
@@ -326,7 +326,7 @@ mod tests {
 
     // Helper to create a RangeField with entries
     fn make_range_field(entries: &[(&str, &str)], mol_uuid: &str) -> FieldVariant {
-        let mut mol = MoleculeRange::new("test_key".to_string());
+        let mut mol = MoleculeRange::new("test_schema", "test_key");
         for (range_key, atom_uuid) in entries {
             mol.set_atom_uuid(range_key.to_string(), atom_uuid.to_string());
         }
@@ -337,7 +337,7 @@ mod tests {
 
     // Helper to create a HashRangeField with entries
     fn make_hash_range_field(entries: &[(&str, &str, &str)], mol_uuid: &str) -> FieldVariant {
-        let mut mol = MoleculeHashRange::new("test_key".to_string());
+        let mut mol = MoleculeHashRange::new("test_schema", "test_key");
         for (hash, range, atom_uuid) in entries {
             mol.set_atom_uuid_from_values(
                 hash.to_string(),
@@ -375,6 +375,8 @@ mod tests {
                 old_atom_uuid: None,
                 new_atom_uuid: "atom-v1".to_string(),
                 version: 0,
+                is_conflict: false,
+                conflict_loser_atom: None,
             },
             MutationEvent {
                 molecule_uuid: mol_uuid.to_string(),
@@ -383,6 +385,8 @@ mod tests {
                 old_atom_uuid: Some("atom-v1".to_string()),
                 new_atom_uuid: "atom-v2".to_string(),
                 version: 0,
+                is_conflict: false,
+                conflict_loser_atom: None,
             },
         ];
         db_ops
@@ -427,6 +431,8 @@ mod tests {
             old_atom_uuid: None,
             new_atom_uuid: "atom-v1".to_string(),
             version: 0,
+            is_conflict: false,
+            conflict_loser_atom: None,
         }];
         db_ops
             .batch_store_mutation_events(events, None)
@@ -472,6 +478,8 @@ mod tests {
                 old_atom_uuid: None,
                 new_atom_uuid: "atom-k1".to_string(),
                 version: 0,
+                is_conflict: false,
+                conflict_loser_atom: None,
             },
             MutationEvent {
                 molecule_uuid: mol_uuid.to_string(),
@@ -482,6 +490,8 @@ mod tests {
                 old_atom_uuid: None,
                 new_atom_uuid: "atom-k2".to_string(),
                 version: 0,
+                is_conflict: false,
+                conflict_loser_atom: None,
             },
         ];
         db_ops
@@ -533,6 +543,8 @@ mod tests {
                 old_atom_uuid: None,
                 new_atom_uuid: "atom-v1".to_string(),
                 version: 0,
+                is_conflict: false,
+                conflict_loser_atom: None,
             },
             MutationEvent {
                 molecule_uuid: mol_uuid.to_string(),
@@ -544,6 +556,8 @@ mod tests {
                 old_atom_uuid: Some("atom-v1".to_string()),
                 new_atom_uuid: "atom-v2".to_string(),
                 version: 0,
+                is_conflict: false,
+                conflict_loser_atom: None,
             },
         ];
         db_ops
@@ -593,6 +607,8 @@ mod tests {
                 old_atom_uuid: None,
                 new_atom_uuid: "atom-hello".to_string(),
                 version: 0,
+                is_conflict: false,
+                conflict_loser_atom: None,
             },
             MutationEvent {
                 molecule_uuid: mol_uuid.to_string(),
@@ -601,6 +617,8 @@ mod tests {
                 old_atom_uuid: Some("atom-hello".to_string()),
                 new_atom_uuid: "atom-world".to_string(),
                 version: 0,
+                is_conflict: false,
+                conflict_loser_atom: None,
             },
             MutationEvent {
                 molecule_uuid: mol_uuid.to_string(),
@@ -609,6 +627,8 @@ mod tests {
                 old_atom_uuid: Some("atom-world".to_string()),
                 new_atom_uuid: "atom-hello".to_string(),
                 version: 0,
+                is_conflict: false,
+                conflict_loser_atom: None,
             },
         ];
         db_ops

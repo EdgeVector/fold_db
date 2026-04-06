@@ -13,6 +13,12 @@ pub struct MutationEvent {
     /// Molecule version at the time this event was recorded
     #[serde(default)]
     pub version: u64,
+    /// Whether this event resulted from a merge conflict resolution.
+    #[serde(default)]
+    pub is_conflict: bool,
+    /// The atom UUID that lost the conflict (if `is_conflict` is true).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub conflict_loser_atom: Option<String>,
 }
 
 /// Identifies which slot in the molecule was changed
@@ -37,6 +43,8 @@ mod tests {
             old_atom_uuid: None,
             new_atom_uuid: "atom-456".to_string(),
             version: 0,
+            is_conflict: false,
+            conflict_loser_atom: None,
         };
 
         let json = serde_json::to_string(&event).unwrap();
@@ -77,6 +85,8 @@ mod tests {
             old_atom_uuid: Some("old-atom".to_string()),
             new_atom_uuid: "new-atom".to_string(),
             version: 0,
+            is_conflict: false,
+            conflict_loser_atom: None,
         };
 
         let json = serde_json::to_string(&event).unwrap();
@@ -95,6 +105,8 @@ mod tests {
             old_atom_uuid: None,
             new_atom_uuid: "atom-1".to_string(),
             version: 0,
+            is_conflict: false,
+            conflict_loser_atom: None,
         };
 
         let ts = event.timestamp.timestamp_nanos_opt().unwrap_or(0);

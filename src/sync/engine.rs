@@ -4,9 +4,14 @@ use super::log::{LogEntry, LogOp};
 use super::org_sync::{SyncDestination, SyncPartitioner, SyncTarget};
 use super::s3::S3Client;
 use super::snapshot::Snapshot;
+use crate::atom::{
+    FieldKey, MergeConflict, Molecule, MoleculeHash, MoleculeHashRange, MoleculeRange,
+    MutationEvent,
+};
 use crate::crypto::CryptoProvider;
 use crate::storage::traits::NamespacedStore;
-use serde::{Deserialize, Serialize};
+use chrono::Utc;
+use serde::Serialize;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -113,15 +118,7 @@ pub struct SyncEngine {
     targets: Arc<Mutex<Vec<SyncTarget>>>,
     /// Per-prefix download cursor: maps prefix -> last_seq_downloaded.
     download_cursors: Arc<Mutex<std::collections::HashMap<String, u64>>>,
-    /// Optional callback fired when a schema is replayed from sync.
-    /// The FoldDB wires this to `schema_manager.load_schema_internal()` so
-    /// the in-memory cache stays up to date after org sync downloads.
-    on_schema_replayed: Arc<Mutex<Option<SchemaReplayCallback>>>,
 }
-
-/// Callback type for schema replay notifications.
-/// Receives the schema name and serialized schema bytes.
-pub type SchemaReplayCallback = Box<dyn Fn(String, Vec<u8>) + Send + Sync>;
 
 impl SyncEngine {
     pub fn new(
@@ -152,7 +149,6 @@ impl SyncEngine {
                 crypto,
             }])),
             download_cursors: Arc::new(Mutex::new(std::collections::HashMap::new())),
-            on_schema_replayed: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -191,12 +187,6 @@ impl SyncEngine {
     /// Set a callback that fires on state changes.
     pub fn set_status_callback(&mut self, cb: StatusCallback) {
         self.status_callback = Some(cb);
-    }
-
-    /// Set a callback that fires when a schema is replayed from sync.
-    /// Used by FoldDB to update the in-memory schema cache after org sync.
-    pub async fn set_on_schema_replayed(&self, cb: SchemaReplayCallback) {
-        *self.on_schema_replayed.lock().await = Some(cb);
     }
 
     /// Get the device identifier.
@@ -725,8 +715,8 @@ impl SyncEngine {
     /// Replay a single log entry with convergent ref handling.
     ///
     /// Non-ref keys (atoms, history) are written unconditionally.
-    /// Ref keys (`ref:` or `{org_hash}:ref:`) use LWW timestamps so all
-    /// nodes converge to the same "current" pointer regardless of replay order.
+    /// Ref keys (`ref:` or `{org_hash}:ref:`) use molecule merge so all
+    /// nodes converge to the same state regardless of replay order.
     pub async fn replay_entry(&self, entry: &LogEntry) -> SyncResult<()> {
         match &entry.op {
             LogOp::Put {
@@ -760,14 +750,14 @@ impl SyncEngine {
         Ok(())
     }
 
-    /// Replay a single put. Ref keys use LWW; everything else is unconditional.
+    /// Replay a single put. Ref keys use molecule merge; everything else is unconditional.
     async fn replay_put(
         &self,
         namespace: &str,
         key_b64: &str,
         value_b64: &str,
-        timestamp_ms: u64,
-        device_id: &str,
+        _timestamp_ms: u64,
+        _device_id: &str,
     ) -> SyncResult<()> {
         let key_bytes = LogOp::decode_bytes(key_b64)?;
         let value_bytes = LogOp::decode_bytes(value_b64)?;
@@ -778,52 +768,37 @@ impl SyncEngine {
                 .is_some_and(|s| s.contains(":ref:"));
 
         if is_ref_key {
-            let meta_key = format!("ref_ts:{namespace}:{key_b64}");
-            let existing = self.read_ref_timestamp(&meta_key).await?;
-
-            let dominated = match existing {
-                Some(ref local) => {
-                    (timestamp_ms, device_id) <= (local.timestamp_ms, local.device_id.as_str())
-                }
-                None => false,
-            };
-
-            if dominated {
-                return Ok(());
-            }
-
             let kv = self.store.open_namespace(namespace).await?;
-            kv.put(&key_bytes, value_bytes).await?;
-            self.write_ref_timestamp(
-                &meta_key,
-                &RefTimestamp {
-                    timestamp_ms,
-                    device_id: device_id.to_string(),
-                },
-            )
-            .await?;
+            let local_bytes = kv.get(&key_bytes).await?;
+
+            match local_bytes {
+                Some(local) => {
+                    // Both exist — try molecule merge
+                    let (merged_bytes, conflicts) = Self::merge_molecules(&local, &value_bytes)?;
+                    kv.put(&key_bytes, merged_bytes).await?;
+
+                    // Store any merge conflicts as MutationEvents
+                    if !conflicts.is_empty() {
+                        Self::store_merge_conflicts(&kv, &conflicts).await?;
+                    }
+                }
+                None => {
+                    // No local — just write incoming
+                    kv.put(&key_bytes, value_bytes).await?;
+                }
+            }
         } else {
             let kv = self.store.open_namespace(namespace).await?;
             kv.put(&key_bytes, value_bytes.clone()).await?;
 
             // When a schema is replayed (from personal sync between devices
-            // OR from org sync), update the in-memory SchemaCore cache so
-            // queries see the latest molecule UUIDs.
+            // OR from org sync), write org-prefixed keys under the bare key
+            // so get_schema finds them by name.
             if namespace == "schemas" {
-                let mut schema_name = String::from_utf8(key_bytes.clone()).unwrap_or_default();
-
-                // Org-prefixed keys: also write under the bare key so
-                // get_schema finds them by name.
                 if let Ok(key_str) = std::str::from_utf8(&key_bytes) {
                     if let Some((_, base_key)) = crate::sync::org_sync::strip_org_prefix(key_str) {
                         kv.put(base_key.as_bytes(), value_bytes.clone()).await?;
-                        schema_name = base_key.to_string();
                     }
-                }
-
-                let cb = self.on_schema_replayed.lock().await;
-                if let Some(callback) = cb.as_ref() {
-                    callback(schema_name, value_bytes);
                 }
             }
         }
@@ -831,23 +806,79 @@ impl SyncEngine {
         Ok(())
     }
 
-    /// Read the last-write timestamp for a ref key.
-    async fn read_ref_timestamp(&self, meta_key: &str) -> SyncResult<Option<RefTimestamp>> {
-        let kv = self.store.open_namespace("ref_timestamps").await?;
-        match kv.get(meta_key.as_bytes()).await? {
-            Some(bytes) => {
-                let ts: RefTimestamp = serde_json::from_slice(&bytes)?;
-                Ok(Some(ts))
-            }
-            None => Ok(None),
+    /// Attempt molecule merge by trying each molecule type in order.
+    /// Returns the serialized merged result and any conflicts.
+    fn merge_molecules(
+        local_bytes: &[u8],
+        incoming_bytes: &[u8],
+    ) -> SyncResult<(Vec<u8>, Vec<MergeConflict>)> {
+        // Try MoleculeHash (HashMap-based atom_uuids)
+        if let (Ok(mut local), Ok(incoming)) = (
+            serde_json::from_slice::<MoleculeHash>(local_bytes),
+            serde_json::from_slice::<MoleculeHash>(incoming_bytes),
+        ) {
+            let conflicts = local.merge(&incoming);
+            let merged = serde_json::to_vec(&local)?;
+            return Ok((merged, conflicts));
         }
+
+        // Try MoleculeRange (BTreeMap-based atom_uuids)
+        if let (Ok(mut local), Ok(incoming)) = (
+            serde_json::from_slice::<MoleculeRange>(local_bytes),
+            serde_json::from_slice::<MoleculeRange>(incoming_bytes),
+        ) {
+            let conflicts = local.merge(&incoming);
+            let merged = serde_json::to_vec(&local)?;
+            return Ok((merged, conflicts));
+        }
+
+        // Try MoleculeHashRange (nested HashMap<BTreeMap>)
+        if let (Ok(mut local), Ok(incoming)) = (
+            serde_json::from_slice::<MoleculeHashRange>(local_bytes),
+            serde_json::from_slice::<MoleculeHashRange>(incoming_bytes),
+        ) {
+            let conflicts = local.merge(&incoming);
+            let merged = serde_json::to_vec(&local)?;
+            return Ok((merged, conflicts));
+        }
+
+        // Try Molecule (single atom ref)
+        if let (Ok(mut local), Ok(incoming)) = (
+            serde_json::from_slice::<Molecule>(local_bytes),
+            serde_json::from_slice::<Molecule>(incoming_bytes),
+        ) {
+            let conflict = local.merge(&incoming);
+            let conflicts = conflict.into_iter().collect::<Vec<_>>();
+            let merged = serde_json::to_vec(&local)?;
+            return Ok((merged, conflicts));
+        }
+
+        // None of the molecule types matched — just use incoming bytes as-is
+        Ok((incoming_bytes.to_vec(), Vec::new()))
     }
 
-    /// Write the last-write timestamp for a ref key.
-    async fn write_ref_timestamp(&self, meta_key: &str, ts: &RefTimestamp) -> SyncResult<()> {
-        let kv = self.store.open_namespace("ref_timestamps").await?;
-        let bytes = serde_json::to_vec(ts)?;
-        kv.put(meta_key.as_bytes(), bytes).await?;
+    /// Store merge conflicts as MutationEvent entries in the same namespace.
+    async fn store_merge_conflicts(
+        kv: &Arc<dyn crate::storage::traits::KvStore>,
+        conflicts: &[MergeConflict],
+    ) -> SyncResult<()> {
+        let now = Utc::now();
+        for conflict in conflicts {
+            let ts_nanos = now.timestamp_nanos_opt().unwrap_or(0);
+            let event = MutationEvent {
+                molecule_uuid: conflict.key.clone(),
+                timestamp: now,
+                field_key: FieldKey::Single,
+                old_atom_uuid: Some(conflict.loser_atom.clone()),
+                new_atom_uuid: conflict.winner_atom.clone(),
+                version: 0,
+                is_conflict: true,
+                conflict_loser_atom: Some(conflict.loser_atom.clone()),
+            };
+            let event_key = format!("history:{}:{:020}", conflict.key, ts_nanos);
+            let event_bytes = serde_json::to_vec(&event)?;
+            kv.put(event_key.as_bytes(), event_bytes).await?;
+        }
         Ok(())
     }
 
@@ -928,13 +959,6 @@ impl SyncEngine {
             }
         }
     }
-}
-
-/// Tracks the timestamp of the last write to a ref key for LWW convergence.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct RefTimestamp {
-    timestamp_ms: u64,
-    device_id: String,
 }
 
 /// Parse a flat log key: `log/{seq}.enc`
