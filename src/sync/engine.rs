@@ -348,12 +348,14 @@ impl SyncEngine {
         {
             let mut state = self.state.lock().await;
             if *state == SyncState::Syncing {
+                log::info!("sync skipped: already syncing");
                 return Ok(false);
             }
             // When Idle with no pending writes, we still need to proceed if org
             // sync is configured — other members may have uploaded data we need
             // to download. Skip only when Idle AND no org memberships.
             if *state == SyncState::Idle && !has_orgs {
+                log::info!("sync skipped: idle with no org targets");
                 return Ok(false);
             }
             *state = SyncState::Syncing;
@@ -547,8 +549,20 @@ impl SyncEngine {
         new_seqs.sort();
 
         if new_seqs.is_empty() {
+            log::info!(
+                "download '{}': 0 new entries (cursor={})",
+                target.label,
+                cursor
+            );
             return Ok(0);
         }
+
+        log::info!(
+            "download '{}': {} new entries after cursor={}",
+            target.label,
+            new_seqs.len(),
+            cursor
+        );
 
         let urls = self.auth.presign_download(target, &new_seqs).await?;
 
