@@ -333,7 +333,7 @@ impl AuthClient {
     }
 
     // =========================================================================
-    // Sync operations
+    // Sync operations (unified personal + org)
     // =========================================================================
 
     /// Presign URLs for uploading log entries to a sync target.
