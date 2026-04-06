@@ -68,6 +68,7 @@ pub mod org_sync;
 pub mod s3;
 pub mod snapshot;
 
+pub use auth::AuthRefreshCallback;
 pub use engine::{SyncConfig, SyncConflict, SyncEngine, SyncState, SyncStatus};
 pub use error::{SyncError, SyncResult};
 pub use org_sync::{SyncDestination, SyncPartitioner};
@@ -76,7 +77,7 @@ pub use org_sync::{SyncDestination, SyncPartitioner};
 ///
 /// Derived automatically from the Exemem credentials — no extra config needed.
 /// The sync auth Lambda shares the same API URL and API key as the Exemem platform.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct SyncSetup {
     /// Exemem API base URL (sync routes live at /api/sync/*).
     pub auth_url: String,
@@ -86,6 +87,22 @@ pub struct SyncSetup {
     pub device_id: String,
     /// Sync tuning parameters. Uses defaults if None.
     pub config: Option<SyncConfig>,
+    /// Optional callback to refresh authentication on 401.
+    /// When provided, the sync engine will attempt to refresh credentials
+    /// and retry once before giving up.
+    pub auth_refresh: Option<AuthRefreshCallback>,
+}
+
+impl std::fmt::Debug for SyncSetup {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SyncSetup")
+            .field("auth_url", &self.auth_url)
+            .field("auth", &self.auth)
+            .field("device_id", &self.device_id)
+            .field("config", &self.config)
+            .field("auth_refresh", &self.auth_refresh.as_ref().map(|_| "..."))
+            .finish()
+    }
 }
 
 impl SyncSetup {
@@ -106,6 +123,7 @@ impl SyncSetup {
             auth: auth::SyncAuth::ApiKey(api_key.to_string()),
             device_id,
             config: None,
+            auth_refresh: None,
         }
     }
 }

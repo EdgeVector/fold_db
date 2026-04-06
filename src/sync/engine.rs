@@ -1,4 +1,4 @@
-use super::auth::AuthClient;
+use super::auth::{AuthClient, AuthRefreshCallback};
 use super::error::{SyncError, SyncResult};
 use super::log::{LogEntry, LogOp};
 use super::org_sync::{SyncDestination, SyncPartitioner, SyncTarget};
@@ -154,6 +154,10 @@ pub struct SyncEngine {
     /// Optional callback invoked after sync replay writes schemas to Sled.
     /// This lets the SchemaCore cache refresh without a hard dependency.
     schema_reloader: Arc<Mutex<Option<SchemaReloadCallback>>>,
+    /// Optional callback to refresh authentication credentials on 401.
+    /// When set, the sync engine will call this on `SyncError::Auth`, update
+    /// the `AuthClient`, and retry the sync cycle once before giving up.
+    auth_refresh: Option<AuthRefreshCallback>,
 }
 
 impl SyncEngine {
@@ -186,6 +190,7 @@ impl SyncEngine {
             }])),
             download_cursors: Arc::new(Mutex::new(std::collections::HashMap::new())),
             schema_reloader: Arc::new(Mutex::new(None)),
+            auth_refresh: None,
         }
     }
 
@@ -224,6 +229,15 @@ impl SyncEngine {
     /// Set a callback that fires on state changes.
     pub fn set_status_callback(&mut self, cb: StatusCallback) {
         self.status_callback = Some(cb);
+    }
+
+    /// Set a callback that refreshes authentication credentials on 401.
+    ///
+    /// When the sync engine encounters an auth error (expired token, etc.),
+    /// it calls this callback to obtain fresh credentials, updates the
+    /// `AuthClient`, and retries the sync cycle once.
+    pub fn set_auth_refresh(&mut self, cb: AuthRefreshCallback) {
+        self.auth_refresh = Some(cb);
     }
 
     /// Register a callback that reloads the SchemaCore cache after sync
@@ -397,14 +411,49 @@ impl SyncEngine {
                 Ok(synced)
             }
             Err(e) => {
+                // On auth errors, attempt to refresh credentials and retry once.
+                if matches!(&e, SyncError::Auth(_)) {
+                    if let Some(ref refresh_cb) = self.auth_refresh {
+                        log::info!("sync auth failed, attempting token refresh");
+                        match refresh_cb().await {
+                            Ok(new_auth) => {
+                                self.auth.update_auth(new_auth).await;
+                                log::info!("token refreshed, retrying sync");
+                                match self.do_sync().await {
+                                    Ok(synced) => {
+                                        if synced {
+                                            let now = std::time::SystemTime::now()
+                                                .duration_since(std::time::UNIX_EPOCH)
+                                                .unwrap_or_default()
+                                                .as_secs();
+                                            *self.last_sync_at.lock().await = Some(now);
+                                            *self.last_error.lock().await = None;
+                                        }
+                                        self.set_state(SyncState::Idle, None).await;
+                                        return Ok(synced);
+                                    }
+                                    Err(retry_err) => {
+                                        let msg = retry_err.to_string();
+                                        log::warn!("sync retry after token refresh failed: {msg}");
+
+                                        *self.last_error.lock().await = Some(msg.clone());
+                                        self.set_state(SyncState::Dirty, Some(&msg)).await;
+                                        return Err(retry_err);
+                                    }
+                                }
+                            }
+                            Err(refresh_err) => {
+                                log::warn!("token refresh failed: {refresh_err}");
+                            }
+                        }
+                    }
+                }
+
                 let msg = e.to_string();
                 *self.last_error.lock().await = Some(msg.clone());
                 match &e {
                     SyncError::Network(_) => {
                         self.set_state(SyncState::Offline, Some(&msg)).await;
-                    }
-                    SyncError::Auth(_) => {
-                        self.set_state(SyncState::Dirty, Some(&msg)).await;
                     }
                     _ => {
                         self.set_state(SyncState::Dirty, Some(&msg)).await;
