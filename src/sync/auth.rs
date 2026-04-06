@@ -112,9 +112,7 @@ impl AuthClient {
         let auth = self.auth.read().await;
         match &*auth {
             SyncAuth::ApiKey(key) => req.header("X-API-Key", key.clone()),
-            SyncAuth::BearerToken(token) => {
-                req.header("Authorization", format!("Bearer {token}"))
-            }
+            SyncAuth::BearerToken(token) => req.header("Authorization", format!("Bearer {token}")),
         }
     }
 
@@ -604,8 +602,11 @@ mod tests {
     #[tokio::test]
     async fn test_update_auth_replaces_credential() {
         let http = Arc::new(Client::new());
-        let client =
-            AuthClient::new(http, "http://localhost".to_string(), SyncAuth::ApiKey("old".into()));
+        let client = AuthClient::new(
+            http,
+            "http://localhost".to_string(),
+            SyncAuth::ApiKey("old".into()),
+        );
 
         // Starts as API key
         assert!(!client.is_bearer_token().await);
@@ -617,18 +618,14 @@ mod tests {
         assert!(client.is_bearer_token().await);
 
         // Update back to API key
-        client
-            .update_auth(SyncAuth::ApiKey("new-key".into()))
-            .await;
+        client.update_auth(SyncAuth::ApiKey("new-key".into())).await;
         assert!(!client.is_bearer_token().await);
     }
 
     #[tokio::test]
     async fn test_auth_refresh_callback_type() {
-        // Verify the callback type compiles and can return SyncAuth
-        let cb: AuthRefreshCallback = Arc::new(|| {
-            Box::pin(async { Ok(SyncAuth::BearerToken("refreshed-token".into())) })
-        });
+        let cb: AuthRefreshCallback =
+            Arc::new(|| Box::pin(async { Ok(SyncAuth::BearerToken("refreshed-token".into())) }));
 
         let result = cb().await;
         assert!(result.is_ok());
