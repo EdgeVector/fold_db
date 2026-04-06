@@ -2,8 +2,8 @@
 pub mod core;
 // Atom and molecule operations
 pub mod atom_operations;
-mod conflict_operations;
 mod capability_operations;
+mod conflict_operations;
 mod metadata_operations;
 pub mod native_index;
 pub mod org_operations;

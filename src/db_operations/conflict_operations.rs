@@ -22,9 +22,7 @@ impl DbOperations {
             .atoms_store()
             .scan_items_with_prefix(&prefix)
             .await
-            .map_err(|e| {
-                SchemaError::InvalidData(format!("Failed to scan conflicts: {}", e))
-            })?;
+            .map_err(|e| SchemaError::InvalidData(format!("Failed to scan conflicts: {}", e)))?;
 
         let conflicts: Vec<SyncConflict> = items
             .into_iter()
@@ -50,20 +48,14 @@ impl DbOperations {
             .atoms_store()
             .get_item(&key)
             .await
-            .map_err(|e| {
-                SchemaError::InvalidData(format!("Failed to read conflict: {}", e))
-            })?
-            .ok_or_else(|| {
-                SchemaError::NotFound(format!("Conflict not found: {}", conflict_id))
-            })?;
+            .map_err(|e| SchemaError::InvalidData(format!("Failed to read conflict: {}", e)))?
+            .ok_or_else(|| SchemaError::NotFound(format!("Conflict not found: {}", conflict_id)))?;
 
         conflict.resolved = true;
         self.atoms_store()
             .put_item(&key, &conflict)
             .await
-            .map_err(|e| {
-                SchemaError::InvalidData(format!("Failed to update conflict: {}", e))
-            })?;
+            .map_err(|e| SchemaError::InvalidData(format!("Failed to update conflict: {}", e)))?;
 
         Ok(())
     }

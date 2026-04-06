@@ -68,7 +68,7 @@ pub mod org_sync;
 pub mod s3;
 pub mod snapshot;
 
-pub use engine::{SyncConflict, SyncConfig, SyncEngine, SyncState, SyncStatus};
+pub use engine::{SyncConfig, SyncConflict, SyncEngine, SyncState, SyncStatus};
 pub use error::{SyncError, SyncResult};
 pub use org_sync::{SyncDestination, SyncPartitioner};
 

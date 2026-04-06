@@ -242,10 +242,7 @@ async fn merge_conflict_stored_as_sync_conflict() {
 
     // Verify a SyncConflict record was stored at conflict:{mol_uuid}:*
     let conflict_prefix = format!("conflict:{}:", mol_uuid);
-    let keys = kv
-        .scan_prefix(conflict_prefix.as_bytes())
-        .await
-        .unwrap();
+    let keys = kv.scan_prefix(conflict_prefix.as_bytes()).await.unwrap();
     assert_eq!(keys.len(), 1, "expected exactly one conflict record");
 
     let conflict_bytes = &keys[0].1;
@@ -281,10 +278,7 @@ async fn merge_no_conflict_for_same_atom() {
     // No conflict should be stored
     let kv = store.open_namespace("main").await.unwrap();
     let conflict_prefix = format!("conflict:{}:", mol_uuid);
-    let entries = kv
-        .scan_prefix(conflict_prefix.as_bytes())
-        .await
-        .unwrap();
+    let entries = kv.scan_prefix(conflict_prefix.as_bytes()).await.unwrap();
     assert!(entries.is_empty(), "no conflict expected for same atom");
 }
 
@@ -327,10 +321,7 @@ async fn hash_molecule_merge_conflict_stored() {
 
     // Verify conflict record
     let conflict_prefix = format!("conflict:{}:", mol_uuid);
-    let entries = kv
-        .scan_prefix(conflict_prefix.as_bytes())
-        .await
-        .unwrap();
+    let entries = kv.scan_prefix(conflict_prefix.as_bytes()).await.unwrap();
     assert_eq!(entries.len(), 1);
 
     let conflict_bytes = &entries[0].1;
