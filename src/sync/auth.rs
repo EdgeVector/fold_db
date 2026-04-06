@@ -2,7 +2,10 @@ use super::error::{SyncError, SyncResult};
 use super::s3::PresignedUrl;
 use reqwest::Client;
 use serde::Deserialize;
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
+use tokio::sync::RwLock;
 
 /// Authentication method for the sync auth Lambda.
 #[derive(Clone)]
@@ -19,6 +22,13 @@ impl std::fmt::Debug for SyncAuth {
         }
     }
 }
+
+/// Callback type for refreshing authentication credentials.
+///
+/// Called when the sync engine receives a 401 from the auth Lambda.
+/// Should return a fresh `SyncAuth` (e.g., by re-registering with Exemem).
+pub type AuthRefreshCallback =
+    Arc<dyn Fn() -> Pin<Box<dyn Future<Output = Result<SyncAuth, String>> + Send>> + Send + Sync>;
 
 /// Response from the auth Lambda listing available S3 objects.
 #[derive(Debug, Deserialize)]
@@ -70,7 +80,7 @@ pub struct LockResponse {
 pub struct AuthClient {
     http: Arc<Client>,
     base_url: String,
-    auth: SyncAuth,
+    auth: Arc<RwLock<SyncAuth>>,
 }
 
 impl AuthClient {
@@ -78,21 +88,40 @@ impl AuthClient {
         Self {
             http,
             base_url,
-            auth,
+            auth: Arc::new(RwLock::new(auth)),
         }
     }
 
-    fn apply_auth(&self, req: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
-        match &self.auth {
-            SyncAuth::ApiKey(key) => req.header("X-API-Key", key),
-            SyncAuth::BearerToken(token) => req.header("Authorization", format!("Bearer {token}")),
+    /// Replace the current authentication credential with a fresh one.
+    ///
+    /// Called after a successful token refresh to update the in-memory credential
+    /// so subsequent requests use the new token.
+    pub async fn update_auth(&self, new_auth: SyncAuth) {
+        *self.auth.write().await = new_auth;
+    }
+
+    /// Check if the current auth credential is a bearer token.
+    ///
+    /// Useful for callers to decide whether a refresh is needed (bearer tokens
+    /// expire, API keys do not).
+    pub async fn is_bearer_token(&self) -> bool {
+        matches!(&*self.auth.read().await, SyncAuth::BearerToken(_))
+    }
+
+    async fn apply_auth(&self, req: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+        let auth = self.auth.read().await;
+        match &*auth {
+            SyncAuth::ApiKey(key) => req.header("X-API-Key", key.clone()),
+            SyncAuth::BearerToken(token) => {
+                req.header("Authorization", format!("Bearer {token}"))
+            }
         }
     }
 
     async fn post(&self, path: &str, body: serde_json::Value) -> SyncResult<serde_json::Value> {
         let url = format!("{}{}", self.base_url, path);
         let req = self.http.post(&url).json(&body);
-        let req = self.apply_auth(req);
+        let req = self.apply_auth(req).await;
 
         let response = req.send().await.map_err(|e| {
             if e.is_timeout() {
@@ -565,5 +594,57 @@ impl AuthClient {
             return Err(SyncError::Auth(err.to_string()));
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_update_auth_replaces_credential() {
+        let http = Arc::new(Client::new());
+        let client =
+            AuthClient::new(http, "http://localhost".to_string(), SyncAuth::ApiKey("old".into()));
+
+        // Starts as API key
+        assert!(!client.is_bearer_token().await);
+
+        // Update to bearer token
+        client
+            .update_auth(SyncAuth::BearerToken("new-token".into()))
+            .await;
+        assert!(client.is_bearer_token().await);
+
+        // Update back to API key
+        client
+            .update_auth(SyncAuth::ApiKey("new-key".into()))
+            .await;
+        assert!(!client.is_bearer_token().await);
+    }
+
+    #[tokio::test]
+    async fn test_auth_refresh_callback_type() {
+        // Verify the callback type compiles and can return SyncAuth
+        let cb: AuthRefreshCallback = Arc::new(|| {
+            Box::pin(async { Ok(SyncAuth::BearerToken("refreshed-token".into())) })
+        });
+
+        let result = cb().await;
+        assert!(result.is_ok());
+        match result.unwrap() {
+            SyncAuth::BearerToken(t) => assert_eq!(t, "refreshed-token"),
+            SyncAuth::ApiKey(_) => panic!("expected BearerToken"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_auth_refresh_callback_error() {
+        let cb: AuthRefreshCallback =
+            Arc::new(|| Box::pin(async { Err("network down".to_string()) }));
+
+        let result = cb().await;
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "network down");
     }
 }
