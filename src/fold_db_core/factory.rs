@@ -170,7 +170,7 @@ async fn create_local_fold_db(
     .map_err(|e| FoldDbError::Config(e.to_string()))?;
 
     if let Some(engine) = sync_engine {
-        fold_db.set_sync_engine(engine);
+        fold_db.set_sync_engine(engine).await;
         fold_db.start_sync(sync_interval_ms);
     }
 

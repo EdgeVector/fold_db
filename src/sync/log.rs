@@ -112,6 +112,16 @@ impl LogEntry {
 }
 
 impl LogOp {
+    /// Returns the namespace this operation targets.
+    pub fn namespace(&self) -> &str {
+        match self {
+            LogOp::Put { namespace, .. } => namespace,
+            LogOp::Delete { namespace, .. } => namespace,
+            LogOp::BatchPut { namespace, .. } => namespace,
+            LogOp::BatchDelete { namespace, .. } => namespace,
+        }
+    }
+
     /// Encode key bytes to base64 for storage in the log entry.
     pub fn encode_bytes(bytes: &[u8]) -> String {
         BASE64.encode(bytes)

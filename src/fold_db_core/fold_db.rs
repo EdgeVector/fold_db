@@ -96,7 +96,20 @@ impl FoldDB {
     }
 
     /// Set the sync engine (called by the factory when sync is configured).
-    pub fn set_sync_engine(&mut self, engine: Arc<crate::sync::SyncEngine>) {
+    /// Also registers the schema reloader callback so SchemaCore's in-memory
+    /// cache is refreshed after sync replays schema entries into Sled.
+    pub async fn set_sync_engine(&mut self, engine: Arc<crate::sync::SyncEngine>) {
+        let schema_mgr = Arc::clone(&self.schema_manager);
+        engine
+            .set_schema_reloader(Arc::new(move || {
+                let mgr = Arc::clone(&schema_mgr);
+                Box::pin(async move {
+                    mgr.reload_from_store()
+                        .await
+                        .map_err(|e| format!("SchemaCore reload failed: {e}"))
+                })
+            }))
+            .await;
         self.sync_engine = Some(engine);
     }
 

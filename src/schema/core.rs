@@ -75,6 +75,38 @@ impl SchemaCore {
         Ok(schema_core)
     }
 
+    /// Reload schemas from the persistent store, merging any newly-discovered
+    /// schemas into the in-memory cache. Existing entries are NOT overwritten
+    /// (additive merge only). Returns the count of newly added schemas.
+    pub async fn reload_from_store(&self) -> Result<usize, SchemaError> {
+        let stored_schemas = self.db_ops.get_all_schemas().await?;
+        let stored_states = self.db_ops.get_all_schema_states().await?;
+
+        let mut schemas = lock_map(&self.schemas, "schemas")?;
+        let mut states = lock_map(&self.schema_states, "schema_states")?;
+
+        let mut added = 0usize;
+        for (name, mut schema) in stored_schemas {
+            if !schemas.contains_key(&name) {
+                // Ensure runtime_fields are populated — schemas coming from
+                // sync replay won't have them (runtime_fields is #[serde(skip)]).
+                if schema.runtime_fields.is_empty() {
+                    schema.populate_runtime_fields()?;
+                }
+                schemas.insert(name.clone(), schema);
+                let state = stored_states.get(&name).copied().unwrap_or_default();
+                states.insert(name, state);
+                added += 1;
+            }
+        }
+
+        if added > 0 {
+            log::info!("reload_from_store: added {} new schema(s) to cache", added);
+        }
+
+        Ok(added)
+    }
+
     pub fn get_schemas(&self) -> Result<HashMap<String, Schema>, SchemaError> {
         Ok(lock_map(&self.schemas, "schemas")?.clone())
     }
@@ -908,5 +940,147 @@ mod tests {
             .expect("get")
             .expect("some");
         assert_eq!(schema.name, "BlogPostWordIndex");
+    }
+
+    #[tokio::test]
+    async fn reload_from_store_adds_new_schemas() {
+        // Create a SchemaCore, store a schema directly to Sled (bypassing
+        // the in-memory cache), then verify reload_from_store picks it up.
+        let db = sled::Config::new()
+            .temporary(true)
+            .open()
+            .expect("open sled");
+        let db_ops = std::sync::Arc::new(
+            crate::db_operations::DbOperations::from_sled(db)
+                .await
+                .expect("db_ops"),
+        );
+        let message_bus = Arc::new(AsyncMessageBus::new());
+        let core = SchemaCore::new(Arc::clone(&db_ops), Arc::clone(&message_bus))
+            .await
+            .expect("init core");
+
+        // Confirm cache is empty
+        assert!(core.get_schemas().unwrap().is_empty());
+
+        // Write a schema directly to Sled (simulating what sync replay does)
+        let json = r#"{
+            "name": "SyncedSchema",
+            "key": { "range_field": "created_at" },
+            "fields": { "title": {}, "created_at": {} }
+        }"#;
+        let declarative: crate::schema::types::DeclarativeSchemaDefinition =
+            serde_json::from_str(json).expect("parse");
+        let schema = core
+            .interpret_declarative_schema(declarative)
+            .await
+            .expect("interpret");
+        db_ops
+            .store_schema("SyncedSchema", &schema)
+            .await
+            .expect("store");
+        db_ops
+            .store_schema_state("SyncedSchema", &SchemaState::Approved)
+            .await
+            .expect("store state");
+
+        // Cache should still be empty (we bypassed it)
+        assert!(!core.get_schemas().unwrap().contains_key("SyncedSchema"));
+
+        // Reload from store
+        let added = core.reload_from_store().await.expect("reload");
+        assert_eq!(added, 1);
+
+        // Now cache should have it
+        assert!(core.get_schemas().unwrap().contains_key("SyncedSchema"));
+        assert_eq!(
+            core.get_schema_states()
+                .unwrap()
+                .get("SyncedSchema")
+                .copied(),
+            Some(SchemaState::Approved)
+        );
+    }
+
+    #[tokio::test]
+    async fn reload_from_store_preserves_existing() {
+        // Verify that reload_from_store does NOT overwrite schemas already in cache.
+        let db = sled::Config::new()
+            .temporary(true)
+            .open()
+            .expect("open sled");
+        let db_ops = std::sync::Arc::new(
+            crate::db_operations::DbOperations::from_sled(db)
+                .await
+                .expect("db_ops"),
+        );
+        let message_bus = Arc::new(AsyncMessageBus::new());
+        let core = SchemaCore::new(Arc::clone(&db_ops), Arc::clone(&message_bus))
+            .await
+            .expect("init core");
+
+        // Load a schema normally (into both cache and Sled)
+        core.load_schema_from_json(&blogpost_schema_json())
+            .await
+            .expect("load");
+
+        // Reload should add 0 new schemas (BlogPost is already in cache)
+        let added = core.reload_from_store().await.expect("reload");
+        assert_eq!(added, 0);
+
+        // Still exactly one schema
+        assert_eq!(core.get_schemas().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn reload_from_store_populates_runtime_fields() {
+        // Schemas written to Sled by sync replay have runtime_fields = {} (#[serde(skip)]).
+        // Verify that reload_from_store populates runtime_fields on load.
+        let db = sled::Config::new()
+            .temporary(true)
+            .open()
+            .expect("open sled");
+        let db_ops = std::sync::Arc::new(
+            crate::db_operations::DbOperations::from_sled(db)
+                .await
+                .expect("db_ops"),
+        );
+        let message_bus = Arc::new(AsyncMessageBus::new());
+        let core = SchemaCore::new(Arc::clone(&db_ops), Arc::clone(&message_bus))
+            .await
+            .expect("init core");
+
+        // Build a schema, then store it directly to Sled
+        let json = r#"{
+            "name": "RuntimeTest",
+            "key": { "range_field": "ts" },
+            "fields": { "content": {}, "ts": {} }
+        }"#;
+        let declarative: crate::schema::types::DeclarativeSchemaDefinition =
+            serde_json::from_str(json).expect("parse");
+        let schema = core
+            .interpret_declarative_schema(declarative)
+            .await
+            .expect("interpret");
+        db_ops
+            .store_schema("RuntimeTest", &schema)
+            .await
+            .expect("store");
+
+        // Reload
+        let added = core.reload_from_store().await.expect("reload");
+        assert_eq!(added, 1);
+
+        // Verify runtime_fields are populated
+        let schemas = core.get_schemas().unwrap();
+        let s = schemas.get("RuntimeTest").expect("exists");
+        assert!(
+            !s.runtime_fields.is_empty(),
+            "runtime_fields should be populated after reload"
+        );
+        assert!(
+            s.runtime_fields.contains_key("content"),
+            "runtime_fields should contain 'content'"
+        );
     }
 }
