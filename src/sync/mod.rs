@@ -48,26 +48,17 @@
 //! - Presigned URLs expire after 15 minutes
 //! - No AWS credentials on the client
 //!
-//! ## Why there is no conflict resolution
+//! ## Conflict detection
 //!
-//! FoldDB's data model makes sync conflicts structurally impossible:
+//! FoldDB's data model prevents divergence — atoms are content-addressed,
+//! history is append-only, and molecule merge uses per-key LWW to converge
+//! deterministically. However, when two nodes write different values to the
+//! same molecule key, the losing write is silently overridden. This is
+//! correct for convergence but the user may want to know it happened.
 //!
-//! - **Atoms** are content-addressed (content → deterministic UUID). Two nodes
-//!   creating different atoms produce different keys. No collision.
-//! - **Mutation history** is append-only with unique timestamps. Both sides'
-//!   events coexist without overwriting each other.
-//! - **Ref pointers** (`ref:{mol_uuid}`) are the only shared mutable state.
-//!   They cache "which atom is current" — derivable from the history.
-//!
-//! After sync, every node has the complete set of atoms and mutation events
-//! from all writers. The ref pointer converges deterministically via LWW
-//! (highest `(timestamp_ms, device_id)` wins). All nodes reach the same
-//! state regardless of replay order.
-//!
-//! This applies to both personal multi-device sync and org sync — the
-//! convergence model is identical. **Do not add conflict resolution
-//! machinery** — it is unnecessary and would add complexity for a problem
-//! that does not exist in this architecture.
+//! The sync engine detects these "soft conflicts" during molecule merge and
+//! stores them as `SyncConflict` records. These are queryable via the
+//! conflict API so users can review what was overridden and acknowledge it.
 
 pub mod auth;
 pub mod engine;
@@ -77,7 +68,7 @@ pub mod org_sync;
 pub mod s3;
 pub mod snapshot;
 
-pub use engine::{SyncConfig, SyncEngine, SyncState, SyncStatus};
+pub use engine::{SyncConfig, SyncConflict, SyncEngine, SyncState, SyncStatus};
 pub use error::{SyncError, SyncResult};
 pub use org_sync::{SyncDestination, SyncPartitioner};
 
