@@ -12,7 +12,7 @@
 /// See autoresearch-ingestion repo for experiment log.
 pub const PROMPT_HEADER: &str = r#"Create a schema for this sample json data. Return JSON with "new_schemas" (single schema) and "mutation_mappers" (top-level JSON keys only, e.g., {"id": "id"}). Keep nested objects as single fields — do NOT flatten.
 
-- HashRange: If data has a unique ID field (e.g., "flight_id", "hotel_id", "order_id", "booking_id", "id", "uuid"), use it as hash_field — unique IDs prevent key collisions. Otherwise use a grouping field (e.g., "author", "category", "source_file"). range_field for ordering (prefer date/timestamp, else "id"). Use dot-notation for nested values (e.g., "departure.date") but parent must be in "fields" and "mutation_mappers".
+- HashRange: If data has a unique ID field (e.g., "flight_id", "hotel_id", "order_id", "booking_id", "id", "uuid"), use it as hash_field — unique IDs prevent key collisions. Otherwise use a grouping field (e.g., "author", "category", "source_file"). range_field for ordering (prefer date/timestamp, else "id"). CRITICAL: hash_field and range_field MUST be fields that actually exist in the sample data — never invent fields. Use dot-notation for nested values (e.g., "departure.date") but parent must be in "fields" and "mutation_mappers".
 - Hash (hash_field only, NO range_field): photos/images MUST use Hash with hash_field="source_file_name" — do NOT add date_taken as range_field.
 - Single (omit "key" entirely): for singleton config/settings (URLs, timeouts, feature flags).
 
@@ -20,7 +20,7 @@ pub const PROMPT_HEADER: &str = r#"Create a schema for this sample json data. Re
 
 REJECTED descriptive_name values — names made entirely of structural/generic words are rejected: "Document Collection", "Data Records", "Text Content", "Content Articles", "Personal Notes", "File Metadata", "Record List", "General Information". The name must identify WHAT the content is about, not just its format. Read the actual content and name the topic: "Bitcoin Macro Analysis", "Apple Notes", "Weekly Meeting Minutes", "Family Vacation Photos".
 
-Array fields (e.g., tags, interests, items) MUST be included in both "fields" and "mutation_mappers" — they are stored as arrays, not flattened. Include ALL top-level JSON keys in "mutation_mappers", including arrays.
+Array fields (e.g., tags, interests, items) MUST be included in both "fields" and "mutation_mappers" — they are stored as arrays, not flattened. Include ALL top-level JSON keys in "mutation_mappers", including arrays. ONLY map fields that exist in the sample data — never add fields the data doesn't have.
 
 Example:
 {"name": "social_media_posts", "descriptive_name": "Social Media Posts", "key": {"hash_field": "author", "range_field": "created_at"}, "fields": ["created_at", "author", "content", "tags"], "field_descriptions": {"created_at": "...", "author": "...", "content": "...", "tags": "topic tags"}, "mutation_mappers": {"created_at": "created_at", "author": "author", "content": "content", "tags": "tags"}}"#;

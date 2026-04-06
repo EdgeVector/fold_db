@@ -54,7 +54,13 @@ where
                     // Normal behavior for new fields or if cleaned up
                 }
                 Err(e) => {
-                    log::error!("❌ FieldBase error loading molecule from DB: {}", e);
+                    // Non-fatal: molecule ref may be in an old serialization format.
+                    // The field still works — data is read from atoms directly.
+                    log::warn!(
+                        "FieldBase: skipping molecule ref for {}: {}",
+                        molecule_uuid,
+                        e
+                    );
                 }
             }
         }
