@@ -234,6 +234,24 @@ impl EmbeddingIndex {
         added
     }
 
+    /// Remove all entries belonging to a specific org from the in-memory index.
+    /// Matches entries whose schema name starts with `{org_hash}:`.
+    pub(super) fn purge_org(&self, org_hash: &str) -> usize {
+        let prefix = format!("{}:", org_hash);
+        let mut entries = self.entries.write().unwrap();
+        let before = entries.len();
+        entries.retain(|e| !e.schema.starts_with(&prefix));
+        let removed = before - entries.len();
+        if removed > 0 {
+            log::info!(
+                "purge_org: removed {} embeddings for org {}",
+                removed,
+                &org_hash[..12.min(org_hash.len())]
+            );
+        }
+        removed
+    }
+
     /// Brute-force cosine similarity search. Returns up to `k` results sorted by score,
     /// deduplicated by (schema, key) — taking the highest-scoring fragment per record.
     pub(super) fn search(&self, query_vec: &[f32], k: usize) -> Vec<IndexResult> {
