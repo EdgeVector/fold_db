@@ -170,16 +170,47 @@ impl Default for TrustDistancePolicy {
     }
 }
 
+/// Well-known trust domain names.
+pub const DOMAIN_PERSONAL: &str = "personal";
+pub const DOMAIN_FAMILY: &str = "family";
+pub const DOMAIN_FINANCIAL: &str = "financial";
+pub const DOMAIN_HEALTH: &str = "health";
+pub const DOMAIN_MEDICAL: &str = "medical";
+
+/// Construct an org trust domain name from an org hash.
+pub fn org_domain(org_hash: &str) -> String {
+    format!("org:{}", org_hash)
+}
+
 /// Per-field access policy combining all four access control layers.
 /// Attached to `FieldCommon`. If `None`, field uses legacy behavior (no checks).
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FieldAccessPolicy {
+    /// Which trust domain governs this field's access.
+    /// Default: "personal". Each domain has its own independent TrustGraph.
+    #[serde(default = "default_trust_domain")]
+    pub trust_domain: String,
     /// Trust distance bounds for read/write
     pub trust_distance: TrustDistancePolicy,
     /// Capability tokens required for access
     pub capabilities: Vec<super::capability::CapabilityConstraint>,
     /// Information flow security label
     pub security_label: Option<super::security_label::SecurityLabel>,
+}
+
+fn default_trust_domain() -> String {
+    DOMAIN_PERSONAL.to_string()
+}
+
+impl Default for FieldAccessPolicy {
+    fn default() -> Self {
+        Self {
+            trust_domain: default_trust_domain(),
+            trust_distance: TrustDistancePolicy::default(),
+            capabilities: Vec::new(),
+            security_label: None,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -259,8 +290,7 @@ mod tests {
     fn test_field_access_policy_serialization() {
         let policy = FieldAccessPolicy {
             trust_distance: TrustDistancePolicy::new(10, 2),
-            capabilities: Vec::new(),
-            security_label: None,
+            ..Default::default()
         };
         let json = serde_json::to_string(&policy).unwrap();
         let deserialized: FieldAccessPolicy = serde_json::from_str(&json).unwrap();

@@ -298,6 +298,13 @@ pub struct DeclarativeSchemaDefinition {
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub org_hash: Option<String>,
 
+    /// Default trust domain for all fields in this schema.
+    /// If set, fields without an explicit `trust_domain` in their access policy
+    /// inherit this value. For org schemas, auto-set to `org:{org_hash}`.
+    /// Default: "personal".
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub trust_domain: Option<String>,
+
     // Runtime state fields (not serialized)
     /// Runtime field storage with molecules (for database operations)
     #[serde(skip)]
@@ -497,6 +504,7 @@ impl DeclarativeSchemaDefinition {
             identity_hash: None,
             superseded_by: None,
             org_hash: None,
+            trust_domain: None,
             runtime_fields: HashMap::new(),
             inputs_schema_fields: Vec::new(),
             source_schemas: Vec::new(),

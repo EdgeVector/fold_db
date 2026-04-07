@@ -20,7 +20,9 @@ pub use payment::PaymentGate;
 pub use security_label::SecurityLabel;
 pub use trust::TrustGraph;
 pub use types::{
-    AccessContext, AccessDecision, AccessDenialReason, FieldAccessPolicy, TrustDistancePolicy,
+    org_domain, AccessContext, AccessDecision, AccessDenialReason, FieldAccessPolicy,
+    TrustDistancePolicy, DOMAIN_FAMILY, DOMAIN_FINANCIAL, DOMAIN_HEALTH, DOMAIN_MEDICAL,
+    DOMAIN_PERSONAL,
 };
 
 /// Check all four access control layers for a **read** operation on a single field.
@@ -140,16 +142,14 @@ mod tests {
     fn policy_public_read() -> FieldAccessPolicy {
         FieldAccessPolicy {
             trust_distance: TrustDistancePolicy::new(u64::MAX, 0),
-            capabilities: Vec::new(),
-            security_label: None,
+            ..Default::default()
         }
     }
 
     fn policy_owner_only() -> FieldAccessPolicy {
         FieldAccessPolicy {
             trust_distance: TrustDistancePolicy::owner_only(),
-            capabilities: Vec::new(),
-            security_label: None,
+            ..Default::default()
         }
     }
 
@@ -188,8 +188,7 @@ mod tests {
         let ctx = AccessContext::remote("bob", 3);
         let policy = FieldAccessPolicy {
             trust_distance: TrustDistancePolicy::new(10, 2),
-            capabilities: Vec::new(),
-            security_label: None,
+            ..Default::default()
         };
         // Read should pass (distance 3 <= read_max 10)
         assert!(check_read_access(Some(&policy), &ctx, "schema", None).is_granted());
@@ -203,8 +202,8 @@ mod tests {
         ctx.clearance_level = 1;
         let policy = FieldAccessPolicy {
             trust_distance: TrustDistancePolicy::public_read(),
-            capabilities: Vec::new(),
             security_label: Some(SecurityLabel::new(3, "secret")),
+            ..Default::default()
         };
         let result = check_read_access(Some(&policy), &ctx, "schema", None);
         assert!(result.is_denied());
@@ -263,6 +262,7 @@ mod tests {
                 10,
             )],
             security_label: Some(SecurityLabel::new(2, "sensitive")),
+            ..Default::default()
         };
         let gate = PaymentGate::Fixed(1.0);
 
