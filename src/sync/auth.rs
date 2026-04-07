@@ -576,6 +576,30 @@ impl AuthClient {
         Ok(())
     }
 
+    /// Fetch the current member list for an org from the cloud.
+    /// Returns a JSON array of `{ user_hash, role, status }` objects.
+    pub async fn list_members(&self, org_hash: &str) -> SyncResult<Vec<serde_json::Value>> {
+        let body = serde_json::json!({
+            "action": "list_members",
+            "org_hash": org_hash,
+        });
+        let resp = self.post("/api/sync/org", body).await?;
+        let ok = resp.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
+        if !ok {
+            let err = resp
+                .get("error")
+                .and_then(|v| v.as_str())
+                .unwrap_or("list_members failed");
+            return Err(SyncError::Auth(err.to_string()));
+        }
+        let members = resp
+            .get("members")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+        Ok(members)
+    }
+
     /// Notify the cloud that this user declined an org invite (status -> declined).
     pub async fn decline_invite(&self, org_hash: &str) -> SyncResult<()> {
         let body = serde_json::json!({
