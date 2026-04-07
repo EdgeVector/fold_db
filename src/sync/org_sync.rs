@@ -127,10 +127,18 @@ impl SyncPartitioner {
             return dest;
         }
 
-        // For schema-level namespaces, the key might be a schema name
-        // that was stored under an org-prefixed schema name
-        // (e.g., key = "{org_hash}:board_meeting" in the "schemas" namespace)
-        let _ = namespace; // namespace used for potential future routing logic
+        // For native_index namespace, embedding keys have format:
+        //   emb:{org_hash}:{schema_hash}:{key_hash}:{field}:{fragment_idx}
+        // The key starts with "emb:", not the org hash, so the plain prefix
+        // check above misses it. Strip the "emb:" prefix and re-check.
+        if namespace == "native_index" {
+            if let Some(after_prefix) = key_str.strip_prefix("emb:") {
+                let dest = self.partition(after_prefix);
+                if dest != SyncDestination::Personal {
+                    return dest;
+                }
+            }
+        }
 
         SyncDestination::Personal
     }
@@ -295,6 +303,41 @@ mod tests {
 
         // Short key
         assert_eq!(strip_org_prefix("abc:def"), None);
+    }
+
+    #[test]
+    fn test_partition_log_key_embedding_with_org_prefix() {
+        use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+
+        let memberships = vec![make_membership("org_alpha", "secret_a")];
+        let partitioner = SyncPartitioner::new(&memberships);
+
+        // Embedding key: emb:{org_hash}:{schema_hash}:{key_hash}:{field}:{fragment}
+        let emb_key = "emb:org_alpha:schema123:keyhash:title:0";
+        let encoded = BASE64.encode(emb_key.as_bytes());
+
+        assert_eq!(
+            partitioner.partition_log_key("native_index", &encoded),
+            SyncDestination::Org {
+                org_hash: "org_alpha".to_string(),
+                org_e2e_secret: "secret_a".to_string(),
+            }
+        );
+
+        // Personal embedding key should remain personal
+        let personal_emb_key = "emb:my_schema:keyhash:title:0";
+        let encoded_personal = BASE64.encode(personal_emb_key.as_bytes());
+        assert_eq!(
+            partitioner.partition_log_key("native_index", &encoded_personal),
+            SyncDestination::Personal
+        );
+
+        // Non native_index namespace should NOT get the emb: stripping
+        let encoded_other = BASE64.encode(emb_key.as_bytes());
+        assert_eq!(
+            partitioner.partition_log_key("molecules", &encoded_other),
+            SyncDestination::Personal
+        );
     }
 
     #[test]

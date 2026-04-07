@@ -195,6 +195,45 @@ impl EmbeddingIndex {
         Ok(())
     }
 
+    /// Reload embeddings from the store, adding any entries not already in the in-memory index.
+    /// Returns the number of newly added entries.
+    pub(super) async fn reload_from_store(&self, store: &dyn KvStore) -> usize {
+        let new_entries = Self::load_from_store(store).await;
+        let mut current = self.entries.write().unwrap();
+        let before = current.len();
+
+        // Build a set of existing storage keys for deduplication
+        let existing_keys: std::collections::HashSet<String> = current
+            .iter()
+            .map(|e| {
+                EmbeddingEntry::fragment_storage_key(
+                    &e.schema,
+                    &e.key,
+                    &e.field_name,
+                    e.fragment_idx,
+                )
+            })
+            .collect();
+
+        for entry in new_entries {
+            let key = EmbeddingEntry::fragment_storage_key(
+                &entry.schema,
+                &entry.key,
+                &entry.field_name,
+                entry.fragment_idx,
+            );
+            if !existing_keys.contains(&key) {
+                current.push(entry);
+            }
+        }
+
+        let added = current.len() - before;
+        if added > 0 {
+            log::info!("reload_from_store: added {} new embeddings to index", added);
+        }
+        added
+    }
+
     /// Brute-force cosine similarity search. Returns up to `k` results sorted by score,
     /// deduplicated by (schema, key) — taking the highest-scoring fragment per record.
     pub(super) fn search(&self, query_vec: &[f32], k: usize) -> Vec<IndexResult> {
