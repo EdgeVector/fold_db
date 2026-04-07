@@ -26,6 +26,19 @@ pub async fn create_fold_db(
     config: &DatabaseConfig,
     e2e_keys: &E2eKeys,
 ) -> FoldDbResult<Arc<Mutex<FoldDB>>> {
+    create_fold_db_with_auth_refresh(config, e2e_keys, None).await
+}
+
+/// Creates a FoldDB instance with an optional auth-refresh callback for the sync engine.
+///
+/// When running in Exemem mode, the callback is invoked on 401 errors to obtain
+/// fresh credentials (e.g., by re-registering with the Exemem API using the node's
+/// Ed25519 keypair). The sync engine retries once after a successful refresh.
+pub async fn create_fold_db_with_auth_refresh(
+    config: &DatabaseConfig,
+    e2e_keys: &E2eKeys,
+    auth_refresh: Option<crate::sync::AuthRefreshCallback>,
+) -> FoldDbResult<Arc<Mutex<FoldDB>>> {
     match config {
         DatabaseConfig::Local { path } => create_local_fold_db(path, e2e_keys, None).await,
         DatabaseConfig::Exemem {
@@ -39,7 +52,8 @@ pub async fn create_fold_db(
             let data_dir = path
                 .to_str()
                 .ok_or_else(|| FoldDbError::Config("Invalid storage path".to_string()))?;
-            let sync_setup = SyncSetup::from_exemem(api_url, api_key, data_dir);
+            let mut sync_setup = SyncSetup::from_exemem(api_url, api_key, data_dir);
+            sync_setup.auth_refresh = auth_refresh;
             create_local_fold_db(&path, e2e_keys, Some(sync_setup)).await
         }
         #[cfg(feature = "aws-backend")]
@@ -98,14 +112,18 @@ async fn create_local_fold_db(
         let s3 = crate::sync::s3::S3Client::new(http.clone());
         let auth = crate::sync::auth::AuthClient::new(http, setup.auth_url, setup.auth);
 
-        let engine = Arc::new(crate::sync::SyncEngine::new(
+        let mut engine = crate::sync::SyncEngine::new(
             setup.device_id,
             sync_crypto,
             s3,
             auth,
             base_store.clone(),
             sync_config,
-        ));
+        );
+        if let Some(cb) = setup.auth_refresh {
+            engine.set_auth_refresh(cb);
+        }
+        let engine = Arc::new(engine);
 
         // Bootstrap from B2 if the local database is empty (new device connecting
         // to an existing user database — like a password manager on a new device).
