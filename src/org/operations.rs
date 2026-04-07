@@ -257,6 +257,7 @@ pub fn generate_invite(db: &sled::Db, org_hash: &str) -> Result<OrgInviteBundle,
 
     Ok(OrgInviteBundle {
         org_name: membership.org_name,
+        org_hash: org_hash.to_string(),
         org_public_key: membership.org_public_key,
         org_e2e_secret: membership.org_e2e_secret,
         members: membership.members,

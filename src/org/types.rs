@@ -52,6 +52,8 @@ pub enum OrgRole {
 pub struct OrgInviteBundle {
     /// Human-readable organization name
     pub org_name: String,
+    /// Hex-encoded SHA256 hash of the org public key — used for decline and display
+    pub org_hash: String,
     /// Base64-encoded Ed25519 public key for the organization
     pub org_public_key: String,
     /// Base64-encoded AES-256-GCM shared secret for E2E encryption
