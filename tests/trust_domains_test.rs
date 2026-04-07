@@ -180,7 +180,7 @@ async fn test_many_domains_coexist() {
     let ops = db.get_db_ops();
 
     // Create graphs with distinct trust relationships across 5 domains
-    let domains = vec![
+    let domains = [
         DOMAIN_PERSONAL,
         DOMAIN_FAMILY,
         DOMAIN_FINANCIAL,
@@ -211,7 +211,7 @@ async fn test_many_domains_coexist() {
         );
 
         // No other users should be reachable
-        for j in 0..5 {
+        for (j, other_domain) in domains.iter().enumerate() {
             if j != i {
                 let other_user = format!("user_{}", j);
                 assert_eq!(
@@ -220,7 +220,7 @@ async fn test_many_domains_coexist() {
                     "Domain {} should NOT have user_{} (that's in {})",
                     domain,
                     j,
-                    domains[j]
+                    other_domain
                 );
             }
         }
