@@ -41,7 +41,8 @@ pub fn check_read_access(
         None => return AccessDecision::Granted,
     };
 
-    let trust_distance = match context.trust_distance {
+    // Resolve trust distance for this field's domain
+    let trust_distance = match context.distance_for_domain(&policy.trust_domain) {
         Some(d) => d,
         None => return AccessDecision::Denied(AccessDenialReason::TrustDistanceUnresolvable),
     };
@@ -95,7 +96,8 @@ pub fn check_write_access(
         None => return AccessDecision::Granted,
     };
 
-    let trust_distance = match context.trust_distance {
+    // Resolve trust distance for this field's domain
+    let trust_distance = match context.distance_for_domain(&policy.trust_domain) {
         Some(d) => d,
         None => return AccessDecision::Denied(AccessDenialReason::TrustDistanceUnresolvable),
     };
@@ -242,6 +244,7 @@ mod tests {
         let ctx = AccessContext {
             user_id: "bob".into(),
             trust_distance: None,
+            trust_distances: Default::default(),
             public_keys: vec![],
             paid_schemas: Default::default(),
             clearance_level: 0,
@@ -249,6 +252,40 @@ mod tests {
         let policy = policy_public_read();
         let result = check_read_access(Some(&policy), &ctx, "schema", None);
         assert!(result.is_denied());
+    }
+
+    #[test]
+    fn test_domain_aware_access_check() {
+        use std::collections::HashMap;
+        // Bob has distance 1 in health, distance 3 in personal
+        let mut distances = HashMap::new();
+        distances.insert("health".to_string(), 1u64);
+        distances.insert("personal".to_string(), 3u64);
+        let ctx = AccessContext::remote_multi("bob", distances);
+
+        // Health field with read_max 2 → Bob at distance 1 → granted
+        let health_policy = FieldAccessPolicy {
+            trust_domain: "health".to_string(),
+            trust_distance: TrustDistancePolicy::new(2, 0),
+            ..Default::default()
+        };
+        assert!(check_read_access(Some(&health_policy), &ctx, "schema", None).is_granted());
+
+        // Personal field with read_max 2 → Bob at distance 3 → denied
+        let personal_policy = FieldAccessPolicy {
+            trust_domain: "personal".to_string(),
+            trust_distance: TrustDistancePolicy::new(2, 0),
+            ..Default::default()
+        };
+        assert!(check_read_access(Some(&personal_policy), &ctx, "schema", None).is_denied());
+
+        // Financial field → Bob not in financial domain → denied (unresolvable)
+        let financial_policy = FieldAccessPolicy {
+            trust_domain: "financial".to_string(),
+            trust_distance: TrustDistancePolicy::new(5, 0),
+            ..Default::default()
+        };
+        assert!(check_read_access(Some(&financial_policy), &ctx, "schema", None).is_denied());
     }
 
     #[test]
