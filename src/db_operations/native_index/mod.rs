@@ -97,6 +97,13 @@ impl NativeIndexManager {
         self.embedding_model.embed_text(text)
     }
 
+    /// Reload embeddings from the persistent store into the in-memory index.
+    /// Called after sync replays new native_index entries. Returns the count of
+    /// newly added embeddings.
+    pub async fn reload_embeddings(&self) -> usize {
+        self.embedding_index.reload_from_store(&*self.store).await
+    }
+
     /// Semantic search: embed the query then return top-50 results by cosine similarity.
     pub async fn search_all_classifications(
         &self,

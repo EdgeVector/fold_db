@@ -110,6 +110,22 @@ impl FoldDB {
                 })
             }))
             .await;
+
+        // Register embedding reloader so the in-memory EmbeddingIndex is
+        // refreshed after sync replays native_index entries into Sled.
+        if let Some(nim) = self.db_ops.native_index_manager() {
+            let embedding_index = nim.clone();
+            engine
+                .set_embedding_reloader(Arc::new(move || {
+                    let idx = embedding_index.clone();
+                    Box::pin(async move {
+                        let count = idx.reload_embeddings().await;
+                        Ok(count)
+                    })
+                }))
+                .await;
+        }
+
         self.sync_engine = Some(engine);
     }
 

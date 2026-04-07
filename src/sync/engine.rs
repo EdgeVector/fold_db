@@ -102,6 +102,14 @@ pub type SchemaReloadCallback = Arc<
         + Sync,
 >;
 
+/// Callback that reloads embeddings from the persistent store into the in-memory index.
+/// Returns the number of newly added embeddings, or an error string.
+pub type EmbeddingReloadCallback = Arc<
+    dyn Fn() -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<usize, String>> + Send>>
+        + Send
+        + Sync,
+>;
+
 /// The sync engine manages replication of a local Sled database to S3.
 ///
 /// Architecture:
@@ -154,6 +162,9 @@ pub struct SyncEngine {
     /// Optional callback invoked after sync replay writes schemas to Sled.
     /// This lets the SchemaCore cache refresh without a hard dependency.
     schema_reloader: Arc<Mutex<Option<SchemaReloadCallback>>>,
+    /// Optional callback invoked after sync replay writes native_index entries to Sled.
+    /// This lets the EmbeddingIndex refresh without a hard dependency.
+    embedding_reloader: Arc<Mutex<Option<EmbeddingReloadCallback>>>,
     /// Optional callback to refresh authentication credentials on 401.
     /// When set, the sync engine will call this on `SyncError::Auth`, update
     /// the `AuthClient`, and retry the sync cycle once before giving up.
@@ -190,6 +201,7 @@ impl SyncEngine {
             }])),
             download_cursors: Arc::new(Mutex::new(std::collections::HashMap::new())),
             schema_reloader: Arc::new(Mutex::new(None)),
+            embedding_reloader: Arc::new(Mutex::new(None)),
             auth_refresh: None,
         }
     }
@@ -245,6 +257,13 @@ impl SyncEngine {
     /// of newly added schemas, or an error string.
     pub async fn set_schema_reloader(&self, reloader: SchemaReloadCallback) {
         *self.schema_reloader.lock().await = Some(reloader);
+    }
+
+    /// Register a callback that reloads the EmbeddingIndex after sync
+    /// replays native_index entries into Sled. The callback returns the number
+    /// of newly added embeddings, or an error string.
+    pub async fn set_embedding_reloader(&self, reloader: EmbeddingReloadCallback) {
+        *self.embedding_reloader.lock().await = Some(reloader);
     }
 
     /// Get the device identifier.
@@ -637,13 +656,16 @@ impl SyncEngine {
         let mut total_replayed = 0u64;
         let mut max_seq = cursor;
         let mut schemas_replayed = false;
+        let mut embeddings_replayed = false;
 
         for (seq, url) in new_seqs.iter().zip(urls.iter()) {
             match self.s3.download(url).await? {
                 Some(bytes) => match LogEntry::unseal(&bytes, &target.crypto).await {
                     Ok(entry) => {
-                        if entry.op.namespace() == "schemas" {
-                            schemas_replayed = true;
+                        match entry.op.namespace() {
+                            "schemas" => schemas_replayed = true,
+                            "native_index" => embeddings_replayed = true,
+                            _ => {}
                         }
                         self.replay_entry(&entry).await?;
                         total_replayed += 1;
@@ -681,6 +703,26 @@ impl SyncEngine {
                     }
                     Err(e) => {
                         log::warn!("failed to reload schemas after sync: {}", e);
+                    }
+                }
+            }
+        }
+
+        // Reload EmbeddingIndex if any native_index entries were replayed
+        if embeddings_replayed {
+            if let Some(reloader) = self.embedding_reloader.lock().await.as_ref() {
+                match reloader().await {
+                    Ok(count) => {
+                        if count > 0 {
+                            log::info!(
+                                "embedding reloader added {} embedding(s) after sync from '{}'",
+                                count,
+                                target.label
+                            );
+                        }
+                    }
+                    Err(e) => {
+                        log::warn!("failed to reload embeddings after sync: {}", e);
                     }
                 }
             }
