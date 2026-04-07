@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 
 /// Context for evaluating access control decisions.
@@ -8,8 +8,12 @@ use std::fmt;
 pub struct AccessContext {
     /// Who is making the request (public key or user identifier)
     pub user_id: String,
-    /// Pre-resolved trust distance, or None to resolve from graph
+    /// Legacy single trust distance. Used when `trust_distances` is empty.
     pub trust_distance: Option<u64>,
+    /// Per-domain trust distances. Key = domain name, value = resolved distance.
+    /// If a domain is missing, the caller has no trust path in that domain.
+    #[serde(default)]
+    pub trust_distances: HashMap<String, u64>,
     /// Caller's public keys (base64-encoded) for capability matching
     pub public_keys: Vec<String>,
     /// Schema names the caller has paid for
@@ -19,22 +23,54 @@ pub struct AccessContext {
 }
 
 impl AccessContext {
-    /// Create an owner context (trust distance 0, full access)
+    /// Resolve trust distance for a specific domain.
+    /// Owner contexts always return Some(0).
+    /// Falls back to legacy `trust_distance` when `trust_distances` is empty.
+    pub fn distance_for_domain(&self, domain: &str) -> Option<u64> {
+        // Owner check: clearance_level == u32::MAX is the owner sentinel
+        if self.clearance_level == u32::MAX && self.trust_distance == Some(0) {
+            return Some(0);
+        }
+        if !self.trust_distances.is_empty() {
+            self.trust_distances.get(domain).copied()
+        } else {
+            self.trust_distance
+        }
+    }
+
+    /// Create an owner context (distance 0 in all domains, full access)
     pub fn owner(user_id: impl Into<String>) -> Self {
         Self {
             user_id: user_id.into(),
             trust_distance: Some(0),
+            trust_distances: HashMap::new(),
             public_keys: Vec::new(),
             paid_schemas: HashSet::new(),
             clearance_level: u32::MAX,
         }
     }
 
-    /// Create a remote context with a specific trust distance
+    /// Create a remote context with a specific trust distance (backwards compatible).
+    /// Stores the distance in both the legacy field and the "personal" domain.
     pub fn remote(user_id: impl Into<String>, trust_distance: u64) -> Self {
+        let mut trust_distances = HashMap::new();
+        trust_distances.insert(DOMAIN_PERSONAL.to_string(), trust_distance);
         Self {
             user_id: user_id.into(),
             trust_distance: Some(trust_distance),
+            trust_distances,
+            public_keys: Vec::new(),
+            paid_schemas: HashSet::new(),
+            clearance_level: 0,
+        }
+    }
+
+    /// Create a remote context with per-domain distances.
+    pub fn remote_multi(user_id: impl Into<String>, trust_distances: HashMap<String, u64>) -> Self {
+        Self {
+            user_id: user_id.into(),
+            trust_distance: None,
+            trust_distances,
             public_keys: Vec::new(),
             paid_schemas: HashSet::new(),
             clearance_level: 0,
@@ -223,6 +259,10 @@ mod tests {
         assert_eq!(ctx.user_id, "alice");
         assert_eq!(ctx.trust_distance, Some(0));
         assert_eq!(ctx.clearance_level, u32::MAX);
+        // Owner has distance 0 in any domain
+        assert_eq!(ctx.distance_for_domain("personal"), Some(0));
+        assert_eq!(ctx.distance_for_domain("health"), Some(0));
+        assert_eq!(ctx.distance_for_domain("financial"), Some(0));
     }
 
     #[test]
@@ -230,6 +270,36 @@ mod tests {
         let ctx = AccessContext::remote("bob", 3);
         assert_eq!(ctx.trust_distance, Some(3));
         assert_eq!(ctx.clearance_level, 0);
+        // remote() stores in "personal" domain
+        assert_eq!(ctx.distance_for_domain("personal"), Some(3));
+        // Other domains: not present
+        assert_eq!(ctx.distance_for_domain("health"), None);
+    }
+
+    #[test]
+    fn test_remote_multi_context() {
+        let mut distances = HashMap::new();
+        distances.insert("personal".to_string(), 2);
+        distances.insert("health".to_string(), 1);
+        let ctx = AccessContext::remote_multi("bob", distances);
+        assert_eq!(ctx.distance_for_domain("personal"), Some(2));
+        assert_eq!(ctx.distance_for_domain("health"), Some(1));
+        assert_eq!(ctx.distance_for_domain("financial"), None);
+    }
+
+    #[test]
+    fn test_distance_for_domain_legacy_fallback() {
+        // Empty trust_distances → falls back to trust_distance
+        let ctx = AccessContext {
+            user_id: "bob".into(),
+            trust_distance: Some(5),
+            trust_distances: HashMap::new(),
+            public_keys: vec![],
+            paid_schemas: HashSet::new(),
+            clearance_level: 0,
+        };
+        assert_eq!(ctx.distance_for_domain("personal"), Some(5));
+        assert_eq!(ctx.distance_for_domain("health"), Some(5));
     }
 
     #[test]

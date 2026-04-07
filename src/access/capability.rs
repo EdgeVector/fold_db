@@ -99,6 +99,7 @@ mod tests {
         AccessContext {
             user_id: "test".into(),
             trust_distance: Some(1),
+            trust_distances: Default::default(),
             public_keys: vec![key.to_string()],
             paid_schemas: Default::default(),
             clearance_level: 0,

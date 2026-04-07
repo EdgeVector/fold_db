@@ -91,6 +91,7 @@ mod tests {
         let ctx = AccessContext {
             user_id: "bob".into(),
             trust_distance: Some(5),
+            trust_distances: Default::default(),
             public_keys: vec![],
             paid_schemas: paid,
             clearance_level: 0,
