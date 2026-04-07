@@ -104,6 +104,42 @@ impl NativeIndexManager {
         self.embedding_index.reload_from_store(&*self.store).await
     }
 
+    /// Purge all org embeddings from both Sled and the in-memory index.
+    /// Embedding keys use format `emb:{org_hash}:{schema}:...`, so we scan for `emb:{org_hash}:`.
+    /// In-memory entries have schema = `{org_hash}:...`, so we retain entries where schema
+    /// does NOT start with `{org_hash}:`.
+    /// Returns the total number of entries removed (Sled + in-memory).
+    pub async fn purge_org_embeddings(&self, org_hash: &str) -> Result<usize, SchemaError> {
+        // 1. Delete from Sled store
+        let emb_prefix = format!("emb:{}:", org_hash);
+        let raw = self
+            .store
+            .scan_prefix(emb_prefix.as_bytes())
+            .await
+            .map_err(|e| SchemaError::InvalidData(format!("Failed to scan native_index: {}", e)))?;
+
+        let sled_count = raw.len();
+        for (key, _) in &raw {
+            self.store.delete(key).await.map_err(|e| {
+                SchemaError::InvalidData(format!("Failed to delete embedding key: {}", e))
+            })?;
+        }
+
+        // 2. Purge in-memory index
+        let mem_count = self.embedding_index.purge_org(org_hash);
+
+        let total = sled_count.max(mem_count);
+        if total > 0 {
+            log::info!(
+                "purge_org_embeddings: deleted {} from store, {} from memory for org {}",
+                sled_count,
+                mem_count,
+                &org_hash[..12.min(org_hash.len())]
+            );
+        }
+        Ok(total)
+    }
+
     /// Semantic search: embed the query then return top-50 results by cosine similarity.
     pub async fn search_all_classifications(
         &self,
