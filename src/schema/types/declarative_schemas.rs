@@ -894,7 +894,10 @@ mod tests {
         schema.populate_runtime_fields().unwrap();
 
         // Verify the runtime field got the policy
-        let body_field = schema.runtime_fields.get("body").expect("body field should exist");
+        let body_field = schema
+            .runtime_fields
+            .get("body")
+            .expect("body field should exist");
         let policy = body_field
             .common()
             .access_policy
@@ -905,7 +908,10 @@ mod tests {
         assert_eq!(policy.trust_distance.write_max, 0);
 
         // title should NOT have a policy (not in field_access_policies)
-        let title_field = schema.runtime_fields.get("title").expect("title field should exist");
+        let title_field = schema
+            .runtime_fields
+            .get("title")
+            .expect("title field should exist");
         assert!(
             title_field.common().access_policy.is_none(),
             "title should have no access policy"
@@ -914,10 +920,9 @@ mod tests {
         // Verify PartialEq includes field_access_policies
         let mut schema2 = schema.clone();
         assert_eq!(schema, schema2, "cloned schemas should be equal");
-        schema2.field_access_policies.insert(
-            "title".to_string(),
-            FieldAccessPolicy::default(),
-        );
+        schema2
+            .field_access_policies
+            .insert("title".to_string(), FieldAccessPolicy::default());
         assert_ne!(
             schema, schema2,
             "schemas with different field_access_policies should not be equal"
