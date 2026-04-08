@@ -305,6 +305,11 @@ pub struct DeclarativeSchemaDefinition {
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub trust_domain: Option<String>,
 
+    /// Persisted per-field access policies. Survives serialization (unlike runtime_fields).
+    /// When set, these are copied onto runtime fields during populate_runtime_fields().
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub field_access_policies: HashMap<String, crate::access::types::FieldAccessPolicy>,
+
     // Runtime state fields (not serialized)
     /// Runtime field storage with molecules (for database operations)
     #[serde(skip)]
@@ -436,19 +441,16 @@ impl DeclarativeSchemaDefinition {
             }
         }
 
-        // Apply default access policy (owner-only) to any field that lacks one.
-        // Uses the schema's trust_domain if set, otherwise "personal".
-        {
-            use crate::access::types::FieldAccessPolicy;
-            let schema_domain = self.trust_domain.clone();
-            for field in self.runtime_fields.values_mut() {
-                if field.common().access_policy.is_none() {
-                    let mut policy = FieldAccessPolicy::default();
-                    if let Some(ref domain) = schema_domain {
-                        policy.trust_domain = domain.clone();
-                    }
-                    field.common_mut().access_policy = Some(policy);
-                }
+        // Fields without policies remain None (legacy = no access checks).
+        // Policies are set explicitly via set_field_access_policy or
+        // apply_classification_defaults, and persisted in field_access_policies.
+
+        // Apply persisted field access policies.
+        // These are stored in field_access_policies and survive serialization,
+        // unlike the policies on runtime_fields which are #[serde(skip)].
+        for (field_name, policy) in &self.field_access_policies {
+            if let Some(field) = self.runtime_fields.get_mut(field_name) {
+                field.common_mut().access_policy = Some(policy.clone());
             }
         }
 
@@ -521,6 +523,7 @@ impl DeclarativeSchemaDefinition {
             superseded_by: None,
             org_hash: None,
             trust_domain: None,
+            field_access_policies: HashMap::new(),
             runtime_fields: HashMap::new(),
             inputs_schema_fields: Vec::new(),
             source_schemas: Vec::new(),
