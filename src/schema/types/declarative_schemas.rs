@@ -436,6 +436,22 @@ impl DeclarativeSchemaDefinition {
             }
         }
 
+        // Apply default access policy (owner-only) to any field that lacks one.
+        // Uses the schema's trust_domain if set, otherwise "personal".
+        {
+            use crate::access::types::FieldAccessPolicy;
+            let schema_domain = self.trust_domain.clone();
+            for field in self.runtime_fields.values_mut() {
+                if field.common().access_policy.is_none() {
+                    let mut policy = FieldAccessPolicy::default();
+                    if let Some(ref domain) = schema_domain {
+                        policy.trust_domain = domain.clone();
+                    }
+                    field.common_mut().access_policy = Some(policy);
+                }
+            }
+        }
+
         // Regenerate transform metadata that isn't persisted (marked with #[serde(skip)])
         // This is needed when schemas are loaded from the database
         self.regenerate_metadata();

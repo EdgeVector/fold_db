@@ -27,7 +27,7 @@ pub use types::{
 
 /// Check all four access control layers for a **read** operation on a single field.
 ///
-/// If `policy` is `None`, the field has no access control (legacy behavior) and access is granted.
+/// If `policy` is `None`, the field defaults to owner-only access.
 /// Payment gates are checked at the schema level (passed separately).
 pub fn check_read_access(
     policy: Option<&FieldAccessPolicy>,
@@ -35,11 +35,8 @@ pub fn check_read_access(
     schema_name: &str,
     payment_gate: Option<&PaymentGate>,
 ) -> AccessDecision {
-    // No policy = legacy behavior, grant access
-    let policy = match policy {
-        Some(p) => p,
-        None => return AccessDecision::Granted,
-    };
+    let default_policy = FieldAccessPolicy::default();
+    let policy = policy.unwrap_or(&default_policy);
 
     // Resolve trust distance for this field's domain
     let trust_distance = match context.distance_for_domain(&policy.trust_domain) {
@@ -91,10 +88,8 @@ pub fn check_write_access(
     schema_name: &str,
     payment_gate: Option<&PaymentGate>,
 ) -> AccessDecision {
-    let policy = match policy {
-        Some(p) => p,
-        None => return AccessDecision::Granted,
-    };
+    let default_policy = FieldAccessPolicy::default();
+    let policy = policy.unwrap_or(&default_policy);
 
     // Resolve trust distance for this field's domain
     let trust_distance = match context.distance_for_domain(&policy.trust_domain) {
@@ -156,10 +151,16 @@ mod tests {
     }
 
     #[test]
-    fn test_no_policy_grants_access() {
+    fn test_no_policy_defaults_to_owner_only() {
+        // Remote caller is denied — no policy means owner-only
         let ctx = AccessContext::remote("bob", 100);
-        assert!(check_read_access(None, &ctx, "schema", None).is_granted());
-        assert!(check_write_access(None, &ctx, "schema", None).is_granted());
+        assert!(check_read_access(None, &ctx, "schema", None).is_denied());
+        assert!(check_write_access(None, &ctx, "schema", None).is_denied());
+
+        // Owner is still granted
+        let owner_ctx = AccessContext::owner("alice");
+        assert!(check_read_access(None, &owner_ctx, "schema", None).is_granted());
+        assert!(check_write_access(None, &owner_ctx, "schema", None).is_granted());
     }
 
     #[test]
