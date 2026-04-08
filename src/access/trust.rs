@@ -28,6 +28,7 @@ impl TrustGraph {
 
     /// Assign trust: `owner` trusts `user` at `distance`.
     /// Replaces any existing edge from owner to user.
+    /// Clears any revoke override so the new grant takes effect.
     pub fn assign_trust(&mut self, owner: &str, user: &str, distance: u64) {
         let edges = self.adjacency.entry(owner.to_string()).or_default();
         if let Some(existing) = edges.iter_mut().find(|(peer, _)| peer == user) {
@@ -35,6 +36,8 @@ impl TrustGraph {
         } else {
             edges.push((user.to_string(), distance));
         }
+        // Clear any revoke override — explicit grant takes precedence
+        self.overrides.remove(&Self::override_key(owner, user));
     }
 
     /// Revoke trust: remove the edge from owner to user and set override to u64::MAX.
@@ -206,6 +209,18 @@ mod tests {
         assert_eq!(graph.resolve("bob", "alice"), Some(1));
         graph.revoke_trust("alice", "bob");
         assert_eq!(graph.resolve("bob", "alice"), None);
+    }
+
+    #[test]
+    fn test_revoke_then_regrant() {
+        let mut graph = TrustGraph::new();
+        graph.assign_trust("alice", "bob", 1);
+        assert_eq!(graph.resolve("bob", "alice"), Some(1));
+        graph.revoke_trust("alice", "bob");
+        assert_eq!(graph.resolve("bob", "alice"), None);
+        // Re-grant should work — override cleared by assign_trust
+        graph.assign_trust("alice", "bob", 3);
+        assert_eq!(graph.resolve("bob", "alice"), Some(3));
     }
 
     #[test]
