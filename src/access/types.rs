@@ -220,7 +220,7 @@ pub fn org_domain(org_hash: &str) -> String {
 
 /// Per-field access policy combining all four access control layers.
 /// Attached to `FieldCommon`. If `None`, field uses legacy behavior (no checks).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FieldAccessPolicy {
     /// Which trust domain governs this field's access.
     /// Default: "personal". Each domain has its own independent TrustGraph.

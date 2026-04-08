@@ -136,6 +136,8 @@ impl<'de> serde::Deserialize<'de> for DeclarativeSchemaDefinition {
             identity_hash: Option<String>,
             #[serde(skip_serializing_if = "Option::is_none", default)]
             org_hash: Option<String>,
+            #[serde(default)]
+            field_access_policies: HashMap<String, crate::access::types::FieldAccessPolicy>,
         }
 
         // Deserialize into the helper struct
@@ -219,6 +221,7 @@ impl<'de> serde::Deserialize<'de> for DeclarativeSchemaDefinition {
         schema.field_types = helper.field_types;
         schema.identity_hash = helper.identity_hash;
         schema.org_hash = helper.org_hash;
+        schema.field_access_policies = helper.field_access_policies;
 
         Ok(schema)
     }
@@ -357,6 +360,7 @@ impl PartialEq for DeclarativeSchemaDefinition {
             && self.identity_hash == other.identity_hash
             && self.superseded_by == other.superseded_by
             && self.org_hash == other.org_hash
+            && self.field_access_policies == other.field_access_policies
         // Exclude runtime_fields, inputs_schema_fields, source_schemas, and hash mappings
         // These are derived/runtime state and don't affect schema identity
     }
@@ -857,6 +861,66 @@ mod tests {
         assert_eq!(
             deserialized.descriptive_name, None,
             "Descriptive name should remain None after deserialization"
+        );
+    }
+
+    #[test]
+    fn test_field_access_policies_deserialization() {
+        use crate::access::types::FieldAccessPolicy;
+
+        // Build JSON with field_access_policies
+        let json = serde_json::json!({
+            "name": "SecureNotes",
+            "schema_type": "Single",
+            "fields": ["title", "body"],
+            "field_access_policies": {
+                "body": {
+                    "trust_domain": "personal",
+                    "trust_distance": { "read_max": 0, "write_max": 0 },
+                    "capabilities": [],
+                    "security_label": null
+                }
+            }
+        });
+
+        let mut schema: DeclarativeSchemaDefinition =
+            serde_json::from_value(json).expect("should deserialize with field_access_policies");
+
+        // The declarative field should be present before populate
+        assert_eq!(schema.field_access_policies.len(), 1);
+        assert!(schema.field_access_policies.contains_key("body"));
+
+        // Populate runtime fields — this should copy policies onto runtime fields
+        schema.populate_runtime_fields().unwrap();
+
+        // Verify the runtime field got the policy
+        let body_field = schema.runtime_fields.get("body").expect("body field should exist");
+        let policy = body_field
+            .common()
+            .access_policy
+            .as_ref()
+            .expect("body should have an access policy after populate");
+        assert_eq!(policy.trust_domain, "personal");
+        assert_eq!(policy.trust_distance.read_max, 0);
+        assert_eq!(policy.trust_distance.write_max, 0);
+
+        // title should NOT have a policy (not in field_access_policies)
+        let title_field = schema.runtime_fields.get("title").expect("title field should exist");
+        assert!(
+            title_field.common().access_policy.is_none(),
+            "title should have no access policy"
+        );
+
+        // Verify PartialEq includes field_access_policies
+        let mut schema2 = schema.clone();
+        assert_eq!(schema, schema2, "cloned schemas should be equal");
+        schema2.field_access_policies.insert(
+            "title".to_string(),
+            FieldAccessPolicy::default(),
+        );
+        assert_ne!(
+            schema, schema2,
+            "schemas with different field_access_policies should not be equal"
         );
     }
 }
