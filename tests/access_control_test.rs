@@ -98,10 +98,10 @@ async fn query_with_no_access_context_returns_all_fields() {
 }
 
 #[tokio::test]
-async fn query_with_no_policy_returns_all_fields() {
+async fn query_with_no_explicit_policy_defaults_to_owner_only() {
     let db = setup_db_with_notes().await;
 
-    // No policies set — legacy behavior, all fields accessible even for remote users
+    // No explicit policies set — defaults to owner-only, remote users denied
     let ctx = AccessContext::remote("bob", 5);
     let query = Query::new(
         "Notes".to_string(),
@@ -110,6 +110,21 @@ async fn query_with_no_policy_returns_all_fields() {
     let results = db
         .query_executor
         .query_with_access(query, &ctx, None)
+        .await
+        .unwrap();
+
+    assert!(!results.contains_key("title"));
+    assert!(!results.contains_key("content"));
+
+    // Owner still has access
+    let owner_ctx = AccessContext::owner("owner");
+    let query = Query::new(
+        "Notes".to_string(),
+        vec!["title".to_string(), "content".to_string()],
+    );
+    let results = db
+        .query_executor
+        .query_with_access(query, &owner_ctx, None)
         .await
         .unwrap();
 
