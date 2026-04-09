@@ -7,6 +7,7 @@ use crate::logging::features::LogFeature;
 #[cfg(feature = "aws-backend")]
 use crate::progress::{DynamoDbProgressStore as DynamoDbJobStore, ProgressStore as JobStore};
 use crate::storage::config::DatabaseConfig;
+use crate::storage::node_config_store::{CloudCredentials, NodeConfigStore};
 #[cfg(feature = "aws-backend")]
 use crate::storage::TableNameResolver;
 use crate::sync::SyncSetup;
@@ -54,7 +55,26 @@ pub async fn create_fold_db_with_auth_refresh(
                 .ok_or_else(|| FoldDbError::Config("Invalid storage path".to_string()))?;
             let mut sync_setup = SyncSetup::from_exemem(api_url, api_key, data_dir);
             sync_setup.auth_refresh = auth_refresh;
-            create_local_fold_db(&path, e2e_keys, Some(sync_setup)).await
+            let db = create_local_fold_db(&path, e2e_keys, Some(sync_setup)).await?;
+
+            // Migrate Exemem credentials into the Sled config store so future
+            // startups with DatabaseConfig::Local automatically enable sync.
+            {
+                let locked = db.lock().await;
+                if let Some(cs) = locked.config_store() {
+                    let creds = CloudCredentials {
+                        api_url: api_url.clone(),
+                        api_key: api_key.clone(),
+                        session_token: None,
+                        user_hash: None,
+                    };
+                    if let Err(e) = cs.set_cloud_config(&creds) {
+                        log::warn!("failed to persist cloud config to Sled: {e}");
+                    }
+                }
+            }
+
+            Ok(db)
         }
         #[cfg(feature = "aws-backend")]
         DatabaseConfig::Cloud(cloud_config) => create_cloud_fold_db(cloud_config, e2e_keys).await,
@@ -85,6 +105,27 @@ async fn create_local_fold_db(
     let progress_tree = db
         .open_tree("progress")
         .map_err(|e| FoldDbError::Config(format!("Failed to open progress tree: {}", e)))?;
+
+    // Create the config store for runtime node configuration
+    let config_store = NodeConfigStore::new(&db)
+        .map_err(|e| FoldDbError::Config(format!("Failed to open config store: {}", e)))?;
+
+    // If no sync_setup provided but Sled has cloud credentials, build sync from Sled
+    let sync_setup = if sync_setup.is_none() {
+        if let Some(cloud_creds) = config_store.get_cloud_config() {
+            let data_dir = path_str;
+            log::info!("found cloud credentials in Sled config store — enabling sync");
+            Some(SyncSetup::from_exemem(
+                &cloud_creds.api_url,
+                &cloud_creds.api_key,
+                data_dir,
+            ))
+        } else {
+            None
+        }
+    } else {
+        sync_setup
+    };
 
     // Retain the raw sled handle so FoldDB::sled_db() can return it.
     // This is needed by org operations (which store memberships directly in
@@ -186,6 +227,8 @@ async fn create_local_fold_db(
     )
     .await
     .map_err(|e| FoldDbError::Config(e.to_string()))?;
+
+    fold_db.set_config_store(config_store);
 
     if let Some(engine) = sync_engine {
         fold_db.set_sync_engine(engine).await;
