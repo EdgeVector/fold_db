@@ -1,5 +1,6 @@
 use super::error::{CryptoError, CryptoResult};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+use ed25519_compact::x25519;
 use hkdf::Hkdf;
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
@@ -36,6 +37,23 @@ impl E2eKeys {
             encryption_key,
             index_key,
         }
+    }
+
+    /// Derive E2E keys from an Ed25519 private key seed.
+    ///
+    /// Converts the Ed25519 seed to an X25519 secret key, then derives
+    /// encryption + index keys via HKDF. This allows a single Ed25519
+    /// key pair to serve as both identity and encryption root.
+    pub fn from_ed25519_seed(seed: &[u8; 32]) -> CryptoResult<Self> {
+        let ed_seed = ed25519_compact::Seed::new(*seed);
+        let ed_kp = ed25519_compact::KeyPair::from_seed(ed_seed);
+        let x25519_sk = x25519::SecretKey::from_ed25519(&ed_kp.sk).map_err(|e| {
+            CryptoError::KeyError(format!("Ed25519→X25519 conversion failed: {:?}", e))
+        })?;
+        let x_bytes: &[u8] = x25519_sk.as_ref();
+        let mut secret = [0u8; 32];
+        secret.copy_from_slice(x_bytes);
+        Ok(Self::from_secret(&secret))
     }
 
     /// Load a 32-byte secret from `key_path`, or generate a random one if the
@@ -168,6 +186,49 @@ mod tests {
         let keys2 = E2eKeys::load_or_generate(&key_path).await.unwrap();
         assert_eq!(keys1.encryption_key(), keys2.encryption_key());
         assert_eq!(keys1.index_key(), keys2.index_key());
+    }
+
+    #[test]
+    fn test_from_ed25519_seed_deterministic() {
+        let seed = [0x42u8; 32];
+        let a = E2eKeys::from_ed25519_seed(&seed).unwrap();
+        let b = E2eKeys::from_ed25519_seed(&seed).unwrap();
+
+        assert_eq!(a.encryption_key(), b.encryption_key());
+        assert_eq!(a.index_key(), b.index_key());
+    }
+
+    #[test]
+    fn test_from_ed25519_seed_different_seeds_different_keys() {
+        let a = E2eKeys::from_ed25519_seed(&[0x42u8; 32]).unwrap();
+        let b = E2eKeys::from_ed25519_seed(&[0x99u8; 32]).unwrap();
+
+        assert_ne!(a.encryption_key(), b.encryption_key());
+        assert_ne!(a.index_key(), b.index_key());
+    }
+
+    #[test]
+    fn test_from_ed25519_seed_differs_from_raw_secret() {
+        // Using the same bytes as raw secret vs Ed25519 seed should produce
+        // different keys (because X25519 conversion transforms the bytes)
+        let bytes = [0x42u8; 32];
+        let from_raw = E2eKeys::from_secret(&bytes);
+        let from_seed = E2eKeys::from_ed25519_seed(&bytes).unwrap();
+
+        assert_ne!(from_raw.encryption_key(), from_seed.encryption_key());
+    }
+
+    #[tokio::test]
+    async fn test_from_ed25519_seed_encrypt_decrypt() {
+        let seed = [0x77u8; 32];
+        let keys = E2eKeys::from_ed25519_seed(&seed).unwrap();
+
+        let provider = LocalCryptoProvider::from_key(keys.encryption_key());
+        let plaintext = b"unified identity encryption";
+
+        let ciphertext = provider.encrypt(plaintext).await.unwrap();
+        let decrypted = provider.decrypt(&ciphertext).await.unwrap();
+        assert_eq!(&decrypted[..], plaintext);
     }
 
     #[tokio::test]
