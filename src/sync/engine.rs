@@ -507,6 +507,7 @@ impl SyncEngine {
             drop(partitioner);
 
             // Upload each bucket with its target's crypto
+            let mut upload_auth_error = false;
             for (target_idx, bucket) in &buckets {
                 log::info!(
                     "uploading {} entries to target {} ('{}')",
@@ -520,12 +521,23 @@ impl SyncEngine {
                 let target = &targets[*target_idx];
                 match self.upload_entries(target, bucket).await {
                     Ok(n) => uploaded += n,
+                    Err(ref e) if matches!(e, SyncError::Auth(_)) => {
+                        log::warn!("upload to '{}' failed (auth): {e}", target.label);
+                        upload_auth_error = true;
+                    }
                     Err(e) => log::warn!("upload to '{}' failed: {e}", target.label),
                 }
             }
 
-            // Clear uploaded entries from pending
-            {
+            // Propagate auth errors so the top-level sync() can refresh and retry
+            if upload_auth_error {
+                return Err(SyncError::Auth(
+                    "upload failed due to auth error".to_string(),
+                ));
+            }
+
+            // Clear uploaded entries from pending (only if all uploads succeeded)
+            if uploaded > 0 {
                 let mut pending = self.pending.lock().await;
                 let count = entries.len().min(pending.len());
                 pending.drain(..count);
