@@ -3,77 +3,16 @@ use std::path::PathBuf;
 use tokio::fs;
 
 /// Storage abstraction for uploaded files
-///
-/// For S3 storage, user_id is passed per-operation (not stored in config) to support
-/// multi-tenant Lambda invocations where each request has its own user_id.
 #[derive(Clone)]
 pub enum UploadStorage {
     /// Local filesystem storage
     Local { path: PathBuf },
-    /// S3 storage for cloud deployments
-    #[cfg(feature = "aws-backend")]
-    S3 {
-        client: aws_sdk_s3::Client,
-        bucket: String,
-        /// Base prefix for organizing files (e.g., "uploads/")
-        prefix: String,
-        /// AWS region (needed for some operations)
-        region: String,
-    },
 }
 
 impl UploadStorage {
     /// Create local upload storage
     pub fn local(path: PathBuf) -> Self {
         Self::Local { path }
-    }
-
-    /// Create S3 upload storage
-    ///
-    /// # Arguments
-    /// * `bucket` - S3 bucket name
-    /// * `region` - AWS region (e.g., "us-east-1")
-    /// * `prefix` - Optional base prefix for organizing files (defaults to "uploads/")
-    ///
-    /// Note: user_id is passed per-operation, not at construction time,
-    /// to support multi-tenant Lambda invocations.
-    /// Create S3 upload storage
-    ///
-    /// # Arguments
-    /// * `bucket` - S3 bucket name
-    /// * `region` - AWS region (e.g., "us-east-1")
-    /// * `prefix` - Optional base prefix for organizing files (defaults to "uploads/")
-    ///
-    /// Note: user_id is passed per-operation, not at construction time,
-    /// to support multi-tenant Lambda invocations.
-    #[cfg(feature = "aws-backend")]
-    pub async fn s3(
-        bucket: String,
-        region: String,
-        prefix: Option<String>,
-    ) -> Result<Self, StorageError> {
-        let aws_config = aws_config::defaults(aws_config::BehaviorVersion::latest())
-            .region(aws_sdk_s3::config::Region::new(region.clone()))
-            .load()
-            .await;
-
-        let client = aws_sdk_s3::Client::new(&aws_config);
-
-        Ok(Self::S3 {
-            client,
-            bucket,
-            prefix: prefix.unwrap_or_else(|| "uploads/".to_string()),
-            region,
-        })
-    }
-
-    /// Get the full S3 key prefix including user_id if present
-    #[cfg(feature = "aws-backend")]
-    fn get_s3_key_prefix(prefix: &str, user_id: Option<&str>) -> String {
-        match user_id {
-            Some(uid) => format!("{}{}/", prefix, uid),
-            None => prefix.to_string(),
-        }
     }
 
     /// Save a file to storage
@@ -108,27 +47,6 @@ impl UploadStorage {
 
                 Ok(filepath)
             }
-            #[cfg(feature = "aws-backend")]
-            Self::S3 {
-                client,
-                bucket,
-                prefix,
-                ..
-            } => {
-                let full_prefix = Self::get_s3_key_prefix(prefix, user_id);
-                let key = format!("{}{}", full_prefix, filename);
-
-                client
-                    .put_object()
-                    .bucket(bucket)
-                    .key(&key)
-                    .body(aws_sdk_s3::primitives::ByteStream::from(data.to_vec()))
-                    .send()
-                    .await
-                    .map_err(|e| StorageError::UploadFailed(format!("S3 upload failed: {}", e)))?;
-
-                Ok(PathBuf::from(format!("s3://{}/{}", bucket, key)))
-            }
         }
     }
 
@@ -146,40 +64,6 @@ impl UploadStorage {
                 };
                 let filepath = target_path.join(filename);
                 Ok(fs::read(&filepath).await?)
-            }
-            #[cfg(feature = "aws-backend")]
-            Self::S3 {
-                client,
-                bucket,
-                prefix,
-                ..
-            } => {
-                let full_prefix = Self::get_s3_key_prefix(prefix, user_id);
-                let key = format!("{}{}", full_prefix, filename);
-
-                let response = client
-                    .get_object()
-                    .bucket(bucket)
-                    .key(&key)
-                    .send()
-                    .await
-                    .map_err(|e| {
-                        StorageError::DownloadFailed(format!("S3 download failed: {}", e))
-                    })?;
-
-                let bytes = response
-                    .body
-                    .collect()
-                    .await
-                    .map_err(|e| {
-                        StorageError::DownloadFailed(format!(
-                            "Failed to read S3 response body: {}",
-                            e
-                        ))
-                    })?
-                    .into_bytes();
-
-                Ok(bytes.to_vec())
             }
         }
     }
@@ -245,42 +129,6 @@ impl UploadStorage {
                     ))),
                 }
             }
-            #[cfg(feature = "aws-backend")]
-            Self::S3 {
-                client,
-                bucket,
-                prefix,
-                ..
-            } => {
-                let full_prefix = Self::get_s3_key_prefix(prefix, user_id);
-                let key = format!("{}{}", full_prefix, filename);
-                let s3_path = PathBuf::from(format!("s3://{}/{}", bucket, key));
-
-                // Check if object already exists
-                let exists = client
-                    .head_object()
-                    .bucket(bucket)
-                    .key(&key)
-                    .send()
-                    .await
-                    .is_ok();
-
-                if exists {
-                    return Ok((s3_path, true));
-                }
-
-                // Upload the file
-                client
-                    .put_object()
-                    .bucket(bucket)
-                    .key(&key)
-                    .body(aws_sdk_s3::primitives::ByteStream::from(data.to_vec()))
-                    .send()
-                    .await
-                    .map_err(|e| StorageError::UploadFailed(format!("S3 upload failed: {}", e)))?;
-
-                Ok((s3_path, false))
-            }
         }
     }
 
@@ -297,20 +145,6 @@ impl UploadStorage {
                     None => path.clone(),
                 };
                 Ok(target_path.join(filename).exists())
-            }
-            #[cfg(feature = "aws-backend")]
-            Self::S3 {
-                client,
-                bucket,
-                prefix,
-                ..
-            } => {
-                let full_prefix = Self::get_s3_key_prefix(prefix, user_id);
-                let key = format!("{}{}", full_prefix, filename);
-
-                let result = client.head_object().bucket(bucket).key(&key).send().await;
-
-                Ok(result.is_ok())
             }
         }
     }
@@ -329,11 +163,6 @@ impl UploadStorage {
                 };
                 target_path.join(filename).display().to_string()
             }
-            #[cfg(feature = "aws-backend")]
-            Self::S3 { bucket, prefix, .. } => {
-                let full_prefix = Self::get_s3_key_prefix(prefix, user_id);
-                format!("s3://{}/{}{}", bucket, full_prefix, filename)
-            }
         }
     }
 
@@ -344,14 +173,7 @@ impl UploadStorage {
 
     /// Returns true if this is S3 storage
     pub fn is_s3(&self) -> bool {
-        #[cfg(feature = "aws-backend")]
-        {
-            matches!(self, Self::S3 { .. })
-        }
-        #[cfg(not(feature = "aws-backend"))]
-        {
-            false
-        }
+        false
     }
 
     /// Download a file from an external S3 path (bucket/key)
@@ -362,23 +184,6 @@ impl UploadStorage {
                 Err(StorageError::DownloadFailed(
                     "S3 download not supported in local mode. Configure S3 storage to enable S3 downloads.".to_string()
                 ))
-            }
-            #[cfg(feature = "aws-backend")]
-            Self::S3 { client, .. } => {
-                let response = client.get_object()
-                    .bucket(_bucket)
-                    .key(_key)
-                    .send()
-                    .await
-                    .map_err(|e| StorageError::DownloadFailed(format!("S3 download from s3://{}/{} failed: {}", _bucket, _key, e)))?;
-
-                let bytes = response.body
-                    .collect()
-                    .await
-                    .map_err(|e| StorageError::DownloadFailed(format!("Failed to read S3 response body: {}", e)))?
-                    .into_bytes();
-
-                Ok(bytes.to_vec())
             }
         }
     }

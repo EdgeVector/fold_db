@@ -44,9 +44,6 @@ pub struct OutputsConfig {
     pub web: WebConfig,
     /// Structured JSON output configuration
     pub structured: StructuredConfig,
-    /// DynamoDB output configuration
-    #[cfg(feature = "aws-backend")]
-    pub dynamodb: DynamoConfig,
 }
 
 /// Console output configuration
@@ -115,20 +112,6 @@ pub struct StructuredConfig {
     pub include_context: bool,
     /// Include performance metrics
     pub include_metrics: bool,
-}
-
-/// DynamoDB output configuration
-#[cfg(feature = "aws-backend")]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DynamoConfig {
-    /// Enable DynamoDB output
-    pub enabled: bool,
-    /// Log level for DynamoDB output
-    pub level: String,
-    /// DynamoDB table name
-    pub table_name: String,
-    /// DynamoDB region (optional)
-    pub region: Option<String>,
 }
 
 impl Default for LogConfig {
@@ -205,18 +188,6 @@ impl Default for StructuredConfig {
     }
 }
 
-#[cfg(feature = "aws-backend")]
-impl Default for DynamoConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            level: "INFO".to_string(),
-            table_name: "folddb-logs".to_string(),
-            region: None,
-        }
-    }
-}
-
 impl LogConfig {
     /// Load configuration from a TOML file
     pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, ConfigError> {
@@ -273,23 +244,6 @@ impl LogConfig {
         }
         if let Ok(level) = std::env::var("FOLD_LOG_WEB_LEVEL") {
             self.outputs.web.level = level;
-        }
-
-        // DynamoDB settings
-        #[cfg(feature = "aws-backend")]
-        {
-            if let Ok(enabled) = std::env::var("FOLD_LOG_DYNAMODB_ENABLED") {
-                self.outputs.dynamodb.enabled = enabled.parse().unwrap_or(false);
-            }
-            if let Ok(level) = std::env::var("FOLD_LOG_DYNAMODB_LEVEL") {
-                self.outputs.dynamodb.level = level;
-            }
-            if let Ok(table) = std::env::var("FOLD_LOG_DYNAMODB_TABLE") {
-                self.outputs.dynamodb.table_name = table;
-            }
-            if let Ok(region) = std::env::var("FOLD_LOG_DYNAMODB_REGION") {
-                self.outputs.dynamodb.region = Some(region);
-            }
         }
 
         // Feature-specific overrides

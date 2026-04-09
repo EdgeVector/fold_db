@@ -10,8 +10,6 @@ pub mod features;
 pub mod outputs;
 
 use crate::logging::core::{LogBridge, Logger, MultiAsyncLogger};
-#[cfg(feature = "aws-backend")]
-use crate::logging::outputs::dynamodb::DynamoDbLogger;
 use crate::logging::outputs::web::WebOutput;
 use config::LogConfig;
 use once_cell::sync::OnceCell;
@@ -70,23 +68,8 @@ impl LoggingSystem {
     pub async fn init_with_cloud(
         dynamo_config: Option<(String, String, Option<String>)>,
     ) -> Result<(), LoggingError> {
-        #[allow(unused_mut)]
-        let mut config = LogConfig::default();
+        let config = LogConfig::default();
 
-        // Enable DynamoDB logging if config is provided
-        #[cfg(feature = "aws-backend")]
-        if let Some((table_name, region, user_id)) = dynamo_config {
-            config.outputs.dynamodb.enabled = true;
-            config.outputs.dynamodb.table_name = table_name;
-            config.outputs.dynamodb.region = Some(region);
-
-            // Set default user ID for the logger if provided
-            if let Some(uid) = user_id {
-                config.general.app_id = Some(uid);
-            }
-        }
-
-        #[cfg(not(feature = "aws-backend"))]
         let _ = dynamo_config; // Suppress unused variable warning
 
         Self::init_with_config(config).await
@@ -126,26 +109,6 @@ impl LoggingSystem {
                 }
                 Err(e) => eprintln!("Failed to initialize web logger: {}", e),
             }
-        }
-
-        // 2. DynamoDB Logger
-        #[cfg(feature = "aws-backend")]
-        if config.outputs.dynamodb.enabled {
-            let table_name = config.outputs.dynamodb.table_name.clone();
-
-            // Create DynamoDB logger
-            let dynamodb_logger = if let Some(region) = &config.outputs.dynamodb.region {
-                let region_provider = aws_config::Region::new(region.clone());
-                let sdk_config = aws_config::defaults(aws_config::BehaviorVersion::latest())
-                    .region(region_provider)
-                    .load()
-                    .await;
-                DynamoDbLogger::with_config(table_name, &sdk_config).await
-            } else {
-                DynamoDbLogger::new(table_name).await
-            };
-
-            async_loggers.push(Arc::new(dynamodb_logger));
         }
 
         // Connect async loggers via MultiAsyncLogger and LogBridge if any exist

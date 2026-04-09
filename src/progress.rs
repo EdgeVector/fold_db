@@ -4,8 +4,6 @@
 //! with pluggable persistence (InMemory, DynamoDB).
 
 use async_trait::async_trait;
-#[cfg(feature = "aws-backend")]
-use aws_sdk_dynamodb::types::AttributeValue;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -266,128 +264,6 @@ impl ProgressStore for SledProgressStore {
     }
 }
 
-/// DynamoDB implementation
-#[cfg(feature = "aws-backend")]
-pub struct DynamoDbProgressStore {
-    client: aws_sdk_dynamodb::Client,
-    table_name: String,
-}
-
-#[cfg(feature = "aws-backend")]
-impl DynamoDbProgressStore {
-    pub fn new(client: aws_sdk_dynamodb::Client, table_name: String) -> Self {
-        Self { client, table_name }
-    }
-
-    // Legacy constructor for backward compatibility or ease of use (optional)
-    pub async fn from_config(table_name: String, region: String) -> Self {
-        let config = aws_config::defaults(aws_config::BehaviorVersion::latest())
-            .region(aws_sdk_dynamodb::config::Region::new(region))
-            .load()
-            .await;
-        let client = aws_sdk_dynamodb::Client::new(&config);
-        Self { client, table_name }
-    }
-
-    // Additional helpers for DynamoDB could be added here (e.g. ensure_table_exists)
-
-    fn item_to_job(&self, item: &HashMap<String, AttributeValue>) -> Option<Job> {
-        let json = item.get("data")?.as_s().ok()?;
-        serde_json::from_str(json).ok()
-    }
-}
-
-#[cfg(feature = "aws-backend")]
-#[async_trait]
-impl ProgressStore for DynamoDbProgressStore {
-    async fn save(&self, job: &Job) -> Result<(), String> {
-        // Require explicit user_id - no global fallback
-        let pk = job
-            .user_id
-            .clone()
-            .ok_or_else(|| "Job must have user_id set for DynamoDB storage".to_string())?;
-
-        let json = serde_json::to_string(job).map_err(|e| e.to_string())?;
-
-        // TTL: 24 hours
-        let ttl = (std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs()
-            + (60 * 60)) as i64;
-
-        self.client
-            .put_item()
-            .table_name(&self.table_name)
-            .item("PK", AttributeValue::S(pk))
-            .item("SK", AttributeValue::S(job.id.clone()))
-            .item("data", AttributeValue::S(json))
-            .item("ttl", AttributeValue::N(ttl.to_string()))
-            // Indexed fields for filtering could be added here
-            .send()
-            .await
-            .map(|_| ())
-            .map_err(|e| e.to_string())
-    }
-
-    async fn load(&self, id: &str) -> Result<Option<Job>, String> {
-        // This is tricky because we need the PK (user_id) to look up by SK (id).
-        // If we don't know the User ID, we might need a GSI or to Query.
-        // For strict multi-tenancy we SHOULD know the user_id.
-        // However, the interface `load(id)` implies global uniqueness lookup.
-
-        // If we assume the ID is unique enough, we might need a GSI on SK?
-        // OR we change the interface to `load(id, user_id)`.
-
-        // FOR NOW: We will assume we can't easily implement efficient global load without GSI.
-        // We will fallback to a Scan if really needed, OR we rely on the caller knowing the context?
-        // Actually, let's keep it simple: WE require user_id for scalable lookups.
-
-        // But the trait is `load(id)`.
-        // Let's rely on a convention: if we are in a context where we know the user, we should use `list_by_user` and filter.
-        // Or we implement a GSI lookup.
-
-        // Given existing Lambda/Ingestion code often just passes ID...
-        // The previous implementation used user_id from "current_user()" helper.
-        // That WAS context aware.
-
-        // Require user context - no default fallback
-        let user_id = crate::logging::core::get_current_user_id()
-            .ok_or_else(|| "User context required to load jobs".to_string())?;
-
-        let result = self
-            .client
-            .get_item()
-            .table_name(&self.table_name)
-            .key("PK", AttributeValue::S(user_id))
-            .key("SK", AttributeValue::S(id.to_string()))
-            .send()
-            .await
-            .map_err(|e| e.to_string())?;
-
-        if let Some(item) = result.item {
-            Ok(self.item_to_job(&item))
-        } else {
-            Ok(None)
-        }
-    }
-
-    async fn list_by_user(&self, user_id: &str) -> Result<Vec<Job>, String> {
-        let result = self
-            .client
-            .query()
-            .table_name(&self.table_name)
-            .key_condition_expression("PK = :uid")
-            .expression_attribute_values(":uid", AttributeValue::S(user_id.to_string()))
-            .send()
-            .await
-            .map_err(|e| e.to_string())?;
-
-        let items = result.items.unwrap_or_default();
-        Ok(items.iter().filter_map(|i| self.item_to_job(i)).collect())
-    }
-}
-
 pub type ProgressTracker = Arc<dyn ProgressStore>;
 
 /// Create a progress tracker with Sled storage (for local persistent storage)
@@ -397,18 +273,6 @@ pub fn create_tracker_with_sled(tree: sled::Tree) -> ProgressTracker {
 
 /// Create a progress tracker with optional DynamoDB config
 pub async fn create_tracker(dynamo_config: Option<(String, String)>) -> ProgressTracker {
-    if let Some((table_name, region)) = dynamo_config {
-        #[cfg(feature = "aws-backend")]
-        {
-            let store = DynamoDbProgressStore::from_config(table_name.clone(), region).await;
-            Arc::new(store)
-        }
-        #[cfg(not(feature = "aws-backend"))]
-        {
-            let _ = (table_name, region);
-            Arc::new(InMemoryProgressStore::new())
-        }
-    } else {
-        Arc::new(InMemoryProgressStore::new())
-    }
+    let _ = dynamo_config;
+    Arc::new(InMemoryProgressStore::new())
 }

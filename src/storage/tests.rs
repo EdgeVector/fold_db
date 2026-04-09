@@ -164,30 +164,6 @@ mod storage_abstraction_tests {
         let mem_kv = mem_store.open_namespace("test").await.unwrap();
         assert_eq!(mem_kv.execution_model(), ExecutionModel::SyncWrapped);
         assert_eq!(mem_kv.flush_behavior(), FlushBehavior::NoOp);
-
-        // Test DynamoDB backend (if available)
-        #[cfg(feature = "aws-backend")]
-        {
-            use crate::storage::dynamodb_backend::DynamoDbNamespacedStore;
-            use aws_sdk_dynamodb::Client;
-
-            let config = aws_config::defaults(aws_config::BehaviorVersion::latest())
-                .load()
-                .await;
-            let client = Client::new(&config);
-            let dynamodb_store =
-                DynamoDbNamespacedStore::new_with_prefix(client, "test-table".to_string());
-
-            match dynamodb_store.open_namespace("test").await {
-                Ok(dynamodb_kv) => {
-                    assert_eq!(dynamodb_kv.execution_model(), ExecutionModel::Async);
-                    assert_eq!(dynamodb_kv.flush_behavior(), FlushBehavior::NoOp);
-                }
-                Err(_) => {
-                    // AWS not available, skip DynamoDB test
-                }
-            }
-        }
     }
 
     #[tokio::test]
@@ -213,76 +189,5 @@ mod storage_abstraction_tests {
 
         let retrieved: Vec<(String, Item)> = typed.scan_items_with_prefix("item").await.unwrap();
         assert_eq!(retrieved.len(), 3);
-    }
-
-    #[tokio::test]
-    #[cfg(feature = "aws-backend")]
-    async fn test_dynamodb_partition_key_logic() {
-        use crate::storage::dynamodb_backend::DynamoDbKvStore;
-        use aws_sdk_dynamodb::Client;
-        use std::sync::Arc;
-
-        // Create a mock client (we won't actually use it, just testing the key logic)
-        // In a real test, you'd use LocalStack or a mock
-        let config = aws_config::defaults(aws_config::BehaviorVersion::latest())
-            .load()
-            .await;
-        let client = Arc::new(Client::new(&config));
-
-        // Create a store to test the sort key function which doesn't require user context
-        let store = DynamoDbKvStore::new(client.clone(), "test-table".to_string());
-
-        // Test sort key (should not have user_id prefix)
-        let test_key = b"atom:abc123";
-        let sort_key = store.make_sort_key(test_key);
-        assert_eq!(sort_key, "atom:abc123");
-    }
-
-    #[tokio::test]
-    #[cfg(feature = "aws-backend")]
-    async fn test_dynamodb_namespaced_store_user_isolation() {
-        use crate::storage::dynamodb_backend::DynamoDbNamespacedStore;
-        use aws_sdk_dynamodb::Client;
-
-        // Create a mock client
-        let config = aws_config::defaults(aws_config::BehaviorVersion::latest())
-            .load()
-            .await;
-        let client = Client::new(&config);
-
-        // Test table name generation
-        let store = DynamoDbNamespacedStore::new_with_prefix(client, "FoldDBStorage".to_string());
-        let table_name = store.get_table_name_for_namespace("main");
-        assert_eq!(table_name, "FoldDBStorage-main");
-
-        // Test that opening a namespace works (user context will be obtained from request context)
-        let store2 = DynamoDbNamespacedStore::new_with_prefix(
-            Client::new(&config),
-            "FoldDBStorage".to_string(),
-        );
-
-        // Verify the store is created correctly
-        // Note: open_namespace will fail without AWS credentials or user context,
-        // which is expected in CI/test environments
-        match store2.open_namespace("test").await {
-            Ok(kv) => {
-                // The kv store will obtain user_id from request context
-                assert_eq!(kv.backend_name(), "dynamodb");
-            }
-            Err(e) => {
-                // If AWS is not available or user context is missing, that's ok - we're just testing the structure
-                // The error should be about table creation/access or user context, not about the store structure
-                let error_msg = e.to_string();
-                assert!(
-                    error_msg.contains("DynamoDbError")
-                        || error_msg.contains("dispatch failure")
-                        || error_msg.contains("credentials")
-                        || error_msg.contains("table")
-                        || error_msg.contains("user_id"),
-                    "Unexpected error: {}",
-                    error_msg
-                );
-            }
-        }
     }
 }

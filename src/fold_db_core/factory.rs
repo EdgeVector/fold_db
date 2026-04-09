@@ -2,27 +2,16 @@ use crate::crypto::E2eKeys;
 use crate::db_operations::DbOperations;
 use crate::error::{FoldDbError, FoldDbResult};
 use crate::fold_db_core::FoldDB;
-#[cfg(feature = "aws-backend")]
-use crate::logging::features::LogFeature;
-#[cfg(feature = "aws-backend")]
-use crate::progress::{DynamoDbProgressStore as DynamoDbJobStore, ProgressStore as JobStore};
 use crate::storage::config::DatabaseConfig;
 use crate::storage::node_config_store::{CloudCredentials, NodeConfigStore};
-#[cfg(feature = "aws-backend")]
-use crate::storage::TableNameResolver;
 use crate::sync::SyncSetup;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-#[cfg(feature = "aws-backend")]
-use crate::log_feature;
-
 /// Creates a fully initialized FoldDB instance based on the database configuration.
 ///
-/// - **Local**: Sled backend with E2E encryption.
-/// - **Exemem**: Local Sled + E2E encryption + S3 sync via the Exemem platform.
-///   Uses the same `api_url` and `api_key` for sync auth — no extra config needed.
-/// - **Cloud** (aws-backend feature): DynamoDB backend with E2E encryption.
+/// Always uses local Sled storage. When `cloud_sync` is configured, layers on
+/// encrypted S3 sync via the Exemem platform.
 pub async fn create_fold_db(
     config: &DatabaseConfig,
     e2e_keys: &E2eKeys,
@@ -32,7 +21,7 @@ pub async fn create_fold_db(
 
 /// Creates a FoldDB instance with an optional auth-refresh callback for the sync engine.
 ///
-/// When running in Exemem mode, the callback is invoked on 401 errors to obtain
+/// When cloud sync is enabled, the callback is invoked on 401 errors to obtain
 /// fresh credentials (e.g., by re-registering with the Exemem API using the node's
 /// Ed25519 keypair). The sync engine retries once after a successful refresh.
 pub async fn create_fold_db_with_auth_refresh(
@@ -40,45 +29,35 @@ pub async fn create_fold_db_with_auth_refresh(
     e2e_keys: &E2eKeys,
     auth_refresh: Option<crate::sync::AuthRefreshCallback>,
 ) -> FoldDbResult<Arc<Mutex<FoldDB>>> {
-    match config {
-        DatabaseConfig::Local { path } => create_local_fold_db(path, e2e_keys, None).await,
-        DatabaseConfig::Exemem {
-            api_url, api_key, ..
-        } => {
-            // Exemem mode: local Sled + S3 sync via the Exemem platform.
-            // The sync auth Lambda shares the same API URL and API key.
-            let path = std::path::PathBuf::from(
-                std::env::var("FOLD_STORAGE_PATH").unwrap_or_else(|_| "data".to_string()),
-            );
-            let data_dir = path
-                .to_str()
-                .ok_or_else(|| FoldDbError::Config("Invalid storage path".to_string()))?;
-            let mut sync_setup = SyncSetup::from_exemem(api_url, api_key, data_dir);
-            sync_setup.auth_refresh = auth_refresh;
-            let db = create_local_fold_db(&path, e2e_keys, Some(sync_setup)).await?;
+    let sync_setup = if let Some(cloud) = &config.cloud_sync {
+        let path = std::env::var("FOLD_STORAGE_PATH").unwrap_or_else(|_| "data".to_string());
+        let mut setup = SyncSetup::from_exemem(&cloud.api_url, &cloud.api_key, &path);
+        setup.auth_refresh = auth_refresh;
+        Some(setup)
+    } else {
+        None
+    };
 
-            // Migrate Exemem credentials into the Sled config store so future
-            // startups with DatabaseConfig::Local automatically enable sync.
-            {
-                let locked = db.lock().await;
-                if let Some(cs) = locked.config_store() {
-                    let creds = CloudCredentials {
-                        api_url: api_url.clone(),
-                        api_key: api_key.clone(),
-                        session_token: None,
-                        user_hash: None,
-                    };
-                    if let Err(e) = cs.set_cloud_config(&creds) {
-                        log::warn!("failed to persist cloud config to Sled: {e}");
-                    }
-                }
+    let db = create_local_fold_db(&config.path, e2e_keys, sync_setup).await?;
+
+    // If cloud sync is configured, persist credentials into the Sled config store
+    // so future startups can auto-enable sync even from a minimal config.
+    if let Some(cloud) = &config.cloud_sync {
+        let locked = db.lock().await;
+        if let Some(cs) = locked.config_store() {
+            let creds = CloudCredentials {
+                api_url: cloud.api_url.clone(),
+                api_key: cloud.api_key.clone(),
+                session_token: None,
+                user_hash: None,
+            };
+            if let Err(e) = cs.set_cloud_config(&creds) {
+                log::warn!("failed to persist cloud config to Sled: {e}");
             }
-
-            Ok(db)
         }
-        #[cfg(feature = "aws-backend")]
-        DatabaseConfig::Cloud(cloud_config) => create_cloud_fold_db(cloud_config, e2e_keys).await,
     }
+
+    Ok(db)
 }
 
 /// Creates a local Sled-backed FoldDB with optional S3 sync.
@@ -86,9 +65,9 @@ pub async fn create_fold_db_with_auth_refresh(
 /// When `sync_setup` is provided, the storage stack becomes:
 /// ```text
 /// EncryptingNamespacedStore  (E2E AES-256-GCM)
-///       ↓
+///       |
 /// SyncingNamespacedStore     (records ops for S3 sync)
-///       ↓
+///       |
 /// SledNamespacedStore        (local persistence)
 /// ```
 async fn create_local_fold_db(
@@ -178,7 +157,7 @@ async fn create_local_fold_db(
             }
         }
 
-        // Sled → SyncingNamespacedStore → EncryptingNamespacedStore
+        // Sled -> SyncingNamespacedStore -> EncryptingNamespacedStore
         let syncing_store = crate::storage::SyncingNamespacedStore::new(base_store, engine.clone());
         let mid_store: Arc<dyn crate::storage::traits::NamespacedStore> = Arc::new(syncing_store);
 
@@ -196,7 +175,7 @@ async fn create_local_fold_db(
             Some(enc_store),
         )
     } else {
-        // No sync — Sled → EncryptingNamespacedStore
+        // No sync — Sled -> EncryptingNamespacedStore
         let crypto = Arc::new(crate::crypto::LocalCryptoProvider::from_key(
             e2e_keys.encryption_key(),
         ));
@@ -236,93 +215,4 @@ async fn create_local_fold_db(
     }
 
     Ok(Arc::new(Mutex::new(fold_db)))
-}
-
-#[cfg(feature = "aws-backend")]
-async fn create_cloud_fold_db(
-    cloud_config: &crate::storage::config::CloudConfig,
-    e2e_keys: &E2eKeys,
-) -> FoldDbResult<Arc<Mutex<FoldDB>>> {
-    log_feature!(
-        LogFeature::Database,
-        info,
-        "Initializing Cloud backend: region={}",
-        cloud_config.region
-    );
-
-    let aws_config = aws_config::defaults(aws_config::BehaviorVersion::latest())
-        .region(aws_sdk_dynamodb::config::Region::new(
-            cloud_config.region.clone(),
-        ))
-        .load()
-        .await;
-
-    let client = aws_sdk_dynamodb::Client::new(&aws_config);
-
-    let map = std::collections::HashMap::from([
-        ("main".to_string(), cloud_config.tables.main.clone()),
-        ("metadata".to_string(), cloud_config.tables.metadata.clone()),
-        (
-            "node_id_schema_permissions".to_string(),
-            cloud_config.tables.permissions.clone(),
-        ),
-        (
-            "schema_states".to_string(),
-            cloud_config.tables.schema_states.clone(),
-        ),
-        ("schemas".to_string(), cloud_config.tables.schemas.clone()),
-        (
-            "public_keys".to_string(),
-            cloud_config.tables.public_keys.clone(),
-        ),
-        (
-            "native_index".to_string(),
-            cloud_config.tables.native_index.clone(),
-        ),
-        ("process".to_string(), cloud_config.tables.process.clone()),
-        (
-            "idempotency".to_string(),
-            cloud_config.tables.idempotency.clone(),
-        ),
-    ]);
-
-    let resolver = TableNameResolver::Explicit(map);
-
-    let user_id = cloud_config
-        .user_id
-        .clone()
-        .ok_or_else(|| FoldDbError::Config("Missing user_id for Cloud config".to_string()))?;
-
-    let base_store: Arc<dyn crate::storage::traits::NamespacedStore> =
-        Arc::new(crate::storage::CloudNamespacedStore::new(
-            client.clone(),
-            resolver,
-            cloud_config.auto_create,
-        ));
-
-    let e2e_crypto = Arc::new(crate::crypto::LocalCryptoProvider::from_key(
-        e2e_keys.encryption_key(),
-    ));
-    let e2e_store = crate::storage::EncryptingNamespacedStore::new(base_store, e2e_crypto, true);
-    let final_store = Arc::new(e2e_store) as Arc<dyn crate::storage::traits::NamespacedStore>;
-
-    let db_ops = Arc::new(
-        DbOperations::from_namespaced_store(final_store)
-            .await
-            .map_err(|e| {
-                FoldDbError::Config(format!("Failed to initialize DynamoDB backend: {}", e))
-            })?,
-    );
-
-    let job_store: Option<Arc<dyn JobStore>> = {
-        let table_name = cloud_config.tables.process.clone();
-        let store = DynamoDbJobStore::new(client.clone(), table_name);
-        Some(Arc::new(store))
-    };
-
-    Ok(Arc::new(Mutex::new(
-        FoldDB::new_with_components(db_ops, "data", job_store, Some(user_id))
-            .await
-            .map_err(|e| FoldDbError::Config(e.to_string()))?,
-    )))
 }

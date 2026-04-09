@@ -330,58 +330,6 @@ impl SchemaServiceState {
         Ok(())
     }
 
-    /// Rebuild canonical fields from existing schemas (for cloud storage where
-    /// there's no separate canonical_fields tree).
-    #[cfg(feature = "aws-backend")]
-    pub(super) fn rebuild_canonical_fields_from_schemas(&self) {
-        let schemas = match self.schemas.read() {
-            Ok(s) => s,
-            Err(_) => return,
-        };
-        let mut fields = match self.canonical_fields.write() {
-            Ok(f) => f,
-            Err(_) => return,
-        };
-        let mut embeddings = match self.canonical_field_embeddings.write() {
-            Ok(e) => e,
-            Err(_) => return,
-        };
-        fields.clear();
-        embeddings.clear();
-
-        for schema in schemas.values() {
-            for field_name in schema.fields.as_deref().unwrap_or(&[]) {
-                if !fields.contains_key(field_name) {
-                    let desc = Self::build_field_description(field_name, schema);
-                    let field_type = Self::infer_field_type(field_name, schema);
-                    let embed_text = Self::build_embedding_text(field_name, &desc);
-                    if let Ok(vec) = self.embedder.embed_text(&embed_text) {
-                        embeddings.insert(field_name.clone(), vec);
-                    }
-                    let classification = schema.field_data_classifications.get(field_name).cloned();
-                    let interest_category =
-                        schema.field_interest_categories.get(field_name).cloned();
-                    fields.insert(
-                        field_name.clone(),
-                        CanonicalField {
-                            description: desc,
-                            field_type,
-                            classification,
-                            interest_category,
-                        },
-                    );
-                }
-            }
-        }
-
-        log_feature!(
-            LogFeature::Schema,
-            info,
-            "Rebuilt {} canonical fields from schemas",
-            fields.len()
-        );
-    }
-
     /// Backfill interest categories for existing canonical fields that don't have one.
     /// Called on startup after loading canonical fields from storage.
     /// Best-effort: failures are logged but don't block startup.
@@ -444,11 +392,6 @@ impl SchemaServiceState {
                         let _ = tree.insert(name.as_bytes(), bytes);
                     }
                 }
-            }
-            #[cfg(feature = "aws-backend")]
-            super::state::SchemaStorage::Cloud { .. } => {
-                // Cloud storage doesn't have a separate canonical_fields table;
-                // canonical fields are rebuilt from schemas on startup.
             }
         }
     }

@@ -6,11 +6,6 @@ use crate::error::{FoldDbError, FoldDbResult};
 use crate::log_feature;
 use crate::logging::features::LogFeature;
 use crate::schema::types::Schema;
-#[cfg(feature = "aws-backend")]
-use crate::storage::DynamoDbSchemaStore;
-
-#[cfg(feature = "aws-backend")]
-pub use crate::storage::CloudConfig;
 
 use super::state_matching::collect_field_names;
 pub use super::state_matching::jaccard_index;
@@ -27,9 +22,6 @@ pub enum SchemaStorage {
         db: sled::Db,
         schemas_tree: sled::Tree,
     },
-    /// Cloud storage (DynamoDB etc) (serverless, no locking needed!)
-    #[cfg(feature = "aws-backend")]
-    Cloud { store: Arc<DynamoDbSchemaStore> },
 }
 
 /// Shared state for the schema service
@@ -394,66 +386,12 @@ impl SchemaServiceState {
                     count
                 );
             }
-            #[cfg(feature = "aws-backend")]
-            _ => {
-                return Err(FoldDbError::Config(
-                    "load_schemas_sync called on non-Sled storage".to_string(),
-                ));
-            }
         }
 
         Ok(())
     }
 
-    /// Create a new schema service state with Cloud storage
-    /// No locking needed - identity hashes ensure idempotent writes!
-    #[cfg(feature = "aws-backend")]
-    pub async fn new_with_cloud(config: CloudConfig) -> FoldDbResult<Self> {
-        log_feature!(
-            LogFeature::Schema,
-            info,
-            "Initializing schema service with DynamoDB in region: {}",
-            config.region
-        );
-
-        let store = DynamoDbSchemaStore::new(config).await?;
-
-        let embedder: Arc<dyn Embedder> = Arc::new(FastEmbedModel::new());
-        let collection_name_anchors = Self::compute_anchor_embeddings(embedder.as_ref());
-
-        let state = Self {
-            schemas: Arc::new(RwLock::new(HashMap::new())),
-            descriptive_name_index: Arc::new(RwLock::new(HashMap::new())),
-            descriptive_name_embeddings: Arc::new(RwLock::new(HashMap::new())),
-            field_embeddings: Arc::new(RwLock::new(HashMap::new())),
-            canonical_fields: Arc::new(RwLock::new(HashMap::new())),
-            canonical_field_embeddings: Arc::new(RwLock::new(HashMap::new())),
-            embedder,
-            storage: SchemaStorage::Cloud {
-                store: Arc::new(store),
-            },
-            views: Arc::new(RwLock::new(HashMap::new())),
-            transforms: Arc::new(RwLock::new(HashMap::new())),
-            collection_name_anchors,
-        };
-
-        // Load schemas on initialization
-        state.load_schemas().await?;
-        state.rebuild_descriptive_name_index();
-        state.rebuild_canonical_fields_from_schemas();
-        state.load_views().await?;
-
-        log_feature!(
-            LogFeature::Schema,
-            info,
-            "Schema service initialized with DynamoDB, loaded {} schemas",
-            state.schemas.read().map(|s| s.len()).unwrap_or(0)
-        );
-
-        Ok(state)
-    }
-
-    /// Load all schemas from storage (works for both Sled and DynamoDB)
+    /// Load all schemas from storage
     pub async fn load_schemas(&self) -> FoldDbResult<()> {
         match &self.storage {
             SchemaStorage::Sled { schemas_tree, .. } => {
@@ -494,34 +432,6 @@ impl SchemaServiceState {
                     LogFeature::Schema,
                     info,
                     "Schema service loaded {} schemas from sled",
-                    count
-                );
-            }
-            #[cfg(feature = "aws-backend")]
-            SchemaStorage::Cloud { store } => {
-                let all_schemas = store.get_all_schemas().await?;
-                let count = all_schemas.len();
-
-                let mut schemas = self.schemas.write().map_err(|_| {
-                    FoldDbError::Config("Failed to acquire schemas write lock".to_string())
-                })?;
-
-                schemas.clear();
-
-                for schema in all_schemas {
-                    log_feature!(
-                        LogFeature::Schema,
-                        info,
-                        "Loaded schema '{}' from DynamoDB",
-                        schema.name
-                    );
-                    schemas.insert(schema.name.clone(), schema);
-                }
-
-                log_feature!(
-                    LogFeature::Schema,
-                    info,
-                    "Schema service loaded {} schemas from DynamoDB",
                     count
                 );
             }
@@ -676,8 +586,6 @@ impl SchemaServiceState {
                                 let _ = schemas_tree.insert(schema.name.as_bytes(), bytes);
                             }
                         }
-                        #[cfg(feature = "aws-backend")]
-                        SchemaStorage::Cloud { .. } => {}
                     }
                     updated += 1;
                 }
@@ -1160,16 +1068,6 @@ impl SchemaServiceState {
                     schema.name
                 );
             }
-            #[cfg(feature = "aws-backend")]
-            SchemaStorage::Cloud { store } => {
-                store.put_schema(schema, mutation_mappers).await?;
-                log_feature!(
-                    LogFeature::Schema,
-                    info,
-                    "Schema '{}' persisted to DynamoDB",
-                    schema.name
-                );
-            }
         }
         Ok(())
     }
@@ -1524,36 +1422,6 @@ impl SchemaServiceState {
                     view.name
                 );
             }
-            #[cfg(feature = "aws-backend")]
-            SchemaStorage::Cloud { store } => {
-                // Store views in the same table with VIEW# prefix on the sort key
-                let view_key = format!("VIEW#{}", view.name);
-                let view_json = serde_json::to_string(view).map_err(|e| {
-                    FoldDbError::Serialization(format!(
-                        "Failed to serialize view '{}': {}",
-                        view.name, e
-                    ))
-                })?;
-                // Reuse put_schema with view_key as schema name and view JSON as the schema
-                // We store the view as a schema with a special key prefix
-                let view_as_schema = Schema::new(
-                    view_key.clone(),
-                    crate::schema::types::schema::DeclarativeSchemaType::Single,
-                    None,
-                    None,
-                    None,
-                    None,
-                );
-                let mut mappers = HashMap::new();
-                mappers.insert("__view_json__".to_string(), view_json);
-                store.put_schema(&view_as_schema, &mappers).await?;
-                log_feature!(
-                    LogFeature::Schema,
-                    info,
-                    "View '{}' persisted to DynamoDB",
-                    view.name
-                );
-            }
         }
         Ok(())
     }
@@ -1597,8 +1465,7 @@ impl SchemaServiceState {
         Ok(())
     }
 
-    /// Load views from storage (async, works for both backends)
-    #[allow(unused_variables)]
+    /// Load views from storage
     pub async fn load_views(&self) -> FoldDbResult<()> {
         match &self.storage {
             SchemaStorage::Sled { db, .. } => {
@@ -1606,31 +1473,6 @@ impl SchemaServiceState {
                     FoldDbError::Config(format!("Failed to open views tree: {}", e))
                 })?;
                 self.load_views_from_tree(&views_tree)?;
-            }
-            #[cfg(feature = "aws-backend")]
-            SchemaStorage::Cloud { store } => {
-                // Load views from DynamoDB: they're stored with VIEW# prefix.
-                // Collect all async work first, then acquire the write lock to avoid
-                // holding a !Send RwLockWriteGuard across .await points.
-                let all_schemas = store.get_all_schemas().await?;
-
-                for schema in &all_schemas {
-                    if schema.name.starts_with("VIEW#") {
-                        if let Ok(Some(raw_schema)) = store.get_schema(&schema.name).await {
-                            log_feature!(
-                                LogFeature::Schema,
-                                warn,
-                                "Cloud view loading: found VIEW# entry '{}', but direct view deserialization not yet supported",
-                                raw_schema.name
-                            );
-                        }
-                    }
-                }
-
-                let mut views = self.views.write().map_err(|_| {
-                    FoldDbError::Config("Failed to acquire views write lock".to_string())
-                })?;
-                views.clear();
             }
         }
         Ok(())
