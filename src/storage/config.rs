@@ -198,9 +198,7 @@ impl<'de> Deserialize<'de> for DatabaseConfig {
 
             let cloud_sync = value
                 .get("cloud_sync")
-                .and_then(|v| {
-                    serde_json::from_value::<CloudSyncConfig>(v.clone()).ok()
-                });
+                .and_then(|v| serde_json::from_value::<CloudSyncConfig>(v.clone()).ok());
 
             Ok(DatabaseConfig { path, cloud_sync })
         }
@@ -278,7 +276,8 @@ mod tests {
 
     #[test]
     fn test_deserialize_legacy_exemem() {
-        let json = r#"{"type": "exemem", "api_url": "https://api.example.com", "api_key": "key123"}"#;
+        let json =
+            r#"{"type": "exemem", "api_url": "https://api.example.com", "api_key": "key123"}"#;
         let config: DatabaseConfig = serde_json::from_str(json).unwrap();
         assert!(config.cloud_sync.is_some());
         let sync = config.cloud_sync.unwrap();

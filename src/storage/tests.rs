@@ -164,7 +164,6 @@ mod storage_abstraction_tests {
         let mem_kv = mem_store.open_namespace("test").await.unwrap();
         assert_eq!(mem_kv.execution_model(), ExecutionModel::SyncWrapped);
         assert_eq!(mem_kv.flush_behavior(), FlushBehavior::NoOp);
-
     }
 
     #[tokio::test]
@@ -191,6 +190,4 @@ mod storage_abstraction_tests {
         let retrieved: Vec<(String, Item)> = typed.scan_items_with_prefix("item").await.unwrap();
         assert_eq!(retrieved.len(), 3);
     }
-
-
 }
