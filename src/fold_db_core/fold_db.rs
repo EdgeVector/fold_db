@@ -279,8 +279,7 @@ impl FoldDB {
 
         let http = Arc::new(reqwest::Client::new());
         let s3 = crate::sync::s3::S3Client::new(http.clone());
-        let auth_client =
-            crate::sync::auth::AuthClient::new(http, setup.auth_url, setup.auth);
+        let auth_client = crate::sync::auth::AuthClient::new(http, setup.auth_url, setup.auth);
 
         let mut engine = crate::sync::SyncEngine::new(
             setup.device_id,
