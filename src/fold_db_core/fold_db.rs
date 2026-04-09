@@ -51,6 +51,8 @@ pub struct FoldDB {
     sync_task: Option<tokio::task::JoinHandle<()>>,
     /// Optional reference to the encrypting store for org crypto registration.
     encrypting_store: Option<Arc<crate::storage::EncryptingNamespacedStore>>,
+    /// Optional Sled-backed configuration store for runtime node config.
+    config_store: Option<crate::storage::NodeConfigStore>,
 }
 
 impl FoldDB {
@@ -230,6 +232,74 @@ impl FoldDB {
         self.sync_engine.as_ref()
     }
 
+    /// Returns a reference to the Sled-backed config store, if available.
+    pub fn config_store(&self) -> Option<&crate::storage::NodeConfigStore> {
+        self.config_store.as_ref()
+    }
+
+    /// Set the Sled-backed config store (called by the factory).
+    pub fn set_config_store(&mut self, store: crate::storage::NodeConfigStore) {
+        self.config_store = Some(store);
+    }
+
+    /// Start the sync engine on an existing FoldDB instance at runtime.
+    /// Called when cloud credentials are written to Sled and sync needs to activate.
+    pub async fn start_sync_engine_runtime(
+        &mut self,
+        api_url: &str,
+        api_key: &str,
+        data_dir: &str,
+        e2e_keys: &crate::crypto::E2eKeys,
+        auth_refresh: Option<crate::sync::AuthRefreshCallback>,
+    ) -> crate::error::FoldDbResult<()> {
+        use crate::error::FoldDbError;
+
+        if self.sync_engine.is_some() {
+            return Ok(()); // already running
+        }
+
+        let sled_db = self
+            .sled_db
+            .as_ref()
+            .ok_or_else(|| FoldDbError::Config("No sled database for sync engine".to_string()))?
+            .clone();
+
+        let mut setup = crate::sync::SyncSetup::from_exemem(api_url, api_key, data_dir);
+        setup.auth_refresh = auth_refresh.clone();
+
+        let sync_config = setup.config.unwrap_or_default();
+        let interval_ms = sync_config.sync_interval_ms;
+
+        let sync_crypto: Arc<dyn crate::crypto::CryptoProvider> = Arc::new(
+            crate::crypto::LocalCryptoProvider::from_key(e2e_keys.encryption_key()),
+        );
+
+        let base_store: Arc<dyn crate::storage::traits::NamespacedStore> =
+            Arc::new(crate::storage::SledNamespacedStore::new(sled_db));
+
+        let http = Arc::new(reqwest::Client::new());
+        let s3 = crate::sync::s3::S3Client::new(http.clone());
+        let auth_client = crate::sync::auth::AuthClient::new(http, setup.auth_url, setup.auth);
+
+        let mut engine = crate::sync::SyncEngine::new(
+            setup.device_id,
+            sync_crypto,
+            s3,
+            auth_client,
+            base_store,
+            sync_config,
+        );
+        if let Some(cb) = auth_refresh {
+            engine.set_auth_refresh(cb);
+        }
+        let engine = Arc::new(engine);
+
+        self.set_sync_engine(engine).await;
+        self.start_sync(interval_ms);
+
+        Ok(())
+    }
+
     /// Register a crypto provider for org-scoped data encryption.
     ///
     /// After this call, storage keys starting with `{org_hash}:` will be
@@ -401,6 +471,7 @@ impl FoldDB {
             sync_engine: None,
             sync_task: None,
             encrypting_store,
+            config_store: None,
         })
     }
 
