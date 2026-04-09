@@ -149,10 +149,6 @@ impl SchemaServiceState {
                     None => Ok(None),
                 }
             }
-            #[cfg(feature = "aws-backend")]
-            SchemaStorage::Cloud { .. } => Err(FoldDbError::Config(
-                "Transform WASM storage not yet supported on Cloud backend".to_string(),
-            )),
         }
     }
 
@@ -247,12 +243,6 @@ impl SchemaServiceState {
                 db.flush()
                     .map_err(|e| FoldDbError::Config(format!("Failed to flush sled: {}", e)))?;
             }
-            #[cfg(feature = "aws-backend")]
-            SchemaStorage::Cloud { .. } => {
-                return Err(FoldDbError::Config(
-                    "Transform metadata persistence not yet supported on Cloud backend".to_string(),
-                ));
-            }
         }
         Ok(())
     }
@@ -271,12 +261,6 @@ impl SchemaServiceState {
                 })?;
                 db.flush()
                     .map_err(|e| FoldDbError::Config(format!("Failed to flush sled: {}", e)))?;
-            }
-            #[cfg(feature = "aws-backend")]
-            SchemaStorage::Cloud { .. } => {
-                return Err(FoldDbError::Config(
-                    "Transform WASM persistence not yet supported on Cloud backend".to_string(),
-                ));
             }
         }
         Ok(())

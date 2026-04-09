@@ -4,34 +4,21 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**FoldDB** is a distributed, schema-based database platform with AI-powered data ingestion, designed for personal data sovereignty. It runs both locally (using Sled) and as a serverless AWS application (using DynamoDB + S3).
+**FoldDB** is a distributed, schema-based database platform with AI-powered data ingestion, designed for personal data sovereignty. It uses Sled as the local embedded database, with optional encrypted cloud sync to Exemem (S3-compatible storage via presigned URLs).
 
 ## Build & Test Commands
 
 ```bash
 # Build
-cargo build                              # Default features
-cargo build --features aws-backend       # With AWS backend support
+cargo build
 
 # Lint
-cargo clippy                             # Default
-cargo clippy --features aws-backend      # With AWS features
+cargo clippy --workspace --all-targets -- -D warnings
 
 # Run Rust tests
 cargo test --lib                         # All library tests
 cargo test test_name                     # Specific test
 cargo test test_name -- --nocapture      # With output
-
-# Run the HTTP server + frontend (port 9001 backend, port 5173 frontend)
-# IMPORTANT: Always use ./run.sh to start the UI - never start services manually
-# The script auto-kills existing processes before starting
-./run.sh --local                         # Local Sled + prod schema service (recommended for dev)
-./run.sh --local --dev                   # Local Sled + dev schema service
-./run.sh --local --local-schema          # Fully offline (local storage + local schema service)
-./run.sh --local --empty-db              # Local with fresh database
-./run.sh                                 # Cloud mode (DynamoDB + prod schema service)
-./run.sh --dev                           # Cloud mode + dev schema service
-./run.sh --help                          # Show all options
 
 # Frontend (in src/server/static-react/)
 npm install
@@ -49,15 +36,13 @@ Required for AI-powered ingestion:
 export FOLD_OPENROUTER_API_KEY=your_key  # Or OPENROUTER_API_KEY
 ```
 
-For cloud mode, ensure AWS credentials are configured (via environment or IAM role).
-
 ## Key Architecture Concepts
 
-### Dual Storage Backends
-- **Local mode**: Sled embedded key-value store
-- **Cloud mode** (`aws-backend` feature): DynamoDB (11 tables) + S3, multi-tenant with user isolation via partition keys
+### Storage Architecture
+- **Always local**: Sled embedded key-value store is the source of truth
+- **Optional cloud sync**: When `cloud_sync` is configured in `DatabaseConfig`, the storage stack adds encrypted S3 sync via the Exemem platform
 
-The `KvStore` trait (`src/storage/traits.rs`) provides a unified async interface for both backends:
+The `KvStore` trait (`src/storage/traits.rs`) provides a unified async interface:
 ```rust
 #[async_trait]
 pub trait KvStore: Send + Sync {
@@ -67,16 +52,24 @@ pub trait KvStore: Send + Sync {
 }
 ```
 
+`DatabaseConfig` is a struct (not an enum):
+```rust
+pub struct DatabaseConfig {
+    pub path: PathBuf,                          // Sled database path
+    pub cloud_sync: Option<CloudSyncConfig>,    // Optional Exemem sync
+}
+```
+
 ### Schema System
 - Schemas define data structure with fields, permissions, transforms
-- States flow: `Pending` → `Approved` (via backfill process)
+- States flow: `Pending` -> `Approved` (via backfill process)
 - Key types in `src/schema/types/`: `Schema`, `Field`, `Query`, `Mutation`, `Transform`
 
 ### Query Sort Order
 The `Query` struct supports an optional `sort_order` field (`"asc"` or `"desc"`) that sorts `execute_query_json` results by range key (lexicographic string comparison — works for ISO dates). Defined as `SortOrder` enum in `src/schema/types/operations.rs`. Sorting happens in `query_ops.rs` before rehydration. The LLM agent tool definition instructs the AI to use `sort_order: "desc"` for "most recent" / "latest" queries.
 
 ### Handler Pattern
-Handlers in `src/handlers/` are framework-agnostic, shared between HTTP server and Lambda:
+Handlers in `src/handlers/` are framework-agnostic:
 ```rust
 pub async fn handle_query(
     query: Query,
@@ -86,9 +79,9 @@ pub async fn handle_query(
 ```
 
 ### Feature Flags
-- `aws-backend`: Enables DynamoDB, S3, SNS, SQS support
 - `test-utils`: Test utilities for integration tests
 - `ts-bindings`: Generates TypeScript type definitions via ts-rs
+- `transform-wasm`: WebAssembly transform support for views
 
 ## Error Types
 
@@ -108,7 +101,6 @@ git rebase origin/<base-branch>   # e.g. origin/mainline
 Then run CI checks:
 ```bash
 cargo clippy --workspace --all-targets -- -D warnings
-cargo check --workspace --features aws-backend
 cargo test --workspace --all-targets
 ```
 
@@ -157,20 +149,11 @@ log_feature!(LogFeature::HttpServer, info, "Server started on {}", addr);
 |------|---------|
 | `src/fold_node/node.rs` | Main FoldNode - combines DB, security, config |
 | `src/fold_db_core/fold_db.rs` | Core database logic |
-| `src/storage/traits.rs` | `KvStore` trait abstraction for storage backends |
-| `src/handlers/mod.rs` | Shared handler layer for HTTP/Lambda |
-| `src/server/http_server.rs` | Actix-web HTTP routes |
+| `src/fold_db_core/factory.rs` | Creates FoldDB with Sled + optional sync |
+| `src/storage/traits.rs` | `KvStore` trait abstraction for storage |
+| `src/storage/config.rs` | `DatabaseConfig` struct + `CloudSyncConfig` |
+| `src/handlers/mod.rs` | Shared handler layer |
 | `src/schema/core.rs` | Schema management |
-
-## Manual Testing Workflow
-
-1. Run `./run.sh --local` (or `./run.sh --local --dev` for dev schema service)
-2. Navigate to http://localhost:5173 (Vite dev server proxies to backend on 9001)
-3. Login with `test_user` if needed
-4. Press "Reset Database" button, confirm, wait for completion
-5. Go to Ingestion tab → click Twitter → click "Process Data"
-6. Wait for ingestion and background indexing to complete
-7. Go to Native Index Query tab → search for a term
 
 ## Schema Service Environments
 

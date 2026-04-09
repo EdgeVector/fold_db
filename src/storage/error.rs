@@ -21,9 +21,6 @@ pub enum StorageError {
     #[error("Upload failed: {0}")]
     UploadFailed(String),
 
-    #[error("DynamoDB error: {0}")]
-    DynamoDbError(String),
-
     #[error("Sled error: {0}")]
     SledError(String),
 

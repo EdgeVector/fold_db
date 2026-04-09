@@ -2,111 +2,6 @@ use serde::{Deserialize, Serialize};
 use std::env;
 use std::path::PathBuf;
 
-/// Configuration for Cloud storage
-#[cfg(feature = "aws-backend")]
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct CloudConfig {
-    /// AWS Region
-    pub region: String,
-    /// Explicit table names for all required namespaces
-    pub tables: ExplicitTables,
-    /// If true, tables will be automatically created if missing.
-    pub auto_create: bool,
-    /// Optional user_id for multi-tenant isolation
-    #[serde(default)]
-    pub user_id: Option<String>,
-    /// Optional S3 bucket for file storage (uploads/ingestion)
-    /// When set, files will be stored in S3 instead of local filesystem
-    #[serde(default)]
-    pub file_storage_bucket: Option<String>,
-}
-
-#[cfg(feature = "aws-backend")]
-impl CloudConfig {
-    /// Create config from environment variables.
-    ///
-    /// Required environment variables:
-    /// - `FOLD_DYNAMODB_REGION`: AWS region
-    /// - `FOLD_DYNAMODB_TABLE_PREFIX`: Prefix for table names (tables will be named `{prefix}-{namespace}`)
-    ///
-    /// Optional:
-    /// - `FOLD_DYNAMODB_USER_ID`: User ID for multi-tenant isolation
-    /// - `FOLD_S3_FILE_STORAGE_BUCKET`: S3 bucket for file storage (uploads/ingestion)
-    pub fn from_env() -> Result<Self, ConfigError> {
-        let region = env::var("FOLD_DYNAMODB_REGION")
-            .map_err(|_| ConfigError::MissingVariable("FOLD_DYNAMODB_REGION".to_string()))?;
-
-        let table_prefix = env::var("FOLD_DYNAMODB_TABLE_PREFIX")
-            .or_else(|_| env::var("FOLD_DYNAMODB_TABLE")) // Backward compatibility
-            .map_err(|_| ConfigError::MissingVariable("FOLD_DYNAMODB_TABLE_PREFIX".to_string()))?;
-
-        // Generate explicit table names from prefix
-        let tables = ExplicitTables::from_prefix(&table_prefix);
-
-        Ok(Self {
-            region,
-            tables,
-            auto_create: true,
-            user_id: env::var("FOLD_DYNAMODB_USER_ID").ok(),
-            file_storage_bucket: env::var("FOLD_S3_FILE_STORAGE_BUCKET").ok(),
-        })
-    }
-}
-
-/// Explicit table names for all required DynamoDB namespaces.
-///
-/// All 9 tables must be explicitly configured:
-/// - `main`: Primary data storage
-/// - `metadata`: Metadata storage
-/// - `permissions`: Node/schema permission mappings
-/// - `schema_states`: Schema state tracking
-/// - `schemas`: Schema definitions
-/// - `public_keys`: Public key storage
-/// - `native_index`: Native index data
-/// - `process`: Process tracking (ingestion)
-/// - `logs`: System logs
-#[cfg(feature = "aws-backend")]
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub struct ExplicitTables {
-    pub main: String,
-    pub metadata: String,
-    pub permissions: String,
-    pub schema_states: String,
-    pub schemas: String,
-    pub public_keys: String,
-    /// Native index table
-    pub native_index: String,
-    /// Process tracking table (ingestion)
-    ///
-    /// This table is used to track long-running operations.
-    /// NOTE: If using DynamoDB storage, this table MUST exist or initialization will fail.
-    pub process: String,
-    /// System logs table
-    pub logs: String,
-    /// Idempotency tracking table (mutation content hashes)
-    pub idempotency: String,
-}
-
-#[cfg(feature = "aws-backend")]
-impl ExplicitTables {
-    /// Create ExplicitTables from a prefix.
-    /// Tables are named `{prefix}-{namespace}`.
-    pub fn from_prefix(prefix: &str) -> Self {
-        Self {
-            main: format!("{}-main", prefix),
-            metadata: format!("{}-metadata", prefix),
-            permissions: format!("{}-node_id_schema_permissions", prefix),
-            schema_states: format!("{}-schema_states", prefix),
-            schemas: format!("{}-schemas", prefix),
-            public_keys: format!("{}-public_keys", prefix),
-            native_index: format!("{}-native_index", prefix),
-            process: format!("{}-process", prefix),
-            logs: format!("{}-logs", prefix),
-            idempotency: format!("{}-idempotency", prefix),
-        }
-    }
-}
-
 /// Error type for configuration parsing
 #[derive(Debug)]
 pub enum ConfigError {
@@ -125,40 +20,189 @@ impl std::fmt::Display for ConfigError {
 
 impl std::error::Error for ConfigError {}
 
-/// Storage configuration enum for different backends
+/// Configuration for cloud sync (Exemem encrypted S3 backup)
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(tag = "type")]
-pub enum DatabaseConfig {
-    /// Local filesystem storage
-    #[serde(rename = "local")]
-    Local {
-        /// Path to the local database file/directory
-        path: PathBuf,
-    },
-    /// Cloud storage (DynamoDB etc)
-    #[cfg(feature = "aws-backend")]
-    #[serde(rename = "cloud")]
-    Cloud(Box<CloudConfig>),
-    /// Exemem Cloud storage (local Sled + encrypted S3 sync)
-    #[serde(rename = "exemem")]
-    Exemem {
-        /// Exemem API URL (sync routes at /api/sync/*)
-        api_url: String,
-        /// API key for authentication
-        api_key: String,
-        /// Session token for authenticated API access
-        #[serde(default)]
-        session_token: Option<String>,
-        /// User hash derived from email or credentials
-        #[serde(default)]
-        user_hash: Option<String>,
-    },
+pub struct CloudSyncConfig {
+    /// Exemem API URL (sync routes at /api/sync/*)
+    pub api_url: String,
+    /// API key for authentication
+    pub api_key: String,
+    /// Session token for authenticated API access
+    #[serde(default)]
+    pub session_token: Option<String>,
+    /// User hash derived from public key
+    #[serde(default)]
+    pub user_hash: Option<String>,
+}
+
+/// Storage configuration — always local Sled, optionally with cloud sync.
+///
+/// Uses a custom deserializer to support both the new format and the legacy
+/// `{"type": "local", ...}` / `{"type": "exemem", ...}` JSON formats.
+#[derive(Clone, Debug, Serialize)]
+pub struct DatabaseConfig {
+    /// Path to the local Sled database directory
+    pub path: PathBuf,
+    /// Optional cloud sync configuration (Exemem encrypted S3 backup)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cloud_sync: Option<CloudSyncConfig>,
 }
 
 impl Default for DatabaseConfig {
     fn default() -> Self {
-        DatabaseConfig::Local {
+        DatabaseConfig {
             path: PathBuf::from("data"),
+            cloud_sync: None,
+        }
+    }
+}
+
+impl DatabaseConfig {
+    /// Create a local-only config
+    pub fn local(path: PathBuf) -> Self {
+        DatabaseConfig {
+            path,
+            cloud_sync: None,
+        }
+    }
+
+    /// Create a config with cloud sync enabled
+    pub fn with_cloud_sync(path: PathBuf, cloud_sync: CloudSyncConfig) -> Self {
+        DatabaseConfig {
+            path,
+            cloud_sync: Some(cloud_sync),
+        }
+    }
+
+    /// Check if cloud sync is enabled
+    pub fn has_cloud_sync(&self) -> bool {
+        self.cloud_sync.is_some()
+    }
+
+    /// Creates DatabaseConfig from environment variables:
+    /// - FOLD_STORAGE_PATH: path for local storage (default: "data")
+    /// - FOLD_STORAGE_MODE: "local" (default) or "exemem"
+    /// - For exemem mode: EXEMEM_API_URL, EXEMEM_API_KEY
+    pub fn from_env() -> Result<Self, ConfigError> {
+        let path = env::var("FOLD_STORAGE_PATH")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| PathBuf::from("data"));
+
+        let mode = env::var("FOLD_STORAGE_MODE").unwrap_or_else(|_| "local".to_string());
+
+        let cloud_sync = match mode.to_lowercase().as_str() {
+            "local" => None,
+            "exemem" => {
+                let api_url = env::var("EXEMEM_API_URL")
+                    .map_err(|_| ConfigError::MissingVariable("EXEMEM_API_URL".to_string()))?;
+                let api_key = env::var("EXEMEM_API_KEY")
+                    .map_err(|_| ConfigError::MissingVariable("EXEMEM_API_KEY".to_string()))?;
+                Some(CloudSyncConfig {
+                    api_url,
+                    api_key,
+                    session_token: env::var("EXEMEM_SESSION_TOKEN").ok(),
+                    user_hash: env::var("EXEMEM_USER_HASH").ok(),
+                })
+            }
+            _ => {
+                return Err(ConfigError::InvalidValue(format!(
+                    "Invalid FOLD_STORAGE_MODE: '{}'. Must be 'local' or 'exemem'",
+                    mode
+                )))
+            }
+        };
+
+        Ok(DatabaseConfig { path, cloud_sync })
+    }
+}
+
+/// Custom deserializer that handles both new format and legacy tagged enum format.
+///
+/// New format:
+/// ```json
+/// { "path": "/data", "cloud_sync": { "api_url": "...", "api_key": "..." } }
+/// ```
+///
+/// Legacy formats (auto-migrated):
+/// ```json
+/// { "type": "local", "path": "/data" }
+/// { "type": "exemem", "api_url": "...", "api_key": "..." }
+/// ```
+impl<'de> Deserialize<'de> for DatabaseConfig {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = serde_json::Value::deserialize(deserializer)?;
+
+        // Check if this is the legacy tagged format
+        if let Some(type_tag) = value.get("type").and_then(|v| v.as_str()) {
+            match type_tag {
+                "local" => {
+                    let path = value
+                        .get("path")
+                        .and_then(|v| v.as_str())
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("data"));
+                    Ok(DatabaseConfig {
+                        path,
+                        cloud_sync: None,
+                    })
+                }
+                "exemem" => {
+                    let api_url = value
+                        .get("api_url")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or_default()
+                        .to_string();
+                    let api_key = value
+                        .get("api_key")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or_default()
+                        .to_string();
+                    let session_token = value
+                        .get("session_token")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+                    let user_hash = value
+                        .get("user_hash")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+
+                    let path = std::env::var("FOLD_STORAGE_PATH")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|_| PathBuf::from("data"));
+
+                    Ok(DatabaseConfig {
+                        path,
+                        cloud_sync: Some(CloudSyncConfig {
+                            api_url,
+                            api_key,
+                            session_token,
+                            user_hash,
+                        }),
+                    })
+                }
+                other => Err(serde::de::Error::custom(format!(
+                    "Unknown database type: '{}'. Supported: 'local', 'exemem'",
+                    other
+                ))),
+            }
+        } else {
+            // New format: direct struct fields
+            let path = value
+                .get("path")
+                .and_then(|v| v.as_str())
+                .map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from("data"));
+
+            let cloud_sync = value
+                .get("cloud_sync")
+                .and_then(|v| {
+                    serde_json::from_value::<CloudSyncConfig>(v.clone()).ok()
+                });
+
+            Ok(DatabaseConfig { path, cloud_sync })
         }
     }
 }
@@ -180,11 +224,8 @@ impl Default for UploadStorageConfig {
 
 impl UploadStorageConfig {
     /// Creates UploadStorageConfig from environment variables:
-    /// - FOLD_UPLOAD_STORAGE_MODE: "local" or "s3" (defaults to "local")
+    /// - FOLD_UPLOAD_STORAGE_MODE: "local" (defaults to "local")
     /// - FOLD_UPLOAD_PATH: Path for local storage (defaults to "data/uploads")
-    /// - FOLD_UPLOAD_S3_BUCKET: S3 bucket for uploads (required if mode=s3)
-    /// - FOLD_UPLOAD_S3_REGION: AWS region (required if mode=s3)
-    /// - FOLD_UPLOAD_S3_PREFIX: S3 prefix/folder (defaults to "uploads")
     pub fn from_env() -> Result<Self, ConfigError> {
         let mode = env::var("FOLD_UPLOAD_STORAGE_MODE").unwrap_or_else(|_| "local".to_string());
 
@@ -197,54 +238,75 @@ impl UploadStorageConfig {
             }
 
             _ => Err(ConfigError::InvalidValue(format!(
-                "Invalid FOLD_UPLOAD_STORAGE_MODE: {}. Must be 'local' or 's3'",
+                "Invalid FOLD_UPLOAD_STORAGE_MODE: {}. Must be 'local'",
                 mode
             ))),
         }
     }
 }
 
-impl DatabaseConfig {
-    /// Creates DatabaseConfig from environment variables:
-    /// - FOLD_STORAGE_MODE: "local" (default) or "s3"
-    /// - FOLD_STORAGE_PATH: path for local storage (default: "data")
-    /// - For S3 mode, uses S3Config::from_env()
-    pub fn from_env() -> Result<Self, ConfigError> {
-        let mode = env::var("FOLD_STORAGE_MODE").unwrap_or_else(|_| "local".to_string());
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-        match mode.to_lowercase().as_str() {
-            "local" => {
-                let path = env::var("FOLD_STORAGE_PATH")
-                    .map(PathBuf::from)
-                    .unwrap_or_else(|_| PathBuf::from("data"));
-                Ok(DatabaseConfig::Local { path })
-            }
-            #[cfg(feature = "aws-backend")]
-            "cloud" | "dynamodb" => {
-                let config = CloudConfig::from_env()?;
-                Ok(DatabaseConfig::Cloud(Box::new(config)))
-            }
-            "exemem" => {
-                let api_url = env::var("EXEMEM_API_URL")
-                    .map_err(|_| ConfigError::MissingVariable("EXEMEM_API_URL".to_string()))?;
-                let api_key = env::var("EXEMEM_API_KEY")
-                    .map_err(|_| ConfigError::MissingVariable("EXEMEM_API_KEY".to_string()))?;
-                Ok(DatabaseConfig::Exemem {
-                    api_url,
-                    api_key,
-                    session_token: std::env::var("EXEMEM_SESSION_TOKEN").ok(),
-                    user_hash: std::env::var("EXEMEM_USER_HASH").ok(),
-                })
-            }
-            _ => Err(ConfigError::InvalidValue(format!(
-                "Invalid FOLD_STORAGE_MODE: '{}'. Must be 'local', 'exemem'{}",
-                mode,
-                if cfg!(feature = "aws-backend") {
-                    ", or 'dynamodb'"
-                } else {
-                    ""
-                }
-            ))),
-        }
+    #[test]
+    fn test_deserialize_new_format() {
+        let json = r#"{"path": "/data/db", "cloud_sync": {"api_url": "https://api.example.com", "api_key": "key123"}}"#;
+        let config: DatabaseConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(config.path, PathBuf::from("/data/db"));
+        assert!(config.cloud_sync.is_some());
+        let sync = config.cloud_sync.unwrap();
+        assert_eq!(sync.api_url, "https://api.example.com");
+        assert_eq!(sync.api_key, "key123");
+    }
+
+    #[test]
+    fn test_deserialize_new_format_no_sync() {
+        let json = r#"{"path": "/data/db"}"#;
+        let config: DatabaseConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(config.path, PathBuf::from("/data/db"));
+        assert!(config.cloud_sync.is_none());
+    }
+
+    #[test]
+    fn test_deserialize_legacy_local() {
+        let json = r#"{"type": "local", "path": "/data/db"}"#;
+        let config: DatabaseConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(config.path, PathBuf::from("/data/db"));
+        assert!(config.cloud_sync.is_none());
+    }
+
+    #[test]
+    fn test_deserialize_legacy_exemem() {
+        let json = r#"{"type": "exemem", "api_url": "https://api.example.com", "api_key": "key123"}"#;
+        let config: DatabaseConfig = serde_json::from_str(json).unwrap();
+        assert!(config.cloud_sync.is_some());
+        let sync = config.cloud_sync.unwrap();
+        assert_eq!(sync.api_url, "https://api.example.com");
+        assert_eq!(sync.api_key, "key123");
+    }
+
+    #[test]
+    fn test_serialize_roundtrip() {
+        let config = DatabaseConfig::with_cloud_sync(
+            PathBuf::from("/data"),
+            CloudSyncConfig {
+                api_url: "https://api.example.com".to_string(),
+                api_key: "key123".to_string(),
+                session_token: None,
+                user_hash: None,
+            },
+        );
+        let json = serde_json::to_string(&config).unwrap();
+        let deserialized: DatabaseConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.path, config.path);
+        assert!(deserialized.cloud_sync.is_some());
+    }
+
+    #[test]
+    fn test_default() {
+        let config = DatabaseConfig::default();
+        assert_eq!(config.path, PathBuf::from("data"));
+        assert!(config.cloud_sync.is_none());
     }
 }

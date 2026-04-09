@@ -1,8 +1,6 @@
 use super::NativeIndexManager;
 use crate::schema::SchemaError;
 use crate::storage::traits::*;
-#[cfg(feature = "aws-backend")]
-use crate::storage::DynamoDbNamespacedStore;
 use crate::storage::{SledNamespacedStore, TypedKvStore};
 use std::sync::Arc;
 
@@ -92,31 +90,6 @@ impl DbOperations {
     pub async fn from_sled(db: sled::Db) -> Result<Self, crate::storage::StorageError> {
         let store = Arc::new(SledNamespacedStore::new(db)) as Arc<dyn NamespacedStore>;
         Self::from_namespaced_store(store).await
-    }
-
-    /// Convenience constructor for Cloud backend with simplified config
-    #[cfg(feature = "aws-backend")]
-    pub async fn from_cloud(
-        client: aws_sdk_dynamodb::Client,
-        table_name: String,
-        user_id: String,
-    ) -> Result<Self, crate::storage::StorageError> {
-        let _ = user_id; // Suppress unused warning - user_id will be obtained from request context
-        let store = DynamoDbNamespacedStore::new_with_prefix(client, table_name);
-        Self::from_namespaced_store(Arc::new(store)).await
-    }
-
-    /// Constructor for Cloud backend with detailed configuration
-    #[cfg(feature = "aws-backend")]
-    pub async fn from_cloud_flexible(
-        client: aws_sdk_dynamodb::Client,
-        resolver: crate::storage::TableNameResolver,
-        auto_create: bool,
-        user_id: String,
-    ) -> Result<Self, crate::storage::StorageError> {
-        let _ = user_id; // Suppress unused warning - user_id will be obtained from request context
-        let store = DynamoDbNamespacedStore::new(client, resolver, auto_create);
-        Self::from_namespaced_store(Arc::new(store)).await
     }
 
     // ===== Namespace-specific store getters =====
