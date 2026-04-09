@@ -537,7 +537,31 @@ impl SyncEngine {
             if !target.prefix.is_empty() {
                 match self.download_entries(target).await {
                     Ok(n) => downloaded += n,
-                    Err(e) => log::warn!("download from '{}' failed: {e}", target.label),
+                    Err(e) => {
+                        // On auth errors, try refreshing credentials and retry
+                        if matches!(&e, SyncError::Auth(_)) {
+                            if let Some(ref refresh_cb) = self.auth_refresh {
+                                log::info!(
+                                    "org download from '{}' auth failed, refreshing",
+                                    target.label
+                                );
+                                if let Ok(new_auth) = refresh_cb().await {
+                                    self.auth.update_auth(new_auth).await;
+                                    match self.download_entries(target).await {
+                                        Ok(n) => {
+                                            downloaded += n;
+                                            continue;
+                                        }
+                                        Err(retry_err) => log::warn!(
+                                            "org download from '{}' retry failed: {retry_err}",
+                                            target.label
+                                        ),
+                                    }
+                                }
+                            }
+                        }
+                        log::warn!("download from '{}' failed: {e}", target.label);
+                    }
                 }
             }
         }
