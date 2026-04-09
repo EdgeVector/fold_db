@@ -104,6 +104,14 @@ impl NodeConfigStore {
         self.set("identity:contact_hint", hint)
     }
 
+    pub fn get_birthday(&self) -> Option<String> {
+        self.get("identity:birthday")
+    }
+
+    pub fn set_birthday(&self, birthday: &str) -> Result<(), sled::Error> {
+        self.set("identity:birthday", birthday)
+    }
+
     // --- AI config ---
 
     pub fn get_ai_config(&self) -> Option<AiConfig> {
