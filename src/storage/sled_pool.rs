@@ -69,18 +69,57 @@ impl SledPool {
     }
 
     /// Acquire a Sled handle. Opens the database if not already open.
-    /// The returned guard keeps the database alive until dropped.
+    /// If another process holds the lock, retries with exponential backoff
+    /// (up to ~5s total) to wait for the other process's idle release.
     pub fn acquire_arc(self: &Arc<Self>) -> StorageResult<SledGuard> {
         let mut inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
 
         let db = if let Some(ref db) = inner.db {
             db.clone()
         } else {
-            let db = sled::open(&self.path).map_err(|e| {
-                StorageError::ConfigurationError(format!("Failed to open sled database: {}", e))
-            })?;
-            inner.db = Some(db.clone());
-            db
+            let mut last_err = String::new();
+            let mut db_result = None;
+            for attempt in 0..10 {
+                match sled::open(&self.path) {
+                    Ok(db) => {
+                        db_result = Some(db);
+                        break;
+                    }
+                    Err(e) => {
+                        last_err = e.to_string();
+                        if last_err.contains("WouldBlock")
+                            || last_err.contains("acquire lock")
+                            || last_err.contains("Resource temporarily unavailable")
+                        {
+                            // Lock held by another process — wait and retry
+                            drop(inner);
+                            let delay = Duration::from_millis(100 * (1 << attempt.min(4)));
+                            std::thread::sleep(delay);
+                            inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+                            // Check if another thread opened it while we waited
+                            if let Some(ref db) = inner.db {
+                                db_result = Some(db.clone());
+                                break;
+                            }
+                            continue;
+                        }
+                        break;
+                    }
+                }
+            }
+
+            match db_result {
+                Some(db) => {
+                    inner.db = Some(db.clone());
+                    db
+                }
+                None => {
+                    return Err(StorageError::ConfigurationError(format!(
+                        "Failed to open sled database after retries: {}",
+                        last_err
+                    )));
+                }
+            }
         };
 
         inner.active_ops += 1;
