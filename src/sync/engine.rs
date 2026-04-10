@@ -536,11 +536,19 @@ impl SyncEngine {
                 ));
             }
 
-            // Clear uploaded entries from pending (only if all uploads succeeded)
-            if uploaded > 0 {
+            // Clear uploaded entries from pending.
+            // Only drain if ALL targets succeeded (uploaded == total entries).
+            // If some targets failed, keep all entries so they retry next cycle.
+            if uploaded >= entries.len() {
                 let mut pending = self.pending.lock().await;
                 let count = entries.len().min(pending.len());
                 pending.drain(..count);
+            } else if uploaded > 0 {
+                log::warn!(
+                    "partial upload: {}/{} entries succeeded, keeping all in pending for retry",
+                    uploaded,
+                    entries.len()
+                );
             }
         }
 
@@ -635,11 +643,13 @@ impl SyncEngine {
             )));
         }
 
+        let mut uploaded_count = 0;
         for ((_seq, s), url) in sealed.into_iter().zip(urls.iter()) {
             self.s3.upload(url, s.bytes).await?;
+            uploaded_count += 1;
         }
 
-        Ok(entries.len())
+        Ok(uploaded_count)
     }
 
     /// Download new entries from a sync target.
@@ -778,10 +788,25 @@ impl SyncEngine {
     /// Persist a download cursor to Sled.
     async fn save_download_cursor(&self, prefix: &str, seq: u64) {
         let cursor_key = format!("cursor:{}", prefix);
-        if let Ok(kv) = self.store.open_namespace("sync_cursors").await {
-            let _ = kv
-                .put(cursor_key.as_bytes(), seq.to_be_bytes().to_vec())
-                .await;
+        match self.store.open_namespace("sync_cursors").await {
+            Ok(kv) => {
+                if let Err(e) = kv
+                    .put(cursor_key.as_bytes(), seq.to_be_bytes().to_vec())
+                    .await
+                {
+                    log::error!(
+                        "failed to save download cursor for '{}' at seq {}: {} — next restart will re-download from last saved cursor",
+                        prefix, seq, e
+                    );
+                }
+            }
+            Err(e) => {
+                log::error!(
+                    "failed to open sync_cursors namespace for '{}': {} — cursor not persisted",
+                    prefix,
+                    e
+                );
+            }
         }
     }
 
