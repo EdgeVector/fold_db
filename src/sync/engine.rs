@@ -803,7 +803,8 @@ impl SyncEngine {
             Err(e) => {
                 log::error!(
                     "failed to open sync_cursors namespace for '{}': {} — cursor not persisted",
-                    prefix, e
+                    prefix,
+                    e
                 );
             }
         }
