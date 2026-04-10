@@ -146,9 +146,10 @@ async fn remove_view_cleans_up() {
 
 #[tokio::test]
 async fn view_persists_across_schema_core_instances() {
-    let db = sled::Config::new().temporary(true).open().unwrap();
+    let tmp = tempfile::tempdir().unwrap();
+    let pool = std::sync::Arc::new(fold_db::storage::SledPool::new(tmp.path().to_path_buf()));
     let db_ops = std::sync::Arc::new(
-        fold_db::db_operations::DbOperations::from_sled(db.clone())
+        fold_db::db_operations::DbOperations::from_sled(pool)
             .await
             .unwrap(),
     );

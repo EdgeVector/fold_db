@@ -119,8 +119,9 @@ async fn test_org_mutation_produces_prefixed_keys() {
     assert_eq!(schema.org_hash.as_deref(), Some(ORG_HASH));
 
     // The underlying sled keys should be org-prefixed.
-    let sled_db = db.sled_db().expect("Expected sled backend");
-    let main_tree = sled_db.open_tree("main").unwrap();
+    let pool = db.sled_pool().expect("Expected sled backend");
+    let guard = pool.acquire_arc().unwrap();
+    let main_tree = guard.db().open_tree("main").unwrap();
 
     let org_prefix = format!("{ORG_HASH}:");
     let org_keys: Vec<String> = main_tree
@@ -241,8 +242,9 @@ async fn test_personal_and_org_data_do_not_collide() {
         .any(|fv| fv.value == json!("personal body")));
 
     // Verify at the Sled level that org keys are prefixed
-    let sled_db = db.sled_db().expect("Expected sled backend");
-    let main_tree = sled_db.open_tree("main").unwrap();
+    let pool = db.sled_pool().expect("Expected sled backend");
+    let guard = pool.acquire_arc().unwrap();
+    let main_tree = guard.db().open_tree("main").unwrap();
 
     let org_prefix = format!("{ORG_HASH}:");
     let all_keys: Vec<String> = main_tree

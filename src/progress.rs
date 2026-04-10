@@ -191,12 +191,22 @@ impl ProgressStore for InMemoryProgressStore {
 
 /// Sled-backed implementation for persistent local storage
 pub struct SledProgressStore {
-    tree: sled::Tree,
+    pool: Arc<crate::storage::SledPool>,
 }
 
 impl SledProgressStore {
-    pub fn new(tree: sled::Tree) -> Self {
-        Self { tree }
+    const TREE_NAME: &'static str = "progress";
+
+    pub fn new(pool: Arc<crate::storage::SledPool>) -> Self {
+        Self { pool }
+    }
+
+    fn tree(&self) -> sled::Tree {
+        let guard = self.pool.acquire_arc().expect("SledPool acquire failed");
+        guard
+            .db()
+            .open_tree(Self::TREE_NAME)
+            .expect("Failed to open progress tree")
     }
 
     /// Create composite key for user+job lookup: "user_id:job_id"
@@ -217,13 +227,12 @@ impl ProgressStore for SledProgressStore {
         let key = Self::make_key(user_id, &job.id);
         let json = serde_json::to_vec(job).map_err(|e| e.to_string())?;
 
-        self.tree
-            .insert(key, json)
+        let tree = self.tree();
+        tree.insert(key, json)
             .map_err(|e| format!("Sled insert error: {}", e))?;
 
         // Flush to ensure persistence
-        self.tree
-            .flush_async()
+        tree.flush_async()
             .await
             .map_err(|e| format!("Sled flush error: {}", e))?;
 
@@ -237,7 +246,7 @@ impl ProgressStore for SledProgressStore {
 
         let key = Self::make_key(&user_id, id);
 
-        match self.tree.get(&key).map_err(|e| e.to_string())? {
+        match self.tree().get(&key).map_err(|e| e.to_string())? {
             Some(bytes) => {
                 let job: Job = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
                 Ok(Some(job))
@@ -250,7 +259,7 @@ impl ProgressStore for SledProgressStore {
         let prefix = format!("{}:", user_id);
         let mut jobs = Vec::new();
 
-        for result in self.tree.scan_prefix(prefix.as_bytes()) {
+        for result in self.tree().scan_prefix(prefix.as_bytes()) {
             let (_, value) = result.map_err(|e| e.to_string())?;
             if let Ok(job) = serde_json::from_slice::<Job>(&value) {
                 jobs.push(job);
@@ -267,8 +276,8 @@ impl ProgressStore for SledProgressStore {
 pub type ProgressTracker = Arc<dyn ProgressStore>;
 
 /// Create a progress tracker with Sled storage (for local persistent storage)
-pub fn create_tracker_with_sled(tree: sled::Tree) -> ProgressTracker {
-    Arc::new(SledProgressStore::new(tree))
+pub fn create_tracker_with_sled(pool: Arc<crate::storage::SledPool>) -> ProgressTracker {
+    Arc::new(SledProgressStore::new(pool))
 }
 
 /// Create a progress tracker with optional DynamoDB config

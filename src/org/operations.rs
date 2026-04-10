@@ -1,9 +1,11 @@
 use base64::{engine::general_purpose::STANDARD, Engine};
 use sha2::{Digest, Sha256};
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::error::FoldDbError;
 use crate::security::Ed25519KeyPair;
+use crate::storage::SledPool;
 
 use super::types::{OrgInviteBundle, OrgMemberInfo, OrgMembership, OrgRole};
 
@@ -20,15 +22,20 @@ fn now_secs() -> u64 {
         .as_secs()
 }
 
-fn org_tree(db: &sled::Db) -> Result<sled::Tree, FoldDbError> {
-    db.open_tree(ORG_TREE_NAME)
+fn org_tree(pool: &Arc<SledPool>) -> Result<sled::Tree, FoldDbError> {
+    let guard = pool
+        .acquire_arc()
+        .map_err(|e| FoldDbError::Database(format!("Failed to acquire SledPool: {}", e)))?;
+    guard
+        .db()
+        .open_tree(ORG_TREE_NAME)
         .map_err(|e| FoldDbError::Database(format!("Failed to open org_memberships tree: {}", e)))
 }
 
 /// Create a new organization. Generates an Ed25519 keypair and random E2E secret.
 /// The calling node becomes the admin.
 pub fn create_org(
-    db: &sled::Db,
+    pool: &Arc<SledPool>,
     org_name: &str,
     creator_public_key: &str,
     creator_display_name: &str,
@@ -69,7 +76,7 @@ pub fn create_org(
         joined_at: ts,
     };
 
-    let tree = org_tree(db)?;
+    let tree = org_tree(pool)?;
     let key = org_key(&org_hash);
     let value = serde_json::to_vec(&membership)?;
     tree.insert(key.as_bytes(), value)
@@ -80,7 +87,7 @@ pub fn create_org(
 
 /// Join an existing organization using an invite bundle.
 pub fn join_org(
-    db: &sled::Db,
+    pool: &Arc<SledPool>,
     invite: &OrgInviteBundle,
     my_public_key: &str,
     my_display_name: &str,
@@ -93,7 +100,7 @@ pub fn join_org(
     hasher.update(&pub_bytes);
     let org_hash = format!("{:x}", hasher.finalize());
 
-    let tree = org_tree(db)?;
+    let tree = org_tree(pool)?;
     let key = org_key(&org_hash);
 
     // Check if already a member
@@ -140,8 +147,8 @@ pub fn join_org(
 }
 
 /// List all organizations this node belongs to.
-pub fn list_orgs(db: &sled::Db) -> Result<Vec<OrgMembership>, FoldDbError> {
-    let tree = org_tree(db)?;
+pub fn list_orgs(pool: &Arc<SledPool>) -> Result<Vec<OrgMembership>, FoldDbError> {
+    let tree = org_tree(pool)?;
     let mut orgs = Vec::new();
 
     for entry in tree.iter() {
@@ -155,8 +162,8 @@ pub fn list_orgs(db: &sled::Db) -> Result<Vec<OrgMembership>, FoldDbError> {
 }
 
 /// Get a single organization by its hash.
-pub fn get_org(db: &sled::Db, org_hash: &str) -> Result<Option<OrgMembership>, FoldDbError> {
-    let tree = org_tree(db)?;
+pub fn get_org(pool: &Arc<SledPool>, org_hash: &str) -> Result<Option<OrgMembership>, FoldDbError> {
+    let tree = org_tree(pool)?;
     let key = org_key(org_hash);
 
     match tree
@@ -172,8 +179,12 @@ pub fn get_org(db: &sled::Db, org_hash: &str) -> Result<Option<OrgMembership>, F
 }
 
 /// Add a member to an existing organization. Only admins should call this.
-pub fn add_member(db: &sled::Db, org_hash: &str, member: OrgMemberInfo) -> Result<(), FoldDbError> {
-    let tree = org_tree(db)?;
+pub fn add_member(
+    pool: &Arc<SledPool>,
+    org_hash: &str,
+    member: OrgMemberInfo,
+) -> Result<(), FoldDbError> {
+    let tree = org_tree(pool)?;
     let key = org_key(org_hash);
 
     let value = tree
@@ -208,11 +219,11 @@ pub fn add_member(db: &sled::Db, org_hash: &str, member: OrgMemberInfo) -> Resul
 
 /// Remove a member from an organization by their node public key.
 pub fn remove_member(
-    db: &sled::Db,
+    pool: &Arc<SledPool>,
     org_hash: &str,
     node_public_key: &str,
 ) -> Result<(), FoldDbError> {
-    let tree = org_tree(db)?;
+    let tree = org_tree(pool)?;
     let key = org_key(org_hash);
 
     let value = tree
@@ -244,8 +255,11 @@ pub fn remove_member(
 }
 
 /// Generate an invite bundle for an organization. Requires admin access (has org_secret_key).
-pub fn generate_invite(db: &sled::Db, org_hash: &str) -> Result<OrgInviteBundle, FoldDbError> {
-    let membership = get_org(db, org_hash)?.ok_or_else(|| {
+pub fn generate_invite(
+    pool: &Arc<SledPool>,
+    org_hash: &str,
+) -> Result<OrgInviteBundle, FoldDbError> {
+    let membership = get_org(pool, org_hash)?.ok_or_else(|| {
         FoldDbError::Database(format!("Organization with hash '{}' not found", org_hash))
     })?;
 
@@ -265,8 +279,8 @@ pub fn generate_invite(db: &sled::Db, org_hash: &str) -> Result<OrgInviteBundle,
 }
 
 /// Delete an organization from local storage.
-pub fn delete_org(db: &sled::Db, org_hash: &str) -> Result<(), FoldDbError> {
-    let tree = org_tree(db)?;
+pub fn delete_org(pool: &Arc<SledPool>, org_hash: &str) -> Result<(), FoldDbError> {
+    let tree = org_tree(pool)?;
     let key = org_key(org_hash);
 
     let existed = tree

@@ -73,14 +73,15 @@ impl DbOperations {
 mod tests {
     use super::*;
     use crate::storage::traits::TypedStore;
-    use crate::storage::{NamespacedStore, SledNamespacedStore};
+    use crate::storage::{NamespacedStore, SledNamespacedStore, SledPool};
     use std::sync::Arc;
 
     #[tokio::test]
     async fn test_purge_org_data() {
-        // Setup in-memory sled db
-        let sled_db = sled::Config::new().temporary(true).open().unwrap();
-        let store = Arc::new(SledNamespacedStore::new(sled_db.clone())) as Arc<dyn NamespacedStore>;
+        // Setup temporary sled pool
+        let tmp = tempfile::TempDir::new().unwrap();
+        let pool = Arc::new(SledPool::new(tmp.path().to_path_buf()));
+        let store = Arc::new(SledNamespacedStore::new(pool)) as Arc<dyn NamespacedStore>;
         let ops = DbOperations::from_namespaced_store(store).await.unwrap();
 
         let org_hash = "abc123def456";

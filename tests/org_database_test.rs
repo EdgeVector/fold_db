@@ -6,7 +6,6 @@
 use fold_db::access::AccessContext;
 use fold_db::fold_db_core::FoldDB;
 use fold_db::org::{operations as org_ops, OrgMemberInfo};
-
 use fold_db::schema::types::operations::{MutationType, Query, SortOrder};
 use fold_db::schema::types::{KeyValue, Mutation};
 use fold_db::schema::SchemaState;
@@ -126,8 +125,9 @@ async fn query_full(
 
 /// Count sled keys in the "main" tree that start with `{org_hash}:`.
 fn count_org_prefixed_keys(db: &FoldDB, org_hash: &str) -> usize {
-    let sled_db = db.sled_db().expect("Expected sled backend");
-    let main_tree = sled_db.open_tree("main").unwrap();
+    let pool = db.sled_pool().expect("Expected sled backend");
+    let guard = pool.acquire_arc().unwrap();
+    let main_tree = guard.db().open_tree("main").unwrap();
     let prefix = format!("{}:", org_hash);
     main_tree
         .iter()
@@ -139,8 +139,9 @@ fn count_org_prefixed_keys(db: &FoldDB, org_hash: &str) -> usize {
 
 /// Collect all sled keys in the "main" tree.
 fn all_sled_keys(db: &FoldDB) -> Vec<String> {
-    let sled_db = db.sled_db().expect("Expected sled backend");
-    let main_tree = sled_db.open_tree("main").unwrap();
+    let pool = db.sled_pool().expect("Expected sled backend");
+    let guard = pool.acquire_arc().unwrap();
+    let main_tree = guard.db().open_tree("main").unwrap();
     main_tree
         .iter()
         .filter_map(|r| r.ok())
@@ -156,10 +157,10 @@ fn all_sled_keys(db: &FoldDB) -> Vec<String> {
 async fn test_full_org_lifecycle() {
     let tmp = tempfile::tempdir().unwrap();
     let mut db = make_folddb(&tmp).await;
-    let sled_db = db.sled_db().cloned().unwrap();
+    let sled_pool = db.sled_pool().cloned().unwrap();
 
     // Create org
-    let membership = org_ops::create_org(&sled_db, "Test Corp", "pubkey_alice", "Alice").unwrap();
+    let membership = org_ops::create_org(&sled_pool, "Test Corp", "pubkey_alice", "Alice").unwrap();
     let org_hash = &membership.org_hash;
 
     // Register org schema
@@ -220,9 +221,9 @@ async fn test_full_org_lifecycle() {
     );
 
     // Delete org membership
-    org_ops::delete_org(&sled_db, org_hash).unwrap();
+    org_ops::delete_org(&sled_pool, org_hash).unwrap();
     assert!(
-        org_ops::get_org(&sled_db, org_hash).unwrap().is_none(),
+        org_ops::get_org(&sled_pool, org_hash).unwrap().is_none(),
         "Org should be gone after delete"
     );
 }
@@ -235,11 +236,11 @@ async fn test_full_org_lifecycle() {
 async fn test_multi_org_data_isolation() {
     let tmp = tempfile::tempdir().unwrap();
     let mut db = make_folddb(&tmp).await;
-    let sled_db = db.sled_db().cloned().unwrap();
+    let sled_pool = db.sled_pool().cloned().unwrap();
 
     // Create two orgs
-    let org_alpha = org_ops::create_org(&sled_db, "Org Alpha", "pubkey_alice", "Alice").unwrap();
-    let org_beta = org_ops::create_org(&sled_db, "Org Beta", "pubkey_bob", "Bob").unwrap();
+    let org_alpha = org_ops::create_org(&sled_pool, "Org Alpha", "pubkey_alice", "Alice").unwrap();
+    let org_beta = org_ops::create_org(&sled_pool, "Org Beta", "pubkey_bob", "Bob").unwrap();
 
     // Register schemas
     register_schema(&mut db, "alpha_notes", Some(&org_alpha.org_hash)).await;
@@ -319,9 +320,9 @@ async fn test_multi_org_data_isolation() {
 async fn test_org_and_personal_coexistence_at_scale() {
     let tmp = tempfile::tempdir().unwrap();
     let mut db = make_folddb(&tmp).await;
-    let sled_db = db.sled_db().cloned().unwrap();
+    let sled_pool = db.sled_pool().cloned().unwrap();
 
-    let org = org_ops::create_org(&sled_db, "My Org", "pubkey_owner", "Owner").unwrap();
+    let org = org_ops::create_org(&sled_pool, "My Org", "pubkey_owner", "Owner").unwrap();
 
     // Register personal and org schemas
     register_schema(&mut db, "personal_journal", None).await;
@@ -397,9 +398,9 @@ async fn test_org_and_personal_coexistence_at_scale() {
 async fn test_org_mutation_history_prefixing() {
     let tmp = tempfile::tempdir().unwrap();
     let mut db = make_folddb(&tmp).await;
-    let sled_db = db.sled_db().cloned().unwrap();
+    let sled_pool = db.sled_pool().cloned().unwrap();
 
-    let org = org_ops::create_org(&sled_db, "History Org", "pubkey_alice", "Alice").unwrap();
+    let org = org_ops::create_org(&sled_pool, "History Org", "pubkey_alice", "Alice").unwrap();
     let org_hash = &org.org_hash;
 
     register_schema(&mut db, "org_tasks", Some(org_hash)).await;
@@ -478,9 +479,9 @@ async fn test_org_mutation_history_prefixing() {
 async fn test_org_query_with_sort_order() {
     let tmp = tempfile::tempdir().unwrap();
     let mut db = make_folddb(&tmp).await;
-    let sled_db = db.sled_db().cloned().unwrap();
+    let sled_pool = db.sled_pool().cloned().unwrap();
 
-    let org = org_ops::create_org(&sled_db, "Sort Org", "pubkey_owner", "Owner").unwrap();
+    let org = org_ops::create_org(&sled_pool, "Sort Org", "pubkey_owner", "Owner").unwrap();
 
     register_schema(&mut db, "org_events", Some(&org.org_hash)).await;
 
@@ -551,9 +552,9 @@ async fn test_org_query_with_sort_order() {
 async fn test_org_purge_leaves_no_residual_keys() {
     let tmp = tempfile::tempdir().unwrap();
     let mut db = make_folddb(&tmp).await;
-    let sled_db = db.sled_db().cloned().unwrap();
+    let sled_pool = db.sled_pool().cloned().unwrap();
 
-    let org = org_ops::create_org(&sled_db, "Purge Org", "pubkey_admin", "Admin").unwrap();
+    let org = org_ops::create_org(&sled_pool, "Purge Org", "pubkey_admin", "Admin").unwrap();
     let org_hash = &org.org_hash;
 
     // Register 3 org schemas + 1 personal schema
@@ -630,9 +631,9 @@ async fn test_org_purge_leaves_no_residual_keys() {
 async fn test_sync_partitioner_routes_org_writes() {
     let tmp = tempfile::tempdir().unwrap();
     let mut db = make_folddb(&tmp).await;
-    let sled_db = db.sled_db().cloned().unwrap();
+    let sled_pool = db.sled_pool().cloned().unwrap();
 
-    let org = org_ops::create_org(&sled_db, "Sync Org", "pubkey_owner", "Owner").unwrap();
+    let org = org_ops::create_org(&sled_pool, "Sync Org", "pubkey_owner", "Owner").unwrap();
 
     // Register personal and org schemas
     register_schema(&mut db, "my_docs", None).await;
@@ -707,10 +708,10 @@ async fn test_sync_partitioner_routes_org_writes() {
 async fn test_org_member_operations_during_data_lifecycle() {
     let tmp = tempfile::tempdir().unwrap();
     let mut db = make_folddb(&tmp).await;
-    let sled_db = db.sled_db().cloned().unwrap();
+    let sled_pool = db.sled_pool().cloned().unwrap();
 
     // Alice creates org
-    let org = org_ops::create_org(&sled_db, "Team Org", "pubkey_alice", "Alice").unwrap();
+    let org = org_ops::create_org(&sled_pool, "Team Org", "pubkey_alice", "Alice").unwrap();
     let org_hash = &org.org_hash;
 
     // Register org schema
@@ -735,10 +736,10 @@ async fn test_org_member_operations_during_data_lifecycle() {
         added_at: 1000,
         added_by: "pubkey_alice".to_string(),
     };
-    org_ops::add_member(&sled_db, org_hash, bob).unwrap();
+    org_ops::add_member(&sled_pool, org_hash, bob).unwrap();
 
     // Verify 2 members
-    let org_state = org_ops::get_org(&sled_db, org_hash).unwrap().unwrap();
+    let org_state = org_ops::get_org(&sled_pool, org_hash).unwrap().unwrap();
     assert_eq!(org_state.members.len(), 2);
 
     // Write 2 more records (simulating Bob's writes via different pub_key)
@@ -760,10 +761,10 @@ async fn test_org_member_operations_during_data_lifecycle() {
     assert_eq!(bodies.len(), 5);
 
     // Remove Bob
-    org_ops::remove_member(&sled_db, org_hash, "pubkey_bob").unwrap();
+    org_ops::remove_member(&sled_pool, org_hash, "pubkey_bob").unwrap();
 
     // Verify 1 member remains
-    let org_state = org_ops::get_org(&sled_db, org_hash).unwrap().unwrap();
+    let org_state = org_ops::get_org(&sled_pool, org_hash).unwrap().unwrap();
     assert_eq!(org_state.members.len(), 1);
     assert_eq!(org_state.members[0].display_name, "Alice");
 

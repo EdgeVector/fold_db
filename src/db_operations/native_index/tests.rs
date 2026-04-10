@@ -1,12 +1,14 @@
 use super::embedding_model::MockEmbeddingModel;
 use super::*;
 use crate::schema::types::key_value::KeyValue;
-use crate::storage::{NamespacedStore, SledNamespacedStore};
+use crate::storage::{NamespacedStore, SledNamespacedStore, SledPool};
 use std::sync::Arc;
 
+#[allow(deprecated)]
 async fn make_manager() -> NativeIndexManager {
-    let db = sled::Config::new().temporary(true).open().unwrap();
-    let store = Arc::new(SledNamespacedStore::new(db));
+    let tmp = tempfile::TempDir::new().unwrap();
+    let pool = Arc::new(SledPool::new(tmp.into_path()));
+    let store = Arc::new(SledNamespacedStore::new(pool));
     let kv = store.open_namespace("native_index").await.unwrap();
     NativeIndexManager::with_model(kv, Arc::new(MockEmbeddingModel))
 }
@@ -148,9 +150,11 @@ async fn test_fragment_text_is_stored() {
 }
 
 #[tokio::test]
+#[allow(deprecated)]
 async fn test_restore_from_store_loads_existing_embeddings() {
-    let db = sled::Config::new().temporary(true).open().unwrap();
-    let store = Arc::new(SledNamespacedStore::new(db));
+    let tmp = tempfile::TempDir::new().unwrap();
+    let pool = Arc::new(SledPool::new(tmp.into_path()));
+    let store = Arc::new(SledNamespacedStore::new(pool));
     let kv = store.open_namespace("native_index").await.unwrap();
 
     // Index a record with manager 1

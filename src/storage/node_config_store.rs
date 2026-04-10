@@ -1,43 +1,64 @@
 use serde::{Deserialize, Serialize};
 
+use super::sled_pool::SledPool;
+use std::sync::Arc;
+
 const TREE_NAME: &str = "node_config";
 
-/// Thin wrapper around a Sled tree for storing node configuration.
+/// Thin wrapper around a SledPool for storing node configuration.
 /// All runtime config (identity, cloud credentials, AI settings) lives here.
 pub struct NodeConfigStore {
-    tree: sled::Tree,
+    pool: Arc<SledPool>,
 }
 
 impl NodeConfigStore {
-    pub fn new(db: &sled::Db) -> Result<Self, sled::Error> {
-        Ok(Self {
-            tree: db.open_tree(TREE_NAME)?,
-        })
+    pub fn new(pool: Arc<SledPool>) -> Result<Self, sled::Error> {
+        // Validate that we can open the tree by doing a test acquire
+        let guard = pool.acquire_arc().map_err(|e| {
+            sled::Error::Io(std::io::Error::other(format!(
+                "Failed to acquire pool: {}",
+                e
+            )))
+        })?;
+        guard.db().open_tree(TREE_NAME)?;
+        drop(guard);
+        Ok(Self { pool })
+    }
+
+    fn tree(&self) -> sled::Tree {
+        let guard = self.pool.acquire_arc().expect("SledPool acquire failed");
+        let tree = guard
+            .db()
+            .open_tree(TREE_NAME)
+            .expect("Failed to open node_config tree");
+        tree
     }
 
     // --- Generic key-value ---
 
     pub fn get(&self, key: &str) -> Option<String> {
-        self.tree
+        self.tree()
             .get(key)
             .ok()?
             .map(|v| String::from_utf8_lossy(&v).into_owned())
     }
 
     pub fn set(&self, key: &str, value: &str) -> Result<(), sled::Error> {
-        self.tree.insert(key, value.as_bytes())?;
-        self.tree.flush()?;
+        let tree = self.tree();
+        tree.insert(key, value.as_bytes())?;
+        tree.flush()?;
         Ok(())
     }
 
     pub fn delete(&self, key: &str) -> Result<(), sled::Error> {
-        self.tree.remove(key)?;
-        self.tree.flush()?;
+        let tree = self.tree();
+        tree.remove(key)?;
+        tree.flush()?;
         Ok(())
     }
 
     pub fn is_empty(&self) -> bool {
-        self.tree.is_empty()
+        self.tree().is_empty()
     }
 
     // --- Cloud credentials ---
@@ -187,15 +208,17 @@ pub struct AiConfig {
 mod tests {
     use super::*;
 
-    fn temp_store() -> NodeConfigStore {
+    fn temp_store() -> (NodeConfigStore, tempfile::TempDir) {
         let dir = tempfile::tempdir().unwrap();
-        let db = sled::open(dir.path()).unwrap();
-        NodeConfigStore::new(&db).unwrap()
+        let pool = Arc::new(SledPool::new(dir.path().to_path_buf()));
+        let store = NodeConfigStore::new(pool).unwrap();
+        // Return dir to keep tempdir alive
+        (store, dir)
     }
 
     #[test]
     fn test_get_set_string() {
-        let store = temp_store();
+        let (store, _dir) = temp_store();
         assert!(store.get("foo").is_none());
         store.set("foo", "bar").unwrap();
         assert_eq!(store.get("foo").unwrap(), "bar");
@@ -203,7 +226,7 @@ mod tests {
 
     #[test]
     fn test_delete() {
-        let store = temp_store();
+        let (store, _dir) = temp_store();
         store.set("foo", "bar").unwrap();
         store.delete("foo").unwrap();
         assert!(store.get("foo").is_none());
@@ -211,7 +234,7 @@ mod tests {
 
     #[test]
     fn test_cloud_config_round_trip() {
-        let store = temp_store();
+        let (store, _dir) = temp_store();
         assert!(store.get_cloud_config().is_none());
         assert!(!store.is_cloud_enabled());
 
@@ -233,7 +256,7 @@ mod tests {
 
     #[test]
     fn test_identity_round_trip() {
-        let store = temp_store();
+        let (store, _dir) = temp_store();
         assert!(store.get_identity().is_none());
 
         let id = NodeIdentity {
@@ -249,7 +272,7 @@ mod tests {
 
     #[test]
     fn test_ai_config_round_trip() {
-        let store = temp_store();
+        let (store, _dir) = temp_store();
         assert!(store.get_ai_config().is_none());
 
         let config = AiConfig {
@@ -271,7 +294,7 @@ mod tests {
 
     #[test]
     fn test_is_empty() {
-        let store = temp_store();
+        let (store, _dir) = temp_store();
         assert!(store.is_empty());
         store.set("foo", "bar").unwrap();
         assert!(!store.is_empty());
@@ -279,7 +302,7 @@ mod tests {
 
     #[test]
     fn test_cloud_disabled_returns_none() {
-        let store = temp_store();
+        let (store, _dir) = temp_store();
         store.set("cloud:api_url", "https://example.com").unwrap();
         store.set("cloud:api_key", "key").unwrap();
         // cloud:enabled not set -> get_cloud_config returns None

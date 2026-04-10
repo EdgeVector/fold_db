@@ -354,9 +354,9 @@ mod tests {
     async fn test_rewind_single_field_to_previous_value() {
         // Setup: Sled temp DB
         let tmp = tempfile::tempdir().unwrap();
-        let db = sled::open(tmp.path()).unwrap();
+        let pool = Arc::new(crate::storage::SledPool::new(tmp.path().to_path_buf()));
         let db_ops = Arc::new(
-            crate::db_operations::DbOperations::from_sled(db)
+            crate::db_operations::DbOperations::from_sled(pool)
                 .await
                 .unwrap(),
         );
@@ -413,9 +413,9 @@ mod tests {
     #[tokio::test]
     async fn test_rewind_single_field_to_before_any_mutation() {
         let tmp = tempfile::tempdir().unwrap();
-        let db = sled::open(tmp.path()).unwrap();
+        let pool = Arc::new(crate::storage::SledPool::new(tmp.path().to_path_buf()));
         let db_ops = Arc::new(
-            crate::db_operations::DbOperations::from_sled(db)
+            crate::db_operations::DbOperations::from_sled(pool)
                 .await
                 .unwrap(),
         );
@@ -455,9 +455,9 @@ mod tests {
     #[tokio::test]
     async fn test_rewind_range_field() {
         let tmp = tempfile::tempdir().unwrap();
-        let db = sled::open(tmp.path()).unwrap();
+        let pool = Arc::new(crate::storage::SledPool::new(tmp.path().to_path_buf()));
         let db_ops = Arc::new(
-            crate::db_operations::DbOperations::from_sled(db)
+            crate::db_operations::DbOperations::from_sled(pool)
                 .await
                 .unwrap(),
         );
@@ -519,9 +519,9 @@ mod tests {
     #[tokio::test]
     async fn test_rewind_hash_range_field() {
         let tmp = tempfile::tempdir().unwrap();
-        let db = sled::open(tmp.path()).unwrap();
+        let pool = Arc::new(crate::storage::SledPool::new(tmp.path().to_path_buf()));
         let db_ops = Arc::new(
-            crate::db_operations::DbOperations::from_sled(db)
+            crate::db_operations::DbOperations::from_sled(pool)
                 .await
                 .unwrap(),
         );
@@ -584,9 +584,9 @@ mod tests {
     async fn test_rewind_aba_cycle() {
         // A->B->A cycle: the event log correctly preserves intermediate state
         let tmp = tempfile::tempdir().unwrap();
-        let db = sled::open(tmp.path()).unwrap();
+        let pool = Arc::new(crate::storage::SledPool::new(tmp.path().to_path_buf()));
         let db_ops = Arc::new(
-            crate::db_operations::DbOperations::from_sled(db)
+            crate::db_operations::DbOperations::from_sled(pool)
                 .await
                 .unwrap(),
         );
@@ -656,9 +656,9 @@ mod tests {
     async fn test_rewind_no_events() {
         // No events stored — rewind should be a no-op
         let tmp = tempfile::tempdir().unwrap();
-        let db = sled::open(tmp.path()).unwrap();
+        let pool = Arc::new(crate::storage::SledPool::new(tmp.path().to_path_buf()));
         let db_ops = Arc::new(
-            crate::db_operations::DbOperations::from_sled(db)
+            crate::db_operations::DbOperations::from_sled(pool)
                 .await
                 .unwrap(),
         );
