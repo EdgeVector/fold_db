@@ -13,8 +13,8 @@ use log::{debug, info};
 use crate::db_operations::{DbOperations, IndexResult};
 use crate::logging::features::{log_feature, LogFeature};
 use crate::schema::{SchemaCore, SchemaError};
-use crate::storage::StorageError;
 use crate::storage::SledPool;
+use crate::storage::StorageError;
 
 // Infrastructure components that are used internally
 use super::infrastructure::{AsyncMessageBus, EventMonitor};
@@ -355,8 +355,10 @@ impl FoldDB {
 
         let store = Arc::new(crate::storage::SledNamespacedStore::new(Arc::clone(&pool)));
         let db_ops = Arc::new(
-            DbOperations::from_namespaced_store(store as Arc<dyn crate::storage::traits::NamespacedStore>)
-                .await?,
+            DbOperations::from_namespaced_store(
+                store as Arc<dyn crate::storage::traits::NamespacedStore>,
+            )
+            .await?,
         );
 
         log_feature!(

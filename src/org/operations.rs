@@ -23,10 +23,12 @@ fn now_secs() -> u64 {
 }
 
 fn org_tree(pool: &Arc<SledPool>) -> Result<sled::Tree, FoldDbError> {
-    let guard = pool.acquire_arc().map_err(|e| {
-        FoldDbError::Database(format!("Failed to acquire SledPool: {}", e))
-    })?;
-    guard.db().open_tree(ORG_TREE_NAME)
+    let guard = pool
+        .acquire_arc()
+        .map_err(|e| FoldDbError::Database(format!("Failed to acquire SledPool: {}", e)))?;
+    guard
+        .db()
+        .open_tree(ORG_TREE_NAME)
         .map_err(|e| FoldDbError::Database(format!("Failed to open org_memberships tree: {}", e)))
 }
 
@@ -177,7 +179,11 @@ pub fn get_org(pool: &Arc<SledPool>, org_hash: &str) -> Result<Option<OrgMembers
 }
 
 /// Add a member to an existing organization. Only admins should call this.
-pub fn add_member(pool: &Arc<SledPool>, org_hash: &str, member: OrgMemberInfo) -> Result<(), FoldDbError> {
+pub fn add_member(
+    pool: &Arc<SledPool>,
+    org_hash: &str,
+    member: OrgMemberInfo,
+) -> Result<(), FoldDbError> {
     let tree = org_tree(pool)?;
     let key = org_key(org_hash);
 
@@ -249,7 +255,10 @@ pub fn remove_member(
 }
 
 /// Generate an invite bundle for an organization. Requires admin access (has org_secret_key).
-pub fn generate_invite(pool: &Arc<SledPool>, org_hash: &str) -> Result<OrgInviteBundle, FoldDbError> {
+pub fn generate_invite(
+    pool: &Arc<SledPool>,
+    org_hash: &str,
+) -> Result<OrgInviteBundle, FoldDbError> {
     let membership = get_org(pool, org_hash)?.ok_or_else(|| {
         FoldDbError::Database(format!("Organization with hash '{}' not found", org_hash))
     })?;

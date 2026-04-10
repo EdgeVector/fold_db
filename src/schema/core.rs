@@ -673,8 +673,7 @@ impl SchemaCore {
     /// Creates a new SchemaCore for testing purposes with a temporary database
     #[allow(deprecated)]
     pub async fn new_for_testing() -> Result<Self, SchemaError> {
-        let tmp = tempfile::TempDir::new()
-            .map_err(|e| SchemaError::InvalidData(e.to_string()))?;
+        let tmp = tempfile::TempDir::new().map_err(|e| SchemaError::InvalidData(e.to_string()))?;
         let pool = std::sync::Arc::new(crate::storage::SledPool::new(tmp.into_path()));
         let db_ops = std::sync::Arc::new(
             crate::db_operations::DbOperations::from_sled(pool)

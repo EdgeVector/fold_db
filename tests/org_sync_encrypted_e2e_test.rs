@@ -118,7 +118,11 @@ fn build_replay_engine(
 
 /// Extract all org-prefixed key-value pairs from a Sled tree and package them
 /// as LogEntries with the given namespace.
-fn extract_org_entries(pool: &Arc<fold_db::storage::SledPool>, tree_name: &str, org_prefix: &str) -> Vec<LogEntry> {
+fn extract_org_entries(
+    pool: &Arc<fold_db::storage::SledPool>,
+    tree_name: &str,
+    org_prefix: &str,
+) -> Vec<LogEntry> {
     let guard = pool.acquire_arc().unwrap();
     let tree = guard.db().open_tree(tree_name).unwrap();
     let mut entries = Vec::new();
@@ -145,7 +149,11 @@ fn extract_org_entries(pool: &Arc<fold_db::storage::SledPool>, tree_name: &str, 
 }
 
 /// Extract a specific key from a Sled tree as a LogEntry.
-fn extract_key_entry(pool: &Arc<fold_db::storage::SledPool>, tree_name: &str, key: &str) -> Option<LogEntry> {
+fn extract_key_entry(
+    pool: &Arc<fold_db::storage::SledPool>,
+    tree_name: &str,
+    key: &str,
+) -> Option<LogEntry> {
     let guard = pool.acquire_arc().unwrap();
     let tree = guard.db().open_tree(tree_name).unwrap();
     tree.get(key.as_bytes()).unwrap().map(|value| LogEntry {

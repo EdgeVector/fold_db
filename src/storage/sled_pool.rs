@@ -71,10 +71,7 @@ impl SledPool {
     /// Acquire a Sled handle. Opens the database if not already open.
     /// The returned guard keeps the database alive until dropped.
     pub fn acquire_arc(self: &Arc<Self>) -> StorageResult<SledGuard> {
-        let mut inner = self
-            .inner
-            .lock()
-            .unwrap_or_else(|p| p.into_inner());
+        let mut inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
 
         let db = if let Some(ref db) = inner.db {
             db.clone()
