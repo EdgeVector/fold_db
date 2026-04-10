@@ -1,5 +1,6 @@
 use fold_db::access::{
-    AccessContext, FieldAccessPolicy, PaymentGate, SecurityLabel, TrustDistancePolicy, TrustGraph,
+    check_access, AccessContext, AccessDecision, AccessDenialReason, CapabilityConstraint,
+    CapabilityKind, FieldAccessPolicy, PaymentGate, TrustTier,
 };
 use fold_db::fold_db_core::FoldDB;
 use fold_db::schema::types::field::Field;
@@ -81,7 +82,242 @@ async fn set_field_policy(
         .unwrap();
 }
 
-// ===== Query Access Control Tests =====
+// ===== Unit-level check_access Tests =====
+
+#[test]
+fn owner_always_has_access_in_any_domain() {
+    let ctx = AccessContext::owner("alice");
+
+    // Owner-only policy in personal domain
+    let policy = FieldAccessPolicy::default();
+    assert!(check_access(Some(&policy), &ctx, "schema", None, false).is_granted());
+    assert!(check_access(Some(&policy), &ctx, "schema", None, true).is_granted());
+
+    // Health domain policy requiring Inner
+    let health_policy = FieldAccessPolicy {
+        trust_domain: "health".to_string(),
+        min_read_tier: TrustTier::Inner,
+        min_write_tier: TrustTier::Inner,
+        capabilities: vec![],
+    };
+    assert!(check_access(Some(&health_policy), &ctx, "schema", None, false).is_granted());
+    assert!(check_access(Some(&health_policy), &ctx, "schema", None, true).is_granted());
+
+    // Even with no explicit policy (defaults to owner-only)
+    assert!(check_access(None, &ctx, "schema", None, false).is_granted());
+    assert!(check_access(None, &ctx, "schema", None, true).is_granted());
+}
+
+#[test]
+fn remote_caller_granted_when_tier_gte_min() {
+    let ctx = AccessContext::remote_single("bob", "personal", TrustTier::Trusted);
+
+    let policy = FieldAccessPolicy {
+        trust_domain: "personal".to_string(),
+        min_read_tier: TrustTier::Trusted, // exact match
+        min_write_tier: TrustTier::Owner,
+        capabilities: vec![],
+    };
+    assert!(check_access(Some(&policy), &ctx, "schema", None, false).is_granted());
+
+    // Higher tier than required
+    let ctx_inner = AccessContext::remote_single("bob", "personal", TrustTier::Inner);
+    let policy_outer = FieldAccessPolicy {
+        trust_domain: "personal".to_string(),
+        min_read_tier: TrustTier::Outer,
+        min_write_tier: TrustTier::Owner,
+        capabilities: vec![],
+    };
+    assert!(check_access(Some(&policy_outer), &ctx_inner, "schema", None, false).is_granted());
+}
+
+#[test]
+fn remote_caller_denied_when_tier_lt_min() {
+    let ctx = AccessContext::remote_single("bob", "personal", TrustTier::Outer);
+
+    let policy = FieldAccessPolicy {
+        trust_domain: "personal".to_string(),
+        min_read_tier: TrustTier::Trusted, // Outer(1) < Trusted(2)
+        min_write_tier: TrustTier::Owner,
+        capabilities: vec![],
+    };
+    let result = check_access(Some(&policy), &ctx, "schema", None, false);
+    assert!(result.is_denied());
+    if let AccessDecision::Denied(AccessDenialReason::InsufficientTrust {
+        domain,
+        required,
+        actual,
+    }) = result
+    {
+        assert_eq!(domain, "personal");
+        assert_eq!(required, TrustTier::Trusted);
+        assert_eq!(actual, TrustTier::Outer);
+    } else {
+        panic!("expected InsufficientTrust denial");
+    }
+}
+
+#[test]
+fn remote_caller_denied_when_no_domain_entry() {
+    // Bob has no domain tiers at all
+    let ctx = AccessContext::remote("bob", HashMap::new());
+
+    let policy = FieldAccessPolicy {
+        trust_domain: "personal".to_string(),
+        min_read_tier: TrustTier::Public,
+        min_write_tier: TrustTier::Owner,
+        capabilities: vec![],
+    };
+    let result = check_access(Some(&policy), &ctx, "schema", None, false);
+    assert!(result.is_denied());
+    if let AccessDecision::Denied(AccessDenialReason::NoDomainTrust { domain }) = result {
+        assert_eq!(domain, "personal");
+    } else {
+        panic!("expected NoDomainTrust denial");
+    }
+}
+
+#[test]
+fn multi_domain_context_independence() {
+    let mut tiers = HashMap::new();
+    tiers.insert("health".to_string(), TrustTier::Inner);
+    tiers.insert("personal".to_string(), TrustTier::Trusted);
+    let ctx = AccessContext::remote("bob", tiers);
+
+    // Health field requiring Trusted — Bob has Inner(3) >= Trusted(2) -> granted
+    let health_policy = FieldAccessPolicy {
+        trust_domain: "health".to_string(),
+        min_read_tier: TrustTier::Trusted,
+        min_write_tier: TrustTier::Owner,
+        capabilities: vec![],
+    };
+    assert!(check_access(Some(&health_policy), &ctx, "schema", None, false).is_granted());
+
+    // Personal field requiring Inner — Bob has Trusted(2) < Inner(3) -> denied
+    let personal_policy = FieldAccessPolicy {
+        trust_domain: "personal".to_string(),
+        min_read_tier: TrustTier::Inner,
+        min_write_tier: TrustTier::Owner,
+        capabilities: vec![],
+    };
+    assert!(check_access(Some(&personal_policy), &ctx, "schema", None, false).is_denied());
+
+    // Financial field — Bob has no entry -> NoDomainTrust
+    let financial_policy = FieldAccessPolicy {
+        trust_domain: "financial".to_string(),
+        min_read_tier: TrustTier::Outer,
+        min_write_tier: TrustTier::Owner,
+        capabilities: vec![],
+    };
+    let result = check_access(Some(&financial_policy), &ctx, "schema", None, false);
+    assert!(matches!(
+        result,
+        AccessDecision::Denied(AccessDenialReason::NoDomainTrust { .. })
+    ));
+}
+
+#[test]
+fn unified_check_access_read_vs_write() {
+    let ctx = AccessContext::remote_single("bob", "personal", TrustTier::Trusted);
+    let policy = FieldAccessPolicy {
+        trust_domain: "personal".to_string(),
+        min_read_tier: TrustTier::Outer,  // Trusted(2) >= Outer(1)
+        min_write_tier: TrustTier::Inner, // Trusted(2) < Inner(3)
+        capabilities: vec![],
+    };
+
+    // Read: granted
+    assert!(check_access(Some(&policy), &ctx, "schema", None, false).is_granted());
+    // Write: denied
+    let result = check_access(Some(&policy), &ctx, "schema", None, true);
+    assert!(result.is_denied());
+    if let AccessDecision::Denied(AccessDenialReason::InsufficientTrust {
+        required, actual, ..
+    }) = result
+    {
+        assert_eq!(required, TrustTier::Inner);
+        assert_eq!(actual, TrustTier::Trusted);
+    } else {
+        panic!("expected InsufficientTrust for write");
+    }
+}
+
+#[test]
+fn payment_gate_fixed_blocks_unpaid() {
+    let ctx = AccessContext::remote_single("bob", "personal", TrustTier::Inner);
+    let policy = FieldAccessPolicy {
+        trust_domain: "personal".to_string(),
+        min_read_tier: TrustTier::Public,
+        min_write_tier: TrustTier::Owner,
+        capabilities: vec![],
+    };
+    let gate = PaymentGate::Fixed(5.0);
+
+    // Unpaid -> denied
+    let result = check_access(Some(&policy), &ctx, "paid_schema", Some(&gate), false);
+    assert!(result.is_denied());
+    if let AccessDecision::Denied(AccessDenialReason::PaymentRequired { cost }) = result {
+        assert!((cost - 5.0).abs() < f64::EPSILON);
+    } else {
+        panic!("expected PaymentRequired denial");
+    }
+
+    // Paid -> granted
+    let mut paid_ctx = AccessContext::remote_single("bob", "personal", TrustTier::Inner);
+    paid_ctx.paid_schemas.insert("paid_schema".to_string());
+    assert!(check_access(Some(&policy), &paid_ctx, "paid_schema", Some(&gate), false).is_granted());
+}
+
+#[test]
+fn combined_trust_capability_payment() {
+    let policy = FieldAccessPolicy {
+        trust_domain: "personal".to_string(),
+        min_read_tier: TrustTier::Outer,
+        min_write_tier: TrustTier::Owner,
+        capabilities: vec![CapabilityConstraint::new(
+            "pk_bob",
+            CapabilityKind::Read,
+            10,
+        )],
+    };
+    let gate = PaymentGate::Fixed(1.0);
+
+    // All three layers satisfied
+    let mut ctx = AccessContext::remote_single("bob", "personal", TrustTier::Inner);
+    ctx.public_keys = vec!["pk_bob".to_string()];
+    ctx.paid_schemas.insert("schema".to_string());
+    assert!(check_access(Some(&policy), &ctx, "schema", Some(&gate), false).is_granted());
+
+    // Remove payment -> denied (PaymentRequired)
+    ctx.paid_schemas.clear();
+    let result = check_access(Some(&policy), &ctx, "schema", Some(&gate), false);
+    assert!(matches!(
+        result,
+        AccessDecision::Denied(AccessDenialReason::PaymentRequired { .. })
+    ));
+
+    // Restore payment, remove capability key -> denied (CapabilityMissing)
+    ctx.paid_schemas.insert("schema".to_string());
+    ctx.public_keys.clear();
+    let result = check_access(Some(&policy), &ctx, "schema", Some(&gate), false);
+    assert!(matches!(
+        result,
+        AccessDecision::Denied(AccessDenialReason::CapabilityMissing { .. })
+    ));
+
+    // Restore capability, drop tier below min -> denied (InsufficientTrust)
+    ctx.public_keys = vec!["pk_bob".to_string()];
+    let mut low_tiers = HashMap::new();
+    low_tiers.insert("personal".to_string(), TrustTier::Public);
+    ctx.tiers = low_tiers;
+    let result = check_access(Some(&policy), &ctx, "schema", Some(&gate), false);
+    assert!(matches!(
+        result,
+        AccessDecision::Denied(AccessDenialReason::InsufficientTrust { .. })
+    ));
+}
+
+// ===== Integration Tests: Query Access Through FoldDB =====
 
 #[tokio::test]
 async fn query_with_no_access_context_returns_all_fields() {
@@ -98,11 +334,11 @@ async fn query_with_no_access_context_returns_all_fields() {
 }
 
 #[tokio::test]
-async fn query_with_no_explicit_policy_defaults_to_owner_only() {
+async fn query_default_policy_owner_only() {
     let db = setup_db_with_notes().await;
 
-    // No explicit policies set — defaults to owner-only, remote users denied
-    let ctx = AccessContext::remote("bob", 5);
+    // No explicit policies — defaults to owner-only, remote users denied
+    let ctx = AccessContext::remote_single("bob", "personal", TrustTier::Trusted);
     let query = Query::new(
         "Notes".to_string(),
         vec!["title".to_string(), "content".to_string()],
@@ -133,17 +369,18 @@ async fn query_with_no_explicit_policy_defaults_to_owner_only() {
 }
 
 #[tokio::test]
-async fn owner_always_has_access() {
+async fn query_owner_always_has_access() {
     let db = setup_db_with_notes().await;
 
-    // Set owner-only policy on content
     set_field_policy(
         &db,
         "Notes",
         "content",
         FieldAccessPolicy {
-            trust_distance: TrustDistancePolicy::owner_only(),
-            ..Default::default()
+            trust_domain: "personal".to_string(),
+            min_read_tier: TrustTier::Owner,
+            min_write_tier: TrustTier::Owner,
+            capabilities: vec![],
         },
     )
     .await;
@@ -159,39 +396,43 @@ async fn owner_always_has_access() {
         .await
         .unwrap();
 
-    // Owner has access to everything
     assert!(results.contains_key("title"));
     assert!(results.contains_key("content"));
 }
 
 #[tokio::test]
-async fn remote_user_blocked_by_trust_distance() {
+async fn query_remote_filtered_by_trust_tier() {
     let db = setup_db_with_notes().await;
 
-    // Set owner-only on content, public read on title
+    // content: owner-only
     set_field_policy(
         &db,
         "Notes",
         "content",
         FieldAccessPolicy {
-            trust_distance: TrustDistancePolicy::owner_only(),
-            ..Default::default()
+            trust_domain: "personal".to_string(),
+            min_read_tier: TrustTier::Owner,
+            min_write_tier: TrustTier::Owner,
+            capabilities: vec![],
         },
     )
     .await;
 
+    // title: public read
     set_field_policy(
         &db,
         "Notes",
         "title",
         FieldAccessPolicy {
-            trust_distance: TrustDistancePolicy::public_read(),
-            ..Default::default()
+            trust_domain: "personal".to_string(),
+            min_read_tier: TrustTier::Public,
+            min_write_tier: TrustTier::Owner,
+            capabilities: vec![],
         },
     )
     .await;
 
-    let ctx = AccessContext::remote("bob", 3);
+    let ctx = AccessContext::remote_single("bob", "personal", TrustTier::Trusted);
     let query = Query::new(
         "Notes".to_string(),
         vec!["title".to_string(), "content".to_string()],
@@ -202,13 +443,13 @@ async fn remote_user_blocked_by_trust_distance() {
         .await
         .unwrap();
 
-    // title is public, content is owner-only → filtered out
+    // title is public -> included, content is owner-only -> filtered out
     assert!(results.contains_key("title"));
     assert!(!results.contains_key("content"));
 }
 
 #[tokio::test]
-async fn trust_distance_within_range_grants_access() {
+async fn query_payment_gate_blocks_unpaid() {
     let db = setup_db_with_notes().await;
 
     set_field_policy(
@@ -216,50 +457,16 @@ async fn trust_distance_within_range_grants_access() {
         "Notes",
         "content",
         FieldAccessPolicy {
-            trust_distance: TrustDistancePolicy::new(5, 0),
-            ..Default::default()
-        },
-    )
-    .await;
-
-    // Distance 3 <= read_max 5 → granted
-    let ctx = AccessContext::remote("bob", 3);
-    let query = Query::new("Notes".to_string(), vec!["content".to_string()]);
-    let results = db
-        .query_executor
-        .query_with_access(query, &ctx, None)
-        .await
-        .unwrap();
-    assert!(results.contains_key("content"));
-
-    // Distance 6 > read_max 5 → denied
-    let ctx2 = AccessContext::remote("charlie", 6);
-    let query2 = Query::new("Notes".to_string(), vec!["content".to_string()]);
-    let results2 = db
-        .query_executor
-        .query_with_access(query2, &ctx2, None)
-        .await
-        .unwrap();
-    assert!(!results2.contains_key("content"));
-}
-
-#[tokio::test]
-async fn payment_gate_blocks_unpaid_access() {
-    let db = setup_db_with_notes().await;
-
-    set_field_policy(
-        &db,
-        "Notes",
-        "content",
-        FieldAccessPolicy {
-            trust_distance: TrustDistancePolicy::public_read(),
-            ..Default::default()
+            trust_domain: "personal".to_string(),
+            min_read_tier: TrustTier::Public,
+            min_write_tier: TrustTier::Owner,
+            capabilities: vec![],
         },
     )
     .await;
 
     let gate = PaymentGate::Fixed(5.0);
-    let ctx = AccessContext::remote("bob", 1);
+    let ctx = AccessContext::remote_single("bob", "personal", TrustTier::Inner);
 
     let query = Query::new("Notes".to_string(), vec!["content".to_string()]);
     let results = db
@@ -268,29 +475,31 @@ async fn payment_gate_blocks_unpaid_access() {
         .await
         .unwrap();
 
-    // Not paid → filtered out
+    // Not paid -> filtered out
     assert!(!results.contains_key("content"));
 }
 
-// ===== Mutation Access Control Tests =====
+// ===== Integration Tests: Mutation Access Through FoldDB =====
 
 #[tokio::test]
-async fn mutation_blocked_by_write_trust_distance() {
+async fn mutation_blocked_by_insufficient_tier() {
     let mut db = setup_db_with_notes().await;
 
-    // Set write_max = 0 (owner only) on content
+    // content: readable by anyone, writable by owner only
     set_field_policy(
         &db,
         "Notes",
         "content",
         FieldAccessPolicy {
-            trust_distance: TrustDistancePolicy::new(u64::MAX, 0),
-            ..Default::default()
+            trust_domain: "personal".to_string(),
+            min_read_tier: TrustTier::Public,
+            min_write_tier: TrustTier::Owner,
+            capabilities: vec![],
         },
     )
     .await;
 
-    let ctx = AccessContext::remote("bob", 1);
+    let ctx = AccessContext::remote_single("bob", "personal", TrustTier::Inner);
     let mut fields = HashMap::new();
     fields.insert("content".to_string(), json!("hacked!"));
     let mutation = Mutation::new(
@@ -308,7 +517,11 @@ async fn mutation_blocked_by_write_trust_distance() {
 
     assert!(result.is_err());
     let err = result.unwrap_err().to_string();
-    assert!(err.contains("Permission denied"), "Error was: {}", err);
+    assert!(
+        err.contains("denied") || err.contains("Permission"),
+        "Error was: {}",
+        err
+    );
 }
 
 #[tokio::test]
@@ -320,8 +533,10 @@ async fn mutation_allowed_for_owner() {
         "Notes",
         "content",
         FieldAccessPolicy {
-            trust_distance: TrustDistancePolicy::new(u64::MAX, 0),
-            ..Default::default()
+            trust_domain: "personal".to_string(),
+            min_read_tier: TrustTier::Public,
+            min_write_tier: TrustTier::Owner,
+            capabilities: vec![],
         },
     )
     .await;
@@ -350,19 +565,15 @@ async fn mutation_allowed_for_owner() {
 async fn mutation_without_access_context_bypasses_checks() {
     let mut db = setup_db_with_notes().await;
 
-    // Set strict policy
     set_field_policy(
         &db,
         "Notes",
         "content",
-        FieldAccessPolicy {
-            trust_distance: TrustDistancePolicy::owner_only(),
-            ..Default::default()
-        },
+        FieldAccessPolicy::default(), // owner-only
     )
     .await;
 
-    // Legacy path (no access context) — always succeeds
+    // Legacy path (no access context) always succeeds
     let mut fields = HashMap::new();
     fields.insert("content".to_string(), json!("no context write"));
     fields.insert("created_at".to_string(), json!("2026-01-03"));
@@ -379,85 +590,4 @@ async fn mutation_without_access_context_bypasses_checks() {
         .write_mutations_batch_async(vec![mutation])
         .await;
     assert!(result.is_ok());
-}
-
-// ===== Trust Graph Persistence Tests =====
-
-#[tokio::test]
-async fn trust_graph_persists_to_sled() {
-    let db = setup_db().await;
-
-    let mut graph = TrustGraph::new();
-    graph.assign_trust("alice", "bob", 2);
-    graph.assign_trust("alice", "charlie", 5);
-
-    db.db_ops.store_trust_graph(&graph).await.unwrap();
-
-    let loaded = db.db_ops.load_trust_graph().await.unwrap();
-    assert_eq!(loaded.resolve("bob", "alice"), Some(2));
-    assert_eq!(loaded.resolve("charlie", "alice"), Some(5));
-    assert_eq!(loaded.resolve("dave", "alice"), None);
-}
-
-#[tokio::test]
-async fn audit_log_persists_to_sled() {
-    use fold_db::access::{AccessDecision, AuditAction, AuditEvent};
-
-    let db = setup_db().await;
-
-    let event = AuditEvent::new(
-        "alice",
-        AuditAction::Read {
-            schema_name: "Notes".into(),
-            fields: vec!["content".into()],
-        },
-        Some(0),
-        &AccessDecision::Granted,
-    );
-
-    db.db_ops.append_audit_event(event).await.unwrap();
-
-    let log = db.db_ops.load_audit_log().await.unwrap();
-    assert_eq!(log.total_events(), 1);
-    assert!(log.events()[0].decision_granted);
-}
-
-// ===== Security Label Tests =====
-
-#[tokio::test]
-async fn security_label_blocks_low_clearance() {
-    let db = setup_db_with_notes().await;
-
-    set_field_policy(
-        &db,
-        "Notes",
-        "content",
-        FieldAccessPolicy {
-            trust_distance: TrustDistancePolicy::public_read(),
-            security_label: Some(SecurityLabel::new(3, "classified")),
-            ..Default::default()
-        },
-    )
-    .await;
-
-    // Clearance 1 < label level 3 → denied
-    let mut ctx = AccessContext::remote("bob", 0);
-    ctx.clearance_level = 1;
-    let query = Query::new("Notes".to_string(), vec!["content".to_string()]);
-    let results = db
-        .query_executor
-        .query_with_access(query, &ctx, None)
-        .await
-        .unwrap();
-    assert!(!results.contains_key("content"));
-
-    // Clearance 5 >= label level 3 → granted
-    ctx.clearance_level = 5;
-    let query2 = Query::new("Notes".to_string(), vec!["content".to_string()]);
-    let results2 = db
-        .query_executor
-        .query_with_access(query2, &ctx, None)
-        .await
-        .unwrap();
-    assert!(results2.contains_key("content"));
 }

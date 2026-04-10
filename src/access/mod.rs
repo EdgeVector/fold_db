@@ -1,127 +1,71 @@
-//! Access control system implementing the four-layer model from the FoldDB whitepaper:
+//! Access control system implementing the three-layer model:
 //!
-//! 1. **Trust distance** — graph-based proximity check (per-field read_max / write_max)
+//! 1. **Trust tier** — per-domain tier check (caller_tier >= field_min_tier)
 //! 2. **Capability tokens** — cryptographic RX/WX tokens with bounded quotas
-//! 3. **Security labels** — information-flow lattice preventing downclassification
-//! 4. **Payment gates** — distance-based pricing formulas
+//! 3. **Payment gates** — fixed pricing for schema access
 //!
-//! All four layers are conjunctive: every applicable check must pass.
+//! All three layers are conjunctive: every applicable check must pass.
 
 pub mod audit;
 pub mod capability;
 pub mod payment;
-pub mod security_label;
-pub mod trust;
 pub mod types;
 
 pub use audit::{AuditAction, AuditEvent, AuditLog};
 pub use capability::{CapabilityConstraint, CapabilityKind};
 pub use payment::PaymentGate;
-pub use security_label::SecurityLabel;
-pub use trust::TrustGraph;
 pub use types::{
-    org_domain, AccessContext, AccessDecision, AccessDenialReason, FieldAccessPolicy,
-    TrustDistancePolicy, DOMAIN_FAMILY, DOMAIN_FINANCIAL, DOMAIN_HEALTH, DOMAIN_MEDICAL,
-    DOMAIN_PERSONAL,
+    org_domain, trust_domain_for_data_domain, AccessContext, AccessDecision, AccessDenialReason,
+    FieldAccessPolicy, TrustMap, TrustTier, DOMAIN_FAMILY, DOMAIN_FINANCIAL, DOMAIN_HEALTH,
+    DOMAIN_MEDICAL, DOMAIN_PERSONAL,
 };
 
-/// Check all four access control layers for a **read** operation on a single field.
+/// Check all three access control layers for a single field.
 ///
 /// If `policy` is `None`, the field defaults to owner-only access.
 /// Payment gates are checked at the schema level (passed separately).
-pub fn check_read_access(
+/// Set `is_write` to check write access instead of read.
+pub fn check_access(
     policy: Option<&FieldAccessPolicy>,
     context: &AccessContext,
     schema_name: &str,
     payment_gate: Option<&PaymentGate>,
+    is_write: bool,
 ) -> AccessDecision {
     let default_policy = FieldAccessPolicy::default();
     let policy = policy.unwrap_or(&default_policy);
 
-    // Resolve trust distance for this field's domain
-    let trust_distance = match context.distance_for_domain(&policy.trust_domain) {
-        Some(d) => d,
-        None => return AccessDecision::Denied(AccessDenialReason::TrustDistanceUnresolvable),
+    // Layer 1: Trust tier
+    let caller_tier = match context.tier_for_domain(&policy.trust_domain) {
+        Some(t) => t,
+        None => {
+            return AccessDecision::Denied(AccessDenialReason::NoDomainTrust {
+                domain: policy.trust_domain.clone(),
+            })
+        }
     };
 
-    // Layer 1: Trust distance
-    if !policy.trust_distance.can_read(trust_distance) {
-        return AccessDecision::Denied(AccessDenialReason::TrustDistance {
-            required: policy.trust_distance.read_max,
-            actual: trust_distance,
+    let min_tier = if is_write {
+        policy.min_write_tier
+    } else {
+        policy.min_read_tier
+    };
+
+    if caller_tier < min_tier {
+        return AccessDecision::Denied(AccessDenialReason::InsufficientTrust {
+            domain: policy.trust_domain.clone(),
+            required: min_tier,
+            actual: caller_tier,
         });
     }
 
     // Layer 2: Capability tokens
-    match capability::check_capabilities(&policy.capabilities, context, false) {
+    match capability::check_capabilities(&policy.capabilities, context, is_write) {
         AccessDecision::Granted => {}
         denied => return denied,
     }
 
-    // Layer 3: Security labels
-    if let Some(label) = &policy.security_label {
-        if !label.allows_read(context.clearance_level) {
-            return AccessDecision::Denied(AccessDenialReason::SecurityLabel {
-                source_level: label.level,
-                caller_level: context.clearance_level,
-            });
-        }
-    }
-
-    // Layer 4: Payment gate (schema-level)
-    if let Some(gate) = payment_gate {
-        match payment::check_payment(gate, context, schema_name) {
-            AccessDecision::Granted => {}
-            denied => return denied,
-        }
-    }
-
-    AccessDecision::Granted
-}
-
-/// Check all four access control layers for a **write** operation on a single field.
-///
-/// Same as `check_read_access` but uses `write_max` and `CapabilityKind::Write`.
-pub fn check_write_access(
-    policy: Option<&FieldAccessPolicy>,
-    context: &AccessContext,
-    schema_name: &str,
-    payment_gate: Option<&PaymentGate>,
-) -> AccessDecision {
-    let default_policy = FieldAccessPolicy::default();
-    let policy = policy.unwrap_or(&default_policy);
-
-    // Resolve trust distance for this field's domain
-    let trust_distance = match context.distance_for_domain(&policy.trust_domain) {
-        Some(d) => d,
-        None => return AccessDecision::Denied(AccessDenialReason::TrustDistanceUnresolvable),
-    };
-
-    // Layer 1: Trust distance
-    if !policy.trust_distance.can_write(trust_distance) {
-        return AccessDecision::Denied(AccessDenialReason::TrustDistance {
-            required: policy.trust_distance.write_max,
-            actual: trust_distance,
-        });
-    }
-
-    // Layer 2: Capability tokens
-    match capability::check_capabilities(&policy.capabilities, context, true) {
-        AccessDecision::Granted => {}
-        denied => return denied,
-    }
-
-    // Layer 3: Security labels
-    if let Some(label) = &policy.security_label {
-        if !label.allows_read(context.clearance_level) {
-            return AccessDecision::Denied(AccessDenialReason::SecurityLabel {
-                source_level: label.level,
-                caller_level: context.clearance_level,
-            });
-        }
-    }
-
-    // Layer 4: Payment gate (schema-level)
+    // Layer 3: Payment gate (schema-level)
     if let Some(gate) = payment_gate {
         match payment::check_payment(gate, context, schema_name) {
             AccessDecision::Granted => {}
@@ -135,185 +79,158 @@ pub fn check_write_access(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
 
     fn policy_public_read() -> FieldAccessPolicy {
         FieldAccessPolicy {
-            trust_distance: TrustDistancePolicy::new(u64::MAX, 0),
+            min_read_tier: TrustTier::Public,
+            min_write_tier: TrustTier::Owner,
             ..Default::default()
         }
     }
 
     fn policy_owner_only() -> FieldAccessPolicy {
-        FieldAccessPolicy {
-            trust_distance: TrustDistancePolicy::owner_only(),
-            ..Default::default()
-        }
+        FieldAccessPolicy::default()
     }
 
     #[test]
     fn test_no_policy_defaults_to_owner_only() {
-        // Remote caller is denied — no policy means owner-only
-        let ctx = AccessContext::remote("bob", 100);
-        assert!(check_read_access(None, &ctx, "schema", None).is_denied());
-        assert!(check_write_access(None, &ctx, "schema", None).is_denied());
+        let ctx = AccessContext::remote_single("bob", "personal", TrustTier::Trusted);
+        assert!(check_access(None, &ctx, "schema", None, false).is_denied());
+        assert!(check_access(None, &ctx, "schema", None, true).is_denied());
 
-        // Owner is still granted
         let owner_ctx = AccessContext::owner("alice");
-        assert!(check_read_access(None, &owner_ctx, "schema", None).is_granted());
-        assert!(check_write_access(None, &owner_ctx, "schema", None).is_granted());
+        assert!(check_access(None, &owner_ctx, "schema", None, false).is_granted());
+        assert!(check_access(None, &owner_ctx, "schema", None, true).is_granted());
     }
 
     #[test]
     fn test_owner_always_has_access() {
         let ctx = AccessContext::owner("alice");
         let policy = policy_owner_only();
-        assert!(check_read_access(Some(&policy), &ctx, "schema", None).is_granted());
-        assert!(check_write_access(Some(&policy), &ctx, "schema", None).is_granted());
+        assert!(check_access(Some(&policy), &ctx, "schema", None, false).is_granted());
+        assert!(check_access(Some(&policy), &ctx, "schema", None, true).is_granted());
     }
 
     #[test]
-    fn test_public_read_allows_remote() {
-        let ctx = AccessContext::remote("bob", 100);
+    fn test_public_read_allows_any_tier() {
+        let ctx = AccessContext::remote_single("bob", "personal", TrustTier::Public);
         let policy = policy_public_read();
-        assert!(check_read_access(Some(&policy), &ctx, "schema", None).is_granted());
+        assert!(check_access(Some(&policy), &ctx, "schema", None, false).is_granted());
     }
 
     #[test]
     fn test_owner_only_blocks_remote_read() {
-        let ctx = AccessContext::remote("bob", 1);
+        let ctx = AccessContext::remote_single("bob", "personal", TrustTier::Inner);
         let policy = policy_owner_only();
-        let result = check_read_access(Some(&policy), &ctx, "schema", None);
-        assert!(result.is_denied());
+        assert!(check_access(Some(&policy), &ctx, "schema", None, false).is_denied());
     }
 
     #[test]
-    fn test_write_blocked_by_trust_distance() {
-        let ctx = AccessContext::remote("bob", 3);
+    fn test_write_requires_higher_tier() {
+        let ctx = AccessContext::remote_single("bob", "personal", TrustTier::Trusted);
         let policy = FieldAccessPolicy {
-            trust_distance: TrustDistancePolicy::new(10, 2),
+            min_read_tier: TrustTier::Outer,
+            min_write_tier: TrustTier::Inner,
             ..Default::default()
         };
-        // Read should pass (distance 3 <= read_max 10)
-        assert!(check_read_access(Some(&policy), &ctx, "schema", None).is_granted());
-        // Write should fail (distance 3 > write_max 2)
-        assert!(check_write_access(Some(&policy), &ctx, "schema", None).is_denied());
+        // Trusted (2) >= Outer (1) → read granted
+        assert!(check_access(Some(&policy), &ctx, "schema", None, false).is_granted());
+        // Trusted (2) < Inner (3) → write denied
+        assert!(check_access(Some(&policy), &ctx, "schema", None, true).is_denied());
     }
 
     #[test]
-    fn test_security_label_blocks_read() {
-        let mut ctx = AccessContext::remote("bob", 0);
-        ctx.clearance_level = 1;
-        let policy = FieldAccessPolicy {
-            trust_distance: TrustDistancePolicy::public_read(),
-            security_label: Some(SecurityLabel::new(3, "secret")),
-            ..Default::default()
-        };
-        let result = check_read_access(Some(&policy), &ctx, "schema", None);
+    fn test_no_domain_trust_denied() {
+        let ctx = AccessContext::remote(
+            "bob",
+            HashMap::new(), // no domains
+        );
+        let policy = policy_public_read();
+        let result = check_access(Some(&policy), &ctx, "schema", None, false);
         assert!(result.is_denied());
-        if let AccessDecision::Denied(AccessDenialReason::SecurityLabel {
-            source_level,
-            caller_level,
-        }) = result
-        {
-            assert_eq!(source_level, 3);
-            assert_eq!(caller_level, 1);
+        if let AccessDecision::Denied(AccessDenialReason::NoDomainTrust { domain }) = result {
+            assert_eq!(domain, "personal");
         } else {
-            panic!("expected SecurityLabel denial");
+            panic!("expected NoDomainTrust denial");
         }
     }
 
     #[test]
     fn test_payment_gate_blocks_unpaid() {
-        let ctx = AccessContext::remote("bob", 1);
+        let ctx = AccessContext::remote_single("bob", "personal", TrustTier::Inner);
         let policy = policy_public_read();
         let gate = PaymentGate::Fixed(5.0);
-        let result = check_read_access(Some(&policy), &ctx, "paid_schema", Some(&gate));
-        assert!(result.is_denied());
+        assert!(check_access(Some(&policy), &ctx, "paid_schema", Some(&gate), false).is_denied());
     }
 
     #[test]
     fn test_payment_gate_allows_paid() {
-        let mut ctx = AccessContext::remote("bob", 1);
+        let mut ctx = AccessContext::remote_single("bob", "personal", TrustTier::Inner);
         ctx.paid_schemas.insert("paid_schema".to_string());
         let policy = policy_public_read();
         let gate = PaymentGate::Fixed(5.0);
-        assert!(check_read_access(Some(&policy), &ctx, "paid_schema", Some(&gate)).is_granted());
-    }
-
-    #[test]
-    fn test_unresolvable_trust_distance() {
-        let ctx = AccessContext {
-            user_id: "bob".into(),
-            trust_distance: None,
-            trust_distances: Default::default(),
-            public_keys: vec![],
-            paid_schemas: Default::default(),
-            clearance_level: 0,
-        };
-        let policy = policy_public_read();
-        let result = check_read_access(Some(&policy), &ctx, "schema", None);
-        assert!(result.is_denied());
+        assert!(check_access(Some(&policy), &ctx, "paid_schema", Some(&gate), false).is_granted());
     }
 
     #[test]
     fn test_domain_aware_access_check() {
-        use std::collections::HashMap;
-        // Bob has distance 1 in health, distance 3 in personal
-        let mut distances = HashMap::new();
-        distances.insert("health".to_string(), 1u64);
-        distances.insert("personal".to_string(), 3u64);
-        let ctx = AccessContext::remote_multi("bob", distances);
+        let mut tiers = HashMap::new();
+        tiers.insert("health".to_string(), TrustTier::Inner);
+        tiers.insert("personal".to_string(), TrustTier::Trusted);
+        let ctx = AccessContext::remote("bob", tiers);
 
-        // Health field with read_max 2 → Bob at distance 1 → granted
+        // Health field with min Trusted → Bob at Inner(3) → granted
         let health_policy = FieldAccessPolicy {
             trust_domain: "health".to_string(),
-            trust_distance: TrustDistancePolicy::new(2, 0),
-            ..Default::default()
+            min_read_tier: TrustTier::Trusted,
+            min_write_tier: TrustTier::Owner,
+            capabilities: vec![],
         };
-        assert!(check_read_access(Some(&health_policy), &ctx, "schema", None).is_granted());
+        assert!(check_access(Some(&health_policy), &ctx, "schema", None, false).is_granted());
 
-        // Personal field with read_max 2 → Bob at distance 3 → denied
+        // Personal field with min Inner → Bob at Trusted(2) → denied
         let personal_policy = FieldAccessPolicy {
             trust_domain: "personal".to_string(),
-            trust_distance: TrustDistancePolicy::new(2, 0),
-            ..Default::default()
+            min_read_tier: TrustTier::Inner,
+            min_write_tier: TrustTier::Owner,
+            capabilities: vec![],
         };
-        assert!(check_read_access(Some(&personal_policy), &ctx, "schema", None).is_denied());
+        assert!(check_access(Some(&personal_policy), &ctx, "schema", None, false).is_denied());
 
-        // Financial field → Bob not in financial domain → denied (unresolvable)
+        // Financial field → Bob not in financial domain → denied
         let financial_policy = FieldAccessPolicy {
             trust_domain: "financial".to_string(),
-            trust_distance: TrustDistancePolicy::new(5, 0),
-            ..Default::default()
+            min_read_tier: TrustTier::Outer,
+            min_write_tier: TrustTier::Owner,
+            capabilities: vec![],
         };
-        assert!(check_read_access(Some(&financial_policy), &ctx, "schema", None).is_denied());
+        assert!(check_access(Some(&financial_policy), &ctx, "schema", None, false).is_denied());
     }
 
     #[test]
     fn test_all_layers_combined() {
-        // A field that requires: distance <= 5, RX capability, clearance >= 2, payment
         let policy = FieldAccessPolicy {
-            trust_distance: TrustDistancePolicy::new(5, 0),
+            min_read_tier: TrustTier::Outer,
+            min_write_tier: TrustTier::Owner,
             capabilities: vec![CapabilityConstraint::new(
                 "pk_bob",
                 CapabilityKind::Read,
                 10,
             )],
-            security_label: Some(SecurityLabel::new(2, "sensitive")),
             ..Default::default()
         };
         let gate = PaymentGate::Fixed(1.0);
 
-        let mut ctx = AccessContext::remote("bob", 3);
+        let mut ctx = AccessContext::remote_single("bob", "personal", TrustTier::Inner);
         ctx.public_keys = vec!["pk_bob".to_string()];
-        ctx.clearance_level = 5;
         ctx.paid_schemas.insert("schema".to_string());
 
         // All layers pass
-        assert!(check_read_access(Some(&policy), &ctx, "schema", Some(&gate)).is_granted());
+        assert!(check_access(Some(&policy), &ctx, "schema", Some(&gate), false).is_granted());
 
         // Remove payment → denied
         ctx.paid_schemas.clear();
-        assert!(check_read_access(Some(&policy), &ctx, "schema", Some(&gate)).is_denied());
+        assert!(check_access(Some(&policy), &ctx, "schema", Some(&gate), false).is_denied());
     }
 }

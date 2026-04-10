@@ -876,9 +876,9 @@ mod tests {
             "field_access_policies": {
                 "body": {
                     "trust_domain": "personal",
-                    "trust_distance": { "read_max": 0, "write_max": 0 },
-                    "capabilities": [],
-                    "security_label": null
+                    "min_read_tier": "Owner",
+                    "min_write_tier": "Owner",
+                    "capabilities": []
                 }
             }
         });
@@ -904,8 +904,8 @@ mod tests {
             .as_ref()
             .expect("body should have an access policy after populate");
         assert_eq!(policy.trust_domain, "personal");
-        assert_eq!(policy.trust_distance.read_max, 0);
-        assert_eq!(policy.trust_distance.write_max, 0);
+        assert_eq!(policy.min_read_tier, crate::access::TrustTier::Owner);
+        assert_eq!(policy.min_write_tier, crate::access::TrustTier::Owner);
 
         // title should NOT have a policy (not in field_access_policies)
         let title_field = schema

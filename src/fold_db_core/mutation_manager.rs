@@ -181,11 +181,12 @@ impl MutationManager {
                     .map(|fv| fv.common().access_policy.as_ref())
                     .unwrap_or(None);
 
-                let decision = access::check_write_access(
+                let decision = access::check_access(
                     policy,
                     access_context,
                     &mutation.schema_name,
                     payment_gate,
+                    true,
                 );
 
                 if let access::AccessDecision::Denied(reason) = decision {

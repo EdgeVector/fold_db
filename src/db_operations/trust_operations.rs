@@ -1,5 +1,7 @@
-use crate::access::types::DOMAIN_PERSONAL;
-use crate::access::{AuditEvent, AuditLog, TrustGraph};
+use std::collections::HashMap;
+
+use crate::access::types::{TrustMap, DOMAIN_PERSONAL};
+use crate::access::{AuditEvent, AuditLog};
 use crate::schema::types::SchemaError;
 use crate::storage::traits::TypedStore;
 
@@ -12,26 +14,24 @@ const AUDIT_LOG_KEY: &str = "audit_log";
 const LEGACY_TRUST_GRAPH_KEY: &str = "trust_graph";
 
 impl DbOperations {
-    /// Storage key for a domain's trust graph.
+    /// Storage key for a domain's trust map.
     fn trust_graph_key(domain: &str) -> String {
         format!("{}{}", TRUST_GRAPH_PREFIX, domain)
     }
 
-    /// Load the trust graph for a specific domain. Returns empty graph if none stored.
+    /// Load the trust map for a specific domain. Returns empty map if none stored.
     /// On first call, migrates the legacy `trust_graph` key to `trust_graph:personal`.
-    pub async fn load_trust_graph_for_domain(
-        &self,
-        domain: &str,
-    ) -> Result<TrustGraph, SchemaError> {
+    /// If deserialization of old format fails, returns empty map (graceful migration).
+    pub async fn load_trust_map_for_domain(&self, domain: &str) -> Result<TrustMap, SchemaError> {
         let key = Self::trust_graph_key(domain);
-        match self.permissions_store().get_item::<TrustGraph>(&key).await {
-            Ok(Some(graph)) => Ok(graph),
+        match self.permissions_store().get_item::<TrustMap>(&key).await {
+            Ok(Some(map)) => Ok(map),
             Ok(None) => {
-                // Migration: if requesting "personal" and legacy key exists, migrate it
+                // Migration: if requesting "personal" and legacy key exists, try to migrate
                 if domain == DOMAIN_PERSONAL {
                     if let Ok(Some(legacy)) = self
                         .permissions_store()
-                        .get_item::<TrustGraph>(LEGACY_TRUST_GRAPH_KEY)
+                        .get_item::<TrustMap>(LEGACY_TRUST_GRAPH_KEY)
                         .await
                     {
                         // Migrate: store under new key, delete legacy
@@ -43,45 +43,44 @@ impl DbOperations {
                         return Ok(legacy);
                     }
                 }
-                Ok(TrustGraph::new())
+                Ok(HashMap::new())
             }
-            Err(e) => Err(SchemaError::InvalidData(format!(
-                "Failed to load trust graph for domain '{}': {}",
-                domain, e
-            ))),
+            Err(_) => {
+                // Old TrustGraph format can't be deserialized — return empty map
+                Ok(HashMap::new())
+            }
         }
     }
 
-    /// Load the trust graph (default "personal" domain). Backwards compatible.
-    pub async fn load_trust_graph(&self) -> Result<TrustGraph, SchemaError> {
-        self.load_trust_graph_for_domain(DOMAIN_PERSONAL).await
+    /// Load the trust map (default "personal" domain). Backwards compatible.
+    pub async fn load_trust_map(&self) -> Result<TrustMap, SchemaError> {
+        self.load_trust_map_for_domain(DOMAIN_PERSONAL).await
     }
 
-    /// Persist the trust graph for a specific domain.
-    pub async fn store_trust_graph_for_domain(
+    /// Persist the trust map for a specific domain.
+    pub async fn store_trust_map_for_domain(
         &self,
         domain: &str,
-        graph: &TrustGraph,
+        map: &TrustMap,
     ) -> Result<(), SchemaError> {
         let key = Self::trust_graph_key(domain);
         self.permissions_store()
-            .put_item(&key, graph)
+            .put_item(&key, map)
             .await
             .map_err(|e| {
                 SchemaError::InvalidData(format!(
-                    "Failed to store trust graph for domain '{}': {}",
+                    "Failed to store trust map for domain '{}': {}",
                     domain, e
                 ))
             })
     }
 
-    /// Persist the trust graph (default "personal" domain). Backwards compatible.
-    pub async fn store_trust_graph(&self, graph: &TrustGraph) -> Result<(), SchemaError> {
-        self.store_trust_graph_for_domain(DOMAIN_PERSONAL, graph)
-            .await
+    /// Persist the trust map (default "personal" domain). Backwards compatible.
+    pub async fn store_trust_map(&self, map: &TrustMap) -> Result<(), SchemaError> {
+        self.store_trust_map_for_domain(DOMAIN_PERSONAL, map).await
     }
 
-    /// Delete a trust domain's graph entirely.
+    /// Delete a trust domain's map entirely.
     pub async fn delete_trust_domain(&self, domain: &str) -> Result<(), SchemaError> {
         let key = Self::trust_graph_key(domain);
         self.permissions_store()
@@ -96,7 +95,7 @@ impl DbOperations {
         Ok(())
     }
 
-    /// List all trust domain names that have stored graphs.
+    /// List all trust domain names that have stored maps.
     pub async fn list_trust_domains(&self) -> Result<Vec<String>, SchemaError> {
         let entries = self
             .permissions_store()
