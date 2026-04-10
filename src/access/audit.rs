@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use super::types::AccessDecision;
+use super::types::{AccessDecision, TrustTier};
 
 /// What kind of action was audited
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -21,7 +21,7 @@ pub enum AuditAction {
     },
     TrustGrant {
         user_id: String,
-        distance: u64,
+        tier: TrustTier,
     },
     TrustRevoke {
         user_id: String,
@@ -35,7 +35,7 @@ pub struct AuditEvent {
     pub timestamp: DateTime<Utc>,
     pub user_id: String,
     pub action: AuditAction,
-    pub trust_distance: Option<u64>,
+    pub trust_tier: Option<TrustTier>,
     pub decision_granted: bool,
 }
 
@@ -43,7 +43,7 @@ impl AuditEvent {
     pub fn new(
         user_id: impl Into<String>,
         action: AuditAction,
-        trust_distance: Option<u64>,
+        trust_tier: Option<TrustTier>,
         decision: &AccessDecision,
     ) -> Self {
         Self {
@@ -51,7 +51,7 @@ impl AuditEvent {
             timestamp: Utc::now(),
             user_id: user_id.into(),
             action,
-            trust_distance,
+            trust_tier,
             decision_granted: decision.is_granted(),
         }
     }
@@ -63,7 +63,7 @@ impl AuditEvent {
             timestamp: Utc::now(),
             user_id: user_id.into(),
             action,
-            trust_distance: Some(0),
+            trust_tier: Some(TrustTier::Owner),
             decision_granted: true,
         }
     }
@@ -132,7 +132,7 @@ mod tests {
                 schema_name: "contacts".into(),
                 fields: vec!["name".into(), "email".into()],
             },
-            Some(0),
+            Some(TrustTier::Owner),
             &AccessDecision::Granted,
         ));
 
@@ -140,12 +140,13 @@ mod tests {
             "bob",
             AuditAction::AccessDenied {
                 schema_name: "contacts".into(),
-                reason: "trust distance too high".into(),
+                reason: "insufficient trust tier".into(),
             },
-            Some(5),
-            &AccessDecision::Denied(super::super::types::AccessDenialReason::TrustDistance {
-                required: 2,
-                actual: 5,
+            Some(TrustTier::Outer),
+            &AccessDecision::Denied(super::super::types::AccessDenialReason::InsufficientTrust {
+                domain: "personal".into(),
+                required: TrustTier::Trusted,
+                actual: TrustTier::Outer,
             }),
         ));
 
@@ -163,11 +164,11 @@ mod tests {
             "alice",
             AuditAction::TrustGrant {
                 user_id: "bob".into(),
-                distance: 2,
+                tier: TrustTier::Trusted,
             },
         );
         assert!(event.decision_granted);
-        assert_eq!(event.trust_distance, Some(0));
+        assert_eq!(event.trust_tier, Some(TrustTier::Owner));
     }
 
     #[test]
@@ -180,7 +181,7 @@ mod tests {
                     schema_name: "test".into(),
                     fields: vec![],
                 },
-                Some(0),
+                Some(TrustTier::Owner),
                 &AccessDecision::Granted,
             ));
         }
@@ -197,7 +198,7 @@ mod tests {
                 schema_name: "notes".into(),
                 fields: vec!["content".into()],
             },
-            Some(0),
+            Some(TrustTier::Owner),
             &AccessDecision::Granted,
         ));
 

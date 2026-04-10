@@ -228,7 +228,7 @@ impl QueryExecutor {
                     .map(|fv| fv.common().access_policy.as_ref())
                     .unwrap_or(None);
                 let decision =
-                    access::check_read_access(policy, context, schema_name, payment_gate);
+                    access::check_access(policy, context, schema_name, payment_gate, false);
                 decision.is_denied()
             })
             .cloned()

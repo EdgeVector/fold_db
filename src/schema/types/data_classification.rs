@@ -1,3 +1,4 @@
+use crate::access::{trust_domain_for_data_domain, TrustTier};
 use serde::Serialize;
 
 /// Standard sensitivity levels for data classification.
@@ -119,6 +120,22 @@ impl DataClassification {
             data_domain: "general".to_string(),
         }
     }
+
+    /// Returns the default trust tier for this classification's sensitivity level.
+    pub fn default_trust_tier(&self) -> TrustTier {
+        TrustTier::from_sensitivity(self.sensitivity_level)
+    }
+
+    /// Returns the trust domain that governs access for this classification's data domain.
+    pub fn default_trust_domain(&self) -> &'static str {
+        trust_domain_for_data_domain(&self.data_domain)
+    }
+
+    /// Information flow check: this classification can flow to `other` iff
+    /// its sensitivity is less than or equal to `other`'s sensitivity.
+    pub fn can_flow_to(&self, other: &DataClassification) -> bool {
+        self.sensitivity_level <= other.sensitivity_level
+    }
 }
 
 impl PartialOrd for DataClassification {
@@ -210,6 +227,69 @@ mod tests {
             result.is_err(),
             "should reject empty data_domain during deserialization"
         );
+    }
+
+    #[test]
+    fn test_default_trust_tier() {
+        use crate::access::TrustTier;
+
+        let cases = [
+            (0, TrustTier::Public),
+            (1, TrustTier::Outer),
+            (2, TrustTier::Trusted),
+            (3, TrustTier::Inner),
+            (4, TrustTier::Owner),
+        ];
+        for (level, expected_tier) in cases {
+            let c = DataClassification::new(level, "general").unwrap();
+            assert_eq!(c.default_trust_tier(), expected_tier, "level {}", level);
+        }
+    }
+
+    #[test]
+    fn test_default_trust_domain() {
+        assert_eq!(
+            DataClassification::new(4, "medical")
+                .unwrap()
+                .default_trust_domain(),
+            "medical"
+        );
+        assert_eq!(
+            DataClassification::new(4, "financial")
+                .unwrap()
+                .default_trust_domain(),
+            "financial"
+        );
+        assert_eq!(
+            DataClassification::new(3, "identity")
+                .unwrap()
+                .default_trust_domain(),
+            "personal"
+        );
+        assert_eq!(
+            DataClassification::new(0, "general")
+                .unwrap()
+                .default_trust_domain(),
+            "personal"
+        );
+    }
+
+    #[test]
+    fn test_can_flow_to() {
+        let low = DataClassification::new(0, "general").unwrap();
+        let mid = DataClassification::new(2, "general").unwrap();
+        let high = DataClassification::new(4, "general").unwrap();
+
+        // same → same: ok
+        assert!(mid.can_flow_to(&mid));
+        // low → high: ok
+        assert!(low.can_flow_to(&high));
+        // high → low: not ok
+        assert!(!high.can_flow_to(&low));
+        // low → mid: ok
+        assert!(low.can_flow_to(&mid));
+        // mid → low: not ok
+        assert!(!mid.can_flow_to(&low));
     }
 
     #[test]
