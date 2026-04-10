@@ -81,6 +81,7 @@ async fn create_local_fold_db(
         .ok_or_else(|| FoldDbError::Config("Invalid storage path".to_string()))?;
 
     let pool = Arc::new(SledPool::new(path.to_path_buf()));
+    pool.start_idle_reaper(std::time::Duration::from_millis(500));
 
     // Create the config store for runtime node configuration
     let config_store = NodeConfigStore::new(Arc::clone(&pool))
