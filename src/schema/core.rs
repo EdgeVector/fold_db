@@ -671,13 +671,13 @@ impl SchemaCore {
     }
 
     /// Creates a new SchemaCore for testing purposes with a temporary database
+    #[allow(deprecated)]
     pub async fn new_for_testing() -> Result<Self, SchemaError> {
-        let db = sled::Config::new()
-            .temporary(true)
-            .open()
+        let tmp = tempfile::TempDir::new()
             .map_err(|e| SchemaError::InvalidData(e.to_string()))?;
+        let pool = std::sync::Arc::new(crate::storage::SledPool::new(tmp.into_path()));
         let db_ops = std::sync::Arc::new(
-            crate::db_operations::DbOperations::from_sled(db)
+            crate::db_operations::DbOperations::from_sled(pool)
                 .await
                 .map_err(|e| SchemaError::InvalidData(e.to_string()))?,
         );
@@ -946,12 +946,10 @@ mod tests {
     async fn reload_from_store_adds_new_schemas() {
         // Create a SchemaCore, store a schema directly to Sled (bypassing
         // the in-memory cache), then verify reload_from_store picks it up.
-        let db = sled::Config::new()
-            .temporary(true)
-            .open()
-            .expect("open sled");
+        let tmp = tempfile::TempDir::new().expect("tmpdir");
+        let pool = std::sync::Arc::new(crate::storage::SledPool::new(tmp.path().to_path_buf()));
         let db_ops = std::sync::Arc::new(
-            crate::db_operations::DbOperations::from_sled(db)
+            crate::db_operations::DbOperations::from_sled(pool)
                 .await
                 .expect("db_ops"),
         );
@@ -1005,12 +1003,10 @@ mod tests {
     #[tokio::test]
     async fn reload_from_store_preserves_existing() {
         // Verify that reload_from_store does NOT overwrite schemas already in cache.
-        let db = sled::Config::new()
-            .temporary(true)
-            .open()
-            .expect("open sled");
+        let tmp = tempfile::TempDir::new().expect("tmpdir");
+        let pool = std::sync::Arc::new(crate::storage::SledPool::new(tmp.path().to_path_buf()));
         let db_ops = std::sync::Arc::new(
-            crate::db_operations::DbOperations::from_sled(db)
+            crate::db_operations::DbOperations::from_sled(pool)
                 .await
                 .expect("db_ops"),
         );
@@ -1036,12 +1032,10 @@ mod tests {
     async fn reload_from_store_populates_runtime_fields() {
         // Schemas written to Sled by sync replay have runtime_fields = {} (#[serde(skip)]).
         // Verify that reload_from_store populates runtime_fields on load.
-        let db = sled::Config::new()
-            .temporary(true)
-            .open()
-            .expect("open sled");
+        let tmp = tempfile::TempDir::new().expect("tmpdir");
+        let pool = std::sync::Arc::new(crate::storage::SledPool::new(tmp.path().to_path_buf()));
         let db_ops = std::sync::Arc::new(
-            crate::db_operations::DbOperations::from_sled(db)
+            crate::db_operations::DbOperations::from_sled(pool)
                 .await
                 .expect("db_ops"),
         );

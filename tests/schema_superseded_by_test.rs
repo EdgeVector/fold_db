@@ -126,9 +126,9 @@ async fn superseded_by_persists_across_schema_core_instances() {
 
     // Create a persistent sled DB
     let dir = tempfile::tempdir().expect("tempdir");
-    let db = sled::open(dir.path()).expect("open sled");
+    let pool = Arc::new(fold_db::storage::SledPool::new(dir.path().to_path_buf()));
     let db_ops = Arc::new(
-        fold_db::db_operations::DbOperations::from_sled(db)
+        fold_db::db_operations::DbOperations::from_sled(pool)
             .await
             .expect("db_ops"),
     );

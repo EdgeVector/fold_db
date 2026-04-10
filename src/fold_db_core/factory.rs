@@ -4,6 +4,7 @@ use crate::error::{FoldDbError, FoldDbResult};
 use crate::fold_db_core::FoldDB;
 use crate::storage::config::DatabaseConfig;
 use crate::storage::node_config_store::{CloudCredentials, NodeConfigStore};
+use crate::storage::SledPool;
 use crate::sync::SyncSetup;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -79,14 +80,10 @@ async fn create_local_fold_db(
         .to_str()
         .ok_or_else(|| FoldDbError::Config("Invalid storage path".to_string()))?;
 
-    let db = sled::open(path)
-        .map_err(|e| FoldDbError::Config(format!("Failed to open sled database: {}", e)))?;
-    let progress_tree = db
-        .open_tree("progress")
-        .map_err(|e| FoldDbError::Config(format!("Failed to open progress tree: {}", e)))?;
+    let pool = Arc::new(SledPool::new(path.to_path_buf()));
 
     // Create the config store for runtime node configuration
-    let config_store = NodeConfigStore::new(&db)
+    let config_store = NodeConfigStore::new(Arc::clone(&pool))
         .map_err(|e| FoldDbError::Config(format!("Failed to open config store: {}", e)))?;
 
     // If no sync_setup provided but Sled has cloud credentials, build sync from Sled
@@ -106,13 +103,8 @@ async fn create_local_fold_db(
         sync_setup
     };
 
-    // Retain the raw sled handle so FoldDB::sled_db() can return it.
-    // This is needed by org operations (which store memberships directly in
-    // Sled trees) and by configure_org_sync_if_needed().
-    let raw_sled = db.clone();
-
     let base_store: Arc<dyn crate::storage::traits::NamespacedStore> =
-        Arc::new(crate::storage::SledNamespacedStore::new(db));
+        Arc::new(crate::storage::SledNamespacedStore::new(Arc::clone(&pool)));
 
     // Build the store stack, optionally inserting sync layer
     #[allow(clippy::type_complexity)]
@@ -194,14 +186,14 @@ async fn create_local_fold_db(
         .await
         .map_err(|e| FoldDbError::Config(e.to_string()))?;
 
-    let job_store = crate::progress::create_tracker_with_sled(progress_tree);
+    let job_store = crate::progress::create_tracker_with_sled(Arc::clone(&pool));
 
     let mut fold_db = FoldDB::initialize_from_db_ops_with_sled(
         Arc::new(db_ops),
         path_str,
         Some(job_store),
         "local".to_string(),
-        Some(raw_sled),
+        Some(pool),
         enc_store_ref,
     )
     .await

@@ -14,6 +14,7 @@ use crate::db_operations::{DbOperations, IndexResult};
 use crate::logging::features::{log_feature, LogFeature};
 use crate::schema::{SchemaCore, SchemaError};
 use crate::storage::StorageError;
+use crate::storage::SledPool;
 
 // Infrastructure components that are used internally
 use super::infrastructure::{AsyncMessageBus, EventMonitor};
@@ -28,9 +29,9 @@ pub struct FoldDB {
     pub schema_manager: Arc<SchemaCore>,
     /// Shared database operations with storage abstraction
     pub db_ops: Arc<DbOperations>,
-    /// Raw sled database handle for direct tree access (e.g., org operations).
+    /// SledPool for on-demand Sled access (e.g., org operations, config store).
     /// Only present when using the Sled backend.
-    sled_db: Option<sled::Db>,
+    sled_pool: Option<Arc<SledPool>>,
     /// Query executor for handling all query operations
     pub query_executor: QueryExecutor,
     /// Message bus for event-driven communication (held for Arc lifetime)
@@ -64,10 +65,10 @@ impl FoldDB {
             .map_err(|e| crate::storage::StorageError::BackendError(e.to_string()))
     }
 
-    /// Returns a reference to the raw sled database, if available.
+    /// Returns a reference to the SledPool, if available.
     /// This is used by modules that need direct sled tree access (e.g., org operations).
-    pub fn sled_db(&self) -> Option<&sled::Db> {
-        self.sled_db.as_ref()
+    pub fn sled_pool(&self) -> Option<&Arc<SledPool>> {
+        self.sled_pool.as_ref()
     }
 
     /// Properly close and flush the database to release all file locks
@@ -141,7 +142,7 @@ impl FoldDB {
             None => return,
         };
         let db_ops = Arc::clone(&self.db_ops);
-        let sled_db = self.sled_db.clone();
+        let sled_pool = self.sled_pool.clone();
 
         let handle = tokio::spawn(async move {
             let interval = tokio::time::Duration::from_millis(interval_ms);
@@ -157,8 +158,8 @@ impl FoldDB {
                             log::warn!("🚨 SYSTEM ALERT: You have been removed from organization (hash: {}) by an administrator. Proceeding to securely purge all locally cached copies of its data and schema to prevent orphans.", org_hash);
 
                             // 1. Delete membership structure locally (if running on Sled backend)
-                            if let Some(db) = &sled_db {
-                                let _ = crate::org::operations::delete_org(db, org_hash).map_err(
+                            if let Some(pool) = &sled_pool {
+                                let _ = crate::org::operations::delete_org(pool, org_hash).map_err(
                                     |err| log::error!("Failed to delete org structure: {}", err),
                                 );
                             }
@@ -258,10 +259,10 @@ impl FoldDB {
             return Ok(()); // already running
         }
 
-        let sled_db = self
-            .sled_db
+        let pool = self
+            .sled_pool
             .as_ref()
-            .ok_or_else(|| FoldDbError::Config("No sled database for sync engine".to_string()))?
+            .ok_or_else(|| FoldDbError::Config("No sled pool for sync engine".to_string()))?
             .clone();
 
         let mut setup = crate::sync::SyncSetup::from_exemem(api_url, api_key, data_dir);
@@ -275,7 +276,7 @@ impl FoldDB {
         );
 
         let base_store: Arc<dyn crate::storage::traits::NamespacedStore> =
-            Arc::new(crate::storage::SledNamespacedStore::new(sled_db));
+            Arc::new(crate::storage::SledNamespacedStore::new(pool));
 
         let http = Arc::new(reqwest::Client::new());
         let s3 = crate::sync::s3::S3Client::new(http.clone());
@@ -321,10 +322,9 @@ impl FoldDB {
     /// All initializations happen here. This is the main entry point for the FoldDB system.
     /// Do not initialize anywhere else.
     pub async fn new(path: &str) -> Result<Self, StorageError> {
-        let db = sled::open(path)
-            .map_err(|e| StorageError::IoError(std::io::Error::other(e.to_string())))?;
+        let pool = Arc::new(SledPool::new(std::path::PathBuf::from(path)));
 
-        Self::initialize_from_db(db, path).await
+        Self::initialize_from_pool(pool, path).await
     }
 
     /// Creates a new FoldDB instance with fully initialized components.
@@ -342,15 +342,22 @@ impl FoldDB {
     }
 
     /// Common initialization logic shared by both new() and new_with_s3()
-    /// This method initializes all FoldDB components from an already-opened sled database
-    async fn initialize_from_db(db: sled::Db, db_path: &str) -> Result<Self, StorageError> {
+    /// This method initializes all FoldDB components from a SledPool
+    async fn initialize_from_pool(
+        pool: Arc<SledPool>,
+        db_path: &str,
+    ) -> Result<Self, StorageError> {
         log_feature!(
             LogFeature::Database,
             info,
             "🔄 Using DbOperations with storage abstraction layer (Sled backend)"
         );
 
-        let db_ops = Arc::new(DbOperations::from_sled(db.clone()).await?);
+        let store = Arc::new(crate::storage::SledNamespacedStore::new(Arc::clone(&pool)));
+        let db_ops = Arc::new(
+            DbOperations::from_namespaced_store(store as Arc<dyn crate::storage::traits::NamespacedStore>)
+                .await?,
+        );
 
         log_feature!(
             LogFeature::Database,
@@ -359,17 +366,15 @@ impl FoldDB {
             "Sled"
         );
 
-        // For local Sled backend, create persistent progress store using a dedicated sled tree
-        let progress_tree = db
-            .open_tree("progress")
-            .map_err(|e| StorageError::IoError(std::io::Error::other(e.to_string())))?;
-        let job_store: ProgressTracker = crate::progress::create_tracker_with_sled(progress_tree);
+        // For local Sled backend, create persistent progress store
+        let job_store: ProgressTracker =
+            crate::progress::create_tracker_with_sled(Arc::clone(&pool));
         Self::initialize_from_db_ops_with_sled(
             db_ops,
             db_path,
             Some(job_store),
             "local".to_string(),
-            Some(db),
+            Some(pool),
             None,
         )
         .await
@@ -386,14 +391,14 @@ impl FoldDB {
             .await
     }
 
-    /// Internal initializer that optionally retains the raw sled handle.
-    /// The raw handle is needed by org operations and org sync configuration.
+    /// Internal initializer that optionally retains the SledPool handle.
+    /// The pool is needed by org operations and org sync configuration.
     pub async fn initialize_from_db_ops_with_sled(
         db_ops: Arc<DbOperations>,
         _db_path: &str,
         job_store: Option<Arc<dyn JobStore>>,
         user_id: String,
-        sled_db: Option<sled::Db>,
+        sled_pool: Option<Arc<SledPool>>,
         encrypting_store: Option<Arc<crate::storage::EncryptingNamespacedStore>>,
     ) -> Result<Self, StorageError> {
         // Initialize message bus
@@ -461,7 +466,7 @@ impl FoldDB {
         Ok(Self {
             schema_manager,
             db_ops,
-            sled_db,
+            sled_pool,
             query_executor,
             message_bus,
             event_monitor,

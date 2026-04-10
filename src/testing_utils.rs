@@ -4,22 +4,25 @@
 
 use crate::db_operations::DbOperations;
 use crate::fold_db_core::infrastructure::message_bus::AsyncMessageBus;
-use sled::{Db, Tree};
+use crate::storage::SledPool;
 use std::sync::Arc;
 
 /// Consolidated temporary database creation - eliminates 11+ duplicates
 pub struct TestDatabaseFactory;
 
 impl TestDatabaseFactory {
-    /// Create a temporary sled database for testing
-    pub fn create_temp_sled_db() -> Result<Db, sled::Error> {
-        sled::Config::new().temporary(true).open()
+    /// Create a temporary SledPool for testing.
+    /// Note: the temp directory is intentionally leaked so the path remains valid.
+    #[allow(deprecated)]
+    pub fn create_temp_sled_pool() -> Arc<SledPool> {
+        let dir = tempfile::TempDir::new().expect("Failed to create temp dir");
+        Arc::new(SledPool::new(dir.into_path()))
     }
 
     /// Create temporary DbOperations for testing - consolidates pattern from multiple files
     pub async fn create_temp_db_ops() -> Result<DbOperations, Box<dyn std::error::Error>> {
-        let db = Self::create_temp_sled_db()?;
-        Ok(DbOperations::from_sled(db).await?)
+        let pool = Self::create_temp_sled_pool();
+        Ok(DbOperations::from_sled(pool).await?)
     }
 
     /// Create complete test environment with db_ops and message bus
@@ -28,11 +31,5 @@ impl TestDatabaseFactory {
         let db_ops = Arc::new(Self::create_temp_db_ops().await?);
         let message_bus = Arc::new(AsyncMessageBus::new());
         Ok((db_ops, message_bus))
-    }
-
-    /// Create named test tree (consolidates multiple create_test_tree functions)
-    pub fn create_named_test_tree(tree_name: &str) -> Tree {
-        let db = Self::create_temp_sled_db().expect("Failed to create test database");
-        db.open_tree(tree_name).expect("Failed to create test tree")
     }
 }

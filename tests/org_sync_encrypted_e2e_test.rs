@@ -118,8 +118,9 @@ fn build_replay_engine(
 
 /// Extract all org-prefixed key-value pairs from a Sled tree and package them
 /// as LogEntries with the given namespace.
-fn extract_org_entries(sled_db: &sled::Db, tree_name: &str, org_prefix: &str) -> Vec<LogEntry> {
-    let tree = sled_db.open_tree(tree_name).unwrap();
+fn extract_org_entries(pool: &Arc<fold_db::storage::SledPool>, tree_name: &str, org_prefix: &str) -> Vec<LogEntry> {
+    let guard = pool.acquire_arc().unwrap();
+    let tree = guard.db().open_tree(tree_name).unwrap();
     let mut entries = Vec::new();
     let mut seq = 1_000_000u64; // start high to avoid collisions
 
@@ -144,8 +145,9 @@ fn extract_org_entries(sled_db: &sled::Db, tree_name: &str, org_prefix: &str) ->
 }
 
 /// Extract a specific key from a Sled tree as a LogEntry.
-fn extract_key_entry(sled_db: &sled::Db, tree_name: &str, key: &str) -> Option<LogEntry> {
-    let tree = sled_db.open_tree(tree_name).unwrap();
+fn extract_key_entry(pool: &Arc<fold_db::storage::SledPool>, tree_name: &str, key: &str) -> Option<LogEntry> {
+    let guard = pool.acquire_arc().unwrap();
+    let tree = guard.db().open_tree(tree_name).unwrap();
     tree.get(key.as_bytes()).unwrap().map(|value| LogEntry {
         seq: 999_999,
         timestamp_ms: 1700000000000,
@@ -170,11 +172,11 @@ async fn test_org_sync_with_encryption_roundtrip() {
     let mut node1 = make_folddb(&tmp1).await;
     let node2 = make_folddb(&tmp2).await;
 
-    let sled1 = node1.sled_db().cloned().unwrap();
+    let pool1 = node1.sled_pool().cloned().unwrap();
 
     // Create org on node1
     let membership =
-        org_ops::create_org(&sled1, "Encrypted Corp", "pubkey_alice", "Alice").unwrap();
+        org_ops::create_org(&pool1, "Encrypted Corp", "pubkey_alice", "Alice").unwrap();
     let org_hash = &membership.org_hash;
 
     // Org E2E key — both nodes share this (received via invite bundle)
@@ -216,10 +218,10 @@ async fn test_org_sync_with_encryption_roundtrip() {
     assert_eq!(node1_bodies.len(), 2, "Node 1 should have 2 records");
 
     // --- Extract org-prefixed entries from node1's Sled ---
-    let sled1 = node1.sled_db().unwrap();
+    let pool1_ref = node1.sled_pool().unwrap();
     let org_prefix = format!("{}:", org_hash);
 
-    let main_entries = extract_org_entries(sled1, "main", &org_prefix);
+    let main_entries = extract_org_entries(pool1_ref, "main", &org_prefix);
     assert!(
         !main_entries.is_empty(),
         "Should have org-prefixed keys in main"
@@ -227,8 +229,8 @@ async fn test_org_sync_with_encryption_roundtrip() {
 
     // Also extract the schema and schema state
     let schema_entry =
-        extract_key_entry(sled1, "schemas", "enc_notes").expect("Schema should exist in sled");
-    let state_entry = extract_key_entry(sled1, "schema_states", "enc_notes")
+        extract_key_entry(pool1_ref, "schemas", "enc_notes").expect("Schema should exist in sled");
+    let state_entry = extract_key_entry(pool1_ref, "schema_states", "enc_notes")
         .expect("Schema state should exist in sled");
 
     // --- Seal all entries with org crypto (simulating upload) ---
@@ -250,9 +252,9 @@ async fn test_org_sync_with_encryption_roundtrip() {
     // --- Node 2: unseal with correct org crypto and replay ---
 
     // Build a SyncEngine for node2 backed by node2's Sled
-    let sled2 = node2.sled_db().cloned().unwrap();
+    let pool2 = node2.sled_pool().cloned().unwrap();
     let node2_store =
-        Arc::new(fold_db::storage::SledNamespacedStore::new(sled2)) as Arc<dyn NamespacedStore>;
+        Arc::new(fold_db::storage::SledNamespacedStore::new(pool2)) as Arc<dyn NamespacedStore>;
     let replay_engine = build_replay_engine(node2_store, org_crypto.clone());
 
     // Unseal and replay schema + state first
@@ -273,8 +275,9 @@ async fn test_org_sync_with_encryption_roundtrip() {
     }
 
     // --- Load schema into node2's in-memory SchemaManager cache ---
-    let sled2 = node2.sled_db().unwrap();
-    let schemas_tree = sled2.open_tree("schemas").unwrap();
+    let pool2_ref = node2.sled_pool().unwrap();
+    let guard2 = pool2_ref.acquire_arc().unwrap();
+    let schemas_tree = guard2.db().open_tree("schemas").unwrap();
     let schema_bytes = schemas_tree
         .get("enc_notes".as_bytes())
         .unwrap()
@@ -325,9 +328,9 @@ async fn test_personal_data_not_readable_with_org_crypto() {
     let tmp1 = tempfile::tempdir().unwrap();
     let mut node1 = make_folddb(&tmp1).await;
 
-    let sled1 = node1.sled_db().cloned().unwrap();
+    let pool1 = node1.sled_pool().cloned().unwrap();
     let membership =
-        org_ops::create_org(&sled1, "Isolation Corp", "pubkey_owner", "Owner").unwrap();
+        org_ops::create_org(&pool1, "Isolation Corp", "pubkey_owner", "Owner").unwrap();
     let org_hash = &membership.org_hash;
 
     // Register personal + org schemas
@@ -369,8 +372,9 @@ async fn test_personal_data_not_readable_with_org_crypto() {
         Arc::new(LocalCryptoProvider::from_key(org_key_bytes));
 
     // Extract personal keys (unprefixed)
-    let sled1 = node1.sled_db().unwrap();
-    let main_tree = sled1.open_tree("main").unwrap();
+    let pool1_ref = node1.sled_pool().unwrap();
+    let guard1 = pool1_ref.acquire_arc().unwrap();
+    let main_tree = guard1.db().open_tree("main").unwrap();
     let org_prefix = format!("{}:", org_hash);
 
     let mut personal_entries = Vec::new();
@@ -415,9 +419,9 @@ async fn test_partitioner_classifies_real_org_mutations() {
     let tmp1 = tempfile::tempdir().unwrap();
     let mut node1 = make_folddb(&tmp1).await;
 
-    let sled1 = node1.sled_db().cloned().unwrap();
+    let pool1 = node1.sled_pool().cloned().unwrap();
     let membership =
-        org_ops::create_org(&sled1, "Partition Corp", "pubkey_owner", "Owner").unwrap();
+        org_ops::create_org(&pool1, "Partition Corp", "pubkey_owner", "Owner").unwrap();
     let org_hash = &membership.org_hash;
 
     // Register both personal and org schemas
@@ -445,8 +449,9 @@ async fn test_partitioner_classifies_real_org_mutations() {
     // Use the SyncPartitioner to classify all keys in main tree
     let partitioner = fold_db::sync::SyncPartitioner::new(std::slice::from_ref(&membership));
 
-    let sled1 = node1.sled_db().unwrap();
-    let main_tree = sled1.open_tree("main").unwrap();
+    let pool1_ref = node1.sled_pool().unwrap();
+    let guard1 = pool1_ref.acquire_arc().unwrap();
+    let main_tree = guard1.db().open_tree("main").unwrap();
 
     let mut personal_count = 0usize;
     let mut org_count = 0usize;

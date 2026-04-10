@@ -123,10 +123,10 @@ async fn test_org_data_sync_between_two_nodes() {
     let mut node1 = make_folddb(&tmp1).await;
     let node2 = make_folddb(&tmp2).await;
 
-    let sled1 = node1.sled_db().cloned().unwrap();
+    let pool1 = node1.sled_pool().cloned().unwrap();
 
     // --- Node 1: create org and write data ---
-    let membership = org_ops::create_org(&sled1, "Sync Corp", "pubkey_alice", "Alice").unwrap();
+    let membership = org_ops::create_org(&pool1, "Sync Corp", "pubkey_alice", "Alice").unwrap();
     let org_hash = &membership.org_hash;
 
     register_schema(&mut node1, "sync_notes", Some(org_hash)).await;
@@ -155,8 +155,12 @@ async fn test_org_data_sync_between_two_nodes() {
 
     // --- Simulate sync: copy org-prefixed keys from node1 sled → node2 sled ---
 
-    let sled1 = node1.sled_db().unwrap();
-    let sled2 = node2.sled_db().unwrap();
+    let pool1 = node1.sled_pool().unwrap();
+    let pool2 = node2.sled_pool().unwrap();
+    let guard1 = pool1.acquire_arc().unwrap();
+    let guard2 = pool2.acquire_arc().unwrap();
+    let sled1 = guard1.db();
+    let sled2 = guard2.db();
     let org_prefix = format!("{}:", org_hash);
 
     // 1. Copy org-prefixed keys from "main" namespace (atom, ref, history data)
@@ -241,8 +245,8 @@ async fn test_org_sync_with_updates() {
     let mut node1 = make_folddb(&tmp1).await;
     let node2 = make_folddb(&tmp2).await;
 
-    let sled1 = node1.sled_db().cloned().unwrap();
-    let membership = org_ops::create_org(&sled1, "Update Corp", "pubkey_owner", "Owner").unwrap();
+    let pool1 = node1.sled_pool().cloned().unwrap();
+    let membership = org_ops::create_org(&pool1, "Update Corp", "pubkey_owner", "Owner").unwrap();
     let org_hash = &membership.org_hash;
 
     register_schema(&mut node1, "update_notes", Some(org_hash)).await;
@@ -281,8 +285,12 @@ async fn test_org_sync_with_updates() {
     assert_eq!(node1_bodies[0], json!("version-2"));
 
     // Simulate sync to node2
-    let sled1 = node1.sled_db().unwrap();
-    let sled2 = node2.sled_db().unwrap();
+    let pool1 = node1.sled_pool().unwrap();
+    let pool2 = node2.sled_pool().unwrap();
+    let guard1 = pool1.acquire_arc().unwrap();
+    let guard2 = pool2.acquire_arc().unwrap();
+    let sled1 = guard1.db();
+    let sled2 = guard2.db();
     let org_prefix = format!("{}:", org_hash);
 
     let main1 = sled1.open_tree("main").unwrap();
@@ -342,9 +350,9 @@ async fn test_org_sync_does_not_leak_personal_data() {
     let mut node1 = make_folddb(&tmp1).await;
     let node2 = make_folddb(&tmp2).await;
 
-    let sled1 = node1.sled_db().cloned().unwrap();
+    let pool1 = node1.sled_pool().cloned().unwrap();
     let membership =
-        org_ops::create_org(&sled1, "Isolation Corp", "pubkey_owner", "Owner").unwrap();
+        org_ops::create_org(&pool1, "Isolation Corp", "pubkey_owner", "Owner").unwrap();
     let org_hash = &membership.org_hash;
 
     // Register both personal and org schemas on node1
@@ -372,8 +380,12 @@ async fn test_org_sync_does_not_leak_personal_data() {
     .await;
 
     // Simulate sync: only copy org-prefixed keys
-    let sled1 = node1.sled_db().unwrap();
-    let sled2 = node2.sled_db().unwrap();
+    let pool1 = node1.sled_pool().unwrap();
+    let pool2 = node2.sled_pool().unwrap();
+    let guard1 = pool1.acquire_arc().unwrap();
+    let guard2 = pool2.acquire_arc().unwrap();
+    let sled1 = guard1.db();
+    let sled2 = guard2.db();
     let org_prefix = format!("{}:", org_hash);
 
     let main1 = sled1.open_tree("main").unwrap();

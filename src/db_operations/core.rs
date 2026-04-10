@@ -87,8 +87,8 @@ impl DbOperations {
     }
 
     /// Convenience constructor for Sled backend (backward compatible, no E2E)
-    pub async fn from_sled(db: sled::Db) -> Result<Self, crate::storage::StorageError> {
-        let store = Arc::new(SledNamespacedStore::new(db)) as Arc<dyn NamespacedStore>;
+    pub async fn from_sled(pool: Arc<crate::storage::SledPool>) -> Result<Self, crate::storage::StorageError> {
+        let store = Arc::new(SledNamespacedStore::new(pool)) as Arc<dyn NamespacedStore>;
         Self::from_namespaced_store(store).await
     }
 
