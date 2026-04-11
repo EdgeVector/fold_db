@@ -9,7 +9,6 @@ pub mod schema_events;
 pub use atom_events::*;
 pub use query_events::*;
 pub use request_events::*;
-pub use schema_events::*;
 
 /// Unified event enumeration that encompasses all event types
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -17,13 +16,8 @@ pub enum Event {
     // Core atom events
     FieldValueSet(FieldValueSet),
     AtomCreated(AtomCreated),
-    AtomUpdated(AtomUpdated),
     // Molecule events
     MoleculeCreated(MoleculeCreated),
-    MoleculeUpdated(MoleculeUpdated),
-    // Schema-related events
-    SchemaLoaded(SchemaLoaded),
-    SchemaChanged(SchemaChanged),
     // Query/mutation events
     QueryExecuted(QueryExecuted),
     MutationExecuted(MutationExecuted),
@@ -39,11 +33,7 @@ impl Event {
         match self {
             Event::FieldValueSet(_) => "FieldValueSet",
             Event::AtomCreated(_) => "AtomCreated",
-            Event::AtomUpdated(_) => "AtomUpdated",
             Event::MoleculeCreated(_) => "MoleculeCreated",
-            Event::MoleculeUpdated(_) => "MoleculeUpdated",
-            Event::SchemaLoaded(_) => "SchemaLoaded",
-            Event::SchemaChanged(_) => "SchemaChanged",
             Event::QueryExecuted(_) => "QueryExecuted",
             Event::MutationExecuted(_) => "MutationExecuted",
             Event::MutationRequest(_) => "MutationRequest",

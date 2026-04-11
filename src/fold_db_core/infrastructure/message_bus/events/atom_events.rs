@@ -32,23 +32,10 @@ pub struct AtomCreated {
     pub data: Value,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct AtomUpdated {
-    pub atom_id: String,
-    pub data: Value,
-}
-
 // Molecule events
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct MoleculeCreated {
     pub molecule_uuid: String,
     pub molecule_type: String,
     pub field_path: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct MoleculeUpdated {
-    pub molecule_uuid: String,
-    pub field_path: String,
-    pub operation: String,
 }

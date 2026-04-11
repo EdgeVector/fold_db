@@ -95,28 +95,6 @@ impl DbOperations {
         Ok(())
     }
 
-    /// List all trust domain names that have stored maps.
-    pub async fn list_trust_domains(&self) -> Result<Vec<String>, SchemaError> {
-        let entries = self
-            .permissions_store()
-            .inner()
-            .scan_prefix(TRUST_GRAPH_PREFIX.as_bytes())
-            .await
-            .map_err(|e| {
-                SchemaError::InvalidData(format!("Failed to scan trust domains: {}", e))
-            })?;
-
-        let domains: Vec<String> = entries
-            .iter()
-            .filter_map(|(key_bytes, _)| {
-                let key = String::from_utf8_lossy(key_bytes);
-                key.strip_prefix(TRUST_GRAPH_PREFIX).map(|d| d.to_string())
-            })
-            .collect();
-
-        Ok(domains)
-    }
-
     /// Load the audit log from storage. Returns empty log if none stored.
     pub async fn load_audit_log(&self) -> Result<AuditLog, SchemaError> {
         match self
@@ -146,5 +124,27 @@ impl DbOperations {
         let mut log = self.load_audit_log().await?;
         log.record(event);
         self.store_audit_log(&log).await
+    }
+
+    /// List all trust domain names that have stored maps.
+    pub async fn list_trust_domains(&self) -> Result<Vec<String>, SchemaError> {
+        let entries = self
+            .permissions_store()
+            .inner()
+            .scan_prefix(TRUST_GRAPH_PREFIX.as_bytes())
+            .await
+            .map_err(|e| {
+                SchemaError::InvalidData(format!("Failed to scan trust domains: {}", e))
+            })?;
+
+        let domains: Vec<String> = entries
+            .iter()
+            .filter_map(|(key_bytes, _)| {
+                let key = String::from_utf8_lossy(key_bytes);
+                key.strip_prefix(TRUST_GRAPH_PREFIX).map(|d| d.to_string())
+            })
+            .collect();
+
+        Ok(domains)
     }
 }

@@ -205,44 +205,6 @@ impl<'de> Deserialize<'de> for DatabaseConfig {
     }
 }
 
-/// Upload storage configuration for uploaded files
-#[derive(Debug, Clone)]
-pub enum UploadStorageConfig {
-    /// Local filesystem storage (default)
-    Local { path: PathBuf },
-}
-
-impl Default for UploadStorageConfig {
-    fn default() -> Self {
-        UploadStorageConfig::Local {
-            path: PathBuf::from("data/uploads"),
-        }
-    }
-}
-
-impl UploadStorageConfig {
-    /// Creates UploadStorageConfig from environment variables:
-    /// - FOLD_UPLOAD_STORAGE_MODE: "local" (defaults to "local")
-    /// - FOLD_UPLOAD_PATH: Path for local storage (defaults to "data/uploads")
-    pub fn from_env() -> Result<Self, ConfigError> {
-        let mode = env::var("FOLD_UPLOAD_STORAGE_MODE").unwrap_or_else(|_| "local".to_string());
-
-        match mode.as_str() {
-            "local" => {
-                let path = env::var("FOLD_UPLOAD_PATH")
-                    .map(PathBuf::from)
-                    .unwrap_or_else(|_| PathBuf::from("data/uploads"));
-                Ok(UploadStorageConfig::Local { path })
-            }
-
-            _ => Err(ConfigError::InvalidValue(format!(
-                "Invalid FOLD_UPLOAD_STORAGE_MODE: {}. Must be 'local'",
-                mode
-            ))),
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
