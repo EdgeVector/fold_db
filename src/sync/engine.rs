@@ -462,9 +462,7 @@ impl SyncEngine {
         // Try do_sync; on auth error, attempt token refresh and retry once.
         let result = match self.do_sync().await {
             Ok(synced) => Ok(synced),
-            Err(ref e) if matches!(e, SyncError::Auth(_)) => {
-                self.try_refresh_and_retry().await
-            }
+            Err(ref e) if matches!(e, SyncError::Auth(_)) => self.try_refresh_and_retry().await,
             Err(e) => Err(e),
         };
 
@@ -492,12 +490,10 @@ impl SyncEngine {
         };
 
         log::info!("sync auth failed, attempting token refresh");
-        let new_auth = refresh_cb()
-            .await
-            .map_err(|e| {
-                log::warn!("token refresh failed: {e}");
-                SyncError::Auth("authentication failed after token refresh failure".to_string())
-            })?;
+        let new_auth = refresh_cb().await.map_err(|e| {
+            log::warn!("token refresh failed: {e}");
+            SyncError::Auth("authentication failed after token refresh failure".to_string())
+        })?;
 
         self.auth.update_auth(new_auth).await;
         log::info!("token refreshed, retrying sync");
