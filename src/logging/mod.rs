@@ -64,17 +64,6 @@ impl LoggingSystem {
         Self::init_with_config(config).await
     }
 
-    /// Initialize logging with explicit Cloud configuration
-    pub async fn init_with_cloud(
-        dynamo_config: Option<(String, String, Option<String>)>,
-    ) -> Result<(), LoggingError> {
-        let config = LogConfig::default();
-
-        let _ = dynamo_config; // Suppress unused variable warning
-
-        Self::init_with_config(config).await
-    }
-
     /// Initialize the logging system with a custom configuration
     pub async fn init_with_config(config: LogConfig) -> Result<(), LoggingError> {
         // Set up global log level based on configuration
@@ -158,17 +147,16 @@ impl LoggingSystem {
         Ok(())
     }
 
-    /// Initialize logging with automatic fallback on failure.
+    /// Initialize logging, silently succeeding if already initialized.
     ///
-    /// Attempts cloud logging first (if config provided), falls back to default
-    /// logging on error. Silently succeeds if logging is already initialized.
-    pub async fn init_with_fallback(cloud_config: Option<(String, String, Option<String>)>) {
-        match Self::init_with_cloud(cloud_config).await {
+    /// The `_cloud_config` parameter is unused and exists only for backward
+    /// compatibility with callers that previously passed DynamoDB coordinates.
+    pub async fn init_with_fallback(_cloud_config: Option<(String, String, Option<String>)>) {
+        match Self::init_default().await {
             Ok(_) => {}
             Err(LoggingError::AlreadyInitialized) => {}
             Err(e) => {
-                eprintln!("Cloud logging init failed ({}), using default", e);
-                let _ = Self::init_default().await;
+                eprintln!("Logging init failed: {}", e);
             }
         }
     }

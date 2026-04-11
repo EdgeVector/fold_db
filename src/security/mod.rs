@@ -19,10 +19,7 @@ pub mod utils;
 
 pub use keys::*;
 pub use signing::*;
-pub use types::{
-    KeyRegistrationRequest, KeyRegistrationResponse, PublicKeyInfo, SignedMessage,
-    VerificationResult,
-};
+pub use types::{PublicKeyInfo, SignedMessage, VerificationResult};
 pub use utils::*;
 
 use thiserror::Error;
@@ -35,12 +32,6 @@ pub enum SecurityError {
 
     #[error("Signature verification failed: {0}")]
     SignatureVerificationFailed(String),
-
-    #[error("Encryption failed: {0}")]
-    EncryptionFailed(String),
-
-    #[error("Decryption failed: {0}")]
-    DecryptionFailed(String),
 
     #[error("Invalid public key: {0}")]
     InvalidPublicKey(String),
@@ -56,9 +47,6 @@ pub enum SecurityError {
 
     #[error("Deserialization error: {0}")]
     DeserializationError(String),
-
-    #[error("Invalid key format: {0}")]
-    InvalidKeyFormat(String),
 }
 
 pub type SecurityResult<T> = Result<T, SecurityError>;
