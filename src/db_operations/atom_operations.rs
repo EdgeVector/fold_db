@@ -36,7 +36,6 @@ impl DbOperations {
     }
 
     /// Batch store multiple atoms efficiently.
-    /// Uses DynamoDB BatchWriteItem to store up to 25 atoms per API call.
     /// Deduplicates by key since atoms with identical content have the same UUID.
     ///
     /// When `org_hash` is `Some`, all keys are prefixed with `{org_hash}:`.
@@ -50,7 +49,6 @@ impl DbOperations {
         }
 
         // Deduplicate by key - atoms with same content have same UUID
-        // DynamoDB batch_write_item doesn't allow duplicate keys in the same batch
         let mut seen_keys = std::collections::HashSet::new();
         let items: Vec<(String, Atom)> = atoms
             .into_iter()
@@ -65,10 +63,7 @@ impl DbOperations {
             })
             .collect();
 
-        log::info!(
-            "💾 Batch storing {} atoms to DynamoDB (after dedup)",
-            items.len()
-        );
+        log::info!("💾 Batch storing {} atoms (after dedup)", items.len());
 
         self.atoms_store()
             .batch_put_items(items)
@@ -84,7 +79,7 @@ impl DbOperations {
 
     /// Batch store multiple molecules efficiently.
     /// Accepts a vector of (molecule_uuid, molecule_data) tuples.
-    /// Deduplicates by key to prevent DynamoDB batch_write_item errors.
+    /// Deduplicates by key to avoid storing the same molecule twice.
     ///
     /// When `org_hash` is `Some`, all keys are prefixed with `{org_hash}:`.
     pub async fn batch_store_molecules(
@@ -96,7 +91,7 @@ impl DbOperations {
             return Ok(());
         }
 
-        // Deduplicate by key - DynamoDB batch_write_item doesn't allow duplicate keys
+        // Deduplicate by key
         let mut seen_keys = std::collections::HashSet::new();
         let items: Vec<(String, serde_json::Value)> = molecules
             .into_iter()
@@ -123,12 +118,9 @@ impl DbOperations {
             })
             .collect();
 
-        log::info!(
-            "💾 Batch storing {} molecules to DynamoDB (after dedup)",
-            items.len()
-        );
+        log::info!("💾 Batch storing {} molecules (after dedup)", items.len());
 
-        self.molecules_store()
+        self.atoms_store()
             .batch_put_items(items)
             .await
             .map_err(|e| {
@@ -143,8 +135,6 @@ impl DbOperations {
     /// Creates and stores an atom for a mutation field with deferred flush.
     /// If an atom with the same content already exists (content-based deduplication),
     /// returns the existing atom instead of creating a duplicate.
-    ///
-    /// This is the async V2 version for use with DbOperations.
     ///
     /// When `org_hash` is `Some`, all keys are prefixed with `{org_hash}:`.
     pub async fn create_and_store_atom_for_mutation_deferred(
@@ -188,7 +178,7 @@ impl DbOperations {
 
         // Store the new atom (deferred - no immediate flush)
         log::info!(
-            "💾 Writing atom to DynamoDB: key={}, uuid={}",
+            "💾 Writing atom: key={}, uuid={}",
             atom_key,
             new_atom.uuid()
         );
@@ -199,7 +189,7 @@ impl DbOperations {
                 log::error!("❌ Failed to store atom '{}': {}", atom_key, e);
                 SchemaError::InvalidData(format!("Failed to store atom: {}", e))
             })?;
-        log::info!("✅ Atom written to DynamoDB: {}", atom_key);
+        log::info!("✅ Atom written: {}", atom_key);
 
         Ok(new_atom)
     }

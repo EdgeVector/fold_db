@@ -171,22 +171,6 @@ impl UploadStorage {
         matches!(self, Self::Local { .. })
     }
 
-    /// Returns true if this is S3 storage
-    pub fn is_s3(&self) -> bool {
-        false
-    }
-
-    /// Download a file from an external S3 path (bucket/key)
-    /// This is used for S3 event-triggered ingestion where files come from external buckets
-    pub async fn download_from_s3_path(&self, _bucket: &str, _key: &str) -> StorageResult<Vec<u8>> {
-        match self {
-            Self::Local { .. } => {
-                Err(StorageError::DownloadFailed(
-                    "S3 download not supported in local mode. Configure S3 storage to enable S3 downloads.".to_string()
-                ))
-            }
-        }
-    }
 }
 
 #[cfg(test)]
@@ -264,12 +248,11 @@ mod tests {
     }
 
     #[test]
-    fn test_is_local_and_is_s3() {
+    fn test_is_local() {
         let local = UploadStorage::Local {
             path: PathBuf::from("/tmp"),
         };
         assert!(local.is_local());
-        assert!(!local.is_s3());
     }
 
     #[test]

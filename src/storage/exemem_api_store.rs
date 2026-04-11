@@ -21,8 +21,8 @@ pub enum ExememAuth {
 /// KvStore implementation that routes operations through the Exemem Storage API.
 ///
 /// Each instance is bound to a specific namespace. All keys and values are
-/// base64-encoded in transit. The Storage API Lambda handles DynamoDB routing,
-/// user isolation, and namespace-to-table mapping.
+/// base64-encoded in transit. The Storage API Lambda handles server-side routing,
+/// user isolation, and namespace mapping.
 pub struct ExememApiStore {
     client: Arc<Client>,
     base_url: String,
@@ -237,7 +237,7 @@ impl KvStore for ExememApiStore {
     }
 
     async fn flush(&self) -> StorageResult<()> {
-        // Storage API is eventually consistent (DynamoDB-backed), no flush needed
+        // Storage API is eventually consistent, no flush needed
         Ok(())
     }
 

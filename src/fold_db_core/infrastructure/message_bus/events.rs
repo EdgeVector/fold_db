@@ -4,7 +4,6 @@ use serde::{Deserialize, Serialize};
 pub mod atom_events;
 pub mod query_events;
 pub mod request_events;
-pub mod schema_events;
 
 pub use atom_events::*;
 pub use query_events::*;

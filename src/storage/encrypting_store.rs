@@ -9,7 +9,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 /// Prefix marker for encrypted values.
-/// On write: `ENC:` + base64(ciphertext) → valid UTF-8 string for DynamoDB `S` attributes.
+/// On write: `ENC:` + base64(ciphertext) → valid UTF-8 string.
 /// On read: detect prefix → strip → base64-decode → decrypt.
 const ENCRYPTED_PREFIX: &str = "ENC:";
 
@@ -23,13 +23,12 @@ const ENCRYPTED_PREFIX: &str = "ENC:";
 ///       ↓
 /// EncryptingKvStore (encrypt → base64 + prefix → valid UTF-8 string)
 ///       ↓
-/// DynamoDbKvStore / SledKvStore (stores as DynamoDB S attribute)
+/// SledKvStore / ExememApiStore (stores as UTF-8 string)
 /// ```
 ///
 /// Keys are NOT encrypted — only values. This preserves indexing and scan_prefix.
 ///
-/// Encrypted values are stored as `ENC:<base64(ciphertext)>` so they remain valid
-/// UTF-8 strings and survive DynamoDB's `S` attribute type, which requires UTF-8.
+/// Encrypted values are stored as `ENC:<base64(ciphertext)>` so they remain valid UTF-8.
 ///
 /// During migration (dual-read mode), values without the `ENC:` prefix are
 /// treated as pre-migration plaintext and returned as-is.

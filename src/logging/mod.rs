@@ -253,7 +253,7 @@ impl LoggingSystem {
             None
         };
 
-        // If we have a user_id, try GLOBAL_LOGGER first (e.g., DynamoDB)
+        // If we have a user_id, try GLOBAL_LOGGER first
         if let Some(uid) = &user_id {
             if let Some(logger) = GLOBAL_LOGGER.get() {
                 if let Ok(entries) = logger.query(uid, limit, from_timestamp).await {

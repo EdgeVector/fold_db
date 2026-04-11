@@ -4,10 +4,9 @@ use crate::storage::traits::*;
 use crate::storage::{SledNamespacedStore, TypedKvStore};
 use std::sync::Arc;
 
-/// Enhanced database operations with pluggable storage backend
+/// Database operations with pluggable storage backend
 ///
-/// This version uses the storage abstraction layer, allowing the same
-/// DbOperations API to work with different backends (Sled, DynamoDB, etc.)
+/// Uses the storage abstraction layer (Sled locally, with optional cloud sync).
 #[derive(Clone)]
 pub struct DbOperations {
     /// Main storage namespace - using concrete type instead of trait object
@@ -146,11 +145,6 @@ impl DbOperations {
 
     /// Get atoms/molecules store (same as main_store for backward compatibility)
     pub fn atoms_store(&self) -> &Arc<TypedKvStore<dyn KvStore>> {
-        &self.main_store
-    }
-
-    /// Get molecules store (same as main_store for backward compatibility)
-    pub fn molecules_store(&self) -> &Arc<TypedKvStore<dyn KvStore>> {
         &self.main_store
     }
 

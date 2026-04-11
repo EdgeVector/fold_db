@@ -11,7 +11,7 @@
 //! * `fold_db_core` - Core database functionality
 //! * `schema` - Schema definition, validation, and execution
 //! * `security` - Cryptographic key management and signing
-//! * `storage` - Storage backend abstraction (Sled, DynamoDB)
+//! * `storage` - Storage backend abstraction (Sled, with optional cloud sync)
 //!
 //! ## Architecture
 //!

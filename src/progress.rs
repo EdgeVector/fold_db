@@ -1,7 +1,7 @@
 //! Generic progress tracking system for FoldDB
 //!
 //! Provides a unified way to track long-running jobs (Ingestion, Indexing, etc.)
-//! with pluggable persistence (InMemory, DynamoDB).
+//! with pluggable persistence (InMemory for tests, Sled for production).
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -280,8 +280,7 @@ pub fn create_tracker_with_sled(pool: Arc<crate::storage::SledPool>) -> Progress
     Arc::new(SledProgressStore::new(pool))
 }
 
-/// Create a progress tracker with optional DynamoDB config
-pub async fn create_tracker(dynamo_config: Option<(String, String)>) -> ProgressTracker {
-    let _ = dynamo_config;
+/// Create an in-memory progress tracker (for testing or single-tenant use)
+pub async fn create_tracker() -> ProgressTracker {
     Arc::new(InMemoryProgressStore::new())
 }
