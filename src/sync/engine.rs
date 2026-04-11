@@ -636,6 +636,36 @@ impl SyncEngine {
         0 // Default to personal target
     }
 
+    /// Retry an S3 operation with exponential backoff.
+    /// Auth errors are NOT retried (they need token refresh at a higher level).
+    async fn retry_s3<F, Fut, T>(&self, label: &str, mut op: F) -> SyncResult<T>
+    where
+        F: FnMut() -> Fut,
+        Fut: std::future::Future<Output = SyncResult<T>>,
+    {
+        let max_retries = self.config.max_retries;
+        for attempt in 0..max_retries {
+            match op().await {
+                Ok(v) => return Ok(v),
+                Err(e) if matches!(&e, SyncError::Auth(_)) => return Err(e),
+                Err(e) => {
+                    let delay_ms = 500 * 2u64.pow(attempt);
+                    log::warn!(
+                        "{}: attempt {}/{} failed ({}), retrying in {}ms",
+                        label,
+                        attempt + 1,
+                        max_retries + 1,
+                        e,
+                        delay_ms
+                    );
+                    tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+                }
+            }
+        }
+        // Final attempt — no retry, just propagate
+        op().await
+    }
+
     /// Upload entries to a single sync target.
     async fn upload_entries(&self, target: &SyncTarget, entries: &[LogEntry]) -> SyncResult<usize> {
         if entries.is_empty() {
@@ -661,8 +691,16 @@ impl SyncEngine {
         }
 
         let mut uploaded_count = 0;
-        for ((_seq, s), url) in sealed.into_iter().zip(urls.iter()) {
-            self.s3.upload(url, s.bytes).await?;
+        for ((seq, s), url) in sealed.into_iter().zip(urls.iter()) {
+            let url = url.clone();
+            let s3 = &self.s3;
+            let bytes = s.bytes;
+            self.retry_s3(&format!("upload seq {}", seq), || {
+                let url = url.clone();
+                let bytes = bytes.clone();
+                async move { s3.upload(&url, bytes).await }
+            })
+            .await?;
             uploaded_count += 1;
         }
 
