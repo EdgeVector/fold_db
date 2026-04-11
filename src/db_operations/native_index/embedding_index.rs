@@ -9,6 +9,10 @@ use super::types::IndexResult;
 
 pub(super) const EMB_PREFIX: &str = "emb:";
 
+/// Sentinel field name used for face embeddings (512-dim ArcFace vectors).
+/// Must be excluded from text search (384-dim) to avoid dimension mismatch.
+pub(super) const FACE_FIELD_NAME: &str = "__face__";
+
 /// Entry stored in Sled for each indexed fragment.
 /// Backward-compatible: old entries missing new fields will deserialize with defaults.
 #[derive(Serialize, Deserialize)]
@@ -257,10 +261,11 @@ impl EmbeddingIndex {
     pub(super) fn search(&self, query_vec: &[f32], k: usize) -> Vec<IndexResult> {
         let entries = self.entries.read().unwrap();
 
-        // Score every entry
+        // Score every entry, excluding face embeddings (different dimensionality).
         let mut scored: Vec<(f32, usize)> = entries
             .iter()
             .enumerate()
+            .filter(|(_, e)| e.field_name != FACE_FIELD_NAME)
             .map(|(i, e)| (cosine_similarity(query_vec, &e.embedding), i))
             .collect();
 
@@ -322,6 +327,53 @@ impl EmbeddingIndex {
                     }]
                 }
             })
+            .collect()
+    }
+
+    /// Search only face embeddings by cosine similarity against a query face vector.
+    /// Returns up to `k` results, deduplicated by (schema, key, fragment_idx).
+    pub(super) fn search_faces(&self, query_vec: &[f32], k: usize) -> Vec<IndexResult> {
+        let entries = self.entries.read().unwrap();
+
+        let mut scored: Vec<(f32, usize)> = entries
+            .iter()
+            .enumerate()
+            .filter(|(_, e)| e.field_name == FACE_FIELD_NAME)
+            .map(|(i, e)| (cosine_similarity(query_vec, &e.embedding), i))
+            .collect();
+
+        scored.sort_unstable_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+
+        scored
+            .into_iter()
+            .take(k)
+            .map(|(score, i)| {
+                let e = &entries[i];
+                IndexResult {
+                    schema_name: e.schema.clone(),
+                    schema_display_name: None,
+                    field: FACE_FIELD_NAME.to_string(),
+                    key_value: e.key.clone(),
+                    value: serde_json::Value::Null,
+                    metadata: Some(serde_json::json!({
+                        "score": score,
+                        "match_type": "face",
+                        "fragment_idx": e.fragment_idx,
+                    })),
+                    molecule_versions: None,
+                }
+            })
+            .collect()
+    }
+
+    /// List all face embeddings stored for a specific record (schema + key).
+    /// Returns each face's embedding, bbox metadata, and fragment index.
+    pub(super) fn list_faces(&self, schema: &str, key: &KeyValue) -> Vec<(usize, Vec<f32>)> {
+        let entries = self.entries.read().unwrap();
+        entries
+            .iter()
+            .filter(|e| e.field_name == FACE_FIELD_NAME && e.schema == schema && e.key == *key)
+            .map(|e| (e.fragment_idx, e.embedding.clone()))
             .collect()
     }
 }
