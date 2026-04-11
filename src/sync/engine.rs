@@ -94,21 +94,20 @@ impl Default for SyncConfig {
 /// Callback for sync status changes.
 pub type StatusCallback = Box<dyn Fn(SyncState, Option<&str>) + Send + Sync>;
 
-/// Callback that reloads schemas from the persistent store into the in-memory cache.
-/// Returns the number of newly added schemas, or an error string.
-pub type SchemaReloadCallback = Arc<
+/// Async callback that reloads an in-memory cache from persistent storage.
+/// Returns the number of newly added items, or an error string.
+/// Used for both schema and embedding reloaders — same signature.
+pub type ReloadCallback = Arc<
     dyn Fn() -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<usize, String>> + Send>>
         + Send
         + Sync,
 >;
 
+/// Callback that reloads schemas from the persistent store into the in-memory cache.
+pub type SchemaReloadCallback = ReloadCallback;
+
 /// Callback that reloads embeddings from the persistent store into the in-memory index.
-/// Returns the number of newly added embeddings, or an error string.
-pub type EmbeddingReloadCallback = Arc<
-    dyn Fn() -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<usize, String>> + Send>>
-        + Send
-        + Sync,
->;
+pub type EmbeddingReloadCallback = ReloadCallback;
 
 /// The sync engine manages replication of a local Sled database to S3.
 ///
@@ -266,6 +265,29 @@ impl SyncEngine {
         *self.embedding_reloader.lock().await = Some(reloader);
     }
 
+    /// Invoke a reload callback, logging the result. `kind` is a human label
+    /// (e.g. "schema", "embedding") and `target_label` identifies the sync target.
+    async fn invoke_reloader(
+        &self,
+        reloader_slot: &Mutex<Option<ReloadCallback>>,
+        kind: &str,
+        target_label: &str,
+    ) {
+        if let Some(reloader) = reloader_slot.lock().await.as_ref() {
+            match reloader().await {
+                Ok(count) if count > 0 => {
+                    log::info!(
+                        "{kind} reloader added {count} item(s) after sync from '{target_label}'"
+                    );
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    log::warn!("failed to reload {kind}s after sync: {e}");
+                }
+            }
+        }
+    }
+
     /// Get the device identifier.
     pub fn device_id(&self) -> &str {
         &self.device_id
@@ -387,6 +409,27 @@ impl SyncEngine {
     // Sync cycle
     // =========================================================================
 
+    /// Record a successful sync: update last_sync_at timestamp and clear last_error.
+    async fn record_sync_success(&self) {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        *self.last_sync_at.lock().await = Some(now);
+        *self.last_error.lock().await = None;
+    }
+
+    /// Record a sync failure: store the error message and transition state.
+    async fn record_sync_failure(&self, err: &SyncError) {
+        let msg = err.to_string();
+        *self.last_error.lock().await = Some(msg.clone());
+        let new_state = match err {
+            SyncError::Network(_) => SyncState::Offline,
+            _ => SyncState::Dirty,
+        };
+        self.set_state(new_state, Some(&msg)).await;
+    }
+
     /// Run one sync cycle: upload pending log entries, compact if needed.
     ///
     /// Returns Ok(true) if all pending entries were uploaded,
@@ -416,71 +459,49 @@ impl SyncEngine {
             cb(SyncState::Syncing, Some("uploading"));
         }
 
-        match self.do_sync().await {
+        // Try do_sync; on auth error, attempt token refresh and retry once.
+        let result = match self.do_sync().await {
+            Ok(synced) => Ok(synced),
+            Err(ref e) if matches!(e, SyncError::Auth(_)) => {
+                self.try_refresh_and_retry().await
+            }
+            Err(e) => Err(e),
+        };
+
+        match result {
             Ok(synced) => {
                 if synced {
-                    let now = std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_secs();
-                    *self.last_sync_at.lock().await = Some(now);
-                    *self.last_error.lock().await = None;
+                    self.record_sync_success().await;
                 }
                 self.set_state(SyncState::Idle, None).await;
                 Ok(synced)
             }
             Err(e) => {
-                // On auth errors, attempt to refresh credentials and retry once.
-                if matches!(&e, SyncError::Auth(_)) {
-                    if let Some(ref refresh_cb) = self.auth_refresh {
-                        log::info!("sync auth failed, attempting token refresh");
-                        match refresh_cb().await {
-                            Ok(new_auth) => {
-                                self.auth.update_auth(new_auth).await;
-                                log::info!("token refreshed, retrying sync");
-                                match self.do_sync().await {
-                                    Ok(synced) => {
-                                        if synced {
-                                            let now = std::time::SystemTime::now()
-                                                .duration_since(std::time::UNIX_EPOCH)
-                                                .unwrap_or_default()
-                                                .as_secs();
-                                            *self.last_sync_at.lock().await = Some(now);
-                                            *self.last_error.lock().await = None;
-                                        }
-                                        self.set_state(SyncState::Idle, None).await;
-                                        return Ok(synced);
-                                    }
-                                    Err(retry_err) => {
-                                        let msg = retry_err.to_string();
-                                        log::warn!("sync retry after token refresh failed: {msg}");
-
-                                        *self.last_error.lock().await = Some(msg.clone());
-                                        self.set_state(SyncState::Dirty, Some(&msg)).await;
-                                        return Err(retry_err);
-                                    }
-                                }
-                            }
-                            Err(refresh_err) => {
-                                log::warn!("token refresh failed: {refresh_err}");
-                            }
-                        }
-                    }
-                }
-
-                let msg = e.to_string();
-                *self.last_error.lock().await = Some(msg.clone());
-                match &e {
-                    SyncError::Network(_) => {
-                        self.set_state(SyncState::Offline, Some(&msg)).await;
-                    }
-                    _ => {
-                        self.set_state(SyncState::Dirty, Some(&msg)).await;
-                    }
-                }
+                self.record_sync_failure(&e).await;
                 Err(e)
             }
         }
+    }
+
+    /// Attempt to refresh auth credentials and retry do_sync once.
+    /// Falls through to the original auth error if refresh isn't available or fails.
+    async fn try_refresh_and_retry(&self) -> SyncResult<bool> {
+        let refresh_cb = match self.auth_refresh {
+            Some(ref cb) => cb.clone(),
+            None => return Err(SyncError::Auth("authentication failed".to_string())),
+        };
+
+        log::info!("sync auth failed, attempting token refresh");
+        let new_auth = refresh_cb()
+            .await
+            .map_err(|e| {
+                log::warn!("token refresh failed: {e}");
+                SyncError::Auth("authentication failed after token refresh failure".to_string())
+            })?;
+
+        self.auth.update_auth(new_auth).await;
+        log::info!("token refreshed, retrying sync");
+        self.do_sync().await
     }
 
     async fn do_sync(&self) -> SyncResult<bool> {
@@ -734,44 +755,14 @@ impl SyncEngine {
             }
         }
 
-        // Reload SchemaCore cache if any schema entries were replayed
+        // Invoke reloaders for any namespaces that received new entries
         if schemas_replayed {
-            if let Some(reloader) = self.schema_reloader.lock().await.as_ref() {
-                match reloader().await {
-                    Ok(count) => {
-                        if count > 0 {
-                            log::info!(
-                                "schema reloader added {} schema(s) after sync from '{}'",
-                                count,
-                                target.label
-                            );
-                        }
-                    }
-                    Err(e) => {
-                        log::warn!("failed to reload schemas after sync: {}", e);
-                    }
-                }
-            }
+            self.invoke_reloader(&self.schema_reloader, "schema", &target.label)
+                .await;
         }
-
-        // Reload EmbeddingIndex if any native_index entries were replayed
         if embeddings_replayed {
-            if let Some(reloader) = self.embedding_reloader.lock().await.as_ref() {
-                match reloader().await {
-                    Ok(count) => {
-                        if count > 0 {
-                            log::info!(
-                                "embedding reloader added {} embedding(s) after sync from '{}'",
-                                count,
-                                target.label
-                            );
-                        }
-                    }
-                    Err(e) => {
-                        log::warn!("failed to reload embeddings after sync: {}", e);
-                    }
-                }
-            }
+            self.invoke_reloader(&self.embedding_reloader, "embedding", &target.label)
+                .await;
         }
 
         // Update cursor
@@ -907,13 +898,7 @@ impl SyncEngine {
         let log_objects = self.auth.list_log_objects(&personal).await?;
         let mut log_seqs: Vec<u64> = log_objects
             .iter()
-            .filter_map(|obj| {
-                obj.key
-                    .rsplit('/')
-                    .next()
-                    .and_then(|name| name.strip_suffix(".enc"))
-                    .and_then(|s| s.parse::<u64>().ok())
-            })
+            .filter_map(|obj| parse_flat_log_key(&obj.key))
             .filter(|seq| *seq > last_seq)
             .collect();
 

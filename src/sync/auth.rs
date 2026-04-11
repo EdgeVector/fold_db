@@ -178,22 +178,15 @@ impl AuthClient {
         Ok(parsed.objects)
     }
 
-    /// Request a presigned URL for uploading a snapshot.
-    pub async fn presign_snapshot_upload(&self, snapshot_name: &str) -> SyncResult<PresignedUrl> {
-        let body = serde_json::json!({
-            "action": "presign_snapshot_upload",
-            "snapshot_name": snapshot_name,
-        });
-
+    /// Presign a single URL: post the body, parse a PresignedResponse, extract one URL.
+    async fn presign_single_url(&self, body: serde_json::Value) -> SyncResult<PresignedUrl> {
         let resp = self.post("/api/sync/presign", body).await?;
         let parsed: PresignedResponse = serde_json::from_value(resp)?;
-
         if !parsed.ok {
             return Err(SyncError::Auth(
                 parsed.error.unwrap_or_else(|| "presign failed".to_string()),
             ));
         }
-
         parsed
             .urls
             .into_iter()
@@ -201,27 +194,22 @@ impl AuthClient {
             .ok_or_else(|| SyncError::Auth("no presigned URL returned".to_string()))
     }
 
+    /// Request a presigned URL for uploading a snapshot.
+    pub async fn presign_snapshot_upload(&self, snapshot_name: &str) -> SyncResult<PresignedUrl> {
+        self.presign_single_url(serde_json::json!({
+            "action": "presign_snapshot_upload",
+            "snapshot_name": snapshot_name,
+        }))
+        .await
+    }
+
     /// Request a presigned URL for downloading a snapshot.
     pub async fn presign_snapshot_download(&self, snapshot_name: &str) -> SyncResult<PresignedUrl> {
-        let body = serde_json::json!({
+        self.presign_single_url(serde_json::json!({
             "action": "presign_snapshot_download",
             "snapshot_name": snapshot_name,
-        });
-
-        let resp = self.post("/api/sync/presign", body).await?;
-        let parsed: PresignedResponse = serde_json::from_value(resp)?;
-
-        if !parsed.ok {
-            return Err(SyncError::Auth(
-                parsed.error.unwrap_or_else(|| "presign failed".to_string()),
-            ));
-        }
-
-        parsed
-            .urls
-            .into_iter()
-            .next()
-            .ok_or_else(|| SyncError::Auth("no presigned URL returned".to_string()))
+        }))
+        .await
     }
 
     /// Request a presigned URL to upload to another user's inbox
@@ -230,71 +218,30 @@ impl AuthClient {
         target_user_hash: &str,
         file_name: &str,
     ) -> SyncResult<PresignedUrl> {
-        let body = serde_json::json!({
+        self.presign_single_url(serde_json::json!({
             "action": "presign_inbox_upload",
             "target_user_hash": target_user_hash,
             "snapshot_name": file_name,
-        });
-
-        let resp = self.post("/api/sync/presign", body).await?;
-        let parsed: PresignedResponse = serde_json::from_value(resp)?;
-
-        if !parsed.ok {
-            return Err(SyncError::Auth(
-                parsed.error.unwrap_or_else(|| "presign failed".to_string()),
-            ));
-        }
-
-        parsed
-            .urls
-            .into_iter()
-            .next()
-            .ok_or_else(|| SyncError::Auth("no presigned URL returned".to_string()))
+        }))
+        .await
     }
 
     /// Request a presigned URL to download an item from your own inbox
     pub async fn presign_inbox_download(&self, file_name: &str) -> SyncResult<PresignedUrl> {
-        let body = serde_json::json!({
+        self.presign_single_url(serde_json::json!({
             "action": "presign_inbox_download",
             "snapshot_name": file_name,
-        });
-
-        let resp = self.post("/api/sync/presign", body).await?;
-        let parsed: PresignedResponse = serde_json::from_value(resp)?;
-
-        if !parsed.ok {
-            return Err(SyncError::Auth(
-                parsed.error.unwrap_or_else(|| "presign failed".to_string()),
-            ));
-        }
-
-        parsed
-            .urls
-            .into_iter()
-            .next()
-            .ok_or_else(|| SyncError::Auth("no presigned URL returned".to_string()))
+        }))
+        .await
     }
 
     /// Presign a DELETE URL for removing an inbox object (e.g., accepted/declined invite).
     pub async fn presign_inbox_delete(&self, file_name: &str) -> SyncResult<PresignedUrl> {
-        let body = serde_json::json!({
+        self.presign_single_url(serde_json::json!({
             "action": "presign_inbox_delete",
             "snapshot_name": file_name,
-        });
-        let resp = self.post("/api/sync/presign", body).await?;
-        let parsed: PresignedResponse = serde_json::from_value(resp)?;
-        if !parsed.ok {
-            return Err(SyncError::Auth(
-                parsed
-                    .error
-                    .unwrap_or_else(|| "presign inbox delete failed".to_string()),
-            ));
-        }
-        parsed
-            .urls
-            .into_iter()
-            .next()
-            .ok_or_else(|| SyncError::Auth("no presigned URL returned".to_string()))
+        }))
+        .await
     }
 
     /// Request presigned URLs for deleting log entries.
@@ -475,20 +422,33 @@ impl AuthClient {
     // Org membership management
     // =========================================================================
 
-    pub async fn create_org(&self, org_hash: &str) -> SyncResult<()> {
-        let body = serde_json::json!({
-            "action": "create_org",
-            "org_hash": org_hash,
-        });
+    /// Post an org action and check the `ok` field. Returns the full response
+    /// for callers that need to extract additional fields (e.g., `list_members`).
+    async fn org_action(&self, body: serde_json::Value) -> SyncResult<serde_json::Value> {
+        let action = body
+            .get("action")
+            .and_then(|v| v.as_str())
+            .unwrap_or("org_action")
+            .to_string();
         let resp = self.post("/api/sync/org", body).await?;
         let ok = resp.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
         if !ok {
+            let default_msg = format!("{action} failed");
             let err = resp
                 .get("error")
                 .and_then(|v| v.as_str())
-                .unwrap_or("create_org failed");
+                .unwrap_or(&default_msg);
             return Err(SyncError::Auth(err.to_string()));
         }
+        Ok(resp)
+    }
+
+    pub async fn create_org(&self, org_hash: &str) -> SyncResult<()> {
+        self.org_action(serde_json::json!({
+            "action": "create_org",
+            "org_hash": org_hash,
+        }))
+        .await?;
         Ok(())
     }
 
@@ -498,39 +458,23 @@ impl AuthClient {
         target_user_hash: &str,
         role: &str,
     ) -> SyncResult<()> {
-        let body = serde_json::json!({
+        self.org_action(serde_json::json!({
             "action": "add_member",
             "org_hash": org_hash,
             "target_user_hash": target_user_hash,
             "role": role,
-        });
-        let resp = self.post("/api/sync/org", body).await?;
-        let ok = resp.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
-        if !ok {
-            let err = resp
-                .get("error")
-                .and_then(|v| v.as_str())
-                .unwrap_or("add_member failed");
-            return Err(SyncError::Auth(err.to_string()));
-        }
+        }))
+        .await?;
         Ok(())
     }
 
     pub async fn remove_member(&self, org_hash: &str, target_user_hash: &str) -> SyncResult<()> {
-        let body = serde_json::json!({
+        self.org_action(serde_json::json!({
             "action": "remove_member",
             "org_hash": org_hash,
             "target_user_hash": target_user_hash,
-        });
-        let resp = self.post("/api/sync/org", body).await?;
-        let ok = resp.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
-        if !ok {
-            let err = resp
-                .get("error")
-                .and_then(|v| v.as_str())
-                .unwrap_or("remove_member failed");
-            return Err(SyncError::Auth(err.to_string()));
-        }
+        }))
+        .await?;
         Ok(())
     }
 
@@ -540,58 +484,35 @@ impl AuthClient {
         target_user_hash: &str,
         role: &str,
     ) -> SyncResult<()> {
-        let body = serde_json::json!({
+        self.org_action(serde_json::json!({
             "action": "update_role",
             "org_hash": org_hash,
             "target_user_hash": target_user_hash,
             "role": role,
-        });
-        let resp = self.post("/api/sync/org", body).await?;
-        let ok = resp.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
-        if !ok {
-            let err = resp
-                .get("error")
-                .and_then(|v| v.as_str())
-                .unwrap_or("update_role failed");
-            return Err(SyncError::Auth(err.to_string()));
-        }
+        }))
+        .await?;
         Ok(())
     }
 
     /// Notify the cloud that this user accepted an org invite (status -> active).
     pub async fn accept_invite(&self, org_hash: &str) -> SyncResult<()> {
-        let body = serde_json::json!({
+        self.org_action(serde_json::json!({
             "action": "accept_invite",
             "org_hash": org_hash,
-        });
-        let resp = self.post("/api/sync/org", body).await?;
-        let ok = resp.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
-        if !ok {
-            let err = resp
-                .get("error")
-                .and_then(|v| v.as_str())
-                .unwrap_or("accept_invite failed");
-            return Err(SyncError::Auth(err.to_string()));
-        }
+        }))
+        .await?;
         Ok(())
     }
 
     /// Fetch the current member list for an org from the cloud.
     /// Returns a JSON array of `{ user_hash, role, status }` objects.
     pub async fn list_members(&self, org_hash: &str) -> SyncResult<Vec<serde_json::Value>> {
-        let body = serde_json::json!({
-            "action": "list_members",
-            "org_hash": org_hash,
-        });
-        let resp = self.post("/api/sync/org", body).await?;
-        let ok = resp.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
-        if !ok {
-            let err = resp
-                .get("error")
-                .and_then(|v| v.as_str())
-                .unwrap_or("list_members failed");
-            return Err(SyncError::Auth(err.to_string()));
-        }
+        let resp = self
+            .org_action(serde_json::json!({
+                "action": "list_members",
+                "org_hash": org_hash,
+            }))
+            .await?;
         let members = resp
             .get("members")
             .and_then(|v| v.as_array())
@@ -602,19 +523,11 @@ impl AuthClient {
 
     /// Notify the cloud that this user declined an org invite (status -> declined).
     pub async fn decline_invite(&self, org_hash: &str) -> SyncResult<()> {
-        let body = serde_json::json!({
+        self.org_action(serde_json::json!({
             "action": "decline_invite",
             "org_hash": org_hash,
-        });
-        let resp = self.post("/api/sync/org", body).await?;
-        let ok = resp.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
-        if !ok {
-            let err = resp
-                .get("error")
-                .and_then(|v| v.as_str())
-                .unwrap_or("decline_invite failed");
-            return Err(SyncError::Auth(err.to_string()));
-        }
+        }))
+        .await?;
         Ok(())
     }
 }
