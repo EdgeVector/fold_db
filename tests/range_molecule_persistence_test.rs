@@ -138,7 +138,7 @@ async fn mutations_work_after_simulated_restart() {
         "Both files should be in the molecule after simulated restart"
     );
 
-    fold_db.close().expect("close");
+    // FoldDB flushes via shutdown() or Drop — no explicit close needed
 }
 
 /// Test that the molecule UUID stays consistent across multiple batches
@@ -223,5 +223,5 @@ async fn molecule_uuid_stays_consistent_across_batches() {
         "Molecule UUID should match deterministic derivation"
     );
 
-    fold_db.close().expect("close");
+    // FoldDB flushes via shutdown() or Drop — no explicit close needed
 }

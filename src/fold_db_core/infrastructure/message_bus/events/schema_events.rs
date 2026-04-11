@@ -1,12 +1,2 @@
-use serde::{Deserialize, Serialize};
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct SchemaLoaded {
-    pub schema_name: String,
-    pub status: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct SchemaChanged {
-    pub schema: String,
-}
+// Schema events — reserved for future use.
+// Event types will be added here when schema lifecycle notifications are implemented.

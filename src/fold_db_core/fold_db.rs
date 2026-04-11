@@ -71,31 +71,17 @@ impl FoldDB {
         self.sled_pool.as_ref()
     }
 
-    /// Properly close and flush the database to release all file locks
-    pub fn close(&self) -> Result<(), sled::Error> {
+    /// Graceful async shutdown: flush pending sync, stop background timer, then flush storage.
+    pub async fn shutdown(&mut self) -> Result<(), StorageError> {
         log_feature!(
             LogFeature::Database,
             info,
-            "Closing FoldDB and flushing all data to disk"
+            "Shutting down FoldDB: flushing sync and storage"
         );
-
-        log_feature!(
-            LogFeature::Database,
-            debug,
-            "FoldDB close() - relying on storage backend's own flush mechanisms"
-        );
-
-        Ok(())
-    }
-
-    /// Graceful async shutdown: flush pending sync, stop background timer, then close.
-    pub async fn shutdown(&mut self) -> Result<(), StorageError> {
         if let Err(e) = self.stop_sync().await {
             log::warn!("sync flush on shutdown failed: {e}");
         }
-        self.flush().await?;
-        self.close()
-            .map_err(|e| StorageError::IoError(std::io::Error::other(e.to_string())))
+        self.flush().await
     }
 
     /// Set the sync engine (called by the factory when sync is configured).
