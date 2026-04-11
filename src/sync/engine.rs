@@ -1112,7 +1112,11 @@ impl SyncEngine {
             _ => return None,
         };
         let conflicts = local.merge_into_conflicts(&incoming);
-        Some(serde_json::to_vec(&local).map(|merged| (merged, conflicts)).map_err(Into::into))
+        Some(
+            serde_json::to_vec(&local)
+                .map(|merged| (merged, conflicts))
+                .map_err(Into::into),
+        )
     }
 
     /// Attempt molecule merge by trying each molecule type in order.

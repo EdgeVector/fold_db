@@ -26,11 +26,7 @@ impl S3Client {
     }
 
     /// Check an S3 response status and return an error with the operation label if it failed.
-    fn check_response(
-        status: reqwest::StatusCode,
-        body: &str,
-        operation: &str,
-    ) -> SyncResult<()> {
+    fn check_response(status: reqwest::StatusCode, body: &str, operation: &str) -> SyncResult<()> {
         if !status.is_success() {
             return Err(SyncError::S3(format!(
                 "{operation} failed: HTTP {status}: {body}"

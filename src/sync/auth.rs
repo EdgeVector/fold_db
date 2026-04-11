@@ -326,9 +326,7 @@ impl AuthClient {
         let parsed: PresignedResponse = serde_json::from_value(resp)?;
         if !parsed.ok {
             return Err(SyncError::Auth(
-                parsed
-                    .error
-                    .unwrap_or_else(|| format!("{action} failed")),
+                parsed.error.unwrap_or_else(|| format!("{action} failed")),
             ));
         }
         Ok(parsed.urls)
