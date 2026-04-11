@@ -94,6 +94,39 @@ impl Default for SyncConfig {
 /// Callback for sync status changes.
 pub type StatusCallback = Box<dyn Fn(SyncState, Option<&str>) + Send + Sync>;
 
+/// Unified merge interface for all molecule types.
+///
+/// Each molecule type has a `merge` method but with slightly different return types
+/// (`Vec<MergeConflict>` vs `Option<MergeConflict>`). This trait normalizes them
+/// into a single `Vec<MergeConflict>` so `try_merge` can be generic.
+trait MergeMolecule {
+    fn merge_into_conflicts(&mut self, other: &Self) -> Vec<MergeConflict>;
+}
+
+impl MergeMolecule for MoleculeHash {
+    fn merge_into_conflicts(&mut self, other: &Self) -> Vec<MergeConflict> {
+        self.merge(other)
+    }
+}
+
+impl MergeMolecule for MoleculeRange {
+    fn merge_into_conflicts(&mut self, other: &Self) -> Vec<MergeConflict> {
+        self.merge(other)
+    }
+}
+
+impl MergeMolecule for MoleculeHashRange {
+    fn merge_into_conflicts(&mut self, other: &Self) -> Vec<MergeConflict> {
+        self.merge(other)
+    }
+}
+
+impl MergeMolecule for Molecule {
+    fn merge_into_conflicts(&mut self, other: &Self) -> Vec<MergeConflict> {
+        self.merge(other).into_iter().collect()
+    }
+}
+
 /// Async callback that reloads an in-memory cache from persistent storage.
 /// Returns the number of newly added items, or an error string.
 /// Used for both schema and embedding reloaders — same signature.
@@ -325,31 +358,30 @@ impl SyncEngine {
     // Recording operations
     // =========================================================================
 
-    /// Record a put operation for sync.
-    pub async fn record_put(&self, namespace: &str, key: &[u8], value: &[u8]) {
-        let entry = self
-            .make_entry(LogOp::Put {
-                namespace: namespace.to_string(),
-                key: LogOp::encode_bytes(key),
-                value: LogOp::encode_bytes(value),
-            })
-            .await;
-
+    /// Record an operation: create a log entry, push to pending, mark dirty.
+    async fn record_op(&self, op: LogOp) {
+        let entry = self.make_entry(op).await;
         self.pending.lock().await.push(entry);
         self.set_state(SyncState::Dirty, None).await;
     }
 
+    /// Record a put operation for sync.
+    pub async fn record_put(&self, namespace: &str, key: &[u8], value: &[u8]) {
+        self.record_op(LogOp::Put {
+            namespace: namespace.to_string(),
+            key: LogOp::encode_bytes(key),
+            value: LogOp::encode_bytes(value),
+        })
+        .await;
+    }
+
     /// Record a delete operation for sync.
     pub async fn record_delete(&self, namespace: &str, key: &[u8]) {
-        let entry = self
-            .make_entry(LogOp::Delete {
-                namespace: namespace.to_string(),
-                key: LogOp::encode_bytes(key),
-            })
-            .await;
-
-        self.pending.lock().await.push(entry);
-        self.set_state(SyncState::Dirty, None).await;
+        self.record_op(LogOp::Delete {
+            namespace: namespace.to_string(),
+            key: LogOp::encode_bytes(key),
+        })
+        .await;
     }
 
     /// Record a batch put operation for sync.
@@ -359,30 +391,22 @@ impl SyncEngine {
             .map(|(k, v)| (LogOp::encode_bytes(k), LogOp::encode_bytes(v)))
             .collect();
 
-        let entry = self
-            .make_entry(LogOp::BatchPut {
-                namespace: namespace.to_string(),
-                items: encoded_items,
-            })
-            .await;
-
-        self.pending.lock().await.push(entry);
-        self.set_state(SyncState::Dirty, None).await;
+        self.record_op(LogOp::BatchPut {
+            namespace: namespace.to_string(),
+            items: encoded_items,
+        })
+        .await;
     }
 
     /// Record a batch delete operation for sync.
     pub async fn record_batch_delete(&self, namespace: &str, keys: &[Vec<u8>]) {
         let encoded_keys: Vec<String> = keys.iter().map(|k| LogOp::encode_bytes(k)).collect();
 
-        let entry = self
-            .make_entry(LogOp::BatchDelete {
-                namespace: namespace.to_string(),
-                keys: encoded_keys,
-            })
-            .await;
-
-        self.pending.lock().await.push(entry);
-        self.set_state(SyncState::Dirty, None).await;
+        self.record_op(LogOp::BatchDelete {
+            namespace: namespace.to_string(),
+            keys: encoded_keys,
+        })
+        .await;
     }
 
     async fn make_entry(&self, op: LogOp) -> LogEntry {
@@ -572,33 +596,9 @@ impl SyncEngine {
         // Download from all org targets
         for target in &targets {
             if !target.prefix.is_empty() {
-                match self.download_entries(target).await {
+                match self.download_with_auth_retry(target).await {
                     Ok(n) => downloaded += n,
-                    Err(e) => {
-                        // On auth errors, try refreshing credentials and retry
-                        if matches!(&e, SyncError::Auth(_)) {
-                            if let Some(ref refresh_cb) = self.auth_refresh {
-                                log::info!(
-                                    "org download from '{}' auth failed, refreshing",
-                                    target.label
-                                );
-                                if let Ok(new_auth) = refresh_cb().await {
-                                    self.auth.update_auth(new_auth).await;
-                                    match self.download_entries(target).await {
-                                        Ok(n) => {
-                                            downloaded += n;
-                                            continue;
-                                        }
-                                        Err(retry_err) => log::warn!(
-                                            "org download from '{}' retry failed: {retry_err}",
-                                            target.label
-                                        ),
-                                    }
-                                }
-                            }
-                        }
-                        log::warn!("download from '{}' failed: {e}", target.label);
-                    }
+                    Err(e) => log::warn!("download from '{}' failed: {e}", target.label),
                 }
             }
         }
@@ -705,6 +705,30 @@ impl SyncEngine {
         }
 
         Ok(uploaded_count)
+    }
+
+    /// Download entries from a target, refreshing auth once on 401.
+    async fn download_with_auth_retry(&self, target: &SyncTarget) -> SyncResult<u64> {
+        match self.download_entries(target).await {
+            Ok(n) => Ok(n),
+            Err(ref e) if matches!(e, SyncError::Auth(_)) => {
+                if let Some(ref refresh_cb) = self.auth_refresh {
+                    log::info!(
+                        "org download from '{}' auth failed, refreshing",
+                        target.label
+                    );
+                    if let Ok(new_auth) = refresh_cb().await {
+                        self.auth.update_auth(new_auth).await;
+                        return self.download_entries(target).await;
+                    }
+                }
+                Err(SyncError::Auth(format!(
+                    "download from '{}' failed after auth refresh",
+                    target.label
+                )))
+            }
+            Err(e) => Err(e),
+        }
     }
 
     /// Download new entries from a sync target.
@@ -1071,51 +1095,43 @@ impl SyncEngine {
         Ok(())
     }
 
+    /// Try to parse both byte slices as type `T`, merge, and serialize back.
+    /// Returns `None` if either side fails to deserialize (caller should try the next type).
+    fn try_merge<T>(
+        local_bytes: &[u8],
+        incoming_bytes: &[u8],
+    ) -> Option<SyncResult<(Vec<u8>, Vec<MergeConflict>)>>
+    where
+        T: serde::de::DeserializeOwned + serde::Serialize + MergeMolecule,
+    {
+        let (mut local, incoming) = match (
+            serde_json::from_slice::<T>(local_bytes),
+            serde_json::from_slice::<T>(incoming_bytes),
+        ) {
+            (Ok(l), Ok(i)) => (l, i),
+            _ => return None,
+        };
+        let conflicts = local.merge_into_conflicts(&incoming);
+        Some(serde_json::to_vec(&local).map(|merged| (merged, conflicts)).map_err(Into::into))
+    }
+
     /// Attempt molecule merge by trying each molecule type in order.
     /// Returns the serialized merged result and any conflicts.
     fn merge_molecules(
         local_bytes: &[u8],
         incoming_bytes: &[u8],
     ) -> SyncResult<(Vec<u8>, Vec<MergeConflict>)> {
-        // Try MoleculeHash (HashMap-based atom_uuids)
-        if let (Ok(mut local), Ok(incoming)) = (
-            serde_json::from_slice::<MoleculeHash>(local_bytes),
-            serde_json::from_slice::<MoleculeHash>(incoming_bytes),
-        ) {
-            let conflicts = local.merge(&incoming);
-            let merged = serde_json::to_vec(&local)?;
-            return Ok((merged, conflicts));
+        if let Some(result) = Self::try_merge::<MoleculeHash>(local_bytes, incoming_bytes) {
+            return result;
         }
-
-        // Try MoleculeRange (BTreeMap-based atom_uuids)
-        if let (Ok(mut local), Ok(incoming)) = (
-            serde_json::from_slice::<MoleculeRange>(local_bytes),
-            serde_json::from_slice::<MoleculeRange>(incoming_bytes),
-        ) {
-            let conflicts = local.merge(&incoming);
-            let merged = serde_json::to_vec(&local)?;
-            return Ok((merged, conflicts));
+        if let Some(result) = Self::try_merge::<MoleculeRange>(local_bytes, incoming_bytes) {
+            return result;
         }
-
-        // Try MoleculeHashRange (nested HashMap<BTreeMap>)
-        if let (Ok(mut local), Ok(incoming)) = (
-            serde_json::from_slice::<MoleculeHashRange>(local_bytes),
-            serde_json::from_slice::<MoleculeHashRange>(incoming_bytes),
-        ) {
-            let conflicts = local.merge(&incoming);
-            let merged = serde_json::to_vec(&local)?;
-            return Ok((merged, conflicts));
+        if let Some(result) = Self::try_merge::<MoleculeHashRange>(local_bytes, incoming_bytes) {
+            return result;
         }
-
-        // Try Molecule (single atom ref)
-        if let (Ok(mut local), Ok(incoming)) = (
-            serde_json::from_slice::<Molecule>(local_bytes),
-            serde_json::from_slice::<Molecule>(incoming_bytes),
-        ) {
-            let conflict = local.merge(&incoming);
-            let conflicts = conflict.into_iter().collect::<Vec<_>>();
-            let merged = serde_json::to_vec(&local)?;
-            return Ok((merged, conflicts));
+        if let Some(result) = Self::try_merge::<Molecule>(local_bytes, incoming_bytes) {
+            return result;
         }
 
         // None of the molecule types matched — just use incoming bytes as-is

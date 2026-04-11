@@ -180,15 +180,8 @@ impl AuthClient {
 
     /// Presign a single URL: post the body, parse a PresignedResponse, extract one URL.
     async fn presign_single_url(&self, body: serde_json::Value) -> SyncResult<PresignedUrl> {
-        let resp = self.post("/api/sync/presign", body).await?;
-        let parsed: PresignedResponse = serde_json::from_value(resp)?;
-        if !parsed.ok {
-            return Err(SyncError::Auth(
-                parsed.error.unwrap_or_else(|| "presign failed".to_string()),
-            ));
-        }
-        parsed
-            .urls
+        self.presign_urls(body)
+            .await?
             .into_iter()
             .next()
             .ok_or_else(|| SyncError::Auth("no presigned URL returned".to_string()))
@@ -246,21 +239,11 @@ impl AuthClient {
 
     /// Request presigned URLs for deleting log entries.
     pub async fn presign_log_delete(&self, seq_numbers: &[u64]) -> SyncResult<Vec<PresignedUrl>> {
-        let body = serde_json::json!({
+        self.presign_urls(serde_json::json!({
             "action": "presign_log_delete",
             "seq_numbers": seq_numbers,
-        });
-
-        let resp = self.post("/api/sync/presign", body).await?;
-        let parsed: PresignedResponse = serde_json::from_value(resp)?;
-
-        if !parsed.ok {
-            return Err(SyncError::Auth(
-                parsed.error.unwrap_or_else(|| "presign failed".to_string()),
-            ));
-        }
-
-        Ok(parsed.urls)
+        }))
+        .await
     }
 
     /// Acquire the device lock.
@@ -332,29 +315,50 @@ impl AuthClient {
     // Sync operations (unified personal + org)
     // =========================================================================
 
-    /// Presign URLs for uploading log entries to a sync target.
-    pub async fn presign_upload(
-        &self,
-        target: &super::org_sync::SyncTarget,
-        seq_numbers: &[u64],
-    ) -> SyncResult<Vec<PresignedUrl>> {
-        let mut body = serde_json::json!({
-            "action": "presign_log_upload",
-            "seq_numbers": seq_numbers,
-        });
-        if !target.prefix.is_empty() {
-            body["org_hash"] = serde_json::Value::String(target.prefix.clone());
-        }
+    /// Post to the presign endpoint and parse the response, returning all URLs.
+    async fn presign_urls(&self, body: serde_json::Value) -> SyncResult<Vec<PresignedUrl>> {
+        let action = body
+            .get("action")
+            .and_then(|v| v.as_str())
+            .unwrap_or("presign")
+            .to_string();
         let resp = self.post("/api/sync/presign", body).await?;
         let parsed: PresignedResponse = serde_json::from_value(resp)?;
         if !parsed.ok {
             return Err(SyncError::Auth(
                 parsed
                     .error
-                    .unwrap_or_else(|| "presign upload failed".to_string()),
+                    .unwrap_or_else(|| format!("{action} failed")),
             ));
         }
         Ok(parsed.urls)
+    }
+
+    /// Presign multiple URLs for a log action (upload or download) on a sync target.
+    async fn presign_log_urls(
+        &self,
+        action: &str,
+        target: &super::org_sync::SyncTarget,
+        seq_numbers: &[u64],
+    ) -> SyncResult<Vec<PresignedUrl>> {
+        let mut body = serde_json::json!({
+            "action": action,
+            "seq_numbers": seq_numbers,
+        });
+        if !target.prefix.is_empty() {
+            body["org_hash"] = serde_json::Value::String(target.prefix.clone());
+        }
+        self.presign_urls(body).await
+    }
+
+    /// Presign URLs for uploading log entries to a sync target.
+    pub async fn presign_upload(
+        &self,
+        target: &super::org_sync::SyncTarget,
+        seq_numbers: &[u64],
+    ) -> SyncResult<Vec<PresignedUrl>> {
+        self.presign_log_urls("presign_log_upload", target, seq_numbers)
+            .await
     }
 
     /// Presign URLs for downloading log entries from a sync target.
@@ -363,23 +367,8 @@ impl AuthClient {
         target: &super::org_sync::SyncTarget,
         seq_numbers: &[u64],
     ) -> SyncResult<Vec<PresignedUrl>> {
-        let mut body = serde_json::json!({
-            "action": "presign_log_download",
-            "seq_numbers": seq_numbers,
-        });
-        if !target.prefix.is_empty() {
-            body["org_hash"] = serde_json::Value::String(target.prefix.clone());
-        }
-        let resp = self.post("/api/sync/presign", body).await?;
-        let parsed: PresignedResponse = serde_json::from_value(resp)?;
-        if !parsed.ok {
-            return Err(SyncError::Auth(
-                parsed
-                    .error
-                    .unwrap_or_else(|| "presign download failed".to_string()),
-            ));
-        }
-        Ok(parsed.urls)
+        self.presign_log_urls("presign_log_download", target, seq_numbers)
+            .await
     }
 
     /// List log objects for a sync target.
