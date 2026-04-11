@@ -33,7 +33,7 @@ pub struct EncryptingNamespacedStore {
 impl EncryptingNamespacedStore {
     /// Create a new encrypting namespaced store.
     ///
-    /// - `inner`: The underlying namespaced store (Sled, DynamoDB, InMemory).
+    /// - `inner`: The underlying namespaced store (Sled, InMemory, etc.).
     /// - `crypto`: The crypto provider to use for encryption/decryption.
     /// - `migration_mode`: When `true`, plaintext reads are permitted (dual-read).
     pub fn new(

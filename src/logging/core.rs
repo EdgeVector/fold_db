@@ -1,7 +1,7 @@
-//! Logging abstraction for Lambda deployments
+//! Logging abstraction
 //!
 //! Provides a trait that users can implement with their choice of backend
-//! (DynamoDB, CloudWatch, S3, custom databases, etc.)
+//! (CloudWatch, file, web socket, etc.)
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -143,7 +143,7 @@ impl Logger for MultiAsyncLogger {
         // Query the first logger that supports querying?
         // Or aggregate?
         // For now, let's just query the first one that returns results, or just the first one.
-        // Typically, we only have one "storage" logger (DynamoDB) and one "stream" logger (Web).
+        // Typically, we only have one "storage" logger and one "stream" logger (Web).
         // Web might hold recent logs in memory.
 
         for logger in &self.loggers {

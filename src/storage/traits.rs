@@ -7,7 +7,7 @@ use super::error::{StorageError, StorageResult};
 /// Describes how the backend executes operations
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExecutionModel {
-    /// Backend is truly async (network I/O, e.g., DynamoDB)
+    /// Backend is truly async (network I/O, e.g., Exemem API)
     Async,
     /// Backend is sync but wrapped in async (local I/O, e.g., Sled)
     SyncWrapped,
@@ -16,7 +16,7 @@ pub enum ExecutionModel {
 /// Describes flush behavior for the backend
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FlushBehavior {
-    /// Flush is a no-op (eventually consistent backend, e.g., DynamoDB)
+    /// Flush is a no-op (eventually consistent backend, e.g., Exemem API)
     NoOp,
     /// Flush performs actual persistence (strongly consistent, e.g., Sled)
     Persists,
@@ -25,7 +25,7 @@ pub enum FlushBehavior {
 /// Core key-value storage trait
 ///
 /// This is the fundamental storage interface that all backends must implement.
-/// Operations are async to support both local (Sled) and remote (DynamoDB) backends.
+/// Operations are async to support both local (Sled) and remote backends.
 #[async_trait]
 pub trait KvStore: Send + Sync {
     /// Get a value by key
@@ -71,7 +71,7 @@ pub trait KvStore: Send + Sync {
 /// Namespace storage trait
 ///
 /// Provides logical separation of data into "namespaces" or "trees"
-/// (like Sled's trees, DynamoDB tables, or Postgres schemas)
+/// (like Sled's trees or logical partitions in remote stores)
 #[async_trait]
 pub trait NamespacedStore: Send + Sync {
     /// Open or create a namespace (like sled::Tree)

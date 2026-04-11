@@ -43,7 +43,7 @@ pub struct FoldDB {
     /// Tracker for pending background tasks
     pub pending_tasks: Arc<super::infrastructure::pending_task_tracker::PendingTaskTracker>,
     /// Unified progress tracker for all job types (ingestion, indexing, etc.)
-    /// This is the single source of truth for progress - local uses Sled, cloud uses DynamoDB
+    /// This is the single source of truth for progress — uses Sled for persistent storage.
     pub progress_tracker: ProgressTracker,
     /// Optional sync engine for S3 replication.
     /// Present when sync is configured (local mode only).

@@ -10,7 +10,7 @@ use std::sync::Arc;
 /// `open_namespace` returns an `ExememApiStore` bound to that namespace.
 /// No server call is needed because the namespace is just a field in each
 /// request body — the Storage API Lambda resolves it to the correct
-/// DynamoDB table on the server side.
+/// storage partition on the server side.
 pub struct ExememNamespacedStore {
     client: Arc<Client>,
     base_url: String,

@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 /// A KvStore decorator that records all write operations to the SyncEngine.
 ///
-/// Sits between EncryptingKvStore and the backend (Sled/DynamoDB):
+/// Sits between EncryptingKvStore and the storage backend:
 ///
 /// ```text
 /// TypedKvStore (JSON serialization)
