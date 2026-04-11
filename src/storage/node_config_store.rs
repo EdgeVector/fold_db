@@ -61,7 +61,12 @@ impl NodeConfigStore {
         self.tree().is_empty()
     }
 
-    // --- Cloud credentials ---
+    // --- Cloud config (shared across devices) ---
+    //
+    // Only `api_url` and `user_hash` are stored in Sled because they are
+    // safe to sync across devices. Per-device secrets (`api_key`,
+    // `session_token`) live exclusively in credentials.json, managed by
+    // the fold_db_node layer.
 
     pub fn get_cloud_config(&self) -> Option<CloudCredentials> {
         if self.get("cloud:enabled")?.as_str() != "true" {
@@ -69,18 +74,12 @@ impl NodeConfigStore {
         }
         Some(CloudCredentials {
             api_url: self.get("cloud:api_url")?,
-            api_key: self.get("cloud:api_key")?,
-            session_token: self.get("cloud:session_token"),
             user_hash: self.get("cloud:user_hash"),
         })
     }
 
     pub fn set_cloud_config(&self, creds: &CloudCredentials) -> Result<(), sled::Error> {
         self.set("cloud:api_url", &creds.api_url)?;
-        self.set("cloud:api_key", &creds.api_key)?;
-        if let Some(ref st) = creds.session_token {
-            self.set("cloud:session_token", st)?;
-        }
         if let Some(ref uh) = creds.user_hash {
             self.set("cloud:user_hash", uh)?;
         }
@@ -179,11 +178,13 @@ impl NodeConfigStore {
     }
 }
 
+/// Cloud configuration stored in Sled (safe to sync across devices).
+///
+/// Per-device secrets (api_key, session_token) are NOT stored here.
+/// They live in credentials.json, managed by the fold_db_node layer.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CloudCredentials {
     pub api_url: String,
-    pub api_key: String,
-    pub session_token: Option<String>,
     pub user_hash: Option<String>,
 }
 
@@ -240,8 +241,6 @@ mod tests {
 
         let creds = CloudCredentials {
             api_url: "https://example.com".into(),
-            api_key: "em_test123".into(),
-            session_token: Some("token_abc".into()),
             user_hash: Some("deadbeef".into()),
         };
         store.set_cloud_config(&creds).unwrap();
@@ -249,8 +248,6 @@ mod tests {
 
         let loaded = store.get_cloud_config().unwrap();
         assert_eq!(loaded.api_url, "https://example.com");
-        assert_eq!(loaded.api_key, "em_test123");
-        assert_eq!(loaded.session_token.unwrap(), "token_abc");
         assert_eq!(loaded.user_hash.unwrap(), "deadbeef");
     }
 
@@ -304,7 +301,6 @@ mod tests {
     fn test_cloud_disabled_returns_none() {
         let (store, _dir) = temp_store();
         store.set("cloud:api_url", "https://example.com").unwrap();
-        store.set("cloud:api_key", "key").unwrap();
         // cloud:enabled not set -> get_cloud_config returns None
         assert!(store.get_cloud_config().is_none());
     }

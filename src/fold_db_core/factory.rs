@@ -3,7 +3,7 @@ use crate::db_operations::DbOperations;
 use crate::error::{FoldDbError, FoldDbResult};
 use crate::fold_db_core::FoldDB;
 use crate::storage::config::DatabaseConfig;
-use crate::storage::node_config_store::{CloudCredentials, NodeConfigStore};
+use crate::storage::node_config_store::NodeConfigStore;
 use crate::storage::SledPool;
 use crate::sync::SyncSetup;
 use std::sync::Arc;
@@ -41,19 +41,22 @@ pub async fn create_fold_db_with_auth_refresh(
 
     let db = create_local_fold_db(&config.path, e2e_keys, sync_setup).await?;
 
-    // If cloud sync is configured, persist credentials into the Sled config store
-    // so future startups can auto-enable sync even from a minimal config.
+    // If cloud sync is configured, persist ONLY api_url and user_hash to Sled.
+    // API keys and session tokens are per-device secrets stored in credentials.json
+    // by the fold_db_node layer — they must NOT be written to Sled (which syncs).
     if let Some(cloud) = &config.cloud_sync {
         let locked = db.lock().await;
         if let Some(cs) = locked.config_store() {
-            let creds = CloudCredentials {
-                api_url: cloud.api_url.clone(),
-                api_key: cloud.api_key.clone(),
-                session_token: None,
-                user_hash: None,
-            };
-            if let Err(e) = cs.set_cloud_config(&creds) {
-                log::warn!("failed to persist cloud config to Sled: {e}");
+            if let Err(e) = cs.set("cloud:api_url", &cloud.api_url) {
+                log::warn!("failed to persist cloud api_url to Sled: {e}");
+            }
+            if let Some(ref uh) = cloud.user_hash {
+                if let Err(e) = cs.set("cloud:user_hash", uh) {
+                    log::warn!("failed to persist cloud user_hash to Sled: {e}");
+                }
+            }
+            if let Err(e) = cs.set("cloud:enabled", "true") {
+                log::warn!("failed to persist cloud:enabled to Sled: {e}");
             }
         }
     }
@@ -87,22 +90,9 @@ async fn create_local_fold_db(
     let config_store = NodeConfigStore::new(Arc::clone(&pool))
         .map_err(|e| FoldDbError::Config(format!("Failed to open config store: {}", e)))?;
 
-    // If no sync_setup provided but Sled has cloud credentials, build sync from Sled
-    let sync_setup = if sync_setup.is_none() {
-        if let Some(cloud_creds) = config_store.get_cloud_config() {
-            let data_dir = path_str;
-            log::info!("found cloud credentials in Sled config store — enabling sync");
-            Some(SyncSetup::from_exemem(
-                &cloud_creds.api_url,
-                &cloud_creds.api_key,
-                data_dir,
-            ))
-        } else {
-            None
-        }
-    } else {
-        sync_setup
-    };
+    // Use the sync_setup provided by the caller. The caller (fold_db_node) is
+    // responsible for loading the API key from the per-device credentials file.
+    // We do NOT read API keys from Sled (which syncs across devices).
 
     let base_store: Arc<dyn crate::storage::traits::NamespacedStore> =
         Arc::new(crate::storage::SledNamespacedStore::new(Arc::clone(&pool)));
