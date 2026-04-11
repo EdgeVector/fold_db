@@ -23,7 +23,7 @@ async fn make_folddb(tmp: &tempfile::TempDir) -> FoldDB {
         .expect("Failed to create FoldDB")
 }
 
-async fn register_schema(db: &mut FoldDB, name: &str, org_hash: Option<&str>) {
+async fn register_schema(db: &FoldDB, name: &str, org_hash: Option<&str>) {
     let org_hash_json = match org_hash {
         Some(h) => format!(r#", "org_hash": "{}""#, h),
         None => String::new(),
@@ -45,7 +45,7 @@ async fn register_schema(db: &mut FoldDB, name: &str, org_hash: Option<&str>) {
 }
 
 async fn write_mutation(
-    db: &mut FoldDB,
+    db: &FoldDB,
     schema_name: &str,
     title: &str,
     date: &str,
@@ -70,7 +70,7 @@ async fn write_mutation(
 }
 
 async fn write_mutation_update(
-    db: &mut FoldDB,
+    db: &FoldDB,
     schema_name: &str,
     title: &str,
     date: &str,
@@ -156,7 +156,7 @@ fn all_sled_keys(db: &FoldDB) -> Vec<String> {
 #[tokio::test]
 async fn test_full_org_lifecycle() {
     let tmp = tempfile::tempdir().unwrap();
-    let mut db = make_folddb(&tmp).await;
+    let db = make_folddb(&tmp).await;
     let sled_pool = db.sled_pool().cloned().unwrap();
 
     // Create org
@@ -164,17 +164,10 @@ async fn test_full_org_lifecycle() {
     let org_hash = &membership.org_hash;
 
     // Register org schema
-    register_schema(&mut db, "corp_notes", Some(org_hash)).await;
+    register_schema(&db, "corp_notes", Some(org_hash)).await;
 
     // Write initial data
-    write_mutation(
-        &mut db,
-        "corp_notes",
-        "meeting",
-        "2026-01-15",
-        "initial notes",
-    )
-    .await;
+    write_mutation(&db, "corp_notes", "meeting", "2026-01-15", "initial notes").await;
 
     // Query — should return 1 record
     let bodies = query_field_values(&db, "corp_notes", "body").await;
@@ -182,14 +175,7 @@ async fn test_full_org_lifecycle() {
     assert_eq!(bodies[0], json!("initial notes"));
 
     // Update same record
-    write_mutation_update(
-        &mut db,
-        "corp_notes",
-        "meeting",
-        "2026-01-15",
-        "updated notes",
-    )
-    .await;
+    write_mutation_update(&db, "corp_notes", "meeting", "2026-01-15", "updated notes").await;
 
     // Query — should return updated value
     let bodies = query_field_values(&db, "corp_notes", "body").await;
@@ -235,7 +221,7 @@ async fn test_full_org_lifecycle() {
 #[tokio::test]
 async fn test_multi_org_data_isolation() {
     let tmp = tempfile::tempdir().unwrap();
-    let mut db = make_folddb(&tmp).await;
+    let db = make_folddb(&tmp).await;
     let sled_pool = db.sled_pool().cloned().unwrap();
 
     // Create two orgs
@@ -243,13 +229,13 @@ async fn test_multi_org_data_isolation() {
     let org_beta = org_ops::create_org(&sled_pool, "Org Beta", "pubkey_bob", "Bob").unwrap();
 
     // Register schemas
-    register_schema(&mut db, "alpha_notes", Some(&org_alpha.org_hash)).await;
-    register_schema(&mut db, "beta_notes", Some(&org_beta.org_hash)).await;
+    register_schema(&db, "alpha_notes", Some(&org_alpha.org_hash)).await;
+    register_schema(&db, "beta_notes", Some(&org_beta.org_hash)).await;
 
     // Write 3 records to each org
     for i in 1..=3 {
         write_mutation(
-            &mut db,
+            &db,
             "alpha_notes",
             &format!("a{i}"),
             &format!("2026-01-{i:02}"),
@@ -257,7 +243,7 @@ async fn test_multi_org_data_isolation() {
         )
         .await;
         write_mutation(
-            &mut db,
+            &db,
             "beta_notes",
             &format!("b{i}"),
             &format!("2026-02-{i:02}"),
@@ -319,19 +305,19 @@ async fn test_multi_org_data_isolation() {
 #[tokio::test]
 async fn test_org_and_personal_coexistence_at_scale() {
     let tmp = tempfile::tempdir().unwrap();
-    let mut db = make_folddb(&tmp).await;
+    let db = make_folddb(&tmp).await;
     let sled_pool = db.sled_pool().cloned().unwrap();
 
     let org = org_ops::create_org(&sled_pool, "My Org", "pubkey_owner", "Owner").unwrap();
 
     // Register personal and org schemas
-    register_schema(&mut db, "personal_journal", None).await;
-    register_schema(&mut db, "org_journal", Some(&org.org_hash)).await;
+    register_schema(&db, "personal_journal", None).await;
+    register_schema(&db, "org_journal", Some(&org.org_hash)).await;
 
     // Write 12 personal records
     for i in 1..=12 {
         write_mutation(
-            &mut db,
+            &db,
             "personal_journal",
             &format!("p{i:02}"),
             &format!("2026-01-{i:02}"),
@@ -343,7 +329,7 @@ async fn test_org_and_personal_coexistence_at_scale() {
     // Write 15 org records
     for i in 1..=15 {
         write_mutation(
-            &mut db,
+            &db,
             "org_journal",
             &format!("o{i:02}"),
             &format!("2026-02-{i:02}"),
@@ -397,22 +383,22 @@ async fn test_org_and_personal_coexistence_at_scale() {
 #[tokio::test]
 async fn test_org_mutation_history_prefixing() {
     let tmp = tempfile::tempdir().unwrap();
-    let mut db = make_folddb(&tmp).await;
+    let db = make_folddb(&tmp).await;
     let sled_pool = db.sled_pool().cloned().unwrap();
 
     let org = org_ops::create_org(&sled_pool, "History Org", "pubkey_alice", "Alice").unwrap();
     let org_hash = &org.org_hash;
 
-    register_schema(&mut db, "org_tasks", Some(org_hash)).await;
+    register_schema(&db, "org_tasks", Some(org_hash)).await;
 
     // Write initial
-    write_mutation(&mut db, "org_tasks", "task1", "2026-03-01", "v1").await;
+    write_mutation(&db, "org_tasks", "task1", "2026-03-01", "v1").await;
 
     // Small delay to ensure different timestamps
     tokio::time::sleep(std::time::Duration::from_millis(10)).await;
 
     // Update same record
-    write_mutation_update(&mut db, "org_tasks", "task1", "2026-03-01", "v2").await;
+    write_mutation_update(&db, "org_tasks", "task1", "2026-03-01", "v2").await;
 
     // Verify latest query value
     let bodies = query_field_values(&db, "org_tasks", "body").await;
@@ -478,12 +464,12 @@ async fn test_org_mutation_history_prefixing() {
 #[tokio::test]
 async fn test_org_query_with_sort_order() {
     let tmp = tempfile::tempdir().unwrap();
-    let mut db = make_folddb(&tmp).await;
+    let db = make_folddb(&tmp).await;
     let sled_pool = db.sled_pool().cloned().unwrap();
 
     let org = org_ops::create_org(&sled_pool, "Sort Org", "pubkey_owner", "Owner").unwrap();
 
-    register_schema(&mut db, "org_events", Some(&org.org_hash)).await;
+    register_schema(&db, "org_events", Some(&org.org_hash)).await;
 
     // Write 5 records with out-of-order dates
     let dates = [
@@ -495,7 +481,7 @@ async fn test_org_query_with_sort_order() {
     ];
     for (i, date) in dates.iter().enumerate() {
         write_mutation(
-            &mut db,
+            &db,
             "org_events",
             &format!("event{}", i + 1),
             date,
@@ -551,23 +537,23 @@ async fn test_org_query_with_sort_order() {
 #[tokio::test]
 async fn test_org_purge_leaves_no_residual_keys() {
     let tmp = tempfile::tempdir().unwrap();
-    let mut db = make_folddb(&tmp).await;
+    let db = make_folddb(&tmp).await;
     let sled_pool = db.sled_pool().cloned().unwrap();
 
     let org = org_ops::create_org(&sled_pool, "Purge Org", "pubkey_admin", "Admin").unwrap();
     let org_hash = &org.org_hash;
 
     // Register 3 org schemas + 1 personal schema
-    register_schema(&mut db, "org_notes", Some(org_hash)).await;
-    register_schema(&mut db, "org_tasks", Some(org_hash)).await;
-    register_schema(&mut db, "org_events", Some(org_hash)).await;
-    register_schema(&mut db, "my_notes", None).await;
+    register_schema(&db, "org_notes", Some(org_hash)).await;
+    register_schema(&db, "org_tasks", Some(org_hash)).await;
+    register_schema(&db, "org_events", Some(org_hash)).await;
+    register_schema(&db, "my_notes", None).await;
 
     // Write 5 records to each org schema (15 total)
     for schema in &["org_notes", "org_tasks", "org_events"] {
         for i in 1..=5 {
             write_mutation(
-                &mut db,
+                &db,
                 schema,
                 &format!("{schema}-{i}"),
                 &format!("2026-01-{i:02}"),
@@ -580,7 +566,7 @@ async fn test_org_purge_leaves_no_residual_keys() {
     // Write 5 personal records
     for i in 1..=5 {
         write_mutation(
-            &mut db,
+            &db,
             "my_notes",
             &format!("personal-{i}"),
             &format!("2026-03-{i:02}"),
@@ -630,18 +616,18 @@ async fn test_org_purge_leaves_no_residual_keys() {
 #[tokio::test]
 async fn test_sync_partitioner_routes_org_writes() {
     let tmp = tempfile::tempdir().unwrap();
-    let mut db = make_folddb(&tmp).await;
+    let db = make_folddb(&tmp).await;
     let sled_pool = db.sled_pool().cloned().unwrap();
 
     let org = org_ops::create_org(&sled_pool, "Sync Org", "pubkey_owner", "Owner").unwrap();
 
     // Register personal and org schemas
-    register_schema(&mut db, "my_docs", None).await;
-    register_schema(&mut db, "shared_docs", Some(&org.org_hash)).await;
+    register_schema(&db, "my_docs", None).await;
+    register_schema(&db, "shared_docs", Some(&org.org_hash)).await;
 
     // Write 1 record to each
     write_mutation(
-        &mut db,
+        &db,
         "my_docs",
         "personal-doc",
         "2026-01-01",
@@ -649,7 +635,7 @@ async fn test_sync_partitioner_routes_org_writes() {
     )
     .await;
     write_mutation(
-        &mut db,
+        &db,
         "shared_docs",
         "shared-doc",
         "2026-01-01",
@@ -707,7 +693,7 @@ async fn test_sync_partitioner_routes_org_writes() {
 #[tokio::test]
 async fn test_org_member_operations_during_data_lifecycle() {
     let tmp = tempfile::tempdir().unwrap();
-    let mut db = make_folddb(&tmp).await;
+    let db = make_folddb(&tmp).await;
     let sled_pool = db.sled_pool().cloned().unwrap();
 
     // Alice creates org
@@ -715,12 +701,12 @@ async fn test_org_member_operations_during_data_lifecycle() {
     let org_hash = &org.org_hash;
 
     // Register org schema
-    register_schema(&mut db, "team_notes", Some(org_hash)).await;
+    register_schema(&db, "team_notes", Some(org_hash)).await;
 
     // Alice writes 3 records
     for i in 1..=3 {
         write_mutation(
-            &mut db,
+            &db,
             "team_notes",
             &format!("alice-{i}"),
             &format!("2026-01-{i:02}"),
@@ -747,7 +733,7 @@ async fn test_org_member_operations_during_data_lifecycle() {
         // Using the same write_mutation helper (pub_key in mutation is "test-pub-key"
         // but the important thing is that data goes to the org-scoped schema)
         write_mutation(
-            &mut db,
+            &db,
             "team_notes",
             &format!("bob-{i}"),
             &format!("2026-01-{i:02}"),

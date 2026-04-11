@@ -68,7 +68,7 @@ fn blogpost_schema_json() -> &'static str {
 
 #[tokio::test]
 async fn wasm_view_query_returns_transformed_output() {
-    let mut db = setup_db().await;
+    let db = setup_db().await;
 
     // Setup schema with data
     db.load_schema_from_json(blogpost_schema_json())
@@ -121,7 +121,7 @@ async fn wasm_view_query_returns_transformed_output() {
 
 #[tokio::test]
 async fn wasm_view_output_type_validation_works() {
-    let mut db = setup_db().await;
+    let db = setup_db().await;
 
     db.load_schema_from_json(blogpost_schema_json())
         .await
@@ -171,7 +171,7 @@ async fn wasm_view_output_type_validation_works() {
 
 #[tokio::test]
 async fn wasm_view_cache_invalidation_works() {
-    let mut db = setup_db().await;
+    let db = setup_db().await;
 
     db.load_schema_from_json(blogpost_schema_json())
         .await

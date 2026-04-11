@@ -7,7 +7,6 @@ use crate::storage::node_config_store::NodeConfigStore;
 use crate::storage::SledPool;
 use crate::sync::SyncSetup;
 use std::sync::Arc;
-use tokio::sync::Mutex;
 
 /// Creates a fully initialized FoldDB instance based on the database configuration.
 ///
@@ -16,7 +15,7 @@ use tokio::sync::Mutex;
 pub async fn create_fold_db(
     config: &DatabaseConfig,
     e2e_keys: &E2eKeys,
-) -> FoldDbResult<Arc<Mutex<FoldDB>>> {
+) -> FoldDbResult<Arc<FoldDB>> {
     create_fold_db_with_auth_refresh(config, e2e_keys, None).await
 }
 
@@ -29,7 +28,7 @@ pub async fn create_fold_db_with_auth_refresh(
     config: &DatabaseConfig,
     e2e_keys: &E2eKeys,
     auth_refresh: Option<crate::sync::AuthRefreshCallback>,
-) -> FoldDbResult<Arc<Mutex<FoldDB>>> {
+) -> FoldDbResult<Arc<FoldDB>> {
     let sync_setup = if let Some(cloud) = &config.cloud_sync {
         let path = std::env::var("FOLD_STORAGE_PATH").unwrap_or_else(|_| "data".to_string());
         let mut setup = SyncSetup::from_exemem(&cloud.api_url, &cloud.api_key, &path);
@@ -45,8 +44,7 @@ pub async fn create_fold_db_with_auth_refresh(
     // API keys and session tokens are per-device secrets stored in credentials.json
     // by the fold_db_node layer — they must NOT be written to Sled (which syncs).
     if let Some(cloud) = &config.cloud_sync {
-        let locked = db.lock().await;
-        if let Some(cs) = locked.config_store() {
+        if let Some(cs) = db.config_store() {
             if let Err(e) = cs.set("cloud:api_url", &cloud.api_url) {
                 log::warn!("failed to persist cloud api_url to Sled: {e}");
             }
@@ -78,7 +76,7 @@ async fn create_local_fold_db(
     path: &std::path::Path,
     e2e_keys: &E2eKeys,
     sync_setup: Option<SyncSetup>,
-) -> FoldDbResult<Arc<Mutex<FoldDB>>> {
+) -> FoldDbResult<Arc<FoldDB>> {
     let path_str = path
         .to_str()
         .ok_or_else(|| FoldDbError::Config("Invalid storage path".to_string()))?;
@@ -204,7 +202,7 @@ async fn create_local_fold_db(
 
     let job_store = crate::progress::create_tracker_with_sled(Arc::clone(&pool));
 
-    let mut fold_db = FoldDB::initialize_from_db_ops_with_sled(
+    let fold_db = FoldDB::initialize_from_db_ops_with_sled(
         Arc::new(db_ops),
         path_str,
         Some(job_store),
@@ -222,5 +220,5 @@ async fn create_local_fold_db(
         fold_db.start_sync(sync_interval_ms);
     }
 
-    Ok(Arc::new(Mutex::new(fold_db)))
+    Ok(Arc::new(fold_db))
 }

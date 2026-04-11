@@ -53,7 +53,7 @@ fn make_mutation(source_file: &str, content: &str, file_type: &str) -> Mutation 
 async fn mutations_work_after_simulated_restart() {
     let temp_dir = TempDir::new().expect("temp dir");
     let db_path = temp_dir.path().to_str().expect("path");
-    let mut fold_db = FoldDB::new(db_path).await.expect("create FoldDB");
+    let fold_db = FoldDB::new(db_path).await.expect("create FoldDB");
 
     fold_db
         .schema_manager()
@@ -149,7 +149,7 @@ async fn mutations_work_after_simulated_restart() {
 async fn molecule_uuid_stays_consistent_across_batches() {
     let temp_dir = TempDir::new().expect("temp dir");
     let db_path = temp_dir.path().to_str().expect("path");
-    let mut fold_db = FoldDB::new(db_path).await.expect("create FoldDB");
+    let fold_db = FoldDB::new(db_path).await.expect("create FoldDB");
 
     fold_db
         .schema_manager()

@@ -24,7 +24,7 @@ async fn make_folddb(tmp: &tempfile::TempDir) -> FoldDB {
         .expect("Failed to create FoldDB")
 }
 
-async fn register_schema(db: &mut FoldDB, name: &str, org_hash: Option<&str>) {
+async fn register_schema(db: &FoldDB, name: &str, org_hash: Option<&str>) {
     let org_hash_json = match org_hash {
         Some(h) => format!(r#", "org_hash": "{}""#, h),
         None => String::new(),
@@ -46,7 +46,7 @@ async fn register_schema(db: &mut FoldDB, name: &str, org_hash: Option<&str>) {
 }
 
 async fn write_mutation(
-    db: &mut FoldDB,
+    db: &FoldDB,
     schema_name: &str,
     title: &str,
     date: &str,
@@ -120,7 +120,7 @@ async fn test_org_data_sync_between_two_nodes() {
     // --- Setup: two independent FoldDB instances ---
     let tmp1 = tempfile::tempdir().unwrap();
     let tmp2 = tempfile::tempdir().unwrap();
-    let mut node1 = make_folddb(&tmp1).await;
+    let node1 = make_folddb(&tmp1).await;
     let node2 = make_folddb(&tmp2).await;
 
     let pool1 = node1.sled_pool().cloned().unwrap();
@@ -129,12 +129,12 @@ async fn test_org_data_sync_between_two_nodes() {
     let membership = org_ops::create_org(&pool1, "Sync Corp", "pubkey_alice", "Alice").unwrap();
     let org_hash = &membership.org_hash;
 
-    register_schema(&mut node1, "sync_notes", Some(org_hash)).await;
+    register_schema(&node1, "sync_notes", Some(org_hash)).await;
 
     // Write 3 records on node1
     for i in 1..=3 {
         write_mutation(
-            &mut node1,
+            &node1,
             "sync_notes",
             &format!("note-{i}"),
             &format!("2026-04-{i:02}"),
@@ -242,24 +242,17 @@ async fn test_org_data_sync_between_two_nodes() {
 async fn test_org_sync_with_updates() {
     let tmp1 = tempfile::tempdir().unwrap();
     let tmp2 = tempfile::tempdir().unwrap();
-    let mut node1 = make_folddb(&tmp1).await;
+    let node1 = make_folddb(&tmp1).await;
     let node2 = make_folddb(&tmp2).await;
 
     let pool1 = node1.sled_pool().cloned().unwrap();
     let membership = org_ops::create_org(&pool1, "Update Corp", "pubkey_owner", "Owner").unwrap();
     let org_hash = &membership.org_hash;
 
-    register_schema(&mut node1, "update_notes", Some(org_hash)).await;
+    register_schema(&node1, "update_notes", Some(org_hash)).await;
 
     // Write initial record
-    write_mutation(
-        &mut node1,
-        "update_notes",
-        "doc1",
-        "2026-04-01",
-        "version-1",
-    )
-    .await;
+    write_mutation(&node1, "update_notes", "doc1", "2026-04-01", "version-1").await;
 
     // Update the same record
     let mut fields = HashMap::new();
@@ -347,7 +340,7 @@ async fn test_org_sync_with_updates() {
 async fn test_org_sync_does_not_leak_personal_data() {
     let tmp1 = tempfile::tempdir().unwrap();
     let tmp2 = tempfile::tempdir().unwrap();
-    let mut node1 = make_folddb(&tmp1).await;
+    let node1 = make_folddb(&tmp1).await;
     let node2 = make_folddb(&tmp2).await;
 
     let pool1 = node1.sled_pool().cloned().unwrap();
@@ -356,12 +349,12 @@ async fn test_org_sync_does_not_leak_personal_data() {
     let org_hash = &membership.org_hash;
 
     // Register both personal and org schemas on node1
-    register_schema(&mut node1, "personal_diary", None).await;
-    register_schema(&mut node1, "org_shared", Some(org_hash)).await;
+    register_schema(&node1, "personal_diary", None).await;
+    register_schema(&node1, "org_shared", Some(org_hash)).await;
 
     // Write personal data
     write_mutation(
-        &mut node1,
+        &node1,
         "personal_diary",
         "secret",
         "2026-04-01",
@@ -371,7 +364,7 @@ async fn test_org_sync_does_not_leak_personal_data() {
 
     // Write org data
     write_mutation(
-        &mut node1,
+        &node1,
         "org_shared",
         "meeting",
         "2026-04-01",

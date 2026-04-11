@@ -7,6 +7,7 @@ const TREE_NAME: &str = "node_config";
 
 /// Thin wrapper around a SledPool for storing node configuration.
 /// All runtime config (identity, cloud credentials, AI settings) lives here.
+#[derive(Clone)]
 pub struct NodeConfigStore {
     pool: Arc<SledPool>,
 }
@@ -83,7 +84,10 @@ impl NodeConfigStore {
         if let Some(ref uh) = creds.user_hash {
             self.set("cloud:user_hash", uh)?;
         }
-        self.set("cloud:enabled", "true")?;
+        // Don't set cloud:enabled here — only the factory should set it when
+        // sync is actually configured with a valid API key. Setting it during
+        // registration (without an API key) causes the factory to bootstrap
+        // sync on restart, which deadlocks.
         Ok(())
     }
 
@@ -244,6 +248,10 @@ mod tests {
             user_hash: Some("deadbeef".into()),
         };
         store.set_cloud_config(&creds).unwrap();
+        // set_cloud_config deliberately doesn't set cloud:enabled —
+        // only the factory sets it when sync is fully configured.
+        assert!(!store.is_cloud_enabled());
+        store.set("cloud:enabled", "true").unwrap();
         assert!(store.is_cloud_enabled());
 
         let loaded = store.get_cloud_config().unwrap();

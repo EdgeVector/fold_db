@@ -42,7 +42,7 @@ fn identity_view(name: &str, source_schema: &str, source_field: &str) -> Transfo
 
 #[tokio::test]
 async fn mutating_source_invalidates_view_cache() {
-    let mut db = setup_db().await;
+    let db = setup_db().await;
 
     // Setup: schema + data + view
     db.load_schema_from_json(blogpost_schema_json())
@@ -123,7 +123,7 @@ async fn mutating_source_invalidates_view_cache() {
 
 #[tokio::test]
 async fn re_query_after_invalidation_re_caches() {
-    let mut db = setup_db().await;
+    let db = setup_db().await;
 
     db.load_schema_from_json(blogpost_schema_json())
         .await
@@ -187,7 +187,7 @@ async fn re_query_after_invalidation_re_caches() {
 
 #[tokio::test]
 async fn cascading_invalidation_through_view_chain() {
-    let mut db = setup_db().await;
+    let db = setup_db().await;
 
     // Setup: schema + data
     db.load_schema_from_json(blogpost_schema_json())
@@ -287,7 +287,7 @@ async fn cascading_invalidation_through_view_chain() {
 
 #[tokio::test]
 async fn view_chain_query_returns_source_data() {
-    let mut db = setup_db().await;
+    let db = setup_db().await;
 
     db.load_schema_from_json(blogpost_schema_json())
         .await
@@ -346,7 +346,7 @@ async fn view_chain_query_returns_source_data() {
 
 #[tokio::test]
 async fn three_level_chain_resolves_to_source() {
-    let mut db = setup_db().await;
+    let db = setup_db().await;
 
     db.load_schema_from_json(blogpost_schema_json())
         .await
@@ -405,7 +405,7 @@ async fn three_level_chain_resolves_to_source() {
 
 #[tokio::test]
 async fn chain_re_query_after_cascade_invalidation_gets_fresh_data() {
-    let mut db = setup_db().await;
+    let db = setup_db().await;
 
     db.load_schema_from_json(blogpost_schema_json())
         .await
@@ -478,7 +478,7 @@ async fn chain_re_query_after_cascade_invalidation_gets_fresh_data() {
 
 #[tokio::test]
 async fn multi_source_view_from_two_views() {
-    let mut db = setup_db().await;
+    let db = setup_db().await;
 
     // Create two source schemas
     db.load_schema_from_json(blogpost_schema_json())
@@ -586,7 +586,7 @@ async fn multi_source_view_from_two_views() {
 
 #[tokio::test]
 async fn three_level_cascade_invalidation() {
-    let mut db = setup_db().await;
+    let db = setup_db().await;
 
     db.load_schema_from_json(blogpost_schema_json())
         .await

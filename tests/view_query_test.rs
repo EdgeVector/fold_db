@@ -42,7 +42,7 @@ fn identity_view(name: &str, source_schema: &str, source_field: &str) -> Transfo
 
 #[tokio::test]
 async fn query_identity_view_returns_source_data() {
-    let mut db = setup_db().await;
+    let db = setup_db().await;
 
     // Load and approve a schema
     db.load_schema_from_json(blogpost_schema_json())
@@ -101,7 +101,7 @@ async fn query_nonexistent_name_errors() {
 
 #[tokio::test]
 async fn query_blocked_view_errors() {
-    let mut db = setup_db().await;
+    let db = setup_db().await;
 
     db.load_schema_from_json(blogpost_schema_json())
         .await
@@ -119,7 +119,7 @@ async fn query_blocked_view_errors() {
 
 #[tokio::test]
 async fn query_view_with_empty_fields_returns_all() {
-    let mut db = setup_db().await;
+    let db = setup_db().await;
 
     db.load_schema_from_json(blogpost_schema_json())
         .await
@@ -172,7 +172,7 @@ async fn query_view_with_empty_fields_returns_all() {
 
 #[tokio::test]
 async fn identity_view_write_redirects_to_source() {
-    let mut db = setup_db().await;
+    let db = setup_db().await;
 
     db.load_schema_from_json(blogpost_schema_json())
         .await
@@ -217,7 +217,7 @@ async fn identity_view_write_redirects_to_source() {
 
 #[tokio::test]
 async fn identity_view_write_invalidates_view_cache() {
-    let mut db = setup_db().await;
+    let db = setup_db().await;
 
     db.load_schema_from_json(blogpost_schema_json())
         .await
@@ -278,7 +278,7 @@ async fn identity_view_write_invalidates_view_cache() {
 
 #[tokio::test]
 async fn wasm_view_write_is_rejected() {
-    let mut db = setup_db().await;
+    let db = setup_db().await;
 
     db.load_schema_from_json(blogpost_schema_json())
         .await
