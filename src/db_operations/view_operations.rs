@@ -49,10 +49,8 @@ impl DbOperations {
 
     /// Get all view states.
     pub async fn get_all_view_states(&self) -> Result<HashMap<String, ViewState>, SchemaError> {
-        let items: Vec<(String, ViewState)> = self
-            .view_states_store()
-            .scan_items_with_prefix("")
-            .await?;
+        let items: Vec<(String, ViewState)> =
+            self.view_states_store().scan_items_with_prefix("").await?;
         Ok(items.into_iter().collect())
     }
 

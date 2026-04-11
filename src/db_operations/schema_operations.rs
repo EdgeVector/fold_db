@@ -50,8 +50,7 @@ impl DbOperations {
 
     /// Get all schemas
     pub async fn get_all_schemas(&self) -> Result<HashMap<String, Schema>, SchemaError> {
-        let items: Vec<(String, Schema)> =
-            self.schemas_store().scan_items_with_prefix("").await?;
+        let items: Vec<(String, Schema)> = self.schemas_store().scan_items_with_prefix("").await?;
 
         let mut schemas = HashMap::with_capacity(items.len());
         for (key, mut schema) in items {
