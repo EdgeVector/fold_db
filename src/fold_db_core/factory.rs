@@ -187,6 +187,22 @@ async fn create_local_fold_db(
         .await
         .map_err(|e| FoldDbError::Config(e.to_string()))?;
 
+    // Initialize face detection processor if the feature is enabled
+    #[cfg(feature = "face-detection")]
+    {
+        let home_path = std::path::Path::new(path_str);
+        if let Some(mgr) = db_ops.native_index_manager() {
+            let processor = std::sync::Arc::new(
+                crate::db_operations::native_index::face::OnnxFaceProcessor::new(home_path),
+            );
+            mgr.set_face_processor(processor);
+            log::info!(
+                "Face detection processor initialized (models at {}/models/)",
+                path_str
+            );
+        }
+    }
+
     let job_store = crate::progress::create_tracker_with_sled(Arc::clone(&pool));
 
     let mut fold_db = FoldDB::initialize_from_db_ops_with_sled(

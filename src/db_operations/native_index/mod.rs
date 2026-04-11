@@ -34,7 +34,7 @@ pub struct NativeIndexManager {
     embedding_model: Arc<dyn Embedder>,
     embedding_index: Arc<EmbeddingIndex>,
     #[cfg(feature = "face-detection")]
-    face_processor: Option<Arc<dyn FaceProcessor>>,
+    face_processor: once_cell::sync::OnceCell<Arc<dyn FaceProcessor>>,
 }
 
 impl NativeIndexManager {
@@ -44,7 +44,7 @@ impl NativeIndexManager {
             embedding_model: Arc::new(FastEmbedModel::new()),
             embedding_index: Arc::new(EmbeddingIndex::new(Vec::new())),
             #[cfg(feature = "face-detection")]
-            face_processor: None,
+            face_processor: once_cell::sync::OnceCell::new(),
         }
     }
 
@@ -61,7 +61,7 @@ impl NativeIndexManager {
             embedding_model: model,
             embedding_index: Arc::new(EmbeddingIndex::new(Vec::new())),
             #[cfg(feature = "face-detection")]
-            face_processor: None,
+            face_processor: once_cell::sync::OnceCell::new(),
         }
     }
 
@@ -169,7 +169,7 @@ impl NativeIndexManager {
     pub fn has_face_processor(&self) -> bool {
         #[cfg(feature = "face-detection")]
         {
-            self.face_processor.is_some()
+            self.face_processor.get().is_some()
         }
         #[cfg(not(feature = "face-detection"))]
         {
@@ -179,8 +179,8 @@ impl NativeIndexManager {
 
     /// Set the face processor for face detection and embedding.
     #[cfg(feature = "face-detection")]
-    pub fn set_face_processor(&mut self, processor: Arc<dyn FaceProcessor>) {
-        self.face_processor = Some(processor);
+    pub fn set_face_processor(&self, processor: Arc<dyn FaceProcessor>) {
+        let _ = self.face_processor.set(processor);
     }
 
     /// Detect faces in an image, embed each face, and store the embeddings.
@@ -194,7 +194,7 @@ impl NativeIndexManager {
     ) -> Result<usize, SchemaError> {
         let processor = self
             .face_processor
-            .as_ref()
+            .get()
             .ok_or_else(|| SchemaError::InvalidData("No face processor configured".to_string()))?;
 
         let faces = processor.detect_and_embed(image_bytes)?;
