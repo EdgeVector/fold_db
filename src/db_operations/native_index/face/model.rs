@@ -64,19 +64,20 @@ impl ModelManager {
         })?;
 
         log::info!("Downloading face models from {} ...", MODEL_PACK_URL);
-        let response = reqwest::blocking::get(MODEL_PACK_URL)
+
+        // Use ureq (not reqwest::blocking) because reqwest::blocking panics
+        // when called inside a tokio async runtime.
+        let response = ureq::get(MODEL_PACK_URL)
+            .call()
             .map_err(|e| SchemaError::InvalidData(format!("Failed to download models: {e}")))?;
 
-        if !response.status().is_success() {
-            return Err(SchemaError::InvalidData(format!(
-                "Model download failed with status {}",
-                response.status()
-            )));
-        }
-
-        let bytes = response
-            .bytes()
+        let mut bytes = Vec::new();
+        response
+            .into_reader()
+            .read_to_end(&mut bytes)
             .map_err(|e| SchemaError::InvalidData(format!("Failed to read model bytes: {e}")))?;
+
+        log::info!("Downloaded {} bytes", bytes.len());
 
         // Extract ONNX files from the zip
         let cursor = Cursor::new(&bytes);
