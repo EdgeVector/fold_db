@@ -25,6 +25,16 @@ impl S3Client {
         Self { http }
     }
 
+    /// Check an S3 response status and return an error with the operation label if it failed.
+    fn check_response(status: reqwest::StatusCode, body: &str, operation: &str) -> SyncResult<()> {
+        if !status.is_success() {
+            return Err(SyncError::S3(format!(
+                "{operation} failed: HTTP {status}: {body}"
+            )));
+        }
+        Ok(())
+    }
+
     /// Upload bytes to S3 using a presigned PUT URL.
     pub async fn upload(&self, presigned: &PresignedUrl, data: Vec<u8>) -> SyncResult<()> {
         let response = self
@@ -35,15 +45,9 @@ impl S3Client {
             .send()
             .await?;
 
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            return Err(SyncError::S3(format!(
-                "upload failed: HTTP {status}: {body}"
-            )));
-        }
-
-        Ok(())
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        Self::check_response(status, &body, "upload")
     }
 
     /// Download bytes from S3 using a presigned GET URL.
@@ -56,8 +60,8 @@ impl S3Client {
             return Ok(None);
         }
 
-        if !response.status().is_success() {
-            let status = response.status();
+        let status = response.status();
+        if !status.is_success() {
             let body = response.text().await.unwrap_or_default();
             return Err(SyncError::S3(format!(
                 "download failed: HTTP {status}: {body}"
@@ -72,15 +76,9 @@ impl S3Client {
     pub async fn delete(&self, presigned: &PresignedUrl) -> SyncResult<()> {
         let response = self.http.delete(&presigned.url).send().await?;
 
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            return Err(SyncError::S3(format!(
-                "delete failed: HTTP {status}: {body}"
-            )));
-        }
-
-        Ok(())
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        Self::check_response(status, &body, "delete")
     }
 }
 
