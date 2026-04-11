@@ -1,6 +1,7 @@
 pub mod anonymity;
 mod embedding_index;
 mod embedding_model;
+pub mod face;
 pub mod fragmentation;
 pub mod pseudonym;
 mod types;
@@ -17,16 +18,23 @@ pub use types::IndexResult;
 use crate::schema::types::key_value::KeyValue;
 use crate::schema::SchemaError;
 use crate::storage::traits::KvStore;
+#[cfg(feature = "face-detection")]
+use embedding_index::FACE_FIELD_NAME;
 use embedding_index::{EmbeddingIndex, FragmentInfo};
 use fragmentation::value_to_fragments;
 use std::collections::HashMap;
 use std::sync::Arc;
+
+#[cfg(feature = "face-detection")]
+use face::FaceProcessor;
 
 #[derive(Clone)]
 pub struct NativeIndexManager {
     store: Arc<dyn KvStore>,
     embedding_model: Arc<dyn Embedder>,
     embedding_index: Arc<EmbeddingIndex>,
+    #[cfg(feature = "face-detection")]
+    face_processor: Option<Arc<dyn FaceProcessor>>,
 }
 
 impl NativeIndexManager {
@@ -35,6 +43,8 @@ impl NativeIndexManager {
             store,
             embedding_model: Arc::new(FastEmbedModel::new()),
             embedding_index: Arc::new(EmbeddingIndex::new(Vec::new())),
+            #[cfg(feature = "face-detection")]
+            face_processor: None,
         }
     }
 
@@ -50,6 +60,8 @@ impl NativeIndexManager {
             store,
             embedding_model: model,
             embedding_index: Arc::new(EmbeddingIndex::new(Vec::new())),
+            #[cfg(feature = "face-detection")]
+            face_processor: None,
         }
     }
 
@@ -151,5 +163,77 @@ impl NativeIndexManager {
 
         let query_vec = self.embedding_model.embed_text(query)?;
         Ok(self.embedding_index.search(&query_vec, 50))
+    }
+
+    /// Returns true if a face processor is available for face detection/embedding.
+    pub fn has_face_processor(&self) -> bool {
+        #[cfg(feature = "face-detection")]
+        {
+            self.face_processor.is_some()
+        }
+        #[cfg(not(feature = "face-detection"))]
+        {
+            false
+        }
+    }
+
+    /// Set the face processor for face detection and embedding.
+    #[cfg(feature = "face-detection")]
+    pub fn set_face_processor(&mut self, processor: Arc<dyn FaceProcessor>) {
+        self.face_processor = Some(processor);
+    }
+
+    /// Detect faces in an image, embed each face, and store the embeddings.
+    /// Returns the number of faces detected and indexed.
+    #[cfg(feature = "face-detection")]
+    pub async fn index_faces(
+        &self,
+        schema: &str,
+        key: &KeyValue,
+        image_bytes: &[u8],
+    ) -> Result<usize, SchemaError> {
+        let processor = self
+            .face_processor
+            .as_ref()
+            .ok_or_else(|| SchemaError::InvalidData("No face processor configured".to_string()))?;
+
+        let faces = processor.detect_and_embed(image_bytes)?;
+        let count = faces.len();
+
+        for (idx, face) in faces.into_iter().enumerate() {
+            let info = FragmentInfo {
+                schema,
+                key,
+                field_name: FACE_FIELD_NAME,
+                fragment_idx: idx,
+                fragment_text: None,
+            };
+            self.embedding_index
+                .insert_fragment(&*self.store, info, face.embedding)
+                .await?;
+        }
+
+        if count > 0 {
+            log::info!(
+                "index_faces: indexed {} face(s) for schema={} key={:?}",
+                count,
+                schema,
+                key
+            );
+        }
+
+        Ok(count)
+    }
+
+    /// Search face embeddings by similarity to a query face vector.
+    /// Returns up to `k` matching records sorted by cosine similarity.
+    pub fn search_faces(&self, query_face_vec: &[f32], k: usize) -> Vec<IndexResult> {
+        self.embedding_index.search_faces(query_face_vec, k)
+    }
+
+    /// List all face embeddings stored for a specific record.
+    /// Returns (fragment_idx, embedding) pairs.
+    pub fn list_faces(&self, schema: &str, key: &KeyValue) -> Vec<(usize, Vec<f32>)> {
+        self.embedding_index.list_faces(schema, key)
     }
 }

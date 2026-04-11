@@ -10,6 +10,7 @@ ts-bindings = ["ts-rs"]  # Generate TypeScript bindings when enabled
 cli = ["dep:clap", "dep:clap_complete"]  # CLI tooling (clap derives)
 transform-wasm = ["dep:wasmtime"]  # Enable WASM transform execution for views
 test-utils = []  # Expose test helpers (MockEmbeddingModel, etc.) for integration tests
+face-detection = ["dep:ort", "dep:image"]  # Face detection and embedding via ONNX Runtime
 
 [dependencies]
 # Cryptography
@@ -59,13 +60,17 @@ clap_complete = { version = "4.4", optional = true }
 utoipa = { version = "4", features = ["actix_extras"] }
 
 # HTTP client (used by schema_client in fold_db_core)
-reqwest = { version = "0.11", features = ["json", "multipart"] }
+reqwest = { version = "0.11", features = ["json", "multipart", "blocking"] }
 
 # Vector embedding model for semantic search
 fastembed = "4"
 
 # WASM runtime for transform views
 wasmtime = { version = "29", optional = true }
+
+# Face detection (ONNX runtime + image processing)
+ort = { version = "2.0.0-rc.9", optional = true, default-features = false }
+image = { version = "0.25", optional = true, default-features = false, features = ["png", "jpeg"] }
 
 ed25519-compact = "2.2.0"
 
