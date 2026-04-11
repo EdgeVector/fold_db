@@ -372,7 +372,10 @@ impl EmbeddingIndex {
         let entries = self.entries.read().unwrap();
         entries
             .iter()
-            .filter(|e| e.field_name == FACE_FIELD_NAME && e.schema == schema && e.key == *key)
+            .filter(|e| {
+                e.field_name == FACE_FIELD_NAME && e.schema == schema && e.key.hash == key.hash
+                // Match by hash only (photo filename)
+            })
             .map(|e| (e.fragment_idx, e.embedding.clone()))
             .collect()
     }

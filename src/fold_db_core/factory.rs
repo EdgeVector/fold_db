@@ -187,6 +187,31 @@ async fn create_local_fold_db(
         .await
         .map_err(|e| FoldDbError::Config(e.to_string()))?;
 
+    // Initialize face detection processor if the feature is enabled
+    #[cfg(feature = "face-detection")]
+    {
+        // FOLDDB_HOME is the node's root dir; models go in {FOLDDB_HOME}/models/
+        // path_str is the Sled data path ({FOLDDB_HOME}/data), so go up one level
+        let home_path = std::env::var("FOLDDB_HOME")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|_| {
+                std::path::Path::new(path_str)
+                    .parent()
+                    .unwrap_or(std::path::Path::new(path_str))
+                    .to_path_buf()
+            });
+        if let Some(mgr) = db_ops.native_index_manager() {
+            let processor = std::sync::Arc::new(
+                crate::db_operations::native_index::face::OnnxFaceProcessor::new(&home_path),
+            );
+            mgr.set_face_processor(processor);
+            log::info!(
+                "Face detection processor initialized (models at {}/models/)",
+                home_path.display()
+            );
+        }
+    }
+
     let job_store = crate::progress::create_tracker_with_sled(Arc::clone(&pool));
 
     let mut fold_db = FoldDB::initialize_from_db_ops_with_sled(

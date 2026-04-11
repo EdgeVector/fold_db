@@ -354,6 +354,29 @@ impl FoldDB {
             "Sled"
         );
 
+        // Initialize face detection processor if the feature is enabled
+        #[cfg(feature = "face-detection")]
+        {
+            let home_path = std::env::var("FOLDDB_HOME")
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(|_| {
+                    std::path::Path::new(db_path)
+                        .parent()
+                        .unwrap_or(std::path::Path::new(db_path))
+                        .to_path_buf()
+                });
+            if let Some(mgr) = db_ops.native_index_manager() {
+                let processor = std::sync::Arc::new(
+                    crate::db_operations::native_index::face::OnnxFaceProcessor::new(&home_path),
+                );
+                mgr.set_face_processor(processor);
+                log::info!(
+                    "Face detection processor initialized (models at {}/models/)",
+                    home_path.display()
+                );
+            }
+        }
+
         // For local Sled backend, create persistent progress store
         let job_store: ProgressTracker =
             crate::progress::create_tracker_with_sled(Arc::clone(&pool));
