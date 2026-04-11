@@ -152,14 +152,7 @@ async fn test_org_query_reads_from_prefixed_keys() {
     let db = make_folddb(&tmp).await;
 
     register_schema(&db, "org_events", Some(ORG_HASH)).await;
-    write_mutation(
-        &db,
-        "org_events",
-        "standup",
-        "2026-03-01",
-        "org event body",
-    )
-    .await;
+    write_mutation(&db, "org_events", "standup", "2026-03-01", "org event body").await;
 
     // Query it back
     let query = Query::new("org_events".to_string(), vec![]);
@@ -192,14 +185,7 @@ async fn test_personal_and_org_data_do_not_collide() {
 
     // Register personal schema
     register_schema(&db, "notes", None).await;
-    write_mutation(
-        &db,
-        "notes",
-        "personal-key",
-        "2026-01-01",
-        "personal body",
-    )
-    .await;
+    write_mutation(&db, "notes", "personal-key", "2026-01-01", "personal body").await;
 
     // Register org schema with different name
     register_schema(&db, "org_notes", Some(ORG_HASH)).await;

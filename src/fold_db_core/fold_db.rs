@@ -545,10 +545,7 @@ impl FoldDB {
     }
 
     /// Load schema from file (creates Available schema)
-    pub async fn load_schema_from_file<P: AsRef<Path>>(
-        &self,
-        path: P,
-    ) -> Result<(), SchemaError> {
+    pub async fn load_schema_from_file<P: AsRef<Path>>(&self, path: P) -> Result<(), SchemaError> {
         self.schema_manager.load_schema_from_file(path).await
     }
 

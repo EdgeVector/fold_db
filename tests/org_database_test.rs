@@ -167,14 +167,7 @@ async fn test_full_org_lifecycle() {
     register_schema(&db, "corp_notes", Some(org_hash)).await;
 
     // Write initial data
-    write_mutation(
-        &db,
-        "corp_notes",
-        "meeting",
-        "2026-01-15",
-        "initial notes",
-    )
-    .await;
+    write_mutation(&db, "corp_notes", "meeting", "2026-01-15", "initial notes").await;
 
     // Query — should return 1 record
     let bodies = query_field_values(&db, "corp_notes", "body").await;
@@ -182,14 +175,7 @@ async fn test_full_org_lifecycle() {
     assert_eq!(bodies[0], json!("initial notes"));
 
     // Update same record
-    write_mutation_update(
-        &db,
-        "corp_notes",
-        "meeting",
-        "2026-01-15",
-        "updated notes",
-    )
-    .await;
+    write_mutation_update(&db, "corp_notes", "meeting", "2026-01-15", "updated notes").await;
 
     // Query — should return updated value
     let bodies = query_field_values(&db, "corp_notes", "body").await;

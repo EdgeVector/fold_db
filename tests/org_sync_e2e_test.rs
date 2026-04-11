@@ -252,14 +252,7 @@ async fn test_org_sync_with_updates() {
     register_schema(&node1, "update_notes", Some(org_hash)).await;
 
     // Write initial record
-    write_mutation(
-        &node1,
-        "update_notes",
-        "doc1",
-        "2026-04-01",
-        "version-1",
-    )
-    .await;
+    write_mutation(&node1, "update_notes", "doc1", "2026-04-01", "version-1").await;
 
     // Update the same record
     let mut fields = HashMap::new();
