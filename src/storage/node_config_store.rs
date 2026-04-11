@@ -248,6 +248,10 @@ mod tests {
             user_hash: Some("deadbeef".into()),
         };
         store.set_cloud_config(&creds).unwrap();
+        // set_cloud_config deliberately doesn't set cloud:enabled —
+        // only the factory sets it when sync is fully configured.
+        assert!(!store.is_cloud_enabled());
+        store.set("cloud:enabled", "true").unwrap();
         assert!(store.is_cloud_enabled());
 
         let loaded = store.get_cloud_config().unwrap();
