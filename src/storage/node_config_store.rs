@@ -83,7 +83,10 @@ impl NodeConfigStore {
         if let Some(ref uh) = creds.user_hash {
             self.set("cloud:user_hash", uh)?;
         }
-        self.set("cloud:enabled", "true")?;
+        // Don't set cloud:enabled here — only the factory should set it when
+        // sync is actually configured with a valid API key. Setting it during
+        // registration (without an API key) causes the factory to bootstrap
+        // sync on restart, which deadlocks.
         Ok(())
     }
 
