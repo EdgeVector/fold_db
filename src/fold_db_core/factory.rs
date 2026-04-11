@@ -87,21 +87,20 @@ async fn create_local_fold_db(
     let config_store = NodeConfigStore::new(Arc::clone(&pool))
         .map_err(|e| FoldDbError::Config(format!("Failed to open config store: {}", e)))?;
 
-    // If no sync_setup provided but Sled has cloud credentials, build sync from Sled
-    let sync_setup = if sync_setup.is_none() {
-        if let Some(cloud_creds) = config_store.get_cloud_config() {
-            let data_dir = path_str;
-            log::info!("found cloud credentials in Sled config store — enabling sync");
-            Some(SyncSetup::from_exemem(
-                &cloud_creds.api_url,
-                &cloud_creds.api_key,
-                data_dir,
-            ))
-        } else {
-            None
-        }
+    // Resolve sync setup: prefer Sled credentials over config file.
+    // The Sled config store has the latest API key from the most recent registration.
+    // The config file may contain a stale (deactivated) key if the node was re-registered.
+    let sync_setup = if let Some(cloud_creds) = config_store.get_cloud_config() {
+        log::info!("Using cloud credentials from Sled config store (latest API key)");
+        Some(SyncSetup::from_exemem(
+            &cloud_creds.api_url,
+            &cloud_creds.api_key,
+            path_str,
+        ))
+    } else if let Some(setup) = sync_setup {
+        Some(setup)
     } else {
-        sync_setup
+        None
     };
 
     let base_store: Arc<dyn crate::storage::traits::NamespacedStore> =
