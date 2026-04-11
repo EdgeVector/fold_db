@@ -170,7 +170,6 @@ impl UploadStorage {
     pub fn is_local(&self) -> bool {
         matches!(self, Self::Local { .. })
     }
-
 }
 
 #[cfg(test)]
