@@ -64,4 +64,58 @@ mod tests {
         assert_eq!(deserialized.embedding.len(), 512);
         assert_eq!(deserialized.confidence, 0.99);
     }
+
+    /// Integration test: download models and run face detection on a real image.
+    /// Only runs when FACE_TEST_IMAGE env var is set (skipped in CI).
+    #[cfg(feature = "face-detection")]
+    #[test]
+    fn test_face_detection_real_image() {
+        let image_path = match std::env::var("FACE_TEST_IMAGE") {
+            Ok(p) => p,
+            Err(_) => {
+                eprintln!("Skipping face detection test (set FACE_TEST_IMAGE=/path/to/photo.jpg)");
+                return;
+            }
+        };
+
+        let home_path = std::env::var("FOLDDB_HOME")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|_| tempfile::tempdir().unwrap().into_path());
+        let processor = OnnxFaceProcessor::new(&home_path);
+
+        let image_bytes = std::fs::read(&image_path)
+            .unwrap_or_else(|e| panic!("Failed to read {}: {}", image_path, e));
+
+        let faces = processor
+            .detect_and_embed(&image_bytes)
+            .unwrap_or_else(|e| panic!("Face detection failed: {}", e));
+
+        eprintln!("Detected {} faces in {}", faces.len(), image_path);
+        for (i, face) in faces.iter().enumerate() {
+            eprintln!(
+                "  Face {}: bbox=[{:.2}, {:.2}, {:.2}, {:.2}] conf={:.3} dim={}",
+                i,
+                face.bbox[0],
+                face.bbox[1],
+                face.bbox[2],
+                face.bbox[3],
+                face.confidence,
+                face.embedding.len()
+            );
+            assert_eq!(
+                face.embedding.len(),
+                512,
+                "ArcFace should produce 512-dim vectors"
+            );
+            assert!(face.confidence > 0.0);
+
+            // Check L2 normalization
+            let norm: f32 = face.embedding.iter().map(|x| x * x).sum::<f32>().sqrt();
+            assert!(
+                (norm - 1.0).abs() < 0.01,
+                "Embedding should be L2-normalized, got norm={}",
+                norm
+            );
+        }
+    }
 }
