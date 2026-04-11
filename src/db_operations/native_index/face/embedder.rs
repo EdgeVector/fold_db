@@ -63,9 +63,9 @@ impl ArcFaceEmbedder {
                 let pixel = resized.get_pixel(x, y);
                 let idx = (y * w + x) as usize;
                 // Normalize: (pixel / 127.5) - 1.0 maps [0, 255] to [-1, 1]
-                input_tensor[idx] = pixel[0] as f32 / 127.5 - 1.0; // R
-                input_tensor[(h * w) as usize + idx] = pixel[1] as f32 / 127.5 - 1.0; // G
-                input_tensor[2 * (h * w) as usize + idx] = pixel[2] as f32 / 127.5 - 1.0;
+                input_tensor[idx] = (pixel[0] as f32 - 127.5) / 128.0; // R
+                input_tensor[(h * w) as usize + idx] = (pixel[1] as f32 - 127.5) / 128.0; // G
+                input_tensor[2 * (h * w) as usize + idx] = (pixel[2] as f32 - 127.5) / 128.0;
                 // B
             }
         }
