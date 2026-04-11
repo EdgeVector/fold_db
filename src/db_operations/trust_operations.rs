@@ -147,5 +147,4 @@ impl DbOperations {
 
         Ok(domains)
     }
-
 }
