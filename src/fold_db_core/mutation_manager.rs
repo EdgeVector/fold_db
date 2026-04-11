@@ -157,7 +157,7 @@ impl MutationManager {
     /// Mutations are all-or-nothing: if any field is denied, the entire batch
     /// for that schema is rejected.
     pub async fn write_mutations_with_access(
-        &mut self,
+        &self,
         mutations: Vec<Mutation>,
         access_context: &crate::access::AccessContext,
         payment_gate: Option<&crate::access::PaymentGate>,
@@ -208,7 +208,7 @@ impl MutationManager {
     /// This is the preferred async version that avoids deadlocks.
     /// All storage operations use direct async/await instead of run_async.
     pub async fn write_mutations_batch_async(
-        &mut self,
+        &self,
         mutations: Vec<Mutation>,
     ) -> Result<Vec<String>, SchemaError> {
         if mutations.is_empty() {
@@ -1282,7 +1282,7 @@ impl MutationManager {
                     if let Some(event) = consumer.recv().await {
                         match event {
                             Event::MutationRequest(mutation_request) => {
-                                let mut temp_manager = Self::new(
+                                let temp_manager = Self::new(
                                     Arc::clone(&db_ops),
                                     Arc::clone(&schema_manager),
                                     Arc::clone(&message_bus),

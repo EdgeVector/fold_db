@@ -47,13 +47,15 @@ pub struct FoldDB {
     pub progress_tracker: ProgressTracker,
     /// Optional sync engine for S3 replication.
     /// Present when sync is configured (local mode only).
-    sync_engine: Option<Arc<crate::sync::SyncEngine>>,
+    /// Uses RwLock for interior mutability so FoldDB doesn't need &mut self.
+    sync_engine: std::sync::RwLock<Option<Arc<crate::sync::SyncEngine>>>,
     /// Handle for the background sync timer task.
-    sync_task: Option<tokio::task::JoinHandle<()>>,
+    sync_task: std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
     /// Optional reference to the encrypting store for org crypto registration.
     encrypting_store: Option<Arc<crate::storage::EncryptingNamespacedStore>>,
     /// Optional Sled-backed configuration store for runtime node config.
-    config_store: Option<crate::storage::NodeConfigStore>,
+    /// Uses RwLock for interior mutability so FoldDB doesn't need &mut self.
+    config_store: std::sync::RwLock<Option<crate::storage::NodeConfigStore>>,
 }
 
 impl FoldDB {
@@ -72,7 +74,7 @@ impl FoldDB {
     }
 
     /// Graceful async shutdown: flush pending sync, stop background timer, then flush storage.
-    pub async fn shutdown(&mut self) -> Result<(), StorageError> {
+    pub async fn shutdown(&self) -> Result<(), StorageError> {
         log_feature!(
             LogFeature::Database,
             info,
@@ -87,7 +89,7 @@ impl FoldDB {
     /// Set the sync engine (called by the factory when sync is configured).
     /// Also registers the schema reloader callback so SchemaCore's in-memory
     /// cache is refreshed after sync replays schema entries into Sled.
-    pub async fn set_sync_engine(&mut self, engine: Arc<crate::sync::SyncEngine>) {
+    pub async fn set_sync_engine(&self, engine: Arc<crate::sync::SyncEngine>) {
         let schema_mgr = Arc::clone(&self.schema_manager);
         engine
             .set_schema_reloader(Arc::new(move || {
@@ -115,15 +117,15 @@ impl FoldDB {
                 .await;
         }
 
-        self.sync_engine = Some(engine);
+        *self.sync_engine.write().unwrap() = Some(engine);
     }
 
     /// Start the background sync timer.
     ///
     /// Spawns a tokio task that calls `sync()` every `interval_ms` when the
     /// engine is dirty. Does nothing if no sync engine is configured.
-    pub fn start_sync(&mut self, interval_ms: u64) {
-        let engine = match &self.sync_engine {
+    pub fn start_sync(&self, interval_ms: u64) {
+        let engine = match &*self.sync_engine.read().unwrap() {
             Some(e) => Arc::clone(e),
             None => return,
         };
@@ -163,20 +165,21 @@ impl FoldDB {
             }
         });
 
-        self.sync_task = Some(handle);
+        *self.sync_task.lock().unwrap() = Some(handle);
     }
 
     /// Force an immediate sync (e.g. on shutdown).
     pub async fn force_sync(&self) -> Result<(), crate::sync::SyncError> {
-        if let Some(engine) = &self.sync_engine {
+        let engine = self.sync_engine.read().unwrap().clone();
+        if let Some(engine) = engine {
             engine.sync().await?;
         }
         Ok(())
     }
 
     /// Stop the background sync timer and run a final sync.
-    pub async fn stop_sync(&mut self) -> Result<(), crate::sync::SyncError> {
-        if let Some(handle) = self.sync_task.take() {
+    pub async fn stop_sync(&self) -> Result<(), crate::sync::SyncError> {
+        if let Some(handle) = self.sync_task.lock().unwrap().take() {
             handle.abort();
         }
         self.force_sync().await
@@ -184,7 +187,8 @@ impl FoldDB {
 
     /// Get the sync engine state, if sync is configured.
     pub async fn sync_state(&self) -> Option<crate::sync::SyncState> {
-        match &self.sync_engine {
+        let engine = self.sync_engine.read().unwrap().clone();
+        match engine {
             Some(engine) => Some(engine.state().await),
             None => None,
         }
@@ -192,7 +196,8 @@ impl FoldDB {
 
     /// Get a full sync status snapshot, if sync is configured.
     pub async fn sync_status(&self) -> Option<crate::sync::SyncStatus> {
-        match &self.sync_engine {
+        let engine = self.sync_engine.read().unwrap().clone();
+        match engine {
             Some(engine) => Some(engine.status().await),
             None => None,
         }
@@ -201,7 +206,8 @@ impl FoldDB {
     /// Get the number of pending (unsynced) log entries.
     /// Returns None if sync is not configured.
     pub async fn sync_pending_count(&self) -> Option<usize> {
-        match &self.sync_engine {
+        let engine = self.sync_engine.read().unwrap().clone();
+        match engine {
             Some(engine) => Some(engine.pending_count().await),
             None => None,
         }
@@ -209,30 +215,30 @@ impl FoldDB {
 
     /// Returns true if the sync engine is configured.
     pub fn is_sync_enabled(&self) -> bool {
-        self.sync_engine.is_some()
+        self.sync_engine.read().unwrap().is_some()
     }
 
-    /// Returns a reference to the sync engine, if configured.
+    /// Returns a clone of the sync engine Arc, if configured.
     ///
     /// Used by fold_db_node to call `configure_org_sync()` after node startup.
-    pub fn sync_engine(&self) -> Option<&Arc<crate::sync::SyncEngine>> {
-        self.sync_engine.as_ref()
+    pub fn sync_engine(&self) -> Option<Arc<crate::sync::SyncEngine>> {
+        self.sync_engine.read().unwrap().clone()
     }
 
-    /// Returns a reference to the Sled-backed config store, if available.
-    pub fn config_store(&self) -> Option<&crate::storage::NodeConfigStore> {
-        self.config_store.as_ref()
+    /// Returns a clone of the Sled-backed config store, if available.
+    pub fn config_store(&self) -> Option<crate::storage::NodeConfigStore> {
+        self.config_store.read().unwrap().clone()
     }
 
     /// Set the Sled-backed config store (called by the factory).
-    pub fn set_config_store(&mut self, store: crate::storage::NodeConfigStore) {
-        self.config_store = Some(store);
+    pub fn set_config_store(&self, store: crate::storage::NodeConfigStore) {
+        *self.config_store.write().unwrap() = Some(store);
     }
 
     /// Start the sync engine on an existing FoldDB instance at runtime.
     /// Called when cloud credentials are written to Sled and sync needs to activate.
     pub async fn start_sync_engine_runtime(
-        &mut self,
+        &self,
         api_url: &str,
         api_key: &str,
         data_dir: &str,
@@ -241,7 +247,7 @@ impl FoldDB {
     ) -> crate::error::FoldDbResult<()> {
         use crate::error::FoldDbError;
 
-        if self.sync_engine.is_some() {
+        if self.sync_engine.read().unwrap().is_some() {
             return Ok(()); // already running
         }
 
@@ -484,10 +490,10 @@ impl FoldDB {
             mutation_manager,
             pending_tasks,
             progress_tracker,
-            sync_engine: None,
-            sync_task: None,
+            sync_engine: std::sync::RwLock::new(None),
+            sync_task: std::sync::Mutex::new(None),
             encrypting_store,
-            config_store: None,
+            config_store: std::sync::RwLock::new(None),
         })
     }
 
@@ -534,13 +540,13 @@ impl FoldDB {
     // ========== CONSOLIDATED SCHEMA API - DELEGATES TO SCHEMA_CORE ==========
 
     /// Load schema from JSON string (creates Available schema)
-    pub async fn load_schema_from_json(&mut self, json_str: &str) -> Result<(), SchemaError> {
+    pub async fn load_schema_from_json(&self, json_str: &str) -> Result<(), SchemaError> {
         self.schema_manager.load_schema_from_json(json_str).await
     }
 
     /// Load schema from file (creates Available schema)
     pub async fn load_schema_from_file<P: AsRef<Path>>(
-        &mut self,
+        &self,
         path: P,
     ) -> Result<(), SchemaError> {
         self.schema_manager.load_schema_from_file(path).await
@@ -583,9 +589,9 @@ impl FoldDB {
         &self.mutation_manager
     }
 
-    /// Get the mutable mutation manager for testing mutation functionality
-    pub fn mutation_manager_mut(&mut self) -> &mut MutationManager {
-        &mut self.mutation_manager
+    /// Get the mutation manager (mutable access via interior mutability if needed)
+    pub fn mutation_manager_mut(&self) -> &MutationManager {
+        &self.mutation_manager
     }
 
     /// Get the message bus for publishing events
@@ -598,7 +604,7 @@ impl Drop for FoldDB {
     fn drop(&mut self) {
         // Abort the background sync task to prevent tokio panic:
         // "Cannot drop a runtime in a context where blocking is not allowed"
-        if let Some(handle) = self.sync_task.take() {
+        if let Some(handle) = self.sync_task.get_mut().unwrap().take() {
             handle.abort();
         }
     }

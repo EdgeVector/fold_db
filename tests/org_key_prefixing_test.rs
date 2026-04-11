@@ -24,7 +24,7 @@ async fn make_folddb(tmp: &tempfile::TempDir) -> FoldDB {
 }
 
 /// Helper: register a HashRange schema with optional org_hash via JSON.
-async fn register_schema(db: &mut FoldDB, name: &str, org_hash: Option<&str>) {
+async fn register_schema(db: &FoldDB, name: &str, org_hash: Option<&str>) {
     let org_hash_json = match org_hash {
         Some(h) => format!(r#", "org_hash": "{}""#, h),
         None => String::new(),
@@ -47,7 +47,7 @@ async fn register_schema(db: &mut FoldDB, name: &str, org_hash: Option<&str>) {
 
 /// Helper: write a mutation to a schema.
 async fn write_mutation(
-    db: &mut FoldDB,
+    db: &FoldDB,
     schema_name: &str,
     title: &str,
     date: &str,
@@ -104,10 +104,10 @@ fn test_build_storage_key_org() {
 #[tokio::test]
 async fn test_org_mutation_produces_prefixed_keys() {
     let tmp = tempfile::tempdir().unwrap();
-    let mut db = make_folddb(&tmp).await;
+    let db = make_folddb(&tmp).await;
 
-    register_schema(&mut db, "org_notes", Some(ORG_HASH)).await;
-    write_mutation(&mut db, "org_notes", "meeting", "2026-01-01", "org body").await;
+    register_schema(&db, "org_notes", Some(ORG_HASH)).await;
+    write_mutation(&db, "org_notes", "meeting", "2026-01-01", "org body").await;
 
     // The schema should have org_hash set
     let schema = db
@@ -149,11 +149,11 @@ async fn test_org_mutation_produces_prefixed_keys() {
 #[tokio::test]
 async fn test_org_query_reads_from_prefixed_keys() {
     let tmp = tempfile::tempdir().unwrap();
-    let mut db = make_folddb(&tmp).await;
+    let db = make_folddb(&tmp).await;
 
-    register_schema(&mut db, "org_events", Some(ORG_HASH)).await;
+    register_schema(&db, "org_events", Some(ORG_HASH)).await;
     write_mutation(
-        &mut db,
+        &db,
         "org_events",
         "standup",
         "2026-03-01",
@@ -188,12 +188,12 @@ async fn test_org_query_reads_from_prefixed_keys() {
 #[tokio::test]
 async fn test_personal_and_org_data_do_not_collide() {
     let tmp = tempfile::tempdir().unwrap();
-    let mut db = make_folddb(&tmp).await;
+    let db = make_folddb(&tmp).await;
 
     // Register personal schema
-    register_schema(&mut db, "notes", None).await;
+    register_schema(&db, "notes", None).await;
     write_mutation(
-        &mut db,
+        &db,
         "notes",
         "personal-key",
         "2026-01-01",
@@ -202,8 +202,8 @@ async fn test_personal_and_org_data_do_not_collide() {
     .await;
 
     // Register org schema with different name
-    register_schema(&mut db, "org_notes", Some(ORG_HASH)).await;
-    write_mutation(&mut db, "org_notes", "org-key", "2026-01-01", "org body").await;
+    register_schema(&db, "org_notes", Some(ORG_HASH)).await;
+    write_mutation(&db, "org_notes", "org-key", "2026-01-01", "org body").await;
 
     let access = AccessContext::owner("test-owner");
 

@@ -44,7 +44,7 @@ fn identity_view(name: &str, source_schema: &str, source_field: &str) -> Transfo
 /// writing to the view should land data in BlogPost.
 #[tokio::test]
 async fn identity_write_redirects_to_source() {
-    let mut db = setup_db().await;
+    let db = setup_db().await;
 
     db.load_schema_from_json(blogpost_schema_json())
         .await
@@ -106,7 +106,7 @@ async fn identity_write_redirects_to_source() {
 /// and attempting a mutation is rejected.
 #[tokio::test]
 async fn wasm_view_write_is_rejected() {
-    let mut db = setup_db().await;
+    let db = setup_db().await;
 
     db.load_schema_from_json(blogpost_schema_json())
         .await
@@ -163,7 +163,7 @@ async fn wasm_view_write_is_rejected() {
 /// subsequent queries return fresh data.
 #[tokio::test]
 async fn write_through_view_invalidates_cache() {
-    let mut db = setup_db().await;
+    let db = setup_db().await;
 
     db.load_schema_from_json(blogpost_schema_json())
         .await
@@ -232,7 +232,7 @@ async fn write_through_view_invalidates_cache() {
 /// invalidate the entire chain (ViewB depends on ViewA which wraps BlogPost).
 #[tokio::test]
 async fn write_through_view_cascades_invalidation() {
-    let mut db = setup_db().await;
+    let db = setup_db().await;
 
     db.load_schema_from_json(blogpost_schema_json())
         .await

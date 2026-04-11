@@ -8,7 +8,7 @@ async fn test_reproduce_schema_mismatch() {
     // 1. Setup FoldDB with a temp dir
     let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
     let db_path = temp_dir.path().to_str().expect("failed to get path");
-    let mut db = FoldDB::new(db_path).await.expect("Failed to create DB");
+    let db = FoldDB::new(db_path).await.expect("Failed to create DB");
 
     let schema_json = r#"{
         "name": "lowercase_hash",

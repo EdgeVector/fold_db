@@ -44,7 +44,7 @@ fn untyped_schema_json() -> &'static str {
 
 #[tokio::test]
 async fn typed_schema_accepts_valid_mutation() {
-    let mut db = setup_db().await;
+    let db = setup_db().await;
     db.load_schema_from_json(typed_schema_json()).await.unwrap();
     db.schema_manager
         .set_schema_state("Person", SchemaState::Approved)
@@ -74,7 +74,7 @@ async fn typed_schema_accepts_valid_mutation() {
 
 #[tokio::test]
 async fn typed_schema_rejects_wrong_type() {
-    let mut db = setup_db().await;
+    let db = setup_db().await;
     db.load_schema_from_json(typed_schema_json()).await.unwrap();
     db.schema_manager
         .set_schema_state("Person", SchemaState::Approved)
@@ -114,7 +114,7 @@ async fn typed_schema_rejects_wrong_type() {
 
 #[tokio::test]
 async fn typed_schema_rejects_wrong_array_element_type() {
-    let mut db = setup_db().await;
+    let db = setup_db().await;
     db.load_schema_from_json(typed_schema_json()).await.unwrap();
     db.schema_manager
         .set_schema_state("Person", SchemaState::Approved)
@@ -149,7 +149,7 @@ async fn typed_schema_rejects_wrong_array_element_type() {
 
 #[tokio::test]
 async fn untyped_schema_accepts_anything() {
-    let mut db = setup_db().await;
+    let db = setup_db().await;
     db.load_schema_from_json(untyped_schema_json())
         .await
         .unwrap();
@@ -183,7 +183,7 @@ async fn untyped_schema_accepts_anything() {
 
 #[tokio::test]
 async fn schema_ref_type_enforced() {
-    let mut db = setup_db().await;
+    let db = setup_db().await;
 
     // Create a child schema
     db.load_schema_from_json(

@@ -38,7 +38,7 @@ async fn make_folddb(tmp: &tempfile::TempDir) -> FoldDB {
         .expect("Failed to create FoldDB")
 }
 
-async fn register_schema(db: &mut FoldDB, name: &str, org_hash: Option<&str>) {
+async fn register_schema(db: &FoldDB, name: &str, org_hash: Option<&str>) {
     let org_hash_json = match org_hash {
         Some(h) => format!(r#", "org_hash": "{}""#, h),
         None => String::new(),
@@ -59,7 +59,7 @@ async fn register_schema(db: &mut FoldDB, name: &str, org_hash: Option<&str>) {
         .unwrap();
 }
 
-async fn write_mutation(db: &mut FoldDB, schema_name: &str, title: &str, date: &str, body: &str) {
+async fn write_mutation(db: &FoldDB, schema_name: &str, title: &str, date: &str, body: &str) {
     let mut fields = HashMap::new();
     fields.insert("title".to_string(), json!(title));
     fields.insert("body".to_string(), json!(body));
@@ -177,7 +177,7 @@ async fn test_org_sync_with_encryption_roundtrip() {
     // --- Setup: two FoldDB instances + org membership ---
     let tmp1 = tempfile::tempdir().unwrap();
     let tmp2 = tempfile::tempdir().unwrap();
-    let mut node1 = make_folddb(&tmp1).await;
+    let node1 = make_folddb(&tmp1).await;
     let node2 = make_folddb(&tmp2).await;
 
     let pool1 = node1.sled_pool().cloned().unwrap();
@@ -202,10 +202,10 @@ async fn test_org_sync_with_encryption_roundtrip() {
         Arc::new(LocalCryptoProvider::from_key([0x99u8; 32]));
 
     // --- Node 1: register org schema and write data ---
-    register_schema(&mut node1, "enc_notes", Some(org_hash)).await;
+    register_schema(&node1, "enc_notes", Some(org_hash)).await;
 
     write_mutation(
-        &mut node1,
+        &node1,
         "enc_notes",
         "note-1",
         "2026-04-01",
@@ -213,7 +213,7 @@ async fn test_org_sync_with_encryption_roundtrip() {
     )
     .await;
     write_mutation(
-        &mut node1,
+        &node1,
         "enc_notes",
         "note-2",
         "2026-04-02",
@@ -334,7 +334,7 @@ async fn test_org_sync_with_encryption_roundtrip() {
 #[tokio::test]
 async fn test_personal_data_not_readable_with_org_crypto() {
     let tmp1 = tempfile::tempdir().unwrap();
-    let mut node1 = make_folddb(&tmp1).await;
+    let node1 = make_folddb(&tmp1).await;
 
     let pool1 = node1.sled_pool().cloned().unwrap();
     let membership =
@@ -342,12 +342,12 @@ async fn test_personal_data_not_readable_with_org_crypto() {
     let org_hash = &membership.org_hash;
 
     // Register personal + org schemas
-    register_schema(&mut node1, "personal_notes", None).await;
-    register_schema(&mut node1, "org_notes", Some(org_hash)).await;
+    register_schema(&node1, "personal_notes", None).await;
+    register_schema(&node1, "org_notes", Some(org_hash)).await;
 
     // Write personal data
     write_mutation(
-        &mut node1,
+        &node1,
         "personal_notes",
         "secret",
         "2026-04-01",
@@ -357,7 +357,7 @@ async fn test_personal_data_not_readable_with_org_crypto() {
 
     // Write org data
     write_mutation(
-        &mut node1,
+        &node1,
         "org_notes",
         "shared",
         "2026-04-01",
@@ -425,7 +425,7 @@ async fn test_personal_data_not_readable_with_org_crypto() {
 #[tokio::test]
 async fn test_partitioner_classifies_real_org_mutations() {
     let tmp1 = tempfile::tempdir().unwrap();
-    let mut node1 = make_folddb(&tmp1).await;
+    let node1 = make_folddb(&tmp1).await;
 
     let pool1 = node1.sled_pool().cloned().unwrap();
     let membership =
@@ -433,12 +433,12 @@ async fn test_partitioner_classifies_real_org_mutations() {
     let org_hash = &membership.org_hash;
 
     // Register both personal and org schemas
-    register_schema(&mut node1, "personal_stuff", None).await;
-    register_schema(&mut node1, "org_stuff", Some(org_hash)).await;
+    register_schema(&node1, "personal_stuff", None).await;
+    register_schema(&node1, "org_stuff", Some(org_hash)).await;
 
     // Write to both
     write_mutation(
-        &mut node1,
+        &node1,
         "personal_stuff",
         "my-note",
         "2026-04-01",
@@ -446,7 +446,7 @@ async fn test_partitioner_classifies_real_org_mutations() {
     )
     .await;
     write_mutation(
-        &mut node1,
+        &node1,
         "org_stuff",
         "team-note",
         "2026-04-01",

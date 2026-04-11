@@ -46,7 +46,7 @@ fn identity_view(name: &str, source_schema: &str, source_field: &str) -> Transfo
     )
 }
 
-async fn write_blogpost(db: &mut FoldDB, content: &str, date: &str) {
+async fn write_blogpost(db: &FoldDB, content: &str, date: &str) {
     let mut fields = HashMap::new();
     fields.insert("content".to_string(), json!(content));
     fields.insert("publish_date".to_string(), json!(date));
@@ -64,7 +64,7 @@ async fn write_blogpost(db: &mut FoldDB, content: &str, date: &str) {
 
 #[tokio::test]
 async fn deep_view_enters_computing_after_mutation() {
-    let mut db = setup_db().await;
+    let db = setup_db().await;
 
     // Setup: schema + data + 2-level view chain
     db.load_schema_from_json(blogpost_schema_json())
@@ -74,7 +74,7 @@ async fn deep_view_enters_computing_after_mutation() {
         .set_schema_state("BlogPost", SchemaState::Approved)
         .await
         .unwrap();
-    write_blogpost(&mut db, "original", "2026-01-01").await;
+    write_blogpost(&db, "original", "2026-01-01").await;
 
     // ViewA → BlogPost (level 1, direct)
     db.schema_manager
@@ -105,7 +105,7 @@ async fn deep_view_enters_computing_after_mutation() {
     ));
 
     // Mutate source — triggers invalidation + background precomputation
-    write_blogpost(&mut db, "updated", "2026-01-02").await;
+    write_blogpost(&db, "updated", "2026-01-02").await;
 
     // ViewA (level 1) may be Empty or already precomputed by the background
     // task (which computes all views bottom-up to unblock deep views).
@@ -134,7 +134,7 @@ async fn deep_view_enters_computing_after_mutation() {
 
 #[tokio::test]
 async fn deep_view_eventually_becomes_cached() {
-    let mut db = setup_db().await;
+    let db = setup_db().await;
 
     db.load_schema_from_json(blogpost_schema_json())
         .await
@@ -143,7 +143,7 @@ async fn deep_view_eventually_becomes_cached() {
         .set_schema_state("BlogPost", SchemaState::Approved)
         .await
         .unwrap();
-    write_blogpost(&mut db, "original", "2026-01-01").await;
+    write_blogpost(&db, "original", "2026-01-01").await;
 
     db.schema_manager
         .register_view(identity_view("ViewA", "BlogPost", "content"))
@@ -161,7 +161,7 @@ async fn deep_view_eventually_becomes_cached() {
     db.query_executor.query(q_b).await.unwrap();
 
     // Mutate source
-    write_blogpost(&mut db, "updated", "2026-01-02").await;
+    write_blogpost(&db, "updated", "2026-01-02").await;
 
     // Wait for background precomputation to complete
     // (ViewA needs to be lazily computed first, then ViewB background task runs)
@@ -182,7 +182,7 @@ async fn deep_view_eventually_becomes_cached() {
 
 #[tokio::test]
 async fn query_during_computing_returns_error() {
-    let mut db = setup_db().await;
+    let db = setup_db().await;
 
     db.load_schema_from_json(blogpost_schema_json())
         .await
@@ -191,7 +191,7 @@ async fn query_during_computing_returns_error() {
         .set_schema_state("BlogPost", SchemaState::Approved)
         .await
         .unwrap();
-    write_blogpost(&mut db, "original", "2026-01-01").await;
+    write_blogpost(&db, "original", "2026-01-01").await;
 
     db.schema_manager
         .register_view(identity_view("ViewA", "BlogPost", "content"))
@@ -219,7 +219,7 @@ async fn query_during_computing_returns_error() {
 
 #[tokio::test]
 async fn three_level_chain_precomputes_bottom_up() {
-    let mut db = setup_db().await;
+    let db = setup_db().await;
 
     db.load_schema_from_json(blogpost_schema_json())
         .await
@@ -228,7 +228,7 @@ async fn three_level_chain_precomputes_bottom_up() {
         .set_schema_state("BlogPost", SchemaState::Approved)
         .await
         .unwrap();
-    write_blogpost(&mut db, "deep", "2026-01-01").await;
+    write_blogpost(&db, "deep", "2026-01-01").await;
 
     // ViewA → BlogPost, ViewB → ViewA, ViewC → ViewB
     db.schema_manager
@@ -251,7 +251,7 @@ async fn three_level_chain_precomputes_bottom_up() {
     }
 
     // Mutate source
-    write_blogpost(&mut db, "changed", "2026-01-02").await;
+    write_blogpost(&db, "changed", "2026-01-02").await;
 
     // ViewA (level 1) is Empty initially but may be precomputed by the
     // background task (which computes all views bottom-up). Either state is valid.
@@ -307,7 +307,7 @@ async fn three_level_chain_precomputes_bottom_up() {
 
 #[tokio::test]
 async fn precomputed_view_has_fresh_data() {
-    let mut db = setup_db().await;
+    let db = setup_db().await;
 
     db.load_schema_from_json(blogpost_schema_json())
         .await
@@ -316,7 +316,7 @@ async fn precomputed_view_has_fresh_data() {
         .set_schema_state("BlogPost", SchemaState::Approved)
         .await
         .unwrap();
-    write_blogpost(&mut db, "v1", "2026-01-01").await;
+    write_blogpost(&db, "v1", "2026-01-01").await;
 
     db.schema_manager
         .register_view(identity_view("ViewA", "BlogPost", "content"))
@@ -334,7 +334,7 @@ async fn precomputed_view_has_fresh_data() {
     db.query_executor.query(q_b.clone()).await.unwrap();
 
     // Mutate to v2
-    write_blogpost(&mut db, "v2", "2026-01-01").await;
+    write_blogpost(&db, "v2", "2026-01-01").await;
 
     // Lazily compute ViewA to unblock ViewB's precomputation
     db.query_executor.query(q_a).await.unwrap();

@@ -7,6 +7,7 @@ const TREE_NAME: &str = "node_config";
 
 /// Thin wrapper around a SledPool for storing node configuration.
 /// All runtime config (identity, cloud credentials, AI settings) lives here.
+#[derive(Clone)]
 pub struct NodeConfigStore {
     pool: Arc<SledPool>,
 }

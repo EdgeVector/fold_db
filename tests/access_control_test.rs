@@ -28,7 +28,7 @@ fn notes_schema_json() -> &'static str {
 }
 
 async fn setup_db_with_notes() -> FoldDB {
-    let mut db = setup_db().await;
+    let db = setup_db().await;
 
     db.load_schema_from_json(notes_schema_json()).await.unwrap();
     db.schema_manager
@@ -483,7 +483,7 @@ async fn query_payment_gate_blocks_unpaid() {
 
 #[tokio::test]
 async fn mutation_blocked_by_insufficient_tier() {
-    let mut db = setup_db_with_notes().await;
+    let db = setup_db_with_notes().await;
 
     // content: readable by anyone, writable by owner only
     set_field_policy(
@@ -526,7 +526,7 @@ async fn mutation_blocked_by_insufficient_tier() {
 
 #[tokio::test]
 async fn mutation_allowed_for_owner() {
-    let mut db = setup_db_with_notes().await;
+    let db = setup_db_with_notes().await;
 
     set_field_policy(
         &db,
@@ -563,7 +563,7 @@ async fn mutation_allowed_for_owner() {
 
 #[tokio::test]
 async fn mutation_without_access_context_bypasses_checks() {
-    let mut db = setup_db_with_notes().await;
+    let db = setup_db_with_notes().await;
 
     set_field_policy(
         &db,
