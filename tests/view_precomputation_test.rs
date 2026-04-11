@@ -11,6 +11,7 @@ use fold_db::schema::types::operations::{MutationType, Query};
 use fold_db::schema::types::schema::DeclarativeSchemaType as SchemaType;
 use fold_db::schema::types::{KeyValue, Mutation};
 use fold_db::schema::SchemaState;
+use fold_db::test_helpers::TestSchemaBuilder;
 use fold_db::view::types::{TransformView, ViewCacheState};
 use serde_json::json;
 use std::collections::HashMap;
@@ -20,16 +21,11 @@ async fn setup_db() -> FoldDB {
     FoldDB::new(dir.path().to_str().unwrap()).await.unwrap()
 }
 
-fn blogpost_schema_json() -> &'static str {
-    r#"{
-        "name": "BlogPost",
-        "key": { "range_field": "publish_date" },
-        "fields": {
-            "title": {},
-            "content": {},
-            "publish_date": {}
-        }
-    }"#
+fn blogpost_schema_json() -> String {
+    TestSchemaBuilder::new("BlogPost")
+        .fields(&["title", "content"])
+        .range_key("publish_date")
+        .build_json()
 }
 
 fn identity_view(name: &str, source_schema: &str, source_field: &str) -> TransformView {
@@ -67,7 +63,7 @@ async fn deep_view_enters_computing_after_mutation() {
     let db = setup_db().await;
 
     // Setup: schema + data + 2-level view chain
-    db.load_schema_from_json(blogpost_schema_json())
+    db.load_schema_from_json(&blogpost_schema_json())
         .await
         .unwrap();
     db.schema_manager
@@ -136,7 +132,7 @@ async fn deep_view_enters_computing_after_mutation() {
 async fn deep_view_eventually_becomes_cached() {
     let db = setup_db().await;
 
-    db.load_schema_from_json(blogpost_schema_json())
+    db.load_schema_from_json(&blogpost_schema_json())
         .await
         .unwrap();
     db.schema_manager
@@ -184,7 +180,7 @@ async fn deep_view_eventually_becomes_cached() {
 async fn query_during_computing_returns_error() {
     let db = setup_db().await;
 
-    db.load_schema_from_json(blogpost_schema_json())
+    db.load_schema_from_json(&blogpost_schema_json())
         .await
         .unwrap();
     db.schema_manager
@@ -221,7 +217,7 @@ async fn query_during_computing_returns_error() {
 async fn three_level_chain_precomputes_bottom_up() {
     let db = setup_db().await;
 
-    db.load_schema_from_json(blogpost_schema_json())
+    db.load_schema_from_json(&blogpost_schema_json())
         .await
         .unwrap();
     db.schema_manager
@@ -309,7 +305,7 @@ async fn three_level_chain_precomputes_bottom_up() {
 async fn precomputed_view_has_fresh_data() {
     let db = setup_db().await;
 
-    db.load_schema_from_json(blogpost_schema_json())
+    db.load_schema_from_json(&blogpost_schema_json())
         .await
         .unwrap();
     db.schema_manager

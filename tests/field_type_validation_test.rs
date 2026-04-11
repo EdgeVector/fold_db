@@ -2,6 +2,7 @@ use fold_db::fold_db_core::FoldDB;
 use fold_db::schema::types::operations::MutationType;
 use fold_db::schema::types::{KeyValue, Mutation};
 use fold_db::schema::SchemaState;
+use fold_db::test_helpers::TestSchemaBuilder;
 use serde_json::json;
 use std::collections::HashMap;
 
@@ -10,42 +11,31 @@ async fn setup_db() -> FoldDB {
     FoldDB::new(dir.path().to_str().unwrap()).await.unwrap()
 }
 
-fn typed_schema_json() -> &'static str {
-    r#"{
-        "name": "Person",
-        "key": { "range_field": "created_at" },
-        "fields": {
-            "name": {},
-            "age": {},
-            "email": {},
-            "tags": {},
-            "created_at": {}
-        },
-        "field_types": {
-            "name": "String",
-            "age": "Integer",
-            "email": "String",
-            "tags": { "Array": "String" },
-            "created_at": "String"
-        }
-    }"#
+fn typed_schema_json() -> String {
+    TestSchemaBuilder::new("Person")
+        .fields(&["name", "age", "email", "tags"])
+        .range_key("created_at")
+        .field_type("name", json!("String"))
+        .field_type("age", json!("Integer"))
+        .field_type("email", json!("String"))
+        .field_type("tags", json!({"Array": "String"}))
+        .field_type("created_at", json!("String"))
+        .build_json()
 }
 
-fn untyped_schema_json() -> &'static str {
-    r#"{
-        "name": "Freeform",
-        "key": { "range_field": "id" },
-        "fields": {
-            "data": {},
-            "id": {}
-        }
-    }"#
+fn untyped_schema_json() -> String {
+    TestSchemaBuilder::new("Freeform")
+        .field("data")
+        .range_key("id")
+        .build_json()
 }
 
 #[tokio::test]
 async fn typed_schema_accepts_valid_mutation() {
     let db = setup_db().await;
-    db.load_schema_from_json(typed_schema_json()).await.unwrap();
+    db.load_schema_from_json(&typed_schema_json())
+        .await
+        .unwrap();
     db.schema_manager
         .set_schema_state("Person", SchemaState::Approved)
         .await
@@ -75,7 +65,9 @@ async fn typed_schema_accepts_valid_mutation() {
 #[tokio::test]
 async fn typed_schema_rejects_wrong_type() {
     let db = setup_db().await;
-    db.load_schema_from_json(typed_schema_json()).await.unwrap();
+    db.load_schema_from_json(&typed_schema_json())
+        .await
+        .unwrap();
     db.schema_manager
         .set_schema_state("Person", SchemaState::Approved)
         .await
@@ -115,7 +107,9 @@ async fn typed_schema_rejects_wrong_type() {
 #[tokio::test]
 async fn typed_schema_rejects_wrong_array_element_type() {
     let db = setup_db().await;
-    db.load_schema_from_json(typed_schema_json()).await.unwrap();
+    db.load_schema_from_json(&typed_schema_json())
+        .await
+        .unwrap();
     db.schema_manager
         .set_schema_state("Person", SchemaState::Approved)
         .await
@@ -150,7 +144,7 @@ async fn typed_schema_rejects_wrong_array_element_type() {
 #[tokio::test]
 async fn untyped_schema_accepts_anything() {
     let db = setup_db().await;
-    db.load_schema_from_json(untyped_schema_json())
+    db.load_schema_from_json(&untyped_schema_json())
         .await
         .unwrap();
     db.schema_manager
@@ -186,36 +180,26 @@ async fn schema_ref_type_enforced() {
     let db = setup_db().await;
 
     // Create a child schema
-    db.load_schema_from_json(
-        r#"{
-            "name": "Post",
-            "key": { "range_field": "id" },
-            "fields": { "title": {}, "id": {} }
-        }"#,
-    )
-    .await
-    .unwrap();
+    let post_json = TestSchemaBuilder::new("Post")
+        .field("title")
+        .range_key("id")
+        .build_json();
+    db.load_schema_from_json(&post_json).await.unwrap();
     db.schema_manager
         .set_schema_state("Post", SchemaState::Approved)
         .await
         .unwrap();
 
     // Create a parent schema with a typed ref field
-    db.load_schema_from_json(
-        r#"{
-            "name": "User",
-            "key": { "range_field": "id" },
-            "fields": { "name": {}, "posts": {}, "id": {} },
-            "field_types": {
-                "name": "String",
-                "posts": { "SchemaRef": "Post" },
-                "id": "String"
-            },
-            "ref_fields": { "posts": "Post" }
-        }"#,
-    )
-    .await
-    .unwrap();
+    let user_json = TestSchemaBuilder::new("User")
+        .fields(&["name", "posts"])
+        .range_key("id")
+        .field_type("name", json!("String"))
+        .field_type("posts", json!({"SchemaRef": "Post"}))
+        .field_type("id", json!("String"))
+        .ref_field("posts", "Post")
+        .build_json();
+    db.load_schema_from_json(&user_json).await.unwrap();
     db.schema_manager
         .set_schema_state("User", SchemaState::Approved)
         .await

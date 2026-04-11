@@ -40,6 +40,11 @@ pub mod security;
 pub mod storage;
 pub mod sync;
 pub mod testing_utils;
+
+/// Test utilities for building schemas with proper classifications.
+/// Always compiled (zero runtime cost when unused). Downstream crates
+/// can also access this via the `test-utils` feature.
+pub mod test_helpers;
 pub mod view;
 
 // Re-export main types for convenience

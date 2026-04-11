@@ -1,36 +1,22 @@
 use fold_db::atom::deterministic_molecule_uuid;
 use fold_db::schema::types::field::Field;
 use fold_db::schema::{SchemaCore, SchemaState};
+use fold_db::test_helpers::TestSchemaBuilder;
 
 fn user_schema_json() -> String {
-    r#"{
-        "name": "User",
-        "key": { "range_field": "created_at" },
-        "fields": {
-            "id": {},
-            "name": {},
-            "created_at": {}
-        }
-    }"#
-    .to_string()
+    TestSchemaBuilder::new("User")
+        .fields(&["id", "name"])
+        .range_key("created_at")
+        .build_json()
 }
 
 fn user_public_schema_json() -> String {
-    r#"{
-        "name": "UserPublic",
-        "key": { "range_field": "created_at" },
-        "fields": {
-            "id": {},
-            "display_name": {},
-            "view_count": {},
-            "is_featured": {}
-        },
-        "field_mappers": {
-            "id": "User.id",
-            "display_name": "User.name"
-        }
-    }"#
-    .to_string()
+    TestSchemaBuilder::new("UserPublic")
+        .fields(&["id", "display_name", "view_count", "is_featured"])
+        .range_key("created_at")
+        .field_mapper("id", "User.id")
+        .field_mapper("display_name", "User.name")
+        .build_json()
 }
 
 #[tokio::test]

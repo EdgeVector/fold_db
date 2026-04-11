@@ -1,4 +1,5 @@
 use fold_db::fold_db_core::fold_db::FoldDB;
+use fold_db::test_helpers::TestSchemaBuilder;
 
 #[tokio::test]
 async fn test_reproduce_schema_mismatch() {
@@ -10,14 +11,13 @@ async fn test_reproduce_schema_mismatch() {
     let db_path = temp_dir.path().to_str().expect("failed to get path");
     let db = FoldDB::new(db_path).await.expect("Failed to create DB");
 
-    let schema_json = r#"{
-        "name": "lowercase_hash",
-        "key": { "hash_field": "id" },
-        "fields": { "id": {}, "data": {} }
-    }"#;
+    let schema_json = TestSchemaBuilder::new("lowercase_hash")
+        .hash_key("id")
+        .field("data")
+        .build_json();
 
     // 2. Load "lowercase_hash"
-    db.load_schema_from_json(schema_json)
+    db.load_schema_from_json(&schema_json)
         .await
         .expect("Failed to load schema");
     db.schema_manager()

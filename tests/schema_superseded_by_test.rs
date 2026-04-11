@@ -1,45 +1,25 @@
 use fold_db::schema::{SchemaCore, SchemaState};
+use fold_db::test_helpers::TestSchemaBuilder;
 
 fn schema_a_json() -> String {
-    r#"{
-        "name": "ContactV1",
-        "key": { "range_field": "created_at" },
-        "fields": {
-            "name": {},
-            "email": {},
-            "created_at": {}
-        }
-    }"#
-    .to_string()
+    TestSchemaBuilder::new("ContactV1")
+        .fields(&["name", "email"])
+        .range_key("created_at")
+        .build_json()
 }
 
 fn schema_b_json() -> String {
-    r#"{
-        "name": "ContactV2",
-        "key": { "range_field": "created_at" },
-        "fields": {
-            "name": {},
-            "email": {},
-            "phone": {},
-            "created_at": {}
-        }
-    }"#
-    .to_string()
+    TestSchemaBuilder::new("ContactV2")
+        .fields(&["name", "email", "phone"])
+        .range_key("created_at")
+        .build_json()
 }
 
 fn schema_c_json() -> String {
-    r#"{
-        "name": "ContactV3",
-        "key": { "range_field": "created_at" },
-        "fields": {
-            "name": {},
-            "email": {},
-            "phone": {},
-            "address": {},
-            "created_at": {}
-        }
-    }"#
-    .to_string()
+    TestSchemaBuilder::new("ContactV3")
+        .fields(&["name", "email", "phone", "address"])
+        .range_key("created_at")
+        .build_json()
 }
 
 #[tokio::test]

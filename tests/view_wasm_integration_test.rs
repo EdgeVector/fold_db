@@ -8,6 +8,7 @@ use fold_db::schema::types::operations::{MutationType, Query};
 use fold_db::schema::types::schema::DeclarativeSchemaType as SchemaType;
 use fold_db::schema::types::{KeyValue, Mutation};
 use fold_db::schema::SchemaState;
+use fold_db::test_helpers::TestSchemaBuilder;
 use fold_db::view::types::TransformView;
 use serde_json::json;
 use std::collections::HashMap;
@@ -54,16 +55,11 @@ async fn setup_db() -> FoldDB {
     FoldDB::new(dir.path().to_str().unwrap()).await.unwrap()
 }
 
-fn blogpost_schema_json() -> &'static str {
-    r#"{
-        "name": "BlogPost",
-        "key": { "range_field": "publish_date" },
-        "fields": {
-            "title": {},
-            "content": {},
-            "publish_date": {}
-        }
-    }"#
+fn blogpost_schema_json() -> String {
+    TestSchemaBuilder::new("BlogPost")
+        .fields(&["title", "content"])
+        .range_key("publish_date")
+        .build_json()
 }
 
 #[tokio::test]
@@ -71,7 +67,7 @@ async fn wasm_view_query_returns_transformed_output() {
     let db = setup_db().await;
 
     // Setup schema with data
-    db.load_schema_from_json(blogpost_schema_json())
+    db.load_schema_from_json(&blogpost_schema_json())
         .await
         .unwrap();
     db.schema_manager
@@ -123,7 +119,7 @@ async fn wasm_view_query_returns_transformed_output() {
 async fn wasm_view_output_type_validation_works() {
     let db = setup_db().await;
 
-    db.load_schema_from_json(blogpost_schema_json())
+    db.load_schema_from_json(&blogpost_schema_json())
         .await
         .unwrap();
     db.schema_manager
@@ -173,7 +169,7 @@ async fn wasm_view_output_type_validation_works() {
 async fn wasm_view_cache_invalidation_works() {
     let db = setup_db().await;
 
-    db.load_schema_from_json(blogpost_schema_json())
+    db.load_schema_from_json(&blogpost_schema_json())
         .await
         .unwrap();
     db.schema_manager

@@ -2,33 +2,23 @@ use fold_db::schema::types::field_value_type::FieldValueType;
 use fold_db::schema::types::operations::Query;
 use fold_db::schema::types::schema::DeclarativeSchemaType as SchemaType;
 use fold_db::schema::SchemaCore;
+use fold_db::test_helpers::TestSchemaBuilder;
 use fold_db::view::registry::ViewState;
 use fold_db::view::types::TransformView;
 use std::collections::HashMap;
 
 fn blogpost_schema_json() -> String {
-    r#"{
-        "name": "BlogPost",
-        "key": { "range_field": "publish_date" },
-        "fields": {
-            "title": {},
-            "content": {},
-            "publish_date": {}
-        }
-    }"#
-    .to_string()
+    TestSchemaBuilder::new("BlogPost")
+        .fields(&["title", "content"])
+        .range_key("publish_date")
+        .build_json()
 }
 
 fn weather_schema_json() -> String {
-    r#"{
-        "name": "Weather",
-        "key": { "range_field": "date" },
-        "fields": {
-            "temp_celsius": {},
-            "date": {}
-        }
-    }"#
-    .to_string()
+    TestSchemaBuilder::new("Weather")
+        .field("temp_celsius")
+        .range_key("date")
+        .build_json()
 }
 
 fn identity_view(name: &str, source_schema: &str, source_field: &str) -> TransformView {

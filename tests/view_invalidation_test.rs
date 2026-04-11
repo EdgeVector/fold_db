@@ -5,6 +5,7 @@ use fold_db::schema::types::operations::{MutationType, Query};
 use fold_db::schema::types::schema::DeclarativeSchemaType as SchemaType;
 use fold_db::schema::types::{KeyValue, Mutation};
 use fold_db::schema::SchemaState;
+use fold_db::test_helpers::TestSchemaBuilder;
 use fold_db::view::types::{TransformView, ViewCacheState};
 use serde_json::json;
 use std::collections::HashMap;
@@ -14,16 +15,11 @@ async fn setup_db() -> FoldDB {
     FoldDB::new(dir.path().to_str().unwrap()).await.unwrap()
 }
 
-fn blogpost_schema_json() -> &'static str {
-    r#"{
-        "name": "BlogPost",
-        "key": { "range_field": "publish_date" },
-        "fields": {
-            "title": {},
-            "content": {},
-            "publish_date": {}
-        }
-    }"#
+fn blogpost_schema_json() -> String {
+    TestSchemaBuilder::new("BlogPost")
+        .fields(&["title", "content"])
+        .range_key("publish_date")
+        .build_json()
 }
 
 fn identity_view(name: &str, source_schema: &str, source_field: &str) -> TransformView {
@@ -45,7 +41,7 @@ async fn mutating_source_invalidates_view_cache() {
     let db = setup_db().await;
 
     // Setup: schema + data + view
-    db.load_schema_from_json(blogpost_schema_json())
+    db.load_schema_from_json(&blogpost_schema_json())
         .await
         .unwrap();
     db.schema_manager
@@ -125,7 +121,7 @@ async fn mutating_source_invalidates_view_cache() {
 async fn re_query_after_invalidation_re_caches() {
     let db = setup_db().await;
 
-    db.load_schema_from_json(blogpost_schema_json())
+    db.load_schema_from_json(&blogpost_schema_json())
         .await
         .unwrap();
     db.schema_manager
@@ -190,7 +186,7 @@ async fn cascading_invalidation_through_view_chain() {
     let db = setup_db().await;
 
     // Setup: schema + data
-    db.load_schema_from_json(blogpost_schema_json())
+    db.load_schema_from_json(&blogpost_schema_json())
         .await
         .unwrap();
     db.schema_manager
@@ -289,7 +285,7 @@ async fn cascading_invalidation_through_view_chain() {
 async fn view_chain_query_returns_source_data() {
     let db = setup_db().await;
 
-    db.load_schema_from_json(blogpost_schema_json())
+    db.load_schema_from_json(&blogpost_schema_json())
         .await
         .unwrap();
     db.schema_manager
@@ -348,7 +344,7 @@ async fn view_chain_query_returns_source_data() {
 async fn three_level_chain_resolves_to_source() {
     let db = setup_db().await;
 
-    db.load_schema_from_json(blogpost_schema_json())
+    db.load_schema_from_json(&blogpost_schema_json())
         .await
         .unwrap();
     db.schema_manager
@@ -407,7 +403,7 @@ async fn three_level_chain_resolves_to_source() {
 async fn chain_re_query_after_cascade_invalidation_gets_fresh_data() {
     let db = setup_db().await;
 
-    db.load_schema_from_json(blogpost_schema_json())
+    db.load_schema_from_json(&blogpost_schema_json())
         .await
         .unwrap();
     db.schema_manager
@@ -481,7 +477,7 @@ async fn multi_source_view_from_two_views() {
     let db = setup_db().await;
 
     // Create two source schemas
-    db.load_schema_from_json(blogpost_schema_json())
+    db.load_schema_from_json(&blogpost_schema_json())
         .await
         .unwrap();
     db.schema_manager
@@ -489,15 +485,11 @@ async fn multi_source_view_from_two_views() {
         .await
         .unwrap();
 
-    db.load_schema_from_json(
-        r#"{
-            "name": "Author",
-            "key": { "range_field": "publish_date" },
-            "fields": { "name": {}, "publish_date": {} }
-        }"#,
-    )
-    .await
-    .unwrap();
+    let author_json = TestSchemaBuilder::new("Author")
+        .field("name")
+        .range_key("publish_date")
+        .build_json();
+    db.load_schema_from_json(&author_json).await.unwrap();
     db.schema_manager
         .set_schema_state("Author", SchemaState::Approved)
         .await
@@ -588,7 +580,7 @@ async fn multi_source_view_from_two_views() {
 async fn three_level_cascade_invalidation() {
     let db = setup_db().await;
 
-    db.load_schema_from_json(blogpost_schema_json())
+    db.load_schema_from_json(&blogpost_schema_json())
         .await
         .unwrap();
     db.schema_manager
