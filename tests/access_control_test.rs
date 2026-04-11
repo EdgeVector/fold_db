@@ -7,6 +7,7 @@ use fold_db::schema::types::field::Field;
 use fold_db::schema::types::operations::{MutationType, Query};
 use fold_db::schema::types::{KeyValue, Mutation};
 use fold_db::schema::SchemaState;
+use fold_db::test_helpers::TestSchemaBuilder;
 use serde_json::json;
 use std::collections::HashMap;
 
@@ -15,22 +16,19 @@ async fn setup_db() -> FoldDB {
     FoldDB::new(dir.path().to_str().unwrap()).await.unwrap()
 }
 
-fn notes_schema_json() -> &'static str {
-    r#"{
-        "name": "Notes",
-        "key": { "range_field": "created_at" },
-        "fields": {
-            "title": {},
-            "content": {},
-            "created_at": {}
-        }
-    }"#
+fn notes_schema_json() -> String {
+    TestSchemaBuilder::new("Notes")
+        .fields(&["title", "content"])
+        .range_key("created_at")
+        .build_json()
 }
 
 async fn setup_db_with_notes() -> FoldDB {
     let db = setup_db().await;
 
-    db.load_schema_from_json(notes_schema_json()).await.unwrap();
+    db.load_schema_from_json(&notes_schema_json())
+        .await
+        .unwrap();
     db.schema_manager
         .set_schema_state("Notes", SchemaState::Approved)
         .await

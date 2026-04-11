@@ -13,18 +13,17 @@ use fold_db::schema::types::field::Field;
 use fold_db::schema::types::key_value::KeyValue;
 use fold_db::schema::types::mutation::Mutation;
 use fold_db::schema::SchemaState;
+use fold_db::test_helpers::TestSchemaBuilder;
 use fold_db::MutationType;
 use serde_json::json;
 use std::collections::HashMap;
 use tempfile::TempDir;
 
 fn file_records_schema_json() -> String {
-    serde_json::to_string(&json!({
-        "name": "FileRecords",
-        "key": { "range_field": "source_file" },
-        "fields": ["source_file", "content", "file_type"]
-    }))
-    .unwrap()
+    TestSchemaBuilder::new("FileRecords")
+        .fields(&["content", "file_type"])
+        .range_key("source_file")
+        .build_json()
 }
 
 fn make_mutation(source_file: &str, content: &str, file_type: &str) -> Mutation {

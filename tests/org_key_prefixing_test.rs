@@ -11,6 +11,7 @@ use fold_db::schema::types::{
     DeclarativeSchemaDefinition, KeyConfig, KeyValue, Mutation, SchemaType,
 };
 use fold_db::schema::SchemaState;
+use fold_db::test_helpers::TestSchemaBuilder;
 use serde_json::json;
 use std::collections::HashMap;
 
@@ -25,19 +26,14 @@ async fn make_folddb(tmp: &tempfile::TempDir) -> FoldDB {
 
 /// Helper: register a HashRange schema with optional org_hash via JSON.
 async fn register_schema(db: &FoldDB, name: &str, org_hash: Option<&str>) {
-    let org_hash_json = match org_hash {
-        Some(h) => format!(r#", "org_hash": "{}""#, h),
-        None => String::new(),
-    };
-    let json_str = format!(
-        r#"{{
-            "name": "{}",
-            "key": {{ "hash_field": "title", "range_field": "date" }},
-            "fields": {{ "title": {{}}, "body": {{}}, "date": {{}} }}
-            {}
-        }}"#,
-        name, org_hash_json
-    );
+    let mut builder = TestSchemaBuilder::new(name)
+        .fields(&["body"])
+        .hash_key("title")
+        .range_key("date");
+    if let Some(h) = org_hash {
+        builder = builder.org_hash(h);
+    }
+    let json_str = builder.build_json();
     db.load_schema_from_json(&json_str).await.unwrap();
     db.schema_manager
         .set_schema_state(name, SchemaState::Approved)

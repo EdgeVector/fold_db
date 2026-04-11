@@ -520,6 +520,26 @@ impl SchemaCore {
                 SchemaError::InvalidData(format!("Failed to parse declarative schema: {}", e))
             })?;
 
+        // Validate all fields have data classifications
+        if let Some(ref fields) = declarative_schema.fields {
+            let unclassified: Vec<&str> = fields
+                .iter()
+                .filter(|f| {
+                    !declarative_schema
+                        .field_data_classifications
+                        .contains_key(*f)
+                })
+                .map(|f| f.as_str())
+                .collect();
+            if !unclassified.is_empty() {
+                return Err(SchemaError::InvalidData(format!(
+                    "Schema '{}' has unclassified fields: {}. All fields must have a DataClassification.",
+                    declarative_schema.name,
+                    unclassified.join(", ")
+                )));
+            }
+        }
+
         // Convert declarative schema to Schema
         let schema = self
             .interpret_declarative_schema(declarative_schema)
@@ -688,33 +708,20 @@ impl SchemaCore {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_helpers::TestSchemaBuilder;
 
     fn blogpost_schema_json() -> String {
-        // Declarative schema format used in available_schemas
-        // Minimal fields map is acceptable per current parser
-        r#"{
-            "name": "BlogPost",
-            "key": { "range_field": "publish_date" },
-            "fields": {
-                "title": {},
-                "content": {},
-                "author": {},
-                "publish_date": {}
-            }
-        }"#
-        .to_string()
+        TestSchemaBuilder::new("BlogPost")
+            .fields(&["title", "content", "author"])
+            .range_key("publish_date")
+            .build_json()
     }
 
     fn wordindex_schema_json() -> String {
-        r#"{
-            "name": "BlogPostWordIndex",
-            "key": { "hash_field": "word", "range_field": "publish_date" },
-            "fields": {
-                "word": {},
-                "publish_date": {}
-            }
-        }"#
-        .to_string()
+        TestSchemaBuilder::new("BlogPostWordIndex")
+            .hash_key("word")
+            .range_key("publish_date")
+            .build_json()
     }
 
     #[tokio::test]
