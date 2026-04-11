@@ -760,7 +760,13 @@ impl SyncEngine {
         let mut embeddings_replayed = false;
 
         for (seq, url) in new_seqs.iter().zip(urls.iter()) {
-            match self.s3.download(url).await? {
+            let downloaded = self
+                .retry_s3(&format!("download '{}' seq {}", target.label, seq), || {
+                    let url = url.clone();
+                    async move { self.s3.download(&url).await }
+                })
+                .await?;
+            match downloaded {
                 Some(bytes) => match LogEntry::unseal(&bytes, &target.crypto).await {
                     Ok(entry) => {
                         match entry.op.namespace() {
