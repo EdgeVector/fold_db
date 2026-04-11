@@ -84,34 +84,6 @@ impl PublicKeyInfo {
     }
 }
 
-/// Key registration request from client
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct KeyRegistrationRequest {
-    /// Base64-encoded Ed25519 public key
-    pub public_key: String,
-    /// User or client ID
-    pub owner_id: String,
-    /// Requested permissions
-    pub permissions: Vec<String>,
-    /// Optional metadata
-    pub metadata: HashMap<String, String>,
-    /// Optional expiration timestamp
-    pub expires_at: Option<i64>,
-}
-
-/// Key registration response from backend
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct KeyRegistrationResponse {
-    /// Whether registration was successful
-    pub success: bool,
-    /// Unique identifier assigned to the public key
-    pub public_key_id: Option<String>,
-    /// The registered public key information (included on successful registration)
-    pub key: Option<PublicKeyInfo>,
-    /// Error message if registration failed
-    pub error: Option<String>,
-}
-
 /// Message verification result
 #[derive(Debug, Clone)]
 pub struct VerificationResult {

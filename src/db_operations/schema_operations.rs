@@ -1,12 +1,11 @@
 use super::core::DbOperations;
 use crate::schema::{Schema, SchemaError, SchemaState};
+use crate::storage::traits::TypedStore;
 use std::collections::HashMap;
 
 impl DbOperations {
     /// Get a specific schema by name
     pub async fn get_schema(&self, schema_name: &str) -> Result<Option<Schema>, SchemaError> {
-        use crate::storage::traits::TypedStore;
-
         let mut schema_opt: Option<Schema> = self.schemas_store().get_item(schema_name).await?;
 
         // Populate runtime_fields if schema exists
@@ -22,8 +21,6 @@ impl DbOperations {
         &self,
         schema_name: &str,
     ) -> Result<Option<SchemaState>, SchemaError> {
-        use crate::storage::traits::TypedStore;
-
         Ok(self.schema_states_store().get_item(schema_name).await?)
     }
 
@@ -33,8 +30,6 @@ impl DbOperations {
         schema_name: &str,
         schema: &Schema,
     ) -> Result<(), SchemaError> {
-        use crate::storage::traits::TypedStore;
-
         self.schemas_store().put_item(schema_name, schema).await?;
         self.schemas_store().inner().flush().await?;
         Ok(())
@@ -46,8 +41,6 @@ impl DbOperations {
         schema_name: &str,
         state: &SchemaState,
     ) -> Result<(), SchemaError> {
-        use crate::storage::traits::TypedStore;
-
         self.schema_states_store()
             .put_item(schema_name, state)
             .await?;
@@ -57,16 +50,12 @@ impl DbOperations {
 
     /// Get all schemas
     pub async fn get_all_schemas(&self) -> Result<HashMap<String, Schema>, SchemaError> {
-        use crate::storage::traits::TypedStore;
+        let items: Vec<(String, Schema)> = self.schemas_store().scan_items_with_prefix("").await?;
 
-        let keys = self.schemas_store().list_keys_with_prefix("").await?;
-
-        let mut schemas = HashMap::new();
-        for key in keys {
-            if let Some(mut schema) = self.schemas_store().get_item::<Schema>(&key).await? {
-                schema.populate_runtime_fields()?;
-                schemas.insert(key, schema);
-            }
+        let mut schemas = HashMap::with_capacity(items.len());
+        for (key, mut schema) in items {
+            schema.populate_runtime_fields()?;
+            schemas.insert(key, schema);
         }
 
         Ok(schemas)
@@ -78,8 +67,6 @@ impl DbOperations {
         old_name: &str,
         new_name: &str,
     ) -> Result<(), SchemaError> {
-        use crate::storage::traits::TypedStore;
-
         self.superseded_by_store()
             .put_item(old_name, &new_name.to_string())
             .await?;
@@ -89,37 +76,19 @@ impl DbOperations {
 
     /// Get all superseded-by mappings
     pub async fn get_all_superseded_by(&self) -> Result<HashMap<String, String>, SchemaError> {
-        use crate::storage::traits::TypedStore;
-
-        let keys = self.superseded_by_store().list_keys_with_prefix("").await?;
-
-        let mut mappings = HashMap::new();
-        for key in keys {
-            if let Some(new_name) = self.superseded_by_store().get_item::<String>(&key).await? {
-                mappings.insert(key, new_name);
-            }
-        }
-
-        Ok(mappings)
+        let items: Vec<(String, String)> = self
+            .superseded_by_store()
+            .scan_items_with_prefix("")
+            .await?;
+        Ok(items.into_iter().collect())
     }
 
     /// Get all schema states
     pub async fn get_all_schema_states(&self) -> Result<HashMap<String, SchemaState>, SchemaError> {
-        use crate::storage::traits::TypedStore;
-
-        let keys = self.schema_states_store().list_keys_with_prefix("").await?;
-
-        let mut states = HashMap::new();
-        for key in keys {
-            if let Some(state) = self
-                .schema_states_store()
-                .get_item::<SchemaState>(&key)
-                .await?
-            {
-                states.insert(key, state);
-            }
-        }
-
-        Ok(states)
+        let items: Vec<(String, SchemaState)> = self
+            .schema_states_store()
+            .scan_items_with_prefix("")
+            .await?;
+        Ok(items.into_iter().collect())
     }
 }
