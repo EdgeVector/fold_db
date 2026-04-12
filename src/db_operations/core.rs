@@ -93,59 +93,72 @@ impl DbOperations {
         Self::from_namespaced_store(store).await
     }
 
-    // ===== Namespace-specific store getters =====
+    // ===== Internal store getters (crate-only) =====
+    //
+    // External callers should use the domain operation methods
+    // (atom_operations, schema_operations, etc.) instead of accessing
+    // raw stores directly.
 
-    pub fn metadata_store(&self) -> &Arc<TypedKvStore<dyn KvStore>> {
+    pub(crate) fn metadata_store(&self) -> &Arc<TypedKvStore<dyn KvStore>> {
         &self.metadata_store
     }
 
-    pub fn permissions_store(&self) -> &Arc<TypedKvStore<dyn KvStore>> {
+    pub(crate) fn permissions_store(&self) -> &Arc<TypedKvStore<dyn KvStore>> {
         &self.permissions_store
     }
 
-    pub fn schema_states_store(&self) -> &Arc<TypedKvStore<dyn KvStore>> {
+    pub(crate) fn schema_states_store(&self) -> &Arc<TypedKvStore<dyn KvStore>> {
         &self.schema_states_store
     }
 
-    pub fn schemas_store(&self) -> &Arc<TypedKvStore<dyn KvStore>> {
+    pub(crate) fn schemas_store(&self) -> &Arc<TypedKvStore<dyn KvStore>> {
         &self.schemas_store
     }
 
-    pub fn public_keys_store(&self) -> &Arc<TypedKvStore<dyn KvStore>> {
+    pub(crate) fn public_keys_store(&self) -> &Arc<TypedKvStore<dyn KvStore>> {
         &self.public_keys_store
     }
 
-    pub fn idempotency_store(&self) -> &Arc<TypedKvStore<dyn KvStore>> {
+    pub(crate) fn idempotency_store(&self) -> &Arc<TypedKvStore<dyn KvStore>> {
         &self.idempotency_store
     }
 
-    pub fn process_results_store(&self) -> &Arc<TypedKvStore<dyn KvStore>> {
+    pub(crate) fn process_results_store(&self) -> &Arc<TypedKvStore<dyn KvStore>> {
         &self.process_results_store
     }
 
-    pub fn superseded_by_store(&self) -> &Arc<TypedKvStore<dyn KvStore>> {
+    pub(crate) fn superseded_by_store(&self) -> &Arc<TypedKvStore<dyn KvStore>> {
         &self.superseded_by_store
     }
 
+    /// Access the native index manager for embedding and search operations.
     pub fn native_index_manager(&self) -> Option<&NativeIndexManager> {
         self.native_index_manager.as_ref()
     }
 
-    pub fn views_store(&self) -> &Arc<TypedKvStore<dyn KvStore>> {
+    pub(crate) fn views_store(&self) -> &Arc<TypedKvStore<dyn KvStore>> {
         &self.views_store
     }
 
-    pub fn view_states_store(&self) -> &Arc<TypedKvStore<dyn KvStore>> {
+    pub(crate) fn view_states_store(&self) -> &Arc<TypedKvStore<dyn KvStore>> {
         &self.view_states_store
     }
 
-    pub fn transform_field_states_store(&self) -> &Arc<TypedKvStore<dyn KvStore>> {
+    pub(crate) fn transform_field_states_store(&self) -> &Arc<TypedKvStore<dyn KvStore>> {
         &self.transform_field_states_store
     }
 
     /// Get atoms/molecules store (same as main_store for backward compatibility)
-    pub fn atoms_store(&self) -> &Arc<TypedKvStore<dyn KvStore>> {
+    pub(crate) fn atoms_store(&self) -> &Arc<TypedKvStore<dyn KvStore>> {
         &self.main_store
+    }
+
+    // ===== Public accessors for external callers =====
+
+    /// Get the raw metadata KvStore for external modules that need generic key-value
+    /// access (e.g., discovery configs, async queries).
+    pub fn raw_metadata_store(&self) -> Arc<dyn KvStore> {
+        self.metadata_store.inner().clone()
     }
 
     /// Flush all pending writes to durable storage
