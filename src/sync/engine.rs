@@ -465,12 +465,12 @@ impl SyncEngine {
     /// Record a sync failure: store the error message and transition state.
     async fn record_sync_failure(&self, err: &SyncError) {
         let msg = err.to_string();
-        *self.last_error.lock().await = Some(msg.clone());
         let new_state = match err {
             SyncError::Network(_) => SyncState::Offline,
             _ => SyncState::Dirty,
         };
         self.set_state(new_state, Some(&msg)).await;
+        *self.last_error.lock().await = Some(msg);
     }
 
     /// Run one sync cycle: upload pending log entries, compact if needed.
@@ -1056,8 +1056,7 @@ impl SyncEngine {
                 key,
                 value,
             } => {
-                self.replay_put(namespace, key, value, entry.timestamp_ms, &entry.device_id)
-                    .await?;
+                self.replay_put(namespace, key, value).await?;
             }
             LogOp::Delete { namespace, key } => {
                 let kv = self.store.open_namespace(namespace).await?;
@@ -1066,8 +1065,7 @@ impl SyncEngine {
             }
             LogOp::BatchPut { namespace, items } => {
                 for (key, value) in items {
-                    self.replay_put(namespace, key, value, entry.timestamp_ms, &entry.device_id)
-                        .await?;
+                    self.replay_put(namespace, key, value).await?;
                 }
             }
             LogOp::BatchDelete { namespace, keys } => {
@@ -1088,11 +1086,10 @@ impl SyncEngine {
         namespace: &str,
         key_b64: &str,
         value_b64: &str,
-        _timestamp_ms: u64,
-        _device_id: &str,
     ) -> SyncResult<()> {
         let key_bytes = LogOp::decode_bytes(key_b64)?;
         let value_bytes = LogOp::decode_bytes(value_b64)?;
+        let kv = self.store.open_namespace(namespace).await?;
 
         let is_ref_key = key_bytes.starts_with(b"ref:")
             || std::str::from_utf8(&key_bytes)
@@ -1108,7 +1105,6 @@ impl SyncEngine {
                 .unwrap_or(key_str)
                 .to_string();
 
-            let kv = self.store.open_namespace(namespace).await?;
             let local_bytes = kv.get(&key_bytes).await?;
 
             match local_bytes {
@@ -1128,8 +1124,7 @@ impl SyncEngine {
                 }
             }
         } else {
-            let kv = self.store.open_namespace(namespace).await?;
-            kv.put(&key_bytes, value_bytes.clone()).await?;
+            kv.put(&key_bytes, value_bytes).await?;
         }
 
         Ok(())

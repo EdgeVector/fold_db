@@ -138,11 +138,8 @@ impl AuthClient {
             ));
         }
 
-        // Let HTTP 403 pass through to be handled by the caller, so we can discern
-        // if it's a global ban vs an organizational-level ban.
-        if status == reqwest::StatusCode::FORBIDDEN {
-            // we try to parse it as JSON if it has an error payload, otherwise bubble it
-        }
+        // HTTP 403 falls through to JSON parsing below, so the caller can
+        // distinguish a global ban from an org-level ban via the error payload.
 
         if status.is_server_error() {
             let body = response.text().await.unwrap_or_default();

@@ -26,17 +26,11 @@ pub enum SyncError {
     #[error("corrupt log entry at seq {seq}: {reason}")]
     CorruptEntry { seq: u64, reason: String },
 
-    #[error("sequence gap: expected {expected}, found {found}")]
-    SequenceGap { expected: u64, found: u64 },
-
     #[error("device locked by {device_id}, expires at {expires_at}")]
     DeviceLocked {
         device_id: String,
         expires_at: String,
     },
-
-    #[error("snapshot too large: {size_bytes} bytes")]
-    SnapshotTooLarge { size_bytes: u64 },
 
     #[error("wrong encryption key")]
     WrongKey,
