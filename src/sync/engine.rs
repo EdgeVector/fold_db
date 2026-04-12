@@ -78,6 +78,10 @@ pub struct SyncConfig {
     pub lock_ttl_secs: u64,
     /// Maximum retries for network operations.
     pub max_retries: u32,
+    /// Maximum pending entries before oldest are dropped. Prevents unbounded
+    /// memory growth during long offline periods with active writes.
+    /// 0 means unlimited (not recommended for production).
+    pub max_pending: usize,
 }
 
 impl Default for SyncConfig {
@@ -87,6 +91,7 @@ impl Default for SyncConfig {
             compaction_threshold: 100,
             lock_ttl_secs: 300,
             max_retries: 2,
+            max_pending: 10_000,
         }
     }
 }
@@ -359,9 +364,23 @@ impl SyncEngine {
     // =========================================================================
 
     /// Record an operation: create a log entry, push to pending, mark dirty.
+    /// If the pending queue exceeds max_pending, drops the oldest entries to
+    /// prevent unbounded memory growth during long offline periods.
     async fn record_op(&self, op: LogOp) {
         let entry = self.make_entry(op).await;
-        self.pending.lock().await.push(entry);
+        let mut pending = self.pending.lock().await;
+        pending.push(entry);
+        let max = self.config.max_pending;
+        if max > 0 && pending.len() > max {
+            let overflow = pending.len() - max;
+            log::warn!(
+                "pending queue exceeded max_pending ({}), dropping {} oldest entries",
+                max,
+                overflow
+            );
+            pending.drain(..overflow);
+        }
+        drop(pending);
         self.set_state(SyncState::Dirty, None).await;
     }
 
@@ -483,12 +502,33 @@ impl SyncEngine {
             cb(SyncState::Syncing, Some("uploading"));
         }
 
+        // Acquire the write lock before uploading. This coordinates with other
+        // devices so only one uploads at a time (prevents wasted presign URLs
+        // and duplicate sequence assignment). Lock failures are non-fatal —
+        // data integrity is guaranteed by the append-only log with nanosecond
+        // keys, not by the lock.
+        let lock_held = match self.acquire_lock().await {
+            Ok(()) => true,
+            Err(SyncError::Auth(_)) => false, // auth error — will be caught by do_sync
+            Err(e) => {
+                log::warn!("failed to acquire sync lock (proceeding anyway): {e}");
+                false
+            }
+        };
+
         // Try do_sync; on auth error, attempt token refresh and retry once.
         let result = match self.do_sync().await {
             Ok(synced) => Ok(synced),
             Err(ref e) if matches!(e, SyncError::Auth(_)) => self.try_refresh_and_retry().await,
             Err(e) => Err(e),
         };
+
+        // Always release the lock, even on error
+        if lock_held {
+            if let Err(e) = self.release_lock().await {
+                log::warn!("failed to release sync lock: {e}");
+            }
+        }
 
         match result {
             Ok(synced) => {
