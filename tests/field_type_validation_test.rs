@@ -36,7 +36,7 @@ async fn typed_schema_accepts_valid_mutation() {
     db.load_schema_from_json(&typed_schema_json())
         .await
         .unwrap();
-    db.schema_manager
+    db.schema_manager()
         .set_schema_state("Person", SchemaState::Approved)
         .await
         .unwrap();
@@ -56,7 +56,7 @@ async fn typed_schema_accepts_valid_mutation() {
         MutationType::Create,
     );
     let result = db
-        .mutation_manager
+        .mutation_manager()
         .write_mutations_batch_async(vec![mutation])
         .await;
     assert!(result.is_ok(), "Valid typed mutation should succeed");
@@ -68,7 +68,7 @@ async fn typed_schema_rejects_wrong_type() {
     db.load_schema_from_json(&typed_schema_json())
         .await
         .unwrap();
-    db.schema_manager
+    db.schema_manager()
         .set_schema_state("Person", SchemaState::Approved)
         .await
         .unwrap();
@@ -87,7 +87,7 @@ async fn typed_schema_rejects_wrong_type() {
         MutationType::Create,
     );
     let result = db
-        .mutation_manager
+        .mutation_manager()
         .write_mutations_batch_async(vec![mutation])
         .await;
     assert!(result.is_err(), "Wrong type should be rejected");
@@ -110,7 +110,7 @@ async fn typed_schema_rejects_wrong_array_element_type() {
     db.load_schema_from_json(&typed_schema_json())
         .await
         .unwrap();
-    db.schema_manager
+    db.schema_manager()
         .set_schema_state("Person", SchemaState::Approved)
         .await
         .unwrap();
@@ -130,7 +130,7 @@ async fn typed_schema_rejects_wrong_array_element_type() {
         MutationType::Create,
     );
     let result = db
-        .mutation_manager
+        .mutation_manager()
         .write_mutations_batch_async(vec![mutation])
         .await;
     assert!(
@@ -147,7 +147,7 @@ async fn untyped_schema_accepts_anything() {
     db.load_schema_from_json(&untyped_schema_json())
         .await
         .unwrap();
-    db.schema_manager
+    db.schema_manager()
         .set_schema_state("Freeform", SchemaState::Approved)
         .await
         .unwrap();
@@ -165,7 +165,7 @@ async fn untyped_schema_accepts_anything() {
         MutationType::Create,
     );
     let result = db
-        .mutation_manager
+        .mutation_manager()
         .write_mutations_batch_async(vec![mutation])
         .await;
     assert!(
@@ -185,7 +185,7 @@ async fn schema_ref_type_enforced() {
         .range_key("id")
         .build_json();
     db.load_schema_from_json(&post_json).await.unwrap();
-    db.schema_manager
+    db.schema_manager()
         .set_schema_state("Post", SchemaState::Approved)
         .await
         .unwrap();
@@ -200,7 +200,7 @@ async fn schema_ref_type_enforced() {
         .ref_field("posts", "Post")
         .build_json();
     db.load_schema_from_json(&user_json).await.unwrap();
-    db.schema_manager
+    db.schema_manager()
         .set_schema_state("User", SchemaState::Approved)
         .await
         .unwrap();
@@ -215,7 +215,7 @@ async fn schema_ref_type_enforced() {
     fields.insert("id".to_string(), json!("u1"));
 
     let result = db
-        .mutation_manager
+        .mutation_manager()
         .write_mutations_batch_async(vec![Mutation::new(
             "User".to_string(),
             fields,
@@ -240,7 +240,7 @@ async fn schema_ref_type_enforced() {
     bad_fields.insert("id".to_string(), json!("u2"));
 
     let result = db
-        .mutation_manager
+        .mutation_manager()
         .write_mutations_batch_async(vec![Mutation::new(
             "User".to_string(),
             bad_fields,
