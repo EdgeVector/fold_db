@@ -73,8 +73,6 @@ impl DbOperations {
         self.process_results_store()
             .scan_items_with_prefix(prefix)
             .await
-            .map_err(|e| {
-                SchemaError::InvalidData(format!("Failed to scan process results: {}", e))
-            })
+            .map_err(|e| SchemaError::InvalidData(format!("Failed to scan process results: {}", e)))
     }
 }
