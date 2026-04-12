@@ -7,4 +7,3 @@ pub const DEFAULT_SCHEMA_SERVICE_PORT: u16 = 9002;
 
 /// The sole ID for the single public key used for signing validation.
 pub const SINGLE_PUBLIC_KEY_ID: &str = "SYSTEM_WIDE_PUBLIC_KEY";
-
