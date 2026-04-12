@@ -1,6 +1,8 @@
 use super::core::DbOperations;
 use crate::schema::SchemaError;
 use crate::storage::traits::TypedStore;
+use serde::de::DeserializeOwned;
+use serde::Serialize;
 use uuid::Uuid;
 
 impl DbOperations {
@@ -36,5 +38,43 @@ impl DbOperations {
             .await?;
         self.metadata_store().inner().flush().await?;
         Ok(())
+    }
+
+    // ===== Idempotency store operations =====
+
+    /// Retrieve an item from the idempotency store by key.
+    pub async fn get_idempotency_item<T: DeserializeOwned + Send + Sync>(
+        &self,
+        key: &str,
+    ) -> Result<Option<T>, SchemaError> {
+        self.idempotency_store()
+            .get_item::<T>(key)
+            .await
+            .map_err(|e| SchemaError::InvalidData(format!("Failed to get idempotency item: {}", e)))
+    }
+
+    /// Store an item in the idempotency store.
+    pub async fn put_idempotency_item<T: Serialize + Send + Sync>(
+        &self,
+        key: &str,
+        item: &T,
+    ) -> Result<(), SchemaError> {
+        self.idempotency_store().put_item(key, item).await?;
+        Ok(())
+    }
+
+    // ===== Process results store operations =====
+
+    /// Scan process results by key prefix.
+    pub async fn scan_process_results<T: DeserializeOwned + Send + Sync>(
+        &self,
+        prefix: &str,
+    ) -> Result<Vec<(String, T)>, SchemaError> {
+        self.process_results_store()
+            .scan_items_with_prefix(prefix)
+            .await
+            .map_err(|e| {
+                SchemaError::InvalidData(format!("Failed to scan process results: {}", e))
+            })
     }
 }

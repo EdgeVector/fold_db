@@ -95,19 +95,9 @@ async fn test_atom_deduplication_in_db() {
     );
 
     // Verify only one atom is stored in the database
-    // Use the same pattern as in atom_operations_v2.rs
-    let atom_key = format!("atom:{}", atom1.uuid());
-    // atoms_store() returns &Arc<TypedKvStore>, dereference to get TypedKvStore which implements TypedStore
-    use fold_db::storage::traits::TypedStore;
-    let stored_atom: Option<Atom> = (**db_ops.atoms_store())
-        .get_item::<Atom>(&atom_key)
+    let stored_atom: Option<Atom> = db_ops
+        .get_atom_by_uuid(atom1.uuid(), None)
         .await
-        .map_err(|e| {
-            fold_db::schema::SchemaError::InvalidData(format!(
-                "Failed to check existing atom: {}",
-                e
-            ))
-        })
         .expect("Failed to get atom");
 
     assert!(stored_atom.is_some(), "Atom should be stored in database");

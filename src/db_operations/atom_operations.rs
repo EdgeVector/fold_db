@@ -16,6 +16,22 @@ pub enum MoleculeData {
 }
 
 impl DbOperations {
+    /// Retrieve a single atom by its UUID.
+    ///
+    /// When `org_hash` is `Some`, the key is prefixed with `{org_hash}:`.
+    pub async fn get_atom_by_uuid(
+        &self,
+        atom_uuid: &str,
+        org_hash: Option<&str>,
+    ) -> Result<Option<Atom>, SchemaError> {
+        let base_key = format!("atom:{}", atom_uuid);
+        let key = build_storage_key(org_hash, &base_key);
+        self.atoms_store()
+            .get_item::<Atom>(&key)
+            .await
+            .map_err(|e| SchemaError::InvalidData(format!("Failed to fetch atom: {}", e)))
+    }
+
     /// Creates an atom in memory without storing it.
     /// Used for batch operations where atoms are collected first then stored together.
     pub fn create_atom(
