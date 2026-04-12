@@ -586,11 +586,6 @@ impl FoldDB {
         &self.mutation_manager
     }
 
-    /// Get the mutation manager (mutable access via interior mutability if needed)
-    pub fn mutation_manager_mut(&self) -> &MutationManager {
-        &self.mutation_manager
-    }
-
     /// Get the message bus for publishing events
     pub fn message_bus(&self) -> Arc<AsyncMessageBus> {
         Arc::clone(&self.message_bus)

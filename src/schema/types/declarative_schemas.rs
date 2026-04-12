@@ -353,6 +353,7 @@ impl PartialEq for DeclarativeSchemaDefinition {
             && self.hash == other.hash
             && self.field_molecule_uuids == other.field_molecule_uuids
             && self.field_classifications == other.field_classifications
+            && self.field_descriptions == other.field_descriptions
             && self.field_data_classifications == other.field_data_classifications
             && self.field_interest_categories == other.field_interest_categories
             && self.ref_fields == other.ref_fields
@@ -360,6 +361,7 @@ impl PartialEq for DeclarativeSchemaDefinition {
             && self.identity_hash == other.identity_hash
             && self.superseded_by == other.superseded_by
             && self.org_hash == other.org_hash
+            && self.trust_domain == other.trust_domain
             && self.field_access_policies == other.field_access_policies
         // Exclude runtime_fields, inputs_schema_fields, source_schemas, and hash mappings
         // These are derived/runtime state and don't affect schema identity
@@ -926,6 +928,35 @@ mod tests {
         assert_ne!(
             schema, schema2,
             "schemas with different field_access_policies should not be equal"
+        );
+    }
+
+    #[test]
+    fn test_partial_eq_includes_field_descriptions() {
+        let mut s1 = DeclarativeSchemaDefinition::new(
+            "Test".to_string(),
+            SchemaType::Single,
+            None,
+            Some(vec!["name".to_string()]),
+            None,
+            None,
+        );
+        let mut s2 = s1.clone();
+        assert_eq!(s1, s2, "cloned schemas should be equal");
+
+        s2.field_descriptions
+            .insert("name".to_string(), "A person's name".to_string());
+        assert_ne!(
+            s1, s2,
+            "schemas with different field_descriptions should not be equal"
+        );
+
+        // Also verify trust_domain
+        s2 = s1.clone();
+        s1.trust_domain = Some("personal".to_string());
+        assert_ne!(
+            s1, s2,
+            "schemas with different trust_domain should not be equal"
         );
     }
 }
