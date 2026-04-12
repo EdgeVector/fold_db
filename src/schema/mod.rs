@@ -22,16 +22,13 @@
 //! queries and mutations against the database.
 
 // Internal modules
-pub mod constants;
 pub mod core;
-pub mod molecule_variants;
 pub mod persistence;
 pub mod schema_types;
 pub mod types;
 
 // Public re-exports
 pub use core::SchemaCore;
-pub use molecule_variants::MoleculeVariant;
 pub use schema_types::{SchemaState, SchemaWithState};
 pub use types::{Schema, SchemaError};
 

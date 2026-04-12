@@ -68,7 +68,7 @@ async fn mutations_work_after_simulated_restart() {
     // Write first mutation
     let mutation1 = make_mutation("original.txt", "Original content", "text");
     fold_db
-        .mutation_manager_mut()
+        .mutation_manager()
         .write_mutations_batch_async(vec![mutation1])
         .await
         .expect("write mutation 1");
@@ -111,7 +111,7 @@ async fn mutations_work_after_simulated_restart() {
     // Write second mutation after simulated restart
     let mutation2 = make_mutation("after_restart.txt", "Post-restart content", "text");
     fold_db
-        .mutation_manager_mut()
+        .mutation_manager()
         .write_mutations_batch_async(vec![mutation2])
         .await
         .expect("write mutation 2 after simulated restart");
@@ -164,7 +164,7 @@ async fn molecule_uuid_stays_consistent_across_batches() {
     // Write first batch
     let mutation1 = make_mutation("a.txt", "Content A", "text");
     fold_db
-        .mutation_manager_mut()
+        .mutation_manager()
         .write_mutations_batch_async(vec![mutation1])
         .await
         .expect("write mutation 1");
@@ -188,7 +188,7 @@ async fn molecule_uuid_stays_consistent_across_batches() {
     // Write second batch
     let mutation2 = make_mutation("b.txt", "Content B", "text");
     fold_db
-        .mutation_manager_mut()
+        .mutation_manager()
         .write_mutations_batch_async(vec![mutation2])
         .await
         .expect("write mutation 2");
