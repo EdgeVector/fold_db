@@ -8,12 +8,11 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use super::infrastructure::message_bus::events::query_events::MutationExecuted;
-
-use super::infrastructure::message_bus::{AsyncMessageBus, Event};
 use super::orchestration::index_status::IndexStatusTracker;
 use crate::atom::{Atom, FieldKey, MutationEvent};
 use crate::db_operations::{DbOperations, MoleculeData};
+use crate::messaging::events::query_events::MutationExecuted;
+use crate::messaging::{AsyncMessageBus, Event};
 use crate::schema::types::field::{Field, FieldVariant};
 use crate::schema::types::{KeyValue, Mutation, Schema};
 use crate::schema::{SchemaCore, SchemaError};
@@ -788,13 +787,11 @@ impl MutationManager {
             let data = mutation.fields_and_values.clone();
             let metadata = mutation.metadata.clone();
 
-            let mutation_context = Some(
-                crate::fold_db_core::infrastructure::message_bus::atom_events::MutationContext {
-                    key_value: Some(key_value),
-                    mutation_hash: Some(mutation_id.clone()),
-                    incremental: true,
-                },
-            );
+            let mutation_context = Some(crate::messaging::atom_events::MutationContext {
+                key_value: Some(key_value),
+                mutation_hash: Some(mutation_id.clone()),
+                incremental: true,
+            });
 
             let mol_versions_opt = if mol_versions.is_empty() {
                 None

@@ -3,7 +3,7 @@
 //! This module eliminates duplicate database setup code found across 11+ files
 
 use crate::db_operations::DbOperations;
-use crate::fold_db_core::infrastructure::message_bus::AsyncMessageBus;
+use crate::messaging::AsyncMessageBus;
 use crate::storage::SledPool;
 use std::sync::Arc;
 

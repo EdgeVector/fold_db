@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 
 use serde_json;
 
-use crate::fold_db_core::infrastructure::message_bus::AsyncMessageBus;
+use crate::messaging::AsyncMessageBus;
 use crate::schema::types::field::Field;
 use crate::schema::types::{DeclarativeSchemaDefinition, Schema, SchemaError};
 use crate::schema::{SchemaState, SchemaWithState};

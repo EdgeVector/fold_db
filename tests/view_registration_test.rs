@@ -143,9 +143,7 @@ async fn view_persists_across_schema_core_instances() {
             .await
             .unwrap(),
     );
-    let bus = std::sync::Arc::new(
-        fold_db::fold_db_core::infrastructure::message_bus::AsyncMessageBus::new(),
-    );
+    let bus = std::sync::Arc::new(fold_db::messaging::AsyncMessageBus::new());
 
     // First instance: load schema and register view
     {

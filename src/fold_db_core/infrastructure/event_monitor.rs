@@ -10,7 +10,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use log::info;
 
 pub use super::event_statistics::{EventStatistics, MutationStats, QueryStats};
-use super::message_bus::{AsyncMessageBus, Event};
+use crate::messaging::{AsyncMessageBus, Event};
 
 /// Centralized event monitor that provides system-wide observability
 pub struct EventMonitor {
@@ -138,10 +138,8 @@ impl EventMonitor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fold_db_core::infrastructure::message_bus::atom_events::{
-        AtomCreated, FieldValueSet, MoleculeCreated,
-    };
-    use crate::fold_db_core::infrastructure::message_bus::AsyncMessageBus;
+    use crate::messaging::atom_events::{AtomCreated, FieldValueSet, MoleculeCreated};
+    use crate::messaging::AsyncMessageBus;
     use serde_json::json;
     use std::time::Duration;
 
