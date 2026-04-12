@@ -44,7 +44,7 @@ async fn mutating_source_invalidates_view_cache() {
     db.load_schema_from_json(&blogpost_schema_json())
         .await
         .unwrap();
-    db.schema_manager
+    db.schema_manager()
         .set_schema_state("BlogPost", SchemaState::Approved)
         .await
         .unwrap();
@@ -52,7 +52,7 @@ async fn mutating_source_invalidates_view_cache() {
     let mut fields = HashMap::new();
     fields.insert("content".to_string(), json!("original"));
     fields.insert("publish_date".to_string(), json!("2026-01-01"));
-    db.mutation_manager
+    db.mutation_manager()
         .write_mutations_batch_async(vec![Mutation::new(
             "BlogPost".to_string(),
             fields,
@@ -63,19 +63,19 @@ async fn mutating_source_invalidates_view_cache() {
         .await
         .unwrap();
 
-    db.schema_manager
+    db.schema_manager()
         .register_view(identity_view("CV", "BlogPost", "content"))
         .await
         .unwrap();
 
     // First query: populates cache
     let query = Query::new("CV".to_string(), vec!["content".to_string()]);
-    let results = db.query_executor.query(query.clone()).await.unwrap();
+    let results = db.query_executor().query(query.clone()).await.unwrap();
     let first_value = results["content"].values().next().unwrap().value.clone();
     assert_eq!(first_value, json!("original"));
 
     // Verify cache state is Cached
-    let state = db.db_ops.get_view_cache_state("CV").await.unwrap();
+    let state = db.db_ops().get_view_cache_state("CV").await.unwrap();
     assert!(
         matches!(state, ViewCacheState::Cached { .. }),
         "View should be cached after first query"
@@ -85,7 +85,7 @@ async fn mutating_source_invalidates_view_cache() {
     let mut fields2 = HashMap::new();
     fields2.insert("content".to_string(), json!("updated"));
     fields2.insert("publish_date".to_string(), json!("2026-01-02"));
-    db.mutation_manager
+    db.mutation_manager()
         .write_mutations_batch_async(vec![Mutation::new(
             "BlogPost".to_string(),
             fields2,
@@ -97,7 +97,7 @@ async fn mutating_source_invalidates_view_cache() {
         .unwrap();
 
     // Verify cache state was invalidated to Empty
-    let state_after = db.db_ops.get_view_cache_state("CV").await.unwrap();
+    let state_after = db.db_ops().get_view_cache_state("CV").await.unwrap();
     assert!(
         matches!(state_after, ViewCacheState::Empty),
         "View cache should be invalidated after source mutation, got {:?}",
@@ -105,7 +105,7 @@ async fn mutating_source_invalidates_view_cache() {
     );
 
     // Re-query: should fetch fresh data
-    let results2 = db.query_executor.query(query).await.unwrap();
+    let results2 = db.query_executor().query(query).await.unwrap();
     let all_values: Vec<_> = results2["content"]
         .values()
         .map(|fv| fv.value.clone())
@@ -124,7 +124,7 @@ async fn re_query_after_invalidation_re_caches() {
     db.load_schema_from_json(&blogpost_schema_json())
         .await
         .unwrap();
-    db.schema_manager
+    db.schema_manager()
         .set_schema_state("BlogPost", SchemaState::Approved)
         .await
         .unwrap();
@@ -132,7 +132,7 @@ async fn re_query_after_invalidation_re_caches() {
     let mut fields = HashMap::new();
     fields.insert("title".to_string(), json!("Hello"));
     fields.insert("publish_date".to_string(), json!("2026-01-01"));
-    db.mutation_manager
+    db.mutation_manager()
         .write_mutations_batch_async(vec![Mutation::new(
             "BlogPost".to_string(),
             fields,
@@ -143,20 +143,20 @@ async fn re_query_after_invalidation_re_caches() {
         .await
         .unwrap();
 
-    db.schema_manager
+    db.schema_manager()
         .register_view(identity_view("TV", "BlogPost", "title"))
         .await
         .unwrap();
 
     // First query: caches
     let query = Query::new("TV".to_string(), vec!["title".to_string()]);
-    db.query_executor.query(query.clone()).await.unwrap();
+    db.query_executor().query(query.clone()).await.unwrap();
 
     // Invalidate
     let mut fields2 = HashMap::new();
     fields2.insert("title".to_string(), json!("Updated"));
     fields2.insert("publish_date".to_string(), json!("2026-01-02"));
-    db.mutation_manager
+    db.mutation_manager()
         .write_mutations_batch_async(vec![Mutation::new(
             "BlogPost".to_string(),
             fields2,
@@ -168,15 +168,15 @@ async fn re_query_after_invalidation_re_caches() {
         .unwrap();
 
     assert!(matches!(
-        db.db_ops.get_view_cache_state("TV").await.unwrap(),
+        db.db_ops().get_view_cache_state("TV").await.unwrap(),
         ViewCacheState::Empty
     ));
 
     // Re-query: should re-cache
-    db.query_executor.query(query).await.unwrap();
+    db.query_executor().query(query).await.unwrap();
 
     assert!(matches!(
-        db.db_ops.get_view_cache_state("TV").await.unwrap(),
+        db.db_ops().get_view_cache_state("TV").await.unwrap(),
         ViewCacheState::Cached { .. }
     ));
 }
@@ -189,7 +189,7 @@ async fn cascading_invalidation_through_view_chain() {
     db.load_schema_from_json(&blogpost_schema_json())
         .await
         .unwrap();
-    db.schema_manager
+    db.schema_manager()
         .set_schema_state("BlogPost", SchemaState::Approved)
         .await
         .unwrap();
@@ -197,7 +197,7 @@ async fn cascading_invalidation_through_view_chain() {
     let mut fields = HashMap::new();
     fields.insert("content".to_string(), json!("original"));
     fields.insert("publish_date".to_string(), json!("2026-01-01"));
-    db.mutation_manager
+    db.mutation_manager()
         .write_mutations_batch_async(vec![Mutation::new(
             "BlogPost".to_string(),
             fields,
@@ -209,7 +209,7 @@ async fn cascading_invalidation_through_view_chain() {
         .unwrap();
 
     // ViewA reads from BlogPost.content
-    db.schema_manager
+    db.schema_manager()
         .register_view(identity_view("ViewA", "BlogPost", "content"))
         .await
         .unwrap();
@@ -223,21 +223,21 @@ async fn cascading_invalidation_through_view_chain() {
         None,
         HashMap::from([("content".to_string(), FieldValueType::Any)]),
     );
-    db.schema_manager.register_view(view_b).await.unwrap();
+    db.schema_manager().register_view(view_b).await.unwrap();
 
     // Query both views to populate caches
     let query_a = Query::new("ViewA".to_string(), vec!["content".to_string()]);
     let query_b = Query::new("ViewB".to_string(), vec!["content".to_string()]);
-    db.query_executor.query(query_a).await.unwrap();
-    db.query_executor.query(query_b).await.unwrap();
+    db.query_executor().query(query_a).await.unwrap();
+    db.query_executor().query(query_b).await.unwrap();
 
     // Both should be cached
     assert!(matches!(
-        db.db_ops.get_view_cache_state("ViewA").await.unwrap(),
+        db.db_ops().get_view_cache_state("ViewA").await.unwrap(),
         ViewCacheState::Cached { .. }
     ));
     assert!(matches!(
-        db.db_ops.get_view_cache_state("ViewB").await.unwrap(),
+        db.db_ops().get_view_cache_state("ViewB").await.unwrap(),
         ViewCacheState::Cached { .. }
     ));
 
@@ -245,7 +245,7 @@ async fn cascading_invalidation_through_view_chain() {
     let mut fields2 = HashMap::new();
     fields2.insert("content".to_string(), json!("updated"));
     fields2.insert("publish_date".to_string(), json!("2026-01-02"));
-    db.mutation_manager
+    db.mutation_manager()
         .write_mutations_batch_async(vec![Mutation::new(
             "BlogPost".to_string(),
             fields2,
@@ -258,7 +258,7 @@ async fn cascading_invalidation_through_view_chain() {
 
     // ViewA (direct dependency) is invalidated. May already be re-Cached
     // by background precomputation task.
-    let state_a = db.db_ops.get_view_cache_state("ViewA").await.unwrap();
+    let state_a = db.db_ops().get_view_cache_state("ViewA").await.unwrap();
     assert!(
         matches!(
             state_a,
@@ -270,7 +270,7 @@ async fn cascading_invalidation_through_view_chain() {
 
     // ViewB should ALSO be invalidated (cascade: ViewB depends on ViewA)
     // Deep views transition to Computing for background precomputation
-    let state_b = db.db_ops.get_view_cache_state("ViewB").await.unwrap();
+    let state_b = db.db_ops().get_view_cache_state("ViewB").await.unwrap();
     assert!(
         matches!(
             state_b,
@@ -288,7 +288,7 @@ async fn view_chain_query_returns_source_data() {
     db.load_schema_from_json(&blogpost_schema_json())
         .await
         .unwrap();
-    db.schema_manager
+    db.schema_manager()
         .set_schema_state("BlogPost", SchemaState::Approved)
         .await
         .unwrap();
@@ -296,7 +296,7 @@ async fn view_chain_query_returns_source_data() {
     let mut fields = HashMap::new();
     fields.insert("title".to_string(), json!("Chain Test"));
     fields.insert("publish_date".to_string(), json!("2026-01-01"));
-    db.mutation_manager
+    db.mutation_manager()
         .write_mutations_batch_async(vec![Mutation::new(
             "BlogPost".to_string(),
             fields,
@@ -308,7 +308,7 @@ async fn view_chain_query_returns_source_data() {
         .unwrap();
 
     // ViewA reads from BlogPost.title
-    db.schema_manager
+    db.schema_manager()
         .register_view(identity_view("ViewA", "BlogPost", "title"))
         .await
         .unwrap();
@@ -322,11 +322,11 @@ async fn view_chain_query_returns_source_data() {
         None,
         HashMap::from([("title".to_string(), FieldValueType::Any)]),
     );
-    db.schema_manager.register_view(view_b).await.unwrap();
+    db.schema_manager().register_view(view_b).await.unwrap();
 
     // Query ViewB — should recursively resolve through ViewA to BlogPost
     let query = Query::new("ViewB".to_string(), vec!["title".to_string()]);
-    let results = db.query_executor.query(query).await.unwrap();
+    let results = db.query_executor().query(query).await.unwrap();
 
     assert!(results.contains_key("title"));
     let values: Vec<_> = results["title"]
@@ -347,7 +347,7 @@ async fn three_level_chain_resolves_to_source() {
     db.load_schema_from_json(&blogpost_schema_json())
         .await
         .unwrap();
-    db.schema_manager
+    db.schema_manager()
         .set_schema_state("BlogPost", SchemaState::Approved)
         .await
         .unwrap();
@@ -355,7 +355,7 @@ async fn three_level_chain_resolves_to_source() {
     let mut fields = HashMap::new();
     fields.insert("content".to_string(), json!("deep chain"));
     fields.insert("publish_date".to_string(), json!("2026-01-01"));
-    db.mutation_manager
+    db.mutation_manager()
         .write_mutations_batch_async(vec![Mutation::new(
             "BlogPost".to_string(),
             fields,
@@ -367,26 +367,26 @@ async fn three_level_chain_resolves_to_source() {
         .unwrap();
 
     // ViewA → BlogPost
-    db.schema_manager
+    db.schema_manager()
         .register_view(identity_view("ViewA", "BlogPost", "content"))
         .await
         .unwrap();
 
     // ViewB → ViewA
-    db.schema_manager
+    db.schema_manager()
         .register_view(identity_view("ViewB", "ViewA", "content"))
         .await
         .unwrap();
 
     // ViewC → ViewB
-    db.schema_manager
+    db.schema_manager()
         .register_view(identity_view("ViewC", "ViewB", "content"))
         .await
         .unwrap();
 
     // Query ViewC — resolves through ViewB → ViewA → BlogPost
     let query = Query::new("ViewC".to_string(), vec!["content".to_string()]);
-    let results = db.query_executor.query(query).await.unwrap();
+    let results = db.query_executor().query(query).await.unwrap();
 
     let values: Vec<_> = results["content"]
         .values()
@@ -406,7 +406,7 @@ async fn chain_re_query_after_cascade_invalidation_gets_fresh_data() {
     db.load_schema_from_json(&blogpost_schema_json())
         .await
         .unwrap();
-    db.schema_manager
+    db.schema_manager()
         .set_schema_state("BlogPost", SchemaState::Approved)
         .await
         .unwrap();
@@ -414,7 +414,7 @@ async fn chain_re_query_after_cascade_invalidation_gets_fresh_data() {
     let mut fields = HashMap::new();
     fields.insert("content".to_string(), json!("v1"));
     fields.insert("publish_date".to_string(), json!("2026-01-01"));
-    db.mutation_manager
+    db.mutation_manager()
         .write_mutations_batch_async(vec![Mutation::new(
             "BlogPost".to_string(),
             fields,
@@ -426,18 +426,18 @@ async fn chain_re_query_after_cascade_invalidation_gets_fresh_data() {
         .unwrap();
 
     // ViewA → BlogPost, ViewB → ViewA
-    db.schema_manager
+    db.schema_manager()
         .register_view(identity_view("ViewA", "BlogPost", "content"))
         .await
         .unwrap();
-    db.schema_manager
+    db.schema_manager()
         .register_view(identity_view("ViewB", "ViewA", "content"))
         .await
         .unwrap();
 
     // Populate caches
     let query_b = Query::new("ViewB".to_string(), vec!["content".to_string()]);
-    let results = db.query_executor.query(query_b.clone()).await.unwrap();
+    let results = db.query_executor().query(query_b.clone()).await.unwrap();
     let val = results["content"].values().next().unwrap().value.clone();
     assert_eq!(val, json!("v1"));
 
@@ -445,7 +445,7 @@ async fn chain_re_query_after_cascade_invalidation_gets_fresh_data() {
     let mut fields2 = HashMap::new();
     fields2.insert("content".to_string(), json!("v2"));
     fields2.insert("publish_date".to_string(), json!("2026-01-01"));
-    db.mutation_manager
+    db.mutation_manager()
         .write_mutations_batch_async(vec![Mutation::new(
             "BlogPost".to_string(),
             fields2,
@@ -460,7 +460,7 @@ async fn chain_re_query_after_cascade_invalidation_gets_fresh_data() {
     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
 
     // Re-query ViewB — should get fresh "v2" through the entire chain
-    let results2 = db.query_executor.query(query_b).await.unwrap();
+    let results2 = db.query_executor().query(query_b).await.unwrap();
     let values: Vec<_> = results2["content"]
         .values()
         .map(|fv| fv.value.clone())
@@ -480,7 +480,7 @@ async fn multi_source_view_from_two_views() {
     db.load_schema_from_json(&blogpost_schema_json())
         .await
         .unwrap();
-    db.schema_manager
+    db.schema_manager()
         .set_schema_state("BlogPost", SchemaState::Approved)
         .await
         .unwrap();
@@ -490,7 +490,7 @@ async fn multi_source_view_from_two_views() {
         .range_key("publish_date")
         .build_json();
     db.load_schema_from_json(&author_json).await.unwrap();
-    db.schema_manager
+    db.schema_manager()
         .set_schema_state("Author", SchemaState::Approved)
         .await
         .unwrap();
@@ -499,7 +499,7 @@ async fn multi_source_view_from_two_views() {
     let mut bp_fields = HashMap::new();
     bp_fields.insert("title".to_string(), json!("Hello"));
     bp_fields.insert("publish_date".to_string(), json!("2026-01-01"));
-    db.mutation_manager
+    db.mutation_manager()
         .write_mutations_batch_async(vec![Mutation::new(
             "BlogPost".to_string(),
             bp_fields,
@@ -513,7 +513,7 @@ async fn multi_source_view_from_two_views() {
     let mut author_fields = HashMap::new();
     author_fields.insert("name".to_string(), json!("Tom"));
     author_fields.insert("publish_date".to_string(), json!("2026-01-01"));
-    db.mutation_manager
+    db.mutation_manager()
         .write_mutations_batch_async(vec![Mutation::new(
             "Author".to_string(),
             author_fields,
@@ -525,7 +525,7 @@ async fn multi_source_view_from_two_views() {
         .unwrap();
 
     // ViewA → BlogPost.title, ViewB → Author.name
-    db.schema_manager
+    db.schema_manager()
         .register_view(identity_view("ViewA", "BlogPost", "title"))
         .await
         .unwrap();
@@ -538,7 +538,7 @@ async fn multi_source_view_from_two_views() {
         None,
         HashMap::from([("name".to_string(), FieldValueType::Any)]),
     );
-    db.schema_manager.register_view(view_b).await.unwrap();
+    db.schema_manager().register_view(view_b).await.unwrap();
 
     // ViewC reads from both ViewA and ViewB
     let view_c = TransformView::new(
@@ -555,11 +555,11 @@ async fn multi_source_view_from_two_views() {
             ("name".to_string(), FieldValueType::Any),
         ]),
     );
-    db.schema_manager.register_view(view_c).await.unwrap();
+    db.schema_manager().register_view(view_c).await.unwrap();
 
     // Query ViewC — should merge data from both source views
     let query = Query::new("ViewC".to_string(), vec![]);
-    let results = db.query_executor.query(query).await.unwrap();
+    let results = db.query_executor().query(query).await.unwrap();
 
     assert!(
         results.contains_key("title"),
@@ -583,7 +583,7 @@ async fn three_level_cascade_invalidation() {
     db.load_schema_from_json(&blogpost_schema_json())
         .await
         .unwrap();
-    db.schema_manager
+    db.schema_manager()
         .set_schema_state("BlogPost", SchemaState::Approved)
         .await
         .unwrap();
@@ -591,7 +591,7 @@ async fn three_level_cascade_invalidation() {
     let mut fields = HashMap::new();
     fields.insert("content".to_string(), json!("original"));
     fields.insert("publish_date".to_string(), json!("2026-01-01"));
-    db.mutation_manager
+    db.mutation_manager()
         .write_mutations_batch_async(vec![Mutation::new(
             "BlogPost".to_string(),
             fields,
@@ -603,15 +603,15 @@ async fn three_level_cascade_invalidation() {
         .unwrap();
 
     // ViewA → BlogPost, ViewB → ViewA, ViewC → ViewB
-    db.schema_manager
+    db.schema_manager()
         .register_view(identity_view("ViewA", "BlogPost", "content"))
         .await
         .unwrap();
-    db.schema_manager
+    db.schema_manager()
         .register_view(identity_view("ViewB", "ViewA", "content"))
         .await
         .unwrap();
-    db.schema_manager
+    db.schema_manager()
         .register_view(identity_view("ViewC", "ViewB", "content"))
         .await
         .unwrap();
@@ -619,14 +619,14 @@ async fn three_level_cascade_invalidation() {
     // Populate all caches
     for name in &["ViewA", "ViewB", "ViewC"] {
         let q = Query::new(name.to_string(), vec!["content".to_string()]);
-        db.query_executor.query(q).await.unwrap();
+        db.query_executor().query(q).await.unwrap();
     }
 
     // All should be cached
     for name in &["ViewA", "ViewB", "ViewC"] {
         assert!(
             matches!(
-                db.db_ops.get_view_cache_state(name).await.unwrap(),
+                db.db_ops().get_view_cache_state(name).await.unwrap(),
                 ViewCacheState::Cached { .. }
             ),
             "{} should be cached",
@@ -638,7 +638,7 @@ async fn three_level_cascade_invalidation() {
     let mut fields2 = HashMap::new();
     fields2.insert("content".to_string(), json!("changed"));
     fields2.insert("publish_date".to_string(), json!("2026-01-02"));
-    db.mutation_manager
+    db.mutation_manager()
         .write_mutations_batch_async(vec![Mutation::new(
             "BlogPost".to_string(),
             fields2,
@@ -653,7 +653,7 @@ async fn three_level_cascade_invalidation() {
     // Deep views (ViewB, ViewC) may be Computing or already re-Cached
     // via background precomputation.
     for name in &["ViewA", "ViewB", "ViewC"] {
-        let state = db.db_ops.get_view_cache_state(name).await.unwrap();
+        let state = db.db_ops().get_view_cache_state(name).await.unwrap();
         assert!(
             matches!(
                 state,

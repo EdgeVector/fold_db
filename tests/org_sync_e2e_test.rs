@@ -35,7 +35,7 @@ async fn register_schema(db: &FoldDB, name: &str, org_hash: Option<&str>) {
     }
     let json_str = builder.build_json();
     db.load_schema_from_json(&json_str).await.unwrap();
-    db.schema_manager
+    db.schema_manager()
         .set_schema_state(name, SchemaState::Approved)
         .await
         .unwrap();
@@ -60,7 +60,7 @@ async fn write_mutation(
         "test-pub-key".to_string(),
         MutationType::Create,
     );
-    db.mutation_manager
+    db.mutation_manager()
         .write_mutations_batch_async(vec![mutation])
         .await
         .expect("Failed to write mutation")
@@ -70,7 +70,7 @@ async fn query_field_values(db: &FoldDB, schema_name: &str, field: &str) -> Vec<
     let query = Query::new(schema_name.to_string(), vec![field.to_string()]);
     let access = AccessContext::owner("test-owner");
     let result = db
-        .query_executor
+        .query_executor()
         .query_with_access(query, &access, None)
         .await
         .expect("Query failed");
@@ -189,12 +189,12 @@ async fn test_org_data_sync_between_two_nodes() {
     let schema: fold_db::schema::Schema =
         serde_json::from_slice(&schema_bytes).expect("Failed to deserialize schema");
     node2
-        .schema_manager
+        .schema_manager()
         .load_schema_internal(schema)
         .await
         .expect("Failed to load schema on node2");
     node2
-        .schema_manager
+        .schema_manager()
         .set_schema_state("sync_notes", SchemaState::Approved)
         .await
         .unwrap();
@@ -263,7 +263,7 @@ async fn test_org_sync_with_updates() {
         MutationType::Update,
     );
     node1
-        .mutation_manager
+        .mutation_manager()
         .write_mutations_batch_async(vec![update])
         .await
         .unwrap();
@@ -308,12 +308,12 @@ async fn test_org_sync_with_updates() {
     let schema: fold_db::schema::Schema =
         serde_json::from_slice(&schema_bytes).expect("Failed to deserialize schema");
     node2
-        .schema_manager
+        .schema_manager()
         .load_schema_internal(schema)
         .await
         .unwrap();
     node2
-        .schema_manager
+        .schema_manager()
         .set_schema_state("update_notes", SchemaState::Approved)
         .await
         .unwrap();
@@ -418,12 +418,12 @@ async fn test_org_sync_does_not_leak_personal_data() {
     let schema: fold_db::schema::Schema =
         serde_json::from_slice(&schema_bytes).expect("Failed to deserialize");
     node2
-        .schema_manager
+        .schema_manager()
         .load_schema_internal(schema)
         .await
         .unwrap();
     node2
-        .schema_manager
+        .schema_manager()
         .set_schema_state("org_shared", SchemaState::Approved)
         .await
         .unwrap();
@@ -435,7 +435,7 @@ async fn test_org_sync_does_not_leak_personal_data() {
 
     // Node 2 should NOT have the personal schema or data
     let personal_schema = node2
-        .schema_manager
+        .schema_manager()
         .get_schema("personal_diary")
         .await
         .unwrap();

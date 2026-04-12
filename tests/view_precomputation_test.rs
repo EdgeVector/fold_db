@@ -46,7 +46,7 @@ async fn write_blogpost(db: &FoldDB, content: &str, date: &str) {
     let mut fields = HashMap::new();
     fields.insert("content".to_string(), json!(content));
     fields.insert("publish_date".to_string(), json!(date));
-    db.mutation_manager
+    db.mutation_manager()
         .write_mutations_batch_async(vec![Mutation::new(
             "BlogPost".to_string(),
             fields,
@@ -66,20 +66,20 @@ async fn deep_view_enters_computing_after_mutation() {
     db.load_schema_from_json(&blogpost_schema_json())
         .await
         .unwrap();
-    db.schema_manager
+    db.schema_manager()
         .set_schema_state("BlogPost", SchemaState::Approved)
         .await
         .unwrap();
     write_blogpost(&db, "original", "2026-01-01").await;
 
     // ViewA → BlogPost (level 1, direct)
-    db.schema_manager
+    db.schema_manager()
         .register_view(identity_view("ViewA", "BlogPost", "content"))
         .await
         .unwrap();
 
     // ViewB → ViewA (level 2, deep)
-    db.schema_manager
+    db.schema_manager()
         .register_view(identity_view("ViewB", "ViewA", "content"))
         .await
         .unwrap();
@@ -87,16 +87,16 @@ async fn deep_view_enters_computing_after_mutation() {
     // Populate caches by querying both
     let q_a = Query::new("ViewA".to_string(), vec!["content".to_string()]);
     let q_b = Query::new("ViewB".to_string(), vec!["content".to_string()]);
-    db.query_executor.query(q_a).await.unwrap();
-    db.query_executor.query(q_b).await.unwrap();
+    db.query_executor().query(q_a).await.unwrap();
+    db.query_executor().query(q_b).await.unwrap();
 
     // Both should be Cached
     assert!(matches!(
-        db.db_ops.get_view_cache_state("ViewA").await.unwrap(),
+        db.db_ops().get_view_cache_state("ViewA").await.unwrap(),
         ViewCacheState::Cached { .. }
     ));
     assert!(matches!(
-        db.db_ops.get_view_cache_state("ViewB").await.unwrap(),
+        db.db_ops().get_view_cache_state("ViewB").await.unwrap(),
         ViewCacheState::Cached { .. }
     ));
 
@@ -105,7 +105,7 @@ async fn deep_view_enters_computing_after_mutation() {
 
     // ViewA (level 1) may be Empty or already precomputed by the background
     // task (which computes all views bottom-up to unblock deep views).
-    let state_a = db.db_ops.get_view_cache_state("ViewA").await.unwrap();
+    let state_a = db.db_ops().get_view_cache_state("ViewA").await.unwrap();
     assert!(
         matches!(
             state_a,
@@ -117,7 +117,7 @@ async fn deep_view_enters_computing_after_mutation() {
 
     // ViewB (level 2) should be Computing or already Cached
     // (background task may complete very fast)
-    let state_b = db.db_ops.get_view_cache_state("ViewB").await.unwrap();
+    let state_b = db.db_ops().get_view_cache_state("ViewB").await.unwrap();
     assert!(
         matches!(
             state_b,
@@ -135,17 +135,17 @@ async fn deep_view_eventually_becomes_cached() {
     db.load_schema_from_json(&blogpost_schema_json())
         .await
         .unwrap();
-    db.schema_manager
+    db.schema_manager()
         .set_schema_state("BlogPost", SchemaState::Approved)
         .await
         .unwrap();
     write_blogpost(&db, "original", "2026-01-01").await;
 
-    db.schema_manager
+    db.schema_manager()
         .register_view(identity_view("ViewA", "BlogPost", "content"))
         .await
         .unwrap();
-    db.schema_manager
+    db.schema_manager()
         .register_view(identity_view("ViewB", "ViewA", "content"))
         .await
         .unwrap();
@@ -153,8 +153,8 @@ async fn deep_view_eventually_becomes_cached() {
     // Populate caches
     let q_a = Query::new("ViewA".to_string(), vec!["content".to_string()]);
     let q_b = Query::new("ViewB".to_string(), vec!["content".to_string()]);
-    db.query_executor.query(q_a).await.unwrap();
-    db.query_executor.query(q_b).await.unwrap();
+    db.query_executor().query(q_a).await.unwrap();
+    db.query_executor().query(q_b).await.unwrap();
 
     // Mutate source
     write_blogpost(&db, "updated", "2026-01-02").await;
@@ -163,12 +163,12 @@ async fn deep_view_eventually_becomes_cached() {
     // (ViewA needs to be lazily computed first, then ViewB background task runs)
     // First, lazily compute ViewA so the background task for ViewB can proceed
     let q_a = Query::new("ViewA".to_string(), vec!["content".to_string()]);
-    db.query_executor.query(q_a).await.unwrap();
+    db.query_executor().query(q_a).await.unwrap();
 
     // Give background task time to complete
     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
 
-    let state_b = db.db_ops.get_view_cache_state("ViewB").await.unwrap();
+    let state_b = db.db_ops().get_view_cache_state("ViewB").await.unwrap();
     assert!(
         matches!(state_b, ViewCacheState::Cached { .. }),
         "ViewB should eventually become Cached after precomputation, got {:?}",
@@ -183,26 +183,26 @@ async fn query_during_computing_returns_error() {
     db.load_schema_from_json(&blogpost_schema_json())
         .await
         .unwrap();
-    db.schema_manager
+    db.schema_manager()
         .set_schema_state("BlogPost", SchemaState::Approved)
         .await
         .unwrap();
     write_blogpost(&db, "original", "2026-01-01").await;
 
-    db.schema_manager
+    db.schema_manager()
         .register_view(identity_view("ViewA", "BlogPost", "content"))
         .await
         .unwrap();
 
     // Manually set ViewA to Computing to simulate in-progress precomputation
-    db.db_ops
+    db.db_ops()
         .set_view_cache_state("ViewA", &ViewCacheState::Computing)
         .await
         .unwrap();
 
     // Query should fail with clear error
     let q = Query::new("ViewA".to_string(), vec!["content".to_string()]);
-    let result = db.query_executor.query(q).await;
+    let result = db.query_executor().query(q).await;
 
     assert!(result.is_err());
     let err = result.unwrap_err().to_string();
@@ -220,22 +220,22 @@ async fn three_level_chain_precomputes_bottom_up() {
     db.load_schema_from_json(&blogpost_schema_json())
         .await
         .unwrap();
-    db.schema_manager
+    db.schema_manager()
         .set_schema_state("BlogPost", SchemaState::Approved)
         .await
         .unwrap();
     write_blogpost(&db, "deep", "2026-01-01").await;
 
     // ViewA → BlogPost, ViewB → ViewA, ViewC → ViewB
-    db.schema_manager
+    db.schema_manager()
         .register_view(identity_view("ViewA", "BlogPost", "content"))
         .await
         .unwrap();
-    db.schema_manager
+    db.schema_manager()
         .register_view(identity_view("ViewB", "ViewA", "content"))
         .await
         .unwrap();
-    db.schema_manager
+    db.schema_manager()
         .register_view(identity_view("ViewC", "ViewB", "content"))
         .await
         .unwrap();
@@ -243,7 +243,7 @@ async fn three_level_chain_precomputes_bottom_up() {
     // Populate all caches
     for name in &["ViewA", "ViewB", "ViewC"] {
         let q = Query::new(name.to_string(), vec!["content".to_string()]);
-        db.query_executor.query(q).await.unwrap();
+        db.query_executor().query(q).await.unwrap();
     }
 
     // Mutate source
@@ -251,7 +251,7 @@ async fn three_level_chain_precomputes_bottom_up() {
 
     // ViewA (level 1) is Empty initially but may be precomputed by the
     // background task (which computes all views bottom-up). Either state is valid.
-    let state_a = db.db_ops.get_view_cache_state("ViewA").await.unwrap();
+    let state_a = db.db_ops().get_view_cache_state("ViewA").await.unwrap();
     assert!(
         matches!(
             state_a,
@@ -262,8 +262,8 @@ async fn three_level_chain_precomputes_bottom_up() {
     );
 
     // ViewB and ViewC should be Computing or Cached
-    let state_b = db.db_ops.get_view_cache_state("ViewB").await.unwrap();
-    let state_c = db.db_ops.get_view_cache_state("ViewC").await.unwrap();
+    let state_b = db.db_ops().get_view_cache_state("ViewB").await.unwrap();
+    let state_c = db.db_ops().get_view_cache_state("ViewC").await.unwrap();
     assert!(
         matches!(
             state_b,
@@ -283,7 +283,7 @@ async fn three_level_chain_precomputes_bottom_up() {
 
     // Lazily compute ViewA so background tasks can resolve
     let q = Query::new("ViewA".to_string(), vec!["content".to_string()]);
-    db.query_executor.query(q).await.unwrap();
+    db.query_executor().query(q).await.unwrap();
 
     // Wait for background tasks
     tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
@@ -292,7 +292,7 @@ async fn three_level_chain_precomputes_bottom_up() {
     for name in &["ViewA", "ViewB", "ViewC"] {
         assert!(
             matches!(
-                db.db_ops.get_view_cache_state(name).await.unwrap(),
+                db.db_ops().get_view_cache_state(name).await.unwrap(),
                 ViewCacheState::Cached { .. }
             ),
             "{} should be Cached after precomputation",
@@ -308,17 +308,17 @@ async fn precomputed_view_has_fresh_data() {
     db.load_schema_from_json(&blogpost_schema_json())
         .await
         .unwrap();
-    db.schema_manager
+    db.schema_manager()
         .set_schema_state("BlogPost", SchemaState::Approved)
         .await
         .unwrap();
     write_blogpost(&db, "v1", "2026-01-01").await;
 
-    db.schema_manager
+    db.schema_manager()
         .register_view(identity_view("ViewA", "BlogPost", "content"))
         .await
         .unwrap();
-    db.schema_manager
+    db.schema_manager()
         .register_view(identity_view("ViewB", "ViewA", "content"))
         .await
         .unwrap();
@@ -326,20 +326,20 @@ async fn precomputed_view_has_fresh_data() {
     // Populate caches with v1
     let q_a = Query::new("ViewA".to_string(), vec!["content".to_string()]);
     let q_b = Query::new("ViewB".to_string(), vec!["content".to_string()]);
-    db.query_executor.query(q_a.clone()).await.unwrap();
-    db.query_executor.query(q_b.clone()).await.unwrap();
+    db.query_executor().query(q_a.clone()).await.unwrap();
+    db.query_executor().query(q_b.clone()).await.unwrap();
 
     // Mutate to v2
     write_blogpost(&db, "v2", "2026-01-01").await;
 
     // Lazily compute ViewA to unblock ViewB's precomputation
-    db.query_executor.query(q_a).await.unwrap();
+    db.query_executor().query(q_a).await.unwrap();
 
     // Wait for ViewB precomputation
     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
 
     // ViewB should be Cached with fresh data
-    let state = db.db_ops.get_view_cache_state("ViewB").await.unwrap();
+    let state = db.db_ops().get_view_cache_state("ViewB").await.unwrap();
     assert!(
         matches!(state, ViewCacheState::Cached { .. }),
         "ViewB should be Cached, got {:?}",
@@ -347,7 +347,7 @@ async fn precomputed_view_has_fresh_data() {
     );
 
     // Query ViewB — should have v2 data
-    let results = db.query_executor.query(q_b).await.unwrap();
+    let results = db.query_executor().query(q_b).await.unwrap();
     let values: Vec<_> = results["content"]
         .values()
         .map(|fv| fv.value.clone())

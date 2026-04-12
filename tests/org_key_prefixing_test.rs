@@ -35,7 +35,7 @@ async fn register_schema(db: &FoldDB, name: &str, org_hash: Option<&str>) {
     }
     let json_str = builder.build_json();
     db.load_schema_from_json(&json_str).await.unwrap();
-    db.schema_manager
+    db.schema_manager()
         .set_schema_state(name, SchemaState::Approved)
         .await
         .unwrap();
@@ -61,7 +61,7 @@ async fn write_mutation(
         "test-pub-key".to_string(),
         MutationType::Create,
     );
-    db.mutation_manager
+    db.mutation_manager()
         .write_mutations_batch_async(vec![mutation])
         .await
         .expect("Failed to write mutation")
@@ -107,7 +107,7 @@ async fn test_org_mutation_produces_prefixed_keys() {
 
     // The schema should have org_hash set
     let schema = db
-        .schema_manager
+        .schema_manager()
         .get_schema("org_notes")
         .await
         .unwrap()
@@ -154,7 +154,7 @@ async fn test_org_query_reads_from_prefixed_keys() {
     let query = Query::new("org_events".to_string(), vec![]);
     let access = AccessContext::owner("test-owner");
     let result = db
-        .query_executor
+        .query_executor()
         .query_with_access(query, &access, None)
         .await
         .expect("Query failed");
@@ -192,7 +192,7 @@ async fn test_personal_and_org_data_do_not_collide() {
     // Query personal schema
     let personal_query = Query::new("notes".to_string(), vec!["body".to_string()]);
     let personal_result = db
-        .query_executor
+        .query_executor()
         .query_with_access(personal_query, &access, None)
         .await
         .expect("Personal query failed");
@@ -200,7 +200,7 @@ async fn test_personal_and_org_data_do_not_collide() {
     // Query org schema
     let org_query = Query::new("org_notes".to_string(), vec!["body".to_string()]);
     let org_result = db
-        .query_executor
+        .query_executor()
         .query_with_access(org_query, &access, None)
         .await
         .expect("Org query failed");

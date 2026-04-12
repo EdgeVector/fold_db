@@ -44,7 +44,7 @@ async fn query_identity_view_returns_source_data() {
     db.load_schema_from_json(&blogpost_schema_json())
         .await
         .unwrap();
-    db.schema_manager
+    db.schema_manager()
         .set_schema_state("BlogPost", SchemaState::Approved)
         .await
         .unwrap();
@@ -61,18 +61,18 @@ async fn query_identity_view_returns_source_data() {
         "test_pub_key".to_string(),
         MutationType::Create,
     );
-    db.mutation_manager
+    db.mutation_manager()
         .write_mutations_batch_async(vec![mutation])
         .await
         .unwrap();
 
     // Register a view over BlogPost.content
     let view = identity_view("ContentView", "BlogPost", "content");
-    db.schema_manager.register_view(view).await.unwrap();
+    db.schema_manager().register_view(view).await.unwrap();
 
     // Query the view — should return the source data
     let query = Query::new("ContentView".to_string(), vec!["content".to_string()]);
-    let results = db.query_executor.query(query).await.unwrap();
+    let results = db.query_executor().query(query).await.unwrap();
 
     assert!(
         results.contains_key("content"),
@@ -91,7 +91,7 @@ async fn query_nonexistent_name_errors() {
     let db = setup_db().await;
 
     let query = Query::new("DoesNotExist".to_string(), vec![]);
-    let result = db.query_executor.query(query).await;
+    let result = db.query_executor().query(query).await;
     assert!(result.is_err());
 }
 
@@ -104,11 +104,11 @@ async fn query_blocked_view_errors() {
         .unwrap();
 
     let view = identity_view("BlockedView", "BlogPost", "title");
-    db.schema_manager.register_view(view).await.unwrap();
-    db.schema_manager.block_view("BlockedView").await.unwrap();
+    db.schema_manager().register_view(view).await.unwrap();
+    db.schema_manager().block_view("BlockedView").await.unwrap();
 
     let query = Query::new("BlockedView".to_string(), vec!["title".to_string()]);
-    let result = db.query_executor.query(query).await;
+    let result = db.query_executor().query(query).await;
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("blocked"));
 }
@@ -120,7 +120,7 @@ async fn query_view_with_empty_fields_returns_all() {
     db.load_schema_from_json(&blogpost_schema_json())
         .await
         .unwrap();
-    db.schema_manager
+    db.schema_manager()
         .set_schema_state("BlogPost", SchemaState::Approved)
         .await
         .unwrap();
@@ -129,7 +129,7 @@ async fn query_view_with_empty_fields_returns_all() {
     fields.insert("title".to_string(), json!("Title"));
     fields.insert("content".to_string(), json!("Body"));
     fields.insert("publish_date".to_string(), json!("2026-01-01"));
-    db.mutation_manager
+    db.mutation_manager()
         .write_mutations_batch_async(vec![Mutation::new(
             "BlogPost".to_string(),
             fields,
@@ -155,11 +155,11 @@ async fn query_view_with_empty_fields_returns_all() {
             ("content".to_string(), FieldValueType::Any),
         ]),
     );
-    db.schema_manager.register_view(view).await.unwrap();
+    db.schema_manager().register_view(view).await.unwrap();
 
     // Query with empty fields — should return all view output fields
     let query = Query::new("FullView".to_string(), vec![]);
-    let results = db.query_executor.query(query).await.unwrap();
+    let results = db.query_executor().query(query).await.unwrap();
 
     assert_eq!(results.len(), 2);
     assert!(results.contains_key("title"));
@@ -173,13 +173,13 @@ async fn identity_view_write_redirects_to_source() {
     db.load_schema_from_json(&blogpost_schema_json())
         .await
         .unwrap();
-    db.schema_manager
+    db.schema_manager()
         .set_schema_state("BlogPost", SchemaState::Approved)
         .await
         .unwrap();
 
     let view = identity_view("MyView", "BlogPost", "content");
-    db.schema_manager.register_view(view).await.unwrap();
+    db.schema_manager().register_view(view).await.unwrap();
 
     // Write through the view — should redirect to BlogPost.content
     let mut mutation_fields = HashMap::new();
@@ -191,14 +191,14 @@ async fn identity_view_write_redirects_to_source() {
         "pk".to_string(),
         MutationType::Create,
     );
-    db.mutation_manager
+    db.mutation_manager()
         .write_mutations_batch_async(vec![mutation])
         .await
         .unwrap();
 
     // Query the SOURCE schema to verify the write landed there
     let query = Query::new("BlogPost".to_string(), vec!["content".to_string()]);
-    let results = db.query_executor.query(query).await.unwrap();
+    let results = db.query_executor().query(query).await.unwrap();
     assert!(results.contains_key("content"));
     let values: Vec<_> = results["content"]
         .values()
@@ -218,7 +218,7 @@ async fn identity_view_write_invalidates_view_cache() {
     db.load_schema_from_json(&blogpost_schema_json())
         .await
         .unwrap();
-    db.schema_manager
+    db.schema_manager()
         .set_schema_state("BlogPost", SchemaState::Approved)
         .await
         .unwrap();
@@ -227,7 +227,7 @@ async fn identity_view_write_invalidates_view_cache() {
     let mut fields = HashMap::new();
     fields.insert("content".to_string(), json!("original"));
     fields.insert("publish_date".to_string(), json!("2026-01-01"));
-    db.mutation_manager
+    db.mutation_manager()
         .write_mutations_batch_async(vec![Mutation::new(
             "BlogPost".to_string(),
             fields,
@@ -239,16 +239,16 @@ async fn identity_view_write_invalidates_view_cache() {
         .unwrap();
 
     let view = identity_view("CacheView", "BlogPost", "content");
-    db.schema_manager.register_view(view).await.unwrap();
+    db.schema_manager().register_view(view).await.unwrap();
 
     // Query view to populate cache
     let query = Query::new("CacheView".to_string(), vec!["content".to_string()]);
-    db.query_executor.query(query.clone()).await.unwrap();
+    db.query_executor().query(query.clone()).await.unwrap();
 
     // Write through the view — should invalidate the cache
     let mut mutation_fields = HashMap::new();
     mutation_fields.insert("content".to_string(), json!("updated via view"));
-    db.mutation_manager
+    db.mutation_manager()
         .write_mutations_batch_async(vec![Mutation::new(
             "CacheView".to_string(),
             mutation_fields,
@@ -260,7 +260,7 @@ async fn identity_view_write_invalidates_view_cache() {
         .unwrap();
 
     // Re-query view — should return fresh data including the new write
-    let results = db.query_executor.query(query).await.unwrap();
+    let results = db.query_executor().query(query).await.unwrap();
     let values: Vec<_> = results["content"]
         .values()
         .map(|fv| fv.value.clone())
@@ -279,7 +279,7 @@ async fn wasm_view_write_is_rejected() {
     db.load_schema_from_json(&blogpost_schema_json())
         .await
         .unwrap();
-    db.schema_manager
+    db.schema_manager()
         .set_schema_state("BlogPost", SchemaState::Approved)
         .await
         .unwrap();
@@ -296,7 +296,7 @@ async fn wasm_view_write_is_rejected() {
         Some(vec![0, 1, 2]), // Placeholder WASM — won't be executed
         HashMap::from([("out".to_string(), FieldValueType::String)]),
     );
-    db.schema_manager.register_view(view).await.unwrap();
+    db.schema_manager().register_view(view).await.unwrap();
 
     // Try to mutate the WASM view — should be rejected
     let mut mutation_fields = HashMap::new();
@@ -309,7 +309,7 @@ async fn wasm_view_write_is_rejected() {
         MutationType::Create,
     );
     let result = db
-        .mutation_manager
+        .mutation_manager()
         .write_mutations_batch_async(vec![mutation])
         .await;
     assert!(result.is_err());

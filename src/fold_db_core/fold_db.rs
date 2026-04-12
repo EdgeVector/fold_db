@@ -26,25 +26,25 @@ use crate::progress::ProgressTracker;
 
 /// The main database coordinator that manages schemas, permissions, and data storage.
 pub struct FoldDB {
-    pub schema_manager: Arc<SchemaCore>,
+    pub(crate) schema_manager: Arc<SchemaCore>,
     /// Shared database operations with storage abstraction
-    pub db_ops: Arc<DbOperations>,
+    pub(crate) db_ops: Arc<DbOperations>,
     /// SledPool for on-demand Sled access (e.g., org operations, config store).
     /// Only present when using the Sled backend.
     sled_pool: Option<Arc<SledPool>>,
     /// Query executor for handling all query operations
-    pub query_executor: QueryExecutor,
+    pub(crate) query_executor: QueryExecutor,
     /// Message bus for event-driven communication (held for Arc lifetime)
-    pub message_bus: Arc<AsyncMessageBus>,
+    pub(crate) message_bus: Arc<AsyncMessageBus>,
     /// Event monitor for system-wide observability
-    pub event_monitor: Arc<EventMonitor>,
+    pub(crate) event_monitor: Arc<EventMonitor>,
     /// Mutation manager for handling all mutation operations
-    pub mutation_manager: MutationManager,
+    pub(crate) mutation_manager: MutationManager,
     /// Tracker for pending background tasks
-    pub pending_tasks: Arc<super::infrastructure::pending_task_tracker::PendingTaskTracker>,
+    pub(crate) pending_tasks: Arc<super::infrastructure::pending_task_tracker::PendingTaskTracker>,
     /// Unified progress tracker for all job types (ingestion, indexing, etc.)
     /// This is the single source of truth for progress — uses Sled for persistent storage.
-    pub progress_tracker: ProgressTracker,
+    pub(crate) progress_tracker: ProgressTracker,
     /// Optional sync engine for S3 replication.
     /// Present when sync is configured (local mode only).
     /// Uses RwLock for interior mutability so FoldDB doesn't need &mut self.
@@ -549,9 +549,29 @@ impl FoldDB {
         self.schema_manager.load_schema_from_file(path).await
     }
 
-    /// Provides access to the underlying database operations
+    /// Provides access to the underlying database operations (cloned Arc)
     pub fn get_db_ops(&self) -> Arc<DbOperations> {
         Arc::clone(&self.db_ops)
+    }
+
+    /// Returns a reference to the database operations Arc
+    pub fn db_ops(&self) -> &Arc<DbOperations> {
+        &self.db_ops
+    }
+
+    /// Returns a reference to the query executor
+    pub fn query_executor(&self) -> &QueryExecutor {
+        &self.query_executor
+    }
+
+    /// Returns a reference to the event monitor
+    pub fn event_monitor(&self) -> &EventMonitor {
+        &self.event_monitor
+    }
+
+    /// Returns a reference to the pending task tracker
+    pub fn pending_tasks(&self) -> &Arc<super::infrastructure::pending_task_tracker::PendingTaskTracker> {
+        &self.pending_tasks
     }
 
     /// Get current event statistics from the event monitor

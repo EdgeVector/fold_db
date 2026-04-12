@@ -70,7 +70,7 @@ async fn wasm_view_query_returns_transformed_output() {
     db.load_schema_from_json(&blogpost_schema_json())
         .await
         .unwrap();
-    db.schema_manager
+    db.schema_manager()
         .set_schema_state("BlogPost", SchemaState::Approved)
         .await
         .unwrap();
@@ -79,7 +79,7 @@ async fn wasm_view_query_returns_transformed_output() {
     fields.insert("title".to_string(), json!("Hello World"));
     fields.insert("content".to_string(), json!("Test content"));
     fields.insert("publish_date".to_string(), json!("2026-01-01"));
-    db.mutation_manager
+    db.mutation_manager()
         .write_mutations_batch_async(vec![Mutation::new(
             "BlogPost".to_string(),
             fields,
@@ -102,11 +102,11 @@ async fn wasm_view_query_returns_transformed_output() {
         Some(hardcoded_wasm()),
         HashMap::from([("summary".to_string(), FieldValueType::String)]),
     );
-    db.schema_manager.register_view(view).await.unwrap();
+    db.schema_manager().register_view(view).await.unwrap();
 
     // Query the view
     let query = Query::new("SummaryView".to_string(), vec!["summary".to_string()]);
-    let results = db.query_executor.query(query).await.unwrap();
+    let results = db.query_executor().query(query).await.unwrap();
 
     assert!(results.contains_key("summary"));
     let summary_values = &results["summary"];
@@ -122,7 +122,7 @@ async fn wasm_view_output_type_validation_works() {
     db.load_schema_from_json(&blogpost_schema_json())
         .await
         .unwrap();
-    db.schema_manager
+    db.schema_manager()
         .set_schema_state("BlogPost", SchemaState::Approved)
         .await
         .unwrap();
@@ -130,7 +130,7 @@ async fn wasm_view_output_type_validation_works() {
     let mut fields = HashMap::new();
     fields.insert("title".to_string(), json!("Hello"));
     fields.insert("publish_date".to_string(), json!("2026-01-01"));
-    db.mutation_manager
+    db.mutation_manager()
         .write_mutations_batch_async(vec![Mutation::new(
             "BlogPost".to_string(),
             fields,
@@ -153,11 +153,11 @@ async fn wasm_view_output_type_validation_works() {
         Some(hardcoded_wasm()), // Returns {"summary": {"k1": "hardcoded"}} — a String
         HashMap::from([("summary".to_string(), FieldValueType::Integer)]), // Declared as Integer
     );
-    db.schema_manager.register_view(view).await.unwrap();
+    db.schema_manager().register_view(view).await.unwrap();
 
     // Query should fail with type validation error
     let query = Query::new("BadTypeView".to_string(), vec!["summary".to_string()]);
-    let result = db.query_executor.query(query).await;
+    let result = db.query_executor().query(query).await;
     assert!(result.is_err());
     assert!(
         result.unwrap_err().to_string().contains("type validation"),
@@ -172,7 +172,7 @@ async fn wasm_view_cache_invalidation_works() {
     db.load_schema_from_json(&blogpost_schema_json())
         .await
         .unwrap();
-    db.schema_manager
+    db.schema_manager()
         .set_schema_state("BlogPost", SchemaState::Approved)
         .await
         .unwrap();
@@ -180,7 +180,7 @@ async fn wasm_view_cache_invalidation_works() {
     let mut fields = HashMap::new();
     fields.insert("title".to_string(), json!("Original"));
     fields.insert("publish_date".to_string(), json!("2026-01-01"));
-    db.mutation_manager
+    db.mutation_manager()
         .write_mutations_batch_async(vec![Mutation::new(
             "BlogPost".to_string(),
             fields,
@@ -203,15 +203,15 @@ async fn wasm_view_cache_invalidation_works() {
         Some(hardcoded_wasm()),
         HashMap::from([("summary".to_string(), FieldValueType::String)]),
     );
-    db.schema_manager.register_view(view).await.unwrap();
+    db.schema_manager().register_view(view).await.unwrap();
 
     // First query: populates cache
     let query = Query::new("WasmCacheView".to_string(), vec!["summary".to_string()]);
-    db.query_executor.query(query.clone()).await.unwrap();
+    db.query_executor().query(query.clone()).await.unwrap();
 
     // Verify cached
     let state = db
-        .db_ops
+        .db_ops()
         .get_view_cache_state("WasmCacheView")
         .await
         .unwrap();
@@ -224,7 +224,7 @@ async fn wasm_view_cache_invalidation_works() {
     let mut fields2 = HashMap::new();
     fields2.insert("title".to_string(), json!("Updated"));
     fields2.insert("publish_date".to_string(), json!("2026-01-02"));
-    db.mutation_manager
+    db.mutation_manager()
         .write_mutations_batch_async(vec![Mutation::new(
             "BlogPost".to_string(),
             fields2,
@@ -237,7 +237,7 @@ async fn wasm_view_cache_invalidation_works() {
 
     // Cache should be invalidated
     let state2 = db
-        .db_ops
+        .db_ops()
         .get_view_cache_state("WasmCacheView")
         .await
         .unwrap();

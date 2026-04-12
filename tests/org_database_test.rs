@@ -34,7 +34,7 @@ async fn register_schema(db: &FoldDB, name: &str, org_hash: Option<&str>) {
     }
     let json_str = builder.build_json();
     db.load_schema_from_json(&json_str).await.unwrap();
-    db.schema_manager
+    db.schema_manager()
         .set_schema_state(name, SchemaState::Approved)
         .await
         .unwrap();
@@ -59,7 +59,7 @@ async fn write_mutation(
         "test-pub-key".to_string(),
         MutationType::Create,
     );
-    db.mutation_manager
+    db.mutation_manager()
         .write_mutations_batch_async(vec![mutation])
         .await
         .expect("Failed to write mutation")
@@ -84,7 +84,7 @@ async fn write_mutation_update(
         "test-pub-key".to_string(),
         MutationType::Update,
     );
-    db.mutation_manager
+    db.mutation_manager()
         .write_mutations_batch_async(vec![mutation])
         .await
         .expect("Failed to write update mutation")
@@ -95,7 +95,7 @@ async fn query_field_values(db: &FoldDB, schema_name: &str, field: &str) -> Vec<
     let query = Query::new(schema_name.to_string(), vec![field.to_string()]);
     let access = AccessContext::owner("test-owner");
     let result = db
-        .query_executor
+        .query_executor()
         .query_with_access(query, &access, None)
         .await
         .expect("Query failed");
@@ -113,7 +113,7 @@ async fn query_full(
 ) -> HashMap<String, HashMap<KeyValue, fold_db::schema::types::field::FieldValue>> {
     let query = Query::new(schema_name.to_string(), vec![]);
     let access = AccessContext::owner("test-owner");
-    db.query_executor
+    db.query_executor()
         .query_with_access(query, &access, None)
         .await
         .expect("Query failed")
@@ -188,11 +188,11 @@ async fn test_full_org_lifecycle() {
     let db_ops = db.get_db_ops();
     let purged = db_ops.purge_org_data(org_hash).await.unwrap();
     assert!(purged > 0, "Expected to purge at least 1 key");
-    let removed_schemas = db.schema_manager.purge_org_schemas(org_hash).await.unwrap();
+    let removed_schemas = db.schema_manager().purge_org_schemas(org_hash).await.unwrap();
     assert_eq!(removed_schemas, vec!["corp_notes"]);
 
     // Schema should be gone from the manager
-    let schema = db.schema_manager.get_schema("corp_notes").await.unwrap();
+    let schema = db.schema_manager().get_schema("corp_notes").await.unwrap();
     assert!(schema.is_none(), "Schema should be purged");
 
     // No org-prefixed keys remain
@@ -272,7 +272,7 @@ async fn test_multi_org_data_isolation() {
     // Purge alpha (data + schemas)
     let db_ops = db.get_db_ops();
     db_ops.purge_org_data(&org_alpha.org_hash).await.unwrap();
-    db.schema_manager
+    db.schema_manager()
         .purge_org_schemas(&org_alpha.org_hash)
         .await
         .unwrap();
@@ -280,7 +280,7 @@ async fn test_multi_org_data_isolation() {
     // Alpha is fully purged — sled keys gone and schema removed
     assert_eq!(count_org_prefixed_keys(&db, &org_alpha.org_hash), 0);
     assert!(
-        db.schema_manager
+        db.schema_manager()
             .get_schema("alpha_notes")
             .await
             .unwrap()

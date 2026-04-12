@@ -29,7 +29,7 @@ async fn setup_db_with_notes() -> FoldDB {
     db.load_schema_from_json(&notes_schema_json())
         .await
         .unwrap();
-    db.schema_manager
+    db.schema_manager()
         .set_schema_state("Notes", SchemaState::Approved)
         .await
         .unwrap();
@@ -46,7 +46,7 @@ async fn setup_db_with_notes() -> FoldDB {
         "owner_pub_key".to_string(),
         MutationType::Create,
     );
-    db.mutation_manager
+    db.mutation_manager()
         .write_mutations_batch_async(vec![mutation])
         .await
         .unwrap();
@@ -62,7 +62,7 @@ async fn set_field_policy(
     policy: FieldAccessPolicy,
 ) {
     let mut schema = db
-        .schema_manager
+        .schema_manager()
         .get_schema(schema_name)
         .await
         .unwrap()
@@ -73,8 +73,8 @@ async fn set_field_policy(
     }
 
     // Persist and reload
-    db.db_ops.store_schema(schema_name, &schema).await.unwrap();
-    db.schema_manager
+    db.db_ops().store_schema(schema_name, &schema).await.unwrap();
+    db.schema_manager()
         .load_schema_internal(schema)
         .await
         .unwrap();
@@ -325,7 +325,7 @@ async fn query_with_no_access_context_returns_all_fields() {
         "Notes".to_string(),
         vec!["title".to_string(), "content".to_string()],
     );
-    let results = db.query_executor.query(query).await.unwrap();
+    let results = db.query_executor().query(query).await.unwrap();
 
     assert!(results.contains_key("title"));
     assert!(results.contains_key("content"));
@@ -342,7 +342,7 @@ async fn query_default_policy_owner_only() {
         vec!["title".to_string(), "content".to_string()],
     );
     let results = db
-        .query_executor
+        .query_executor()
         .query_with_access(query, &ctx, None)
         .await
         .unwrap();
@@ -357,7 +357,7 @@ async fn query_default_policy_owner_only() {
         vec!["title".to_string(), "content".to_string()],
     );
     let results = db
-        .query_executor
+        .query_executor()
         .query_with_access(query, &owner_ctx, None)
         .await
         .unwrap();
@@ -389,7 +389,7 @@ async fn query_owner_always_has_access() {
         vec!["title".to_string(), "content".to_string()],
     );
     let results = db
-        .query_executor
+        .query_executor()
         .query_with_access(query, &ctx, None)
         .await
         .unwrap();
@@ -436,7 +436,7 @@ async fn query_remote_filtered_by_trust_tier() {
         vec!["title".to_string(), "content".to_string()],
     );
     let results = db
-        .query_executor
+        .query_executor()
         .query_with_access(query, &ctx, None)
         .await
         .unwrap();
@@ -468,7 +468,7 @@ async fn query_payment_gate_blocks_unpaid() {
 
     let query = Query::new("Notes".to_string(), vec!["content".to_string()]);
     let results = db
-        .query_executor
+        .query_executor()
         .query_with_access(query, &ctx, Some(&gate))
         .await
         .unwrap();
@@ -509,7 +509,7 @@ async fn mutation_blocked_by_insufficient_tier() {
     );
 
     let result = db
-        .mutation_manager
+        .mutation_manager()
         .write_mutations_with_access(vec![mutation], &ctx, None)
         .await;
 
@@ -552,7 +552,7 @@ async fn mutation_allowed_for_owner() {
     );
 
     let result = db
-        .mutation_manager
+        .mutation_manager()
         .write_mutations_with_access(vec![mutation], &ctx, None)
         .await;
 
@@ -584,7 +584,7 @@ async fn mutation_without_access_context_bypasses_checks() {
     );
 
     let result = db
-        .mutation_manager
+        .mutation_manager()
         .write_mutations_batch_async(vec![mutation])
         .await;
     assert!(result.is_ok());

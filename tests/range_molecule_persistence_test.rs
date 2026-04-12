@@ -88,7 +88,7 @@ async fn mutations_work_after_simulated_restart() {
 
     // Simulate restart: reload schema from DB (which calls populate_runtime_fields)
     let reloaded = fold_db
-        .db_ops
+        .db_ops()
         .get_schema("FileRecords")
         .await
         .unwrap()
@@ -171,7 +171,7 @@ async fn molecule_uuid_stays_consistent_across_batches() {
 
     let mol_uuid_first = {
         let schema = fold_db
-            .db_ops
+            .db_ops()
             .get_schema("FileRecords")
             .await
             .unwrap()
@@ -195,7 +195,7 @@ async fn molecule_uuid_stays_consistent_across_batches() {
 
     let mol_uuid_second = {
         let schema = fold_db
-            .db_ops
+            .db_ops()
             .get_schema("FileRecords")
             .await
             .unwrap()
