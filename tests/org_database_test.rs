@@ -188,7 +188,11 @@ async fn test_full_org_lifecycle() {
     let db_ops = db.get_db_ops();
     let purged = db_ops.purge_org_data(org_hash).await.unwrap();
     assert!(purged > 0, "Expected to purge at least 1 key");
-    let removed_schemas = db.schema_manager().purge_org_schemas(org_hash).await.unwrap();
+    let removed_schemas = db
+        .schema_manager()
+        .purge_org_schemas(org_hash)
+        .await
+        .unwrap();
     assert_eq!(removed_schemas, vec!["corp_notes"]);
 
     // Schema should be gone from the manager

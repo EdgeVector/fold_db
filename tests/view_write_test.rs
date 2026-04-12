@@ -193,7 +193,10 @@ async fn write_through_view_invalidates_cache() {
 
     // Cache should be populated
     assert!(matches!(
-        db.db_ops().get_view_cache_state("CacheWrite").await.unwrap(),
+        db.db_ops()
+            .get_view_cache_state("CacheWrite")
+            .await
+            .unwrap(),
         ViewCacheState::Cached { .. }
     ));
 

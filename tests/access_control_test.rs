@@ -73,7 +73,10 @@ async fn set_field_policy(
     }
 
     // Persist and reload
-    db.db_ops().store_schema(schema_name, &schema).await.unwrap();
+    db.db_ops()
+        .store_schema(schema_name, &schema)
+        .await
+        .unwrap();
     db.schema_manager()
         .load_schema_internal(schema)
         .await

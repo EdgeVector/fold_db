@@ -570,7 +570,9 @@ impl FoldDB {
     }
 
     /// Returns a reference to the pending task tracker
-    pub fn pending_tasks(&self) -> &Arc<super::infrastructure::pending_task_tracker::PendingTaskTracker> {
+    pub fn pending_tasks(
+        &self,
+    ) -> &Arc<super::infrastructure::pending_task_tracker::PendingTaskTracker> {
         &self.pending_tasks
     }
 
