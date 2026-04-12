@@ -578,12 +578,15 @@ impl SyncEngine {
         if !entries.is_empty() {
             let partitioner = self.partitioner.lock().await;
 
-            // Partition entries across targets by key prefix
+            // Partition entries across targets by key prefix.
+            // Batches with mixed-prefix keys are split into one sub-entry per target
+            // so each chunk is sealed under the correct crypto provider.
             let mut buckets: std::collections::HashMap<usize, Vec<LogEntry>> =
                 std::collections::HashMap::new();
             for entry in &entries {
-                let idx = Self::classify_to_target(&partitioner, entry, &targets);
-                buckets.entry(idx).or_default().push(entry.clone());
+                for (idx, sub_entry) in Self::partition_entry(&partitioner, entry, &targets) {
+                    buckets.entry(idx).or_default().push(sub_entry);
+                }
             }
             drop(partitioner);
 
@@ -656,24 +659,108 @@ impl SyncEngine {
         Ok(uploaded > 0 || downloaded > 0)
     }
 
-    /// Classify a pending entry to a target index.
-    fn classify_to_target(
-        partitioner: &Option<SyncPartitioner>,
-        entry: &LogEntry,
-        targets: &[SyncTarget],
-    ) -> usize {
-        if let Some(p) = partitioner {
-            let dest = Self::classify_entry(p, entry);
-            if let SyncDestination::Org { org_hash, .. } = dest {
-                // Find the target with matching prefix
-                for (i, t) in targets.iter().enumerate() {
-                    if !t.prefix.is_empty() && t.prefix == org_hash {
-                        return i;
-                    }
+    /// Resolve a `SyncDestination` to a target index in `targets`.
+    ///
+    /// Returns 0 (personal) if the destination is `Personal` or no org target
+    /// with a matching prefix is configured.
+    fn destination_to_target_idx(dest: &SyncDestination, targets: &[SyncTarget]) -> usize {
+        if let SyncDestination::Org { org_hash, .. } = dest {
+            for (i, t) in targets.iter().enumerate() {
+                if !t.prefix.is_empty() && t.prefix == *org_hash {
+                    return i;
                 }
             }
         }
-        0 // Default to personal target
+        0
+    }
+
+    /// Partition a single pending entry into one or more (target_idx, sub_entry)
+    /// pairs.
+    ///
+    /// For `Put` / `Delete`, this returns exactly one pair, with the original
+    /// entry unchanged. For `BatchPut` / `BatchDelete`, items are grouped by
+    /// target index — homogeneous batches still produce a single pair with the
+    /// original batch intact (no allocation of new items). Mixed-prefix batches
+    /// are split into one sub-batch per target, each sealed under the correct
+    /// crypto provider. All sub-entries share the original `seq`, `timestamp_ms`,
+    /// and `device_id`; seq ordering / dedupe tracking is preserved because the
+    /// original log position is unchanged.
+    fn partition_entry(
+        partitioner: &Option<SyncPartitioner>,
+        entry: &LogEntry,
+        targets: &[SyncTarget],
+    ) -> Vec<(usize, LogEntry)> {
+        let Some(p) = partitioner else {
+            return vec![(0, entry.clone())];
+        };
+
+        match &entry.op {
+            LogOp::Put { namespace, key, .. } | LogOp::Delete { namespace, key } => {
+                let dest = p.partition_log_key(namespace, key);
+                let idx = Self::destination_to_target_idx(&dest, targets);
+                vec![(idx, entry.clone())]
+            }
+            LogOp::BatchPut { namespace, items } => {
+                let mut by_target: std::collections::BTreeMap<usize, Vec<(String, String)>> =
+                    std::collections::BTreeMap::new();
+                for (k, v) in items {
+                    let dest = p.partition_log_key(namespace, k);
+                    let idx = Self::destination_to_target_idx(&dest, targets);
+                    by_target
+                        .entry(idx)
+                        .or_default()
+                        .push((k.clone(), v.clone()));
+                }
+                if by_target.len() == 1 {
+                    // Homogeneous: return the original batch intact, no clone of items.
+                    let idx = *by_target.keys().next().expect("len == 1");
+                    return vec![(idx, entry.clone())];
+                }
+                by_target
+                    .into_iter()
+                    .map(|(idx, sub_items)| {
+                        let sub_entry = LogEntry {
+                            seq: entry.seq,
+                            timestamp_ms: entry.timestamp_ms,
+                            device_id: entry.device_id.clone(),
+                            op: LogOp::BatchPut {
+                                namespace: namespace.clone(),
+                                items: sub_items,
+                            },
+                        };
+                        (idx, sub_entry)
+                    })
+                    .collect()
+            }
+            LogOp::BatchDelete { namespace, keys } => {
+                let mut by_target: std::collections::BTreeMap<usize, Vec<String>> =
+                    std::collections::BTreeMap::new();
+                for k in keys {
+                    let dest = p.partition_log_key(namespace, k);
+                    let idx = Self::destination_to_target_idx(&dest, targets);
+                    by_target.entry(idx).or_default().push(k.clone());
+                }
+                if by_target.len() == 1 {
+                    let idx = *by_target.keys().next().expect("len == 1");
+                    return vec![(idx, entry.clone())];
+                }
+                by_target
+                    .into_iter()
+                    .map(|(idx, sub_keys)| {
+                        let sub_entry = LogEntry {
+                            seq: entry.seq,
+                            timestamp_ms: entry.timestamp_ms,
+                            device_id: entry.device_id.clone(),
+                            op: LogOp::BatchDelete {
+                                namespace: namespace.clone(),
+                                keys: sub_keys,
+                            },
+                        };
+                        (idx, sub_entry)
+                    })
+                    .collect()
+            }
+        }
     }
 
     /// Retry an S3 operation with exponential backoff.
@@ -1292,33 +1379,6 @@ impl SyncEngine {
     pub async fn has_org_sync(&self) -> bool {
         self.targets.lock().await.len() > 1
     }
-
-    /// Classify a single log entry by examining its key.
-    fn classify_entry(partitioner: &SyncPartitioner, entry: &LogEntry) -> SyncDestination {
-        match &entry.op {
-            LogOp::Put { namespace, key, .. } | LogOp::Delete { namespace, key } => {
-                partitioner.partition_log_key(namespace, key)
-            }
-            LogOp::BatchPut {
-                namespace, items, ..
-            } => {
-                if let Some((key, _)) = items.first() {
-                    partitioner.partition_log_key(namespace, key)
-                } else {
-                    SyncDestination::Personal
-                }
-            }
-            LogOp::BatchDelete {
-                namespace, keys, ..
-            } => {
-                if let Some(key) = keys.first() {
-                    partitioner.partition_log_key(namespace, key)
-                } else {
-                    SyncDestination::Personal
-                }
-            }
-        }
-    }
 }
 
 /// Parse a flat log key: `log/{seq}.enc`
@@ -1351,74 +1411,180 @@ mod tests {
         assert!(parse_flat_log_key("").is_none());
     }
 
-    #[test]
-    fn test_classify_entry_personal() {
+    // ---- partition_entry tests (mixed-prefix batch splitting) ----
+
+    fn test_targets() -> Vec<SyncTarget> {
+        use crate::crypto::provider::LocalCryptoProvider;
+        vec![
+            SyncTarget {
+                label: "personal".to_string(),
+                prefix: "personal_user".to_string(),
+                crypto: Arc::new(LocalCryptoProvider::from_key([0x01u8; 32])),
+            },
+            SyncTarget {
+                label: "org_a".to_string(),
+                prefix: "org_a_hash".to_string(),
+                crypto: Arc::new(LocalCryptoProvider::from_key([0x02u8; 32])),
+            },
+            SyncTarget {
+                label: "org_b".to_string(),
+                prefix: "org_b_hash".to_string(),
+                crypto: Arc::new(LocalCryptoProvider::from_key([0x03u8; 32])),
+            },
+        ]
+    }
+
+    fn test_partitioner() -> SyncPartitioner {
         use crate::org::OrgMembership;
+        let memberships = vec![
+            OrgMembership {
+                org_name: "Org A".to_string(),
+                org_hash: "org_a_hash".to_string(),
+                org_public_key: "pk_a".to_string(),
+                org_secret_key: None,
+                org_e2e_secret: "secret_a".to_string(),
+                role: crate::org::OrgRole::Member,
+                members: vec![],
+                created_at: 0,
+                joined_at: 0,
+            },
+            OrgMembership {
+                org_name: "Org B".to_string(),
+                org_hash: "org_b_hash".to_string(),
+                org_public_key: "pk_b".to_string(),
+                org_secret_key: None,
+                org_e2e_secret: "secret_b".to_string(),
+                role: crate::org::OrgRole::Member,
+                members: vec![],
+                created_at: 0,
+                joined_at: 0,
+            },
+        ];
+        SyncPartitioner::new(&memberships)
+    }
 
-        let memberships = vec![OrgMembership {
-            org_name: "Test".to_string(),
-            org_hash: "org_abc".to_string(),
-            org_public_key: "pk".to_string(),
-            org_secret_key: None,
-            org_e2e_secret: "secret".to_string(),
-            role: crate::org::OrgRole::Member,
-            members: vec![],
-            created_at: 0,
-            joined_at: 0,
-        }];
-        let partitioner = SyncPartitioner::new(&memberships);
-
-        let entry = LogEntry {
-            seq: 1,
+    fn batch_put(items: &[&[u8]]) -> LogEntry {
+        LogEntry {
+            seq: 42,
             timestamp_ms: 1000,
             device_id: "dev".to_string(),
-            op: LogOp::Put {
+            op: LogOp::BatchPut {
                 namespace: "main".to_string(),
-                key: LogOp::encode_bytes(b"atom:uuid-1"),
-                value: LogOp::encode_bytes(b"data"),
+                items: items
+                    .iter()
+                    .map(|k| (LogOp::encode_bytes(k), LogOp::encode_bytes(b"v")))
+                    .collect(),
             },
-        };
+        }
+    }
 
-        assert_eq!(
-            SyncEngine::classify_entry(&partitioner, &entry),
-            SyncDestination::Personal
-        );
+    fn batch_delete(keys: &[&[u8]]) -> LogEntry {
+        LogEntry {
+            seq: 42,
+            timestamp_ms: 1000,
+            device_id: "dev".to_string(),
+            op: LogOp::BatchDelete {
+                namespace: "main".to_string(),
+                keys: keys.iter().map(|k| LogOp::encode_bytes(k)).collect(),
+            },
+        }
+    }
+
+    fn batch_len(entry: &LogEntry) -> usize {
+        match &entry.op {
+            LogOp::BatchPut { items, .. } => items.len(),
+            LogOp::BatchDelete { keys, .. } => keys.len(),
+            _ => panic!("expected batch"),
+        }
     }
 
     #[test]
-    fn test_classify_entry_org() {
-        use crate::org::OrgMembership;
+    fn partition_entry_homogeneous_org_batch_unchanged() {
+        let partitioner = Some(test_partitioner());
+        let targets = test_targets();
+        let entry = batch_put(&[b"org_a_hash:atom:foo", b"org_a_hash:atom:bar"]);
 
-        let memberships = vec![OrgMembership {
-            org_name: "Test".to_string(),
-            org_hash: "org_abc".to_string(),
-            org_public_key: "pk".to_string(),
-            org_secret_key: None,
-            org_e2e_secret: "secret".to_string(),
-            role: crate::org::OrgRole::Member,
-            members: vec![],
-            created_at: 0,
-            joined_at: 0,
-        }];
-        let partitioner = SyncPartitioner::new(&memberships);
+        let result = SyncEngine::partition_entry(&partitioner, &entry, &targets);
+        assert_eq!(result.len(), 1, "homogeneous batch must produce one bucket");
+        let (idx, sub) = &result[0];
+        assert_eq!(*idx, 1, "org_a is target index 1");
+        assert_eq!(sub.seq, 42);
+        assert_eq!(batch_len(sub), 2, "original batch intact");
+    }
 
+    #[test]
+    fn partition_entry_mixed_personal_and_org_splits() {
+        let partitioner = Some(test_partitioner());
+        let targets = test_targets();
+        let entry = batch_put(&[b"atom:personal-1", b"org_a_hash:atom:shared-1"]);
+
+        let result = SyncEngine::partition_entry(&partitioner, &entry, &targets);
+        assert_eq!(result.len(), 2, "mixed batch must split");
+
+        let by_idx: std::collections::HashMap<usize, &LogEntry> =
+            result.iter().map(|(i, e)| (*i, e)).collect();
+        let personal = by_idx.get(&0).expect("personal bucket");
+        let org_a = by_idx.get(&1).expect("org_a bucket");
+        assert_eq!(batch_len(personal), 1);
+        assert_eq!(batch_len(org_a), 1);
+        assert_eq!(personal.seq, 42);
+        assert_eq!(org_a.seq, 42, "seq preserved across split");
+    }
+
+    #[test]
+    fn partition_entry_mixed_three_orgs_splits() {
+        let partitioner = Some(test_partitioner());
+        let targets = test_targets();
+        let entry = batch_put(&[
+            b"atom:personal-1",
+            b"org_a_hash:atom:shared-1",
+            b"org_a_hash:atom:shared-2",
+            b"org_b_hash:atom:shared-3",
+        ]);
+
+        let result = SyncEngine::partition_entry(&partitioner, &entry, &targets);
+        assert_eq!(result.len(), 3);
+        let by_idx: std::collections::HashMap<usize, &LogEntry> =
+            result.iter().map(|(i, e)| (*i, e)).collect();
+        assert_eq!(batch_len(by_idx.get(&0).expect("personal")), 1);
+        assert_eq!(batch_len(by_idx.get(&1).expect("org_a")), 2);
+        assert_eq!(batch_len(by_idx.get(&2).expect("org_b")), 1);
+    }
+
+    #[test]
+    fn partition_entry_batch_delete_mixed_splits() {
+        let partitioner = Some(test_partitioner());
+        let targets = test_targets();
+        let entry = batch_delete(&[b"atom:personal-1", b"org_b_hash:atom:shared-1"]);
+
+        let result = SyncEngine::partition_entry(&partitioner, &entry, &targets);
+        assert_eq!(result.len(), 2);
+        let by_idx: std::collections::HashMap<usize, &LogEntry> =
+            result.iter().map(|(i, e)| (*i, e)).collect();
+        assert_eq!(batch_len(by_idx.get(&0).expect("personal")), 1);
+        assert_eq!(batch_len(by_idx.get(&2).expect("org_b")), 1);
+        // Confirm ops are BatchDelete
+        for (_, sub) in &result {
+            assert!(matches!(sub.op, LogOp::BatchDelete { .. }));
+        }
+    }
+
+    #[test]
+    fn partition_entry_single_put_unchanged() {
+        let partitioner = Some(test_partitioner());
+        let targets = test_targets();
         let entry = LogEntry {
-            seq: 1,
+            seq: 7,
             timestamp_ms: 1000,
             device_id: "dev".to_string(),
             op: LogOp::Put {
                 namespace: "main".to_string(),
-                key: LogOp::encode_bytes(b"org_abc:atom:uuid-1"),
-                value: LogOp::encode_bytes(b"data"),
+                key: LogOp::encode_bytes(b"org_b_hash:atom:x"),
+                value: LogOp::encode_bytes(b"v"),
             },
         };
-
-        assert_eq!(
-            SyncEngine::classify_entry(&partitioner, &entry),
-            SyncDestination::Org {
-                org_hash: "org_abc".to_string(),
-                org_e2e_secret: "secret".to_string(),
-            }
-        );
+        let result = SyncEngine::partition_entry(&partitioner, &entry, &targets);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].0, 2);
     }
 }
