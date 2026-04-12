@@ -85,7 +85,7 @@ impl EventStatistics {
 
     pub fn increment_mutation_executions(
         &mut self,
-        event: &super::message_bus::query_events::MutationExecuted,
+        event: &crate::messaging::query_events::MutationExecuted,
     ) {
         self.mutation_executions += 1;
         self.total_events += 1;

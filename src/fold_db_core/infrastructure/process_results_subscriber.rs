@@ -11,8 +11,8 @@ use crate::db_operations::DbOperations;
 use crate::schema::types::KeyValue;
 use crate::storage::traits::TypedStore;
 
-use super::message_bus::events::query_events::MutationExecuted;
-use super::message_bus::{AsyncMessageBus, Event};
+use crate::messaging::events::query_events::MutationExecuted;
+use crate::messaging::{AsyncMessageBus, Event};
 
 /// A single mutation outcome stored in the process_results namespace.
 #[derive(Debug, Clone, Serialize, Deserialize)]

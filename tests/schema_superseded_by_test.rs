@@ -101,7 +101,7 @@ async fn superseded_chain_redirect_a_to_b_to_c() {
 
 #[tokio::test]
 async fn superseded_by_persists_across_schema_core_instances() {
-    use fold_db::fold_db_core::infrastructure::message_bus::AsyncMessageBus;
+    use fold_db::messaging::AsyncMessageBus;
     use std::sync::Arc;
 
     // Create a persistent sled DB
