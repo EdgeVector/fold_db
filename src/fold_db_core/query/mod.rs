@@ -6,6 +6,7 @@
 pub mod formatter;
 pub mod hash_range_query;
 pub mod query_executor;
+pub mod source_query;
 
 // Re-export main query functionality
 pub use formatter::{
@@ -13,3 +14,4 @@ pub use formatter::{
 };
 pub use hash_range_query::HashRangeQueryProcessor;
 pub use query_executor::QueryExecutor;
+pub use source_query::{SourceQueryMode, StandardSourceQuery};
