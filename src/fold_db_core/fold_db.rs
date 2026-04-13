@@ -403,7 +403,6 @@ impl FoldDB {
         let view_orchestrator = Arc::new(super::view_orchestrator::ViewOrchestrator::new(
             Arc::clone(&schema_manager),
             Arc::clone(&db_ops),
-            Arc::clone(&message_bus),
         ));
 
         // Create MutationManager for handling all mutation operations
