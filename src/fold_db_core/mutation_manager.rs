@@ -17,7 +17,6 @@ use crate::messaging::{AsyncMessageBus, Event};
 use crate::schema::types::field::{Field, FieldVariant};
 use crate::schema::types::{KeyValue, Mutation, Schema};
 use crate::schema::{SchemaCore, SchemaError};
-use crate::storage::traits::TypedStore;
 use chrono::Utc;
 use log::{debug, error, warn};
 use sha2::{Digest, Sha256};
@@ -362,8 +361,8 @@ impl MutationManager {
             let key = format!("idem:{}", hash);
             match self
                 .db_ops
-                .idempotency_store()
-                .get_item::<String>(&key)
+                .metadata()
+                .get_idempotency_item::<String>(&key)
                 .await
             {
                 Ok(Some(cached_id)) => {
@@ -770,14 +769,13 @@ impl MutationManager {
             .map(|(hash, uuid)| (format!("idem:{}", hash), uuid.clone()))
             .collect();
         if !idem_entries.is_empty() {
-            use crate::storage::traits::TypedStore;
             self.db_ops
-                .idempotency_store()
-                .batch_put_items(idem_entries)
+                .metadata()
+                .batch_put_idempotency(idem_entries)
                 .await
                 .map_err(|e| {
                     log::error!("Failed to store idempotency entries: {}", e);
-                    SchemaError::InvalidData(format!("Idempotency store failed: {}", e))
+                    e
                 })?;
         }
         timing_breakdown.insert("idempotency_store", idem_store_start.elapsed());

@@ -9,7 +9,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::db_operations::DbOperations;
 use crate::schema::types::KeyValue;
-use crate::storage::traits::TypedStore;
 
 use crate::messaging::events::query_events::MutationExecuted;
 use crate::messaging::{AsyncMessageBus, Event};
@@ -77,7 +76,7 @@ impl ProcessResultsSubscriber {
 
         // Write: key = "{progress_id}:mut:{mutation_id}"
         let key = format!("{}:mut:{}", progress_id, mutation_id);
-        if let Err(e) = db_ops.process_results_store().put_item(&key, &result).await {
+        if let Err(e) = db_ops.metadata().put_process_result(&key, &result).await {
             log::error!(
                 "ProcessResultsSubscriber: failed to write result for key '{}': {}",
                 key,

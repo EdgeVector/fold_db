@@ -1,4 +1,6 @@
 use super::atom_store::AtomStore;
+use super::metadata_store::MetadataStore;
+use super::permissions_store::PermissionsStore;
 use super::schema_store::SchemaStore;
 use super::view_store::ViewStore;
 use super::NativeIndexManager;
@@ -11,9 +13,9 @@ use std::sync::Arc;
 ///
 /// Uses the storage abstraction layer (Sled locally, with optional cloud sync).
 ///
-/// The three core domains (schemas, atoms, views) are each encapsulated in
-/// a dedicated store struct whose fields are private. External callers
-/// reach them through `schemas()`, `atoms()`, and `views()`.
+/// All persistence is encapsulated in domain store structs whose
+/// namespace fields are private. External callers reach them through
+/// `schemas()`, `atoms()`, `views()`, `permissions()`, and `metadata()`.
 #[derive(Clone)]
 pub struct DbOperations {
     /// Schema / schema-state / superseded-by namespaces
@@ -22,13 +24,10 @@ pub struct DbOperations {
     atom_store: AtomStore,
     /// Transform view definitions, view states, field cache state
     view_store: ViewStore,
-
-    // ----- Remaining raw namespaces not yet wrapped in a domain store -----
-    metadata_store: Arc<TypedKvStore<dyn KvStore>>,
-    permissions_store: Arc<TypedKvStore<dyn KvStore>>,
-    public_keys_store: Arc<TypedKvStore<dyn KvStore>>,
-    idempotency_store: Arc<TypedKvStore<dyn KvStore>>,
-    process_results_store: Arc<TypedKvStore<dyn KvStore>>,
+    /// Permissions + public keys
+    permissions_store: PermissionsStore,
+    /// Metadata + idempotency + process results
+    metadata_store: MetadataStore,
 
     native_index_manager: Option<NativeIndexManager>,
 }
@@ -55,13 +54,13 @@ impl DbOperations {
 
         // Wrap KvStores in TypedKvStore adapters
         let main_store = Arc::new(TypedKvStore::new(main_kv));
-        let metadata_store = Arc::new(TypedKvStore::new(metadata_kv));
-        let permissions_store = Arc::new(TypedKvStore::new(permissions_kv));
+        let metadata_typed = Arc::new(TypedKvStore::new(metadata_kv));
+        let permissions_typed = Arc::new(TypedKvStore::new(permissions_kv));
         let schema_states_store = Arc::new(TypedKvStore::new(schema_states_kv));
         let schemas_store = Arc::new(TypedKvStore::new(schemas_kv));
-        let public_keys_store = Arc::new(TypedKvStore::new(public_keys_kv));
-        let idempotency_store = Arc::new(TypedKvStore::new(idempotency_kv));
-        let process_results_store = Arc::new(TypedKvStore::new(process_results_kv));
+        let public_keys_typed = Arc::new(TypedKvStore::new(public_keys_kv));
+        let idempotency_typed = Arc::new(TypedKvStore::new(idempotency_kv));
+        let process_results_typed = Arc::new(TypedKvStore::new(process_results_kv));
         let superseded_by_store = Arc::new(TypedKvStore::new(superseded_by_kv));
         let views_store = Arc::new(TypedKvStore::new(views_kv));
         let view_states_store = Arc::new(TypedKvStore::new(view_states_kv));
@@ -73,6 +72,9 @@ impl DbOperations {
         let atom_store = AtomStore::new(main_store);
         let view_store =
             ViewStore::new(views_store, view_states_store, transform_field_states_store);
+        let permissions_store = PermissionsStore::new(permissions_typed, public_keys_typed);
+        let metadata_store =
+            MetadataStore::new(metadata_typed, idempotency_typed, process_results_typed);
 
         // Create native index manager and load any previously stored embeddings
         let native_index_manager = NativeIndexManager::new(native_index_kv);
@@ -82,11 +84,8 @@ impl DbOperations {
             schema_store,
             atom_store,
             view_store,
-            metadata_store,
             permissions_store,
-            public_keys_store,
-            idempotency_store,
-            process_results_store,
+            metadata_store,
             native_index_manager: Some(native_index_manager),
         })
     }
@@ -116,31 +115,14 @@ impl DbOperations {
         &self.view_store
     }
 
-    // ===== Non-domain store getters (crate-only) =====
-    //
-    // These namespaces are used by smaller sibling modules
-    // (metadata_operations, trust_operations, public_key_operations,
-    // conflict_operations, org_operations). Wrapping them in their
-    // own domain structs is left for a follow-up refactor.
-
-    pub(crate) fn metadata_store(&self) -> &Arc<TypedKvStore<dyn KvStore>> {
-        &self.metadata_store
-    }
-
-    pub(crate) fn permissions_store(&self) -> &Arc<TypedKvStore<dyn KvStore>> {
+    /// Access the permissions / public-keys / trust domain store.
+    pub fn permissions(&self) -> &PermissionsStore {
         &self.permissions_store
     }
 
-    pub(crate) fn public_keys_store(&self) -> &Arc<TypedKvStore<dyn KvStore>> {
-        &self.public_keys_store
-    }
-
-    pub(crate) fn idempotency_store(&self) -> &Arc<TypedKvStore<dyn KvStore>> {
-        &self.idempotency_store
-    }
-
-    pub(crate) fn process_results_store(&self) -> &Arc<TypedKvStore<dyn KvStore>> {
-        &self.process_results_store
+    /// Access the metadata / idempotency / process-results domain store.
+    pub fn metadata(&self) -> &MetadataStore {
+        &self.metadata_store
     }
 
     /// Access the native index manager for embedding and search operations.
@@ -148,12 +130,12 @@ impl DbOperations {
         self.native_index_manager.as_ref()
     }
 
-    // ===== Public accessors for external callers =====
+    // ===== Public escape hatches =====
 
     /// Get the raw metadata KvStore for external modules that need generic key-value
     /// access (e.g., discovery configs, async queries).
     pub fn raw_metadata_store(&self) -> Arc<dyn KvStore> {
-        self.metadata_store.inner().clone()
+        self.metadata_store.raw_metadata_kv()
     }
 
     /// Flush all pending writes to durable storage
