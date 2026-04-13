@@ -69,7 +69,7 @@ pub mod s3;
 pub mod snapshot;
 
 pub use auth::AuthRefreshCallback;
-pub use engine::{SyncConfig, SyncConflict, SyncEngine, SyncState, SyncStatus};
+pub use engine::{BootstrapOutcome, SyncConfig, SyncConflict, SyncEngine, SyncState, SyncStatus};
 pub use error::{SyncError, SyncResult};
 pub use org_sync::{SyncDestination, SyncPartitioner};
 
