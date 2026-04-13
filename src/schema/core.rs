@@ -4,6 +4,8 @@ use std::sync::{Arc, Mutex};
 use serde_json;
 
 use crate::messaging::AsyncMessageBus;
+use crate::schema::field_mapper::FieldMapperService;
+#[cfg(test)]
 use crate::schema::types::field::Field;
 use crate::schema::types::{DeclarativeSchemaDefinition, Schema, SchemaError};
 use crate::schema::{SchemaState, SchemaWithState};
@@ -34,6 +36,8 @@ pub struct SchemaCore {
     message_bus: Arc<AsyncMessageBus>,
     /// Registry for transform views
     view_registry: Mutex<ViewRegistry>,
+    /// Domain service that applies FieldMapper entries during schema expansion.
+    field_mapper: FieldMapperService,
 }
 
 /// Acquire a `Mutex<HashMap<String, T>>` lock, mapping poison errors to `SchemaError`.
@@ -63,13 +67,17 @@ impl SchemaCore {
         let wasm_engine = Arc::new(WasmTransformEngine::new()?);
         let view_registry = ViewRegistry::load(views, view_states, wasm_engine);
 
+        let schemas = Arc::new(Mutex::new(schemas));
+        let field_mapper = FieldMapperService::new(db_ops.clone(), schemas.clone());
+
         let schema_core = Self {
-            schemas: Arc::new(Mutex::new(schemas)),
+            schemas,
             schema_states: Arc::new(Mutex::new(schema_states)),
             superseded_by: Arc::new(Mutex::new(superseded_by)),
             db_ops,
             message_bus,
             view_registry: Mutex::new(view_registry),
+            field_mapper,
         };
 
         Ok(schema_core)
@@ -144,7 +152,7 @@ impl SchemaCore {
         schema_state: SchemaState,
     ) -> Result<(), SchemaError> {
         if schema_state == SchemaState::Approved {
-            self.apply_field_mappers(schema_name).await?;
+            self.field_mapper.apply_field_mappers(schema_name).await?;
         }
 
         // Persist to database first - this is the source of truth
@@ -180,98 +188,6 @@ impl SchemaCore {
         if current_state != SchemaState::Approved {
             self.set_schema_state(schema_name, SchemaState::Approved)
                 .await?;
-        }
-
-        Ok(())
-    }
-
-    async fn apply_field_mappers(&self, schema_name: &str) -> Result<(), SchemaError> {
-        let mut schema = self.db_ops.get_schema(schema_name).await?.ok_or_else(|| {
-            SchemaError::InvalidData(format!("Schema '{}' not found in database", schema_name))
-        })?;
-
-        let Some(field_mappers) = schema.field_mappers().cloned() else {
-            return Ok(());
-        };
-
-        if field_mappers.is_empty() {
-            return Ok(());
-        }
-
-        let mut source_cache: HashMap<String, Schema> = HashMap::new();
-        let mut updated = false;
-
-        for (target_field, mapper) in field_mappers {
-            let source_schema_name = mapper.source_schema().to_string();
-            let source_schema = if let Some(schema) = source_cache.get(&source_schema_name) {
-                schema
-            } else {
-                // Use db_ops.get_schema directly (not self.get_schema) to bypass
-                // the superseded_by redirect chain. The source schema may already
-                // be blocked and superseded to point back to this schema, which
-                // would cause a circular redirect. We need the raw source schema
-                // with its molecule UUIDs.
-                let fetched = match self.db_ops.get_schema(&source_schema_name).await {
-                    Ok(Some(s)) => s,
-                    Ok(None) => {
-                        log::warn!(
-                            "apply_field_mappers: source schema '{}' not found, skipping its mappers",
-                            source_schema_name
-                        );
-                        continue;
-                    }
-                    Err(e) => {
-                        log::warn!(
-                            "apply_field_mappers: error loading source schema '{}': {}, skipping",
-                            source_schema_name,
-                            e
-                        );
-                        continue;
-                    }
-                };
-                source_cache.insert(source_schema_name.clone(), fetched);
-                source_cache
-                    .get(&source_schema_name)
-                    .expect("source schema inserted")
-            };
-
-            let Some(source_field) = source_schema.runtime_fields.get(mapper.source_field()) else {
-                log::warn!(
-                    "apply_field_mappers: source field '{}.{}' not in runtime_fields, skipping",
-                    source_schema_name,
-                    mapper.source_field()
-                );
-                continue;
-            };
-
-            // If the source field doesn't have a molecule UUID yet (no data written),
-            // skip it — the target field will get a fresh molecule on first mutation.
-            let Some(molecule_uuid) = source_field.common().molecule_uuid().cloned() else {
-                continue;
-            };
-
-            let Some(target_runtime_field) = schema.runtime_fields.get_mut(&target_field) else {
-                log::warn!(
-                    "apply_field_mappers: target field '{}' not in runtime_fields, skipping",
-                    target_field
-                );
-                continue;
-            };
-
-            target_runtime_field
-                .common_mut()
-                .set_molecule_uuid(molecule_uuid.clone());
-            target_runtime_field
-                .common_mut()
-                .set_field_mappers(HashMap::from([(target_field.clone(), mapper.clone())]));
-
-            updated = true;
-        }
-
-        if updated {
-            schema.sync_molecule_uuids();
-            self.db_ops.store_schema(schema_name, &schema).await?;
-            lock_map(&self.schemas, "schemas")?.insert(schema_name.to_string(), schema);
         }
 
         Ok(())
