@@ -18,6 +18,7 @@ pub mod query;
 // Core components
 
 pub mod mutation_manager;
+pub mod view_invalidation;
 
 // Re-export key components
 pub use infrastructure::EventMonitor;
