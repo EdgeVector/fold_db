@@ -446,11 +446,22 @@ impl FoldDB {
         // Create shared IndexStatusTracker for tracking indexing progress
         let index_status_tracker = IndexStatusTracker::new(Some(progress_tracker.clone()));
 
+        // Create ViewInvalidationService that MutationManager uses for
+        // view lifecycle events (redirect writes, invalidate caches,
+        // precompute dependents).
+        let view_invalidation_service =
+            Arc::new(super::view_invalidation::ViewInvalidationService::new(
+                Arc::clone(&schema_manager),
+                Arc::clone(&db_ops),
+                Arc::clone(&message_bus),
+            ));
+
         // Create MutationManager for handling all mutation operations
         let mutation_manager = MutationManager::new(
             Arc::clone(&db_ops),
             Arc::clone(&schema_manager),
             Arc::clone(&message_bus),
+            Arc::clone(&view_invalidation_service),
             Some(index_status_tracker.clone()),
         );
 
