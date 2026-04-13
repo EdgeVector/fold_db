@@ -21,13 +21,13 @@ impl DbOperations {
 
         // Collect all namespace stores
         let stores: Vec<&Arc<TypedKvStore<dyn KvStore>>> = vec![
-            self.metadata_store(),
-            self.permissions_store(),
+            self.metadata().raw_metadata(),
+            self.permissions().raw_permissions(),
             self.schemas().raw_schema_states(),
             self.schemas().raw_schemas(),
-            self.public_keys_store(),
-            self.idempotency_store(),
-            self.process_results_store(),
+            self.permissions().raw_public_keys(),
+            self.metadata().raw_idempotency(),
+            self.metadata().raw_process_results(),
             self.schemas().raw_superseded_by(),
             self.views().raw_views(),
             self.views().raw_view_states(),
