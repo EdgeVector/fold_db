@@ -1,4 +1,4 @@
-//! View Invalidation Service
+//! View Orchestrator
 //!
 //! Extracted from MutationManager. Owns all view lifecycle logic triggered by
 //! mutations: redirecting mutations targeting identity views to their source
@@ -98,16 +98,17 @@ impl SourceQueryFn for PrecomputeSourceQuery {
     }
 }
 
-/// Service that handles view lifecycle events triggered by mutations.
-pub struct ViewInvalidationService {
+/// Orchestrates view lifecycle: dependency-graph traversal, invalidation,
+/// and precomputation of derived views triggered by mutations.
+pub struct ViewOrchestrator {
     schema_manager: Arc<SchemaCore>,
     db_ops: Arc<DbOperations>,
     #[allow(dead_code)]
     message_bus: Arc<AsyncMessageBus>,
 }
 
-impl ViewInvalidationService {
-    /// Create a new ViewInvalidationService.
+impl ViewOrchestrator {
+    /// Create a new ViewOrchestrator.
     pub fn new(
         schema_manager: Arc<SchemaCore>,
         db_ops: Arc<DbOperations>,

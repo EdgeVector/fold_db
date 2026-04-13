@@ -17,11 +17,12 @@ use crate::storage::SledPool;
 use crate::storage::StorageError;
 
 // Infrastructure components that are used internally
-use super::infrastructure::{AsyncMessageBus, EventMonitor};
+use super::event_monitor::EventMonitor;
 use super::mutation_manager::MutationManager;
 use super::orchestration::index_status::IndexStatusTracker;
 use super::query::QueryExecutor;
 use super::sync_coordinator::SyncCoordinator;
+use crate::messaging::AsyncMessageBus;
 use crate::progress::ProgressStore as JobStore;
 use crate::progress::ProgressTracker;
 
@@ -42,7 +43,7 @@ pub struct FoldDB {
     /// Mutation manager for handling all mutation operations
     pub(crate) mutation_manager: MutationManager,
     /// Tracker for pending background tasks
-    pub(crate) pending_tasks: Arc<super::infrastructure::pending_task_tracker::PendingTaskTracker>,
+    pub(crate) pending_tasks: Arc<super::pending_task_tracker::PendingTaskTracker>,
     /// Unified progress tracker for all job types (ingestion, indexing, etc.)
     /// This is the single source of truth for progress — uses Sled for persistent storage.
     pub(crate) progress_tracker: ProgressTracker,
@@ -373,8 +374,7 @@ impl FoldDB {
         let message_bus = Arc::new(AsyncMessageBus::new());
 
         // Initialize pending task tracker
-        let pending_tasks =
-            Arc::new(super::infrastructure::pending_task_tracker::PendingTaskTracker::new());
+        let pending_tasks = Arc::new(super::pending_task_tracker::PendingTaskTracker::new());
 
         // Use provided progress tracker or create an in-memory one (for testing)
         let progress_tracker: ProgressTracker =
@@ -397,22 +397,21 @@ impl FoldDB {
         // Create shared IndexStatusTracker for tracking indexing progress
         let index_status_tracker = IndexStatusTracker::new(Some(progress_tracker.clone()));
 
-        // Create ViewInvalidationService that MutationManager uses for
+        // Create ViewOrchestrator that MutationManager uses for
         // view lifecycle events (redirect writes, invalidate caches,
         // precompute dependents).
-        let view_invalidation_service =
-            Arc::new(super::view_invalidation::ViewInvalidationService::new(
-                Arc::clone(&schema_manager),
-                Arc::clone(&db_ops),
-                Arc::clone(&message_bus),
-            ));
+        let view_orchestrator = Arc::new(super::view_orchestrator::ViewOrchestrator::new(
+            Arc::clone(&schema_manager),
+            Arc::clone(&db_ops),
+            Arc::clone(&message_bus),
+        ));
 
         // Create MutationManager for handling all mutation operations
         let mutation_manager = MutationManager::new(
             Arc::clone(&db_ops),
             Arc::clone(&schema_manager),
             Arc::clone(&message_bus),
-            Arc::clone(&view_invalidation_service),
+            Arc::clone(&view_orchestrator),
             Some(index_status_tracker.clone()),
         );
 
@@ -436,7 +435,7 @@ impl FoldDB {
 
         // Start ProcessResultsSubscriber to capture actual stored keys for ingestion reports
         let process_results_subscriber =
-            super::infrastructure::ProcessResultsSubscriber::new(Arc::clone(&db_ops));
+            super::process_results_subscriber::ProcessResultsSubscriber::new(Arc::clone(&db_ops));
         process_results_subscriber
             .start_event_listener(Arc::clone(&message_bus), user_id.clone())
             .await;
@@ -531,14 +530,12 @@ impl FoldDB {
     }
 
     /// Returns a reference to the pending task tracker
-    pub fn pending_tasks(
-        &self,
-    ) -> &Arc<super::infrastructure::pending_task_tracker::PendingTaskTracker> {
+    pub fn pending_tasks(&self) -> &Arc<super::pending_task_tracker::PendingTaskTracker> {
         &self.pending_tasks
     }
 
     /// Get current event statistics from the event monitor
-    pub fn get_event_statistics(&self) -> super::infrastructure::event_monitor::EventStatistics {
+    pub fn get_event_statistics(&self) -> super::event_monitor::EventStatistics {
         self.event_monitor.get_statistics()
     }
 
