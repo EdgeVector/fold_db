@@ -19,7 +19,8 @@ impl DbOperations {
         let prefix = build_storage_key(org_hash, &base_prefix);
 
         let items: Vec<(String, SyncConflict)> = self
-            .atoms_store()
+            .atoms()
+            .raw()
             .scan_items_with_prefix(&prefix)
             .await
             .map_err(|e| SchemaError::InvalidData(format!("Failed to scan conflicts: {}", e)))?;
@@ -45,14 +46,16 @@ impl DbOperations {
         let key = build_storage_key(org_hash, &base_key);
 
         let mut conflict: SyncConflict = self
-            .atoms_store()
+            .atoms()
+            .raw()
             .get_item(&key)
             .await
             .map_err(|e| SchemaError::InvalidData(format!("Failed to read conflict: {}", e)))?
             .ok_or_else(|| SchemaError::NotFound(format!("Conflict not found: {}", conflict_id)))?;
 
         conflict.resolved = true;
-        self.atoms_store()
+        self.atoms()
+            .raw()
             .put_item(&key, &conflict)
             .await
             .map_err(|e| SchemaError::InvalidData(format!("Failed to update conflict: {}", e)))?;

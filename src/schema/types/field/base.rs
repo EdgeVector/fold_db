@@ -46,7 +46,7 @@ where
             let base_key = format!("ref:{}", molecule_uuid);
             let ref_key = self.inner.storage_key(&base_key);
             use crate::storage::traits::TypedStore;
-            match db_ops.atoms_store().get_item::<M>(&ref_key).await {
+            match db_ops.atoms().raw().get_item::<M>(&ref_key).await {
                 Ok(Some(molecule)) => {
                     self.molecule = Some(molecule);
                 }

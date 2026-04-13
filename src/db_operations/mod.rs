@@ -1,6 +1,10 @@
 // Core database operations
 pub mod core;
-// Atom and molecule operations
+// Domain stores (private namespace fields, public operation methods)
+pub mod atom_store;
+pub mod schema_store;
+pub mod view_store;
+// Thin delegator impl blocks on DbOperations (backward compat)
 pub mod atom_operations;
 mod conflict_operations;
 mod metadata_operations;
@@ -10,7 +14,9 @@ pub mod public_key_operations;
 mod schema_operations;
 mod trust_operations;
 mod view_operations;
-// Re-export the main DbOperations struct
-pub use atom_operations::MoleculeData;
+// Re-exports
+pub use atom_store::{AtomStore, MoleculeData};
 pub use core::DbOperations;
 pub use native_index::{IndexResult, NativeIndexManager};
+pub use schema_store::SchemaStore;
+pub use view_store::ViewStore;

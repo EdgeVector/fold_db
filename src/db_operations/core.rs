@@ -1,3 +1,6 @@
+use super::atom_store::AtomStore;
+use super::schema_store::SchemaStore;
+use super::view_store::ViewStore;
 use super::NativeIndexManager;
 use crate::schema::SchemaError;
 use crate::storage::traits::*;
@@ -7,25 +10,25 @@ use std::sync::Arc;
 /// Database operations with pluggable storage backend
 ///
 /// Uses the storage abstraction layer (Sled locally, with optional cloud sync).
+///
+/// The three core domains (schemas, atoms, views) are each encapsulated in
+/// a dedicated store struct whose fields are private. External callers
+/// reach them through `schemas()`, `atoms()`, and `views()`.
 #[derive(Clone)]
 pub struct DbOperations {
-    /// Main storage namespace - using concrete type instead of trait object
-    main_store: Arc<TypedKvStore<dyn KvStore>>,
+    /// Schema / schema-state / superseded-by namespaces
+    schema_store: SchemaStore,
+    /// Main namespace — atoms, molecules, mutation events, sync conflicts
+    atom_store: AtomStore,
+    /// Transform view definitions, view states, field cache state
+    view_store: ViewStore,
 
-    /// Named namespaces (like sled trees)
+    // ----- Remaining raw namespaces not yet wrapped in a domain store -----
     metadata_store: Arc<TypedKvStore<dyn KvStore>>,
     permissions_store: Arc<TypedKvStore<dyn KvStore>>,
-    schema_states_store: Arc<TypedKvStore<dyn KvStore>>,
-    schemas_store: Arc<TypedKvStore<dyn KvStore>>,
     public_keys_store: Arc<TypedKvStore<dyn KvStore>>,
     idempotency_store: Arc<TypedKvStore<dyn KvStore>>,
     process_results_store: Arc<TypedKvStore<dyn KvStore>>,
-    superseded_by_store: Arc<TypedKvStore<dyn KvStore>>,
-
-    /// Transform view storage namespaces
-    views_store: Arc<TypedKvStore<dyn KvStore>>,
-    view_states_store: Arc<TypedKvStore<dyn KvStore>>,
-    transform_field_states_store: Arc<TypedKvStore<dyn KvStore>>,
 
     native_index_manager: Option<NativeIndexManager>,
 }
@@ -64,23 +67,26 @@ impl DbOperations {
         let view_states_store = Arc::new(TypedKvStore::new(view_states_kv));
         let transform_field_states_store = Arc::new(TypedKvStore::new(transform_field_states_kv));
 
+        // Domain stores
+        let schema_store =
+            SchemaStore::new(schemas_store, schema_states_store, superseded_by_store);
+        let atom_store = AtomStore::new(main_store);
+        let view_store =
+            ViewStore::new(views_store, view_states_store, transform_field_states_store);
+
         // Create native index manager and load any previously stored embeddings
         let native_index_manager = NativeIndexManager::new(native_index_kv);
         native_index_manager.restore_from_store().await;
 
         Ok(Self {
-            main_store,
+            schema_store,
+            atom_store,
+            view_store,
             metadata_store,
             permissions_store,
-            schema_states_store,
-            schemas_store,
             public_keys_store,
             idempotency_store,
             process_results_store,
-            superseded_by_store,
-            views_store,
-            view_states_store,
-            transform_field_states_store,
             native_index_manager: Some(native_index_manager),
         })
     }
@@ -93,11 +99,29 @@ impl DbOperations {
         Self::from_namespaced_store(store).await
     }
 
-    // ===== Internal store getters (crate-only) =====
+    // ===== Domain store accessors (public) =====
+
+    /// Access the schema domain store.
+    pub fn schemas(&self) -> &SchemaStore {
+        &self.schema_store
+    }
+
+    /// Access the atom domain store.
+    pub fn atoms(&self) -> &AtomStore {
+        &self.atom_store
+    }
+
+    /// Access the view domain store.
+    pub fn views(&self) -> &ViewStore {
+        &self.view_store
+    }
+
+    // ===== Non-domain store getters (crate-only) =====
     //
-    // External callers should use the domain operation methods
-    // (atom_operations, schema_operations, etc.) instead of accessing
-    // raw stores directly.
+    // These namespaces are used by smaller sibling modules
+    // (metadata_operations, trust_operations, public_key_operations,
+    // conflict_operations, org_operations). Wrapping them in their
+    // own domain structs is left for a follow-up refactor.
 
     pub(crate) fn metadata_store(&self) -> &Arc<TypedKvStore<dyn KvStore>> {
         &self.metadata_store
@@ -105,14 +129,6 @@ impl DbOperations {
 
     pub(crate) fn permissions_store(&self) -> &Arc<TypedKvStore<dyn KvStore>> {
         &self.permissions_store
-    }
-
-    pub(crate) fn schema_states_store(&self) -> &Arc<TypedKvStore<dyn KvStore>> {
-        &self.schema_states_store
-    }
-
-    pub(crate) fn schemas_store(&self) -> &Arc<TypedKvStore<dyn KvStore>> {
-        &self.schemas_store
     }
 
     pub(crate) fn public_keys_store(&self) -> &Arc<TypedKvStore<dyn KvStore>> {
@@ -127,30 +143,9 @@ impl DbOperations {
         &self.process_results_store
     }
 
-    pub(crate) fn superseded_by_store(&self) -> &Arc<TypedKvStore<dyn KvStore>> {
-        &self.superseded_by_store
-    }
-
     /// Access the native index manager for embedding and search operations.
     pub fn native_index_manager(&self) -> Option<&NativeIndexManager> {
         self.native_index_manager.as_ref()
-    }
-
-    pub(crate) fn views_store(&self) -> &Arc<TypedKvStore<dyn KvStore>> {
-        &self.views_store
-    }
-
-    pub(crate) fn view_states_store(&self) -> &Arc<TypedKvStore<dyn KvStore>> {
-        &self.view_states_store
-    }
-
-    pub(crate) fn transform_field_states_store(&self) -> &Arc<TypedKvStore<dyn KvStore>> {
-        &self.transform_field_states_store
-    }
-
-    /// Get atoms/molecules store (same as main_store for backward compatibility)
-    pub(crate) fn atoms_store(&self) -> &Arc<TypedKvStore<dyn KvStore>> {
-        &self.main_store
     }
 
     // ===== Public accessors for external callers =====
@@ -163,6 +158,6 @@ impl DbOperations {
 
     /// Flush all pending writes to durable storage
     pub async fn flush(&self) -> Result<(), SchemaError> {
-        Ok(self.main_store.inner().flush().await?)
+        Ok(self.atom_store.flush().await?)
     }
 }
