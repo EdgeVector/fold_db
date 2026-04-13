@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use super::orchestration::index_status::IndexStatusTracker;
-use super::view_invalidation::ViewInvalidationService;
+use super::view_orchestrator::ViewOrchestrator;
 use crate::atom::{Atom, FieldKey, MutationEvent};
 use crate::db_operations::{DbOperations, MoleculeData};
 use crate::messaging::events::query_events::MutationExecuted;
@@ -31,7 +31,7 @@ pub struct MutationManager {
     /// Message bus for event publishing and listening
     message_bus: Arc<AsyncMessageBus>,
     /// View lifecycle service (redirect/invalidate/precompute)
-    view_invalidation_service: Arc<ViewInvalidationService>,
+    view_orchestrator: Arc<ViewOrchestrator>,
     /// Index status tracker for reporting indexing progress
     index_status_tracker: Option<IndexStatusTracker>,
     /// Flag to track if the event listener is running
@@ -44,14 +44,14 @@ impl MutationManager {
         db_ops: Arc<DbOperations>,
         schema_manager: Arc<SchemaCore>,
         message_bus: Arc<AsyncMessageBus>,
-        view_invalidation_service: Arc<ViewInvalidationService>,
+        view_orchestrator: Arc<ViewOrchestrator>,
         index_status_tracker: Option<IndexStatusTracker>,
     ) -> Self {
         Self {
             db_ops,
             schema_manager,
             message_bus,
-            view_invalidation_service,
+            view_orchestrator,
             index_status_tracker,
             is_listening: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         }
@@ -138,10 +138,7 @@ impl MutationManager {
         }
 
         // Phase 0: Redirect identity view mutations to source schemas
-        let mutations = self
-            .view_invalidation_service
-            .redirect_mutation(mutations)
-            .await?;
+        let mutations = self.view_orchestrator.redirect_mutation(mutations).await?;
 
         log::info!(
             "🔄 write_mutations_batch_async: Starting batch of {} mutations",
@@ -293,7 +290,7 @@ impl MutationManager {
                 .collect::<HashSet<_>>()
                 .into_iter()
                 .collect();
-            self.view_invalidation_service
+            self.view_orchestrator
                 .invalidate_on_mutation(&schema_name, &fields_affected)
                 .await?;
         }
@@ -829,7 +826,7 @@ impl MutationManager {
         let db_ops = Arc::clone(&self.db_ops);
         let schema_manager = Arc::clone(&self.schema_manager);
         let message_bus = Arc::clone(&self.message_bus);
-        let view_invalidation_service = Arc::clone(&self.view_invalidation_service);
+        let view_orchestrator = Arc::clone(&self.view_orchestrator);
         let is_listening = Arc::clone(&self.is_listening);
 
         is_listening.store(true, std::sync::atomic::Ordering::Release);
@@ -850,7 +847,7 @@ impl MutationManager {
                                     Arc::clone(&db_ops),
                                     Arc::clone(&schema_manager),
                                     Arc::clone(&message_bus),
-                                    Arc::clone(&view_invalidation_service),
+                                    Arc::clone(&view_orchestrator),
                                     None,
                                 );
 

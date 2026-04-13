@@ -5,24 +5,26 @@
 //!
 //! - **managers/**: Core managers for different aspects of data management
 //! - **services/**: Service layer components for operations
-//! - **infrastructure/**: Foundation components (message bus, initialization, etc.)
 //! - **orchestration/**: Coordination and orchestration components
 
 // Organized module declarations
+pub mod event_monitor;
+pub mod event_statistics;
 pub mod factory;
 pub mod fold_db;
-pub mod infrastructure;
 pub mod orchestration;
+pub mod pending_task_tracker;
+pub mod process_results_subscriber;
 pub mod query;
 
 // Core components
 
 pub mod mutation_manager;
 pub mod sync_coordinator;
-pub mod view_invalidation;
+pub mod view_orchestrator;
 
 // Re-export key components
-pub use infrastructure::EventMonitor;
+pub use event_monitor::EventMonitor;
 pub use query::QueryExecutor;
 
 // Re-export core components
