@@ -147,6 +147,26 @@ pub type SchemaReloadCallback = ReloadCallback;
 /// Callback that reloads embeddings from the persistent store into the in-memory index.
 pub type EmbeddingReloadCallback = ReloadCallback;
 
+/// Summary of a single `bootstrap_target` invocation.
+///
+/// Consumed by `bootstrap_all` to decide whether schema/embedding reloaders
+/// need to fire after a multi-target restore, and by fold_db_node's
+/// `bootstrap_from_cloud` flow to report what was restored.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct BootstrapOutcome {
+    /// Highest sequence number restored (from snapshot + log replay).
+    /// Zero if the target had no prior data.
+    pub last_seq: u64,
+    /// Count of log entries replayed after the snapshot.
+    pub entries_replayed: usize,
+    /// True if at least one replayed entry wrote to the `schemas` namespace.
+    /// Used to decide whether the schema reloader should fire.
+    pub schemas_replayed: bool,
+    /// True if at least one replayed entry wrote to the `native_index`
+    /// namespace. Used to decide whether the embedding reloader should fire.
+    pub embeddings_replayed: bool,
+}
+
 /// The sync engine manages replication of a local Sled database to S3.
 ///
 /// Architecture:
@@ -1053,82 +1073,245 @@ impl SyncEngine {
     // Bootstrap (download snapshot + replay logs)
     // =========================================================================
 
-    /// Bootstrap this device from S3.
+    /// Bootstrap this device from S3 (personal target only).
     ///
     /// Downloads the latest snapshot, restores it to the local store,
     /// then replays any log entries after the snapshot's sequence number.
+    ///
+    /// This is a thin shim over `bootstrap_target(0)` preserved for
+    /// backward compatibility with existing callers. New callers that
+    /// need multi-target restore (personal + orgs) should use
+    /// `bootstrap_all` instead.
     pub async fn bootstrap(&self) -> SyncResult<u64> {
-        log::info!("bootstrapping from S3");
+        let outcome = self.bootstrap_target(0).await?;
+        // Preserve original behavior: personal bootstrap also fires the
+        // schema reloader once if any schemas were replayed. `bootstrap_all`
+        // handles this centrally; the single-target shim does it here so
+        // the classic `bootstrap()` path still refreshes the SchemaCore.
+        if outcome.schemas_replayed {
+            self.invoke_reloader(&self.schema_reloader, "schema", "personal")
+                .await;
+        }
+        if outcome.embeddings_replayed {
+            self.invoke_reloader(&self.embedding_reloader, "embedding", "personal")
+                .await;
+        }
+        Ok(outcome.last_seq)
+    }
 
-        // Download latest snapshot
-        let snapshot_url = self.auth.presign_snapshot_download("latest.enc").await?;
-        let snapshot_data = self.s3.download(&snapshot_url).await?;
-
-        let last_seq = match snapshot_data {
-            Some(data) => {
-                let snapshot = Snapshot::unseal(&data, &self.crypto).await?;
-                let last_seq = snapshot.last_seq;
-
-                log::info!(
-                    "restoring snapshot: {} namespaces, last_seq={}",
-                    snapshot.namespaces.len(),
-                    last_seq
-                );
-
-                snapshot.restore(self.store.as_ref()).await?;
-                last_seq
+    /// Bootstrap a single sync target by index into `self.targets`.
+    ///
+    /// For the personal target (idx == 0), downloads `latest.enc`, restores
+    /// the snapshot, and replays any log entries after the snapshot's
+    /// sequence number. For org targets (idx > 0), snapshots are not yet
+    /// supported by the storage service, so only log replay is performed
+    /// starting from seq 0 using the target's own crypto provider.
+    ///
+    /// Returns a `BootstrapOutcome` describing what was replayed. If
+    /// `latest.enc` does not exist (new prefix), returns an outcome with
+    /// `last_seq = 0` and no entries replayed — not an error.
+    ///
+    /// This method does NOT invoke schema/embedding reloaders. Callers that
+    /// need cache refresh should either use `bootstrap` (single target) or
+    /// `bootstrap_all` (multi target), which handle reloader dispatch.
+    pub async fn bootstrap_target(&self, idx: usize) -> SyncResult<BootstrapOutcome> {
+        let target = {
+            let targets = self.targets.lock().await;
+            if idx >= targets.len() {
+                return Err(SyncError::Storage(format!(
+                    "bootstrap_target: index {} out of range (have {} targets)",
+                    idx,
+                    targets.len()
+                )));
             }
-            None => {
-                log::info!("no snapshot found — starting fresh");
-                0
-            }
+            targets[idx].clone()
         };
 
-        // List and replay log entries after the snapshot
-        let personal = self.targets.lock().await[0].clone();
-        let log_objects = self.auth.list_log_objects(&personal).await?;
+        log::info!(
+            "bootstrapping target '{}' (idx={}, prefix='{}')",
+            target.label,
+            idx,
+            target.prefix
+        );
+
+        // Snapshot restore is only supported for the personal target today.
+        // The storage service's presign_snapshot_download endpoint does not
+        // accept an org prefix. Org targets start from seq 0 and replay all
+        // log entries.
+        let snapshot_last_seq = if idx == 0 {
+            let snapshot_url = self.auth.presign_snapshot_download("latest.enc").await?;
+            let snapshot_data = self.s3.download(&snapshot_url).await?;
+            match snapshot_data {
+                Some(data) => {
+                    let snapshot = Snapshot::unseal(&data, &target.crypto).await?;
+                    let last_seq = snapshot.last_seq;
+                    log::info!(
+                        "restoring snapshot for '{}': {} namespaces, last_seq={}",
+                        target.label,
+                        snapshot.namespaces.len(),
+                        last_seq
+                    );
+                    snapshot.restore(self.store.as_ref()).await?;
+                    last_seq
+                }
+                None => {
+                    log::info!("no snapshot found for '{}' — starting fresh", target.label);
+                    0
+                }
+            }
+        } else {
+            0
+        };
+
+        // List and replay log entries after the snapshot for this target.
+        let log_objects = self.auth.list_log_objects(&target).await?;
         let mut log_seqs: Vec<u64> = log_objects
             .iter()
             .filter_map(|obj| parse_flat_log_key(&obj.key))
-            .filter(|seq| *seq > last_seq)
+            .filter(|seq| *seq > snapshot_last_seq)
             .collect();
-
         log_seqs.sort();
+
+        let mut schemas_replayed = false;
+        let mut embeddings_replayed = false;
+        let mut entries_replayed: usize = 0;
 
         if !log_seqs.is_empty() {
             log::info!(
-                "replaying {} log entries (seq {}..={})",
+                "replaying {} log entries for '{}' (seq {}..={})",
                 log_seqs.len(),
+                target.label,
                 log_seqs[0],
                 log_seqs[log_seqs.len() - 1]
             );
 
-            let urls = self.auth.presign_download(&personal, &log_seqs).await?;
+            let urls = self.auth.presign_download(&target, &log_seqs).await?;
 
             for (seq, url) in log_seqs.iter().zip(urls.iter()) {
                 let data = self.s3.download(url).await?;
                 match data {
-                    Some(bytes) => match LogEntry::unseal(&bytes, &self.crypto).await {
+                    Some(bytes) => match LogEntry::unseal(&bytes, &target.crypto).await {
                         Ok(entry) => {
+                            match entry.op.namespace() {
+                                "schemas" => schemas_replayed = true,
+                                "native_index" => embeddings_replayed = true,
+                                _ => {}
+                            }
                             self.replay_entry(&entry).await?;
+                            entries_replayed += 1;
                         }
                         Err(e) => {
-                            log::warn!("skipping corrupt log entry seq={seq}: {e}");
+                            log::warn!(
+                                "skipping corrupt log entry for '{}' seq={seq}: {e}",
+                                target.label
+                            );
                         }
                     },
                     None => {
-                        log::warn!("log entry seq={seq} not found in S3, skipping");
+                        log::warn!(
+                            "log entry for '{}' seq={seq} not found in S3, skipping",
+                            target.label
+                        );
                     }
                 }
             }
         }
 
-        // Update local sequence counter
-        let final_seq = log_seqs.last().copied().unwrap_or(last_seq);
-        *self.seq.lock().await = final_seq;
+        let last_seq = log_seqs.last().copied().unwrap_or(snapshot_last_seq);
 
-        log::info!("bootstrap complete at seq {final_seq}");
-        Ok(final_seq)
+        // Advance the local sequence counter only from the personal target.
+        // Org targets write to their own R2 prefix and must not rewind the
+        // personal counter used for upload sequencing.
+        if idx == 0 {
+            *self.seq.lock().await = last_seq;
+        }
+
+        // Also update this target's download cursor so subsequent sync cycles
+        // don't re-download log entries we already replayed.
+        if last_seq > snapshot_last_seq {
+            {
+                let mut cursors = self.download_cursors.lock().await;
+                cursors.insert(target.prefix.clone(), last_seq);
+            }
+            self.save_download_cursor(&target.prefix, last_seq).await;
+        }
+
+        log::info!(
+            "bootstrap of '{}' complete at seq {} ({} entries replayed)",
+            target.label,
+            last_seq,
+            entries_replayed
+        );
+
+        Ok(BootstrapOutcome {
+            last_seq,
+            entries_replayed,
+            schemas_replayed,
+            embeddings_replayed,
+        })
+    }
+
+    /// Bootstrap all configured sync targets (personal + orgs).
+    ///
+    /// Iterates `self.targets` in order and calls `bootstrap_target(idx)` for
+    /// each. Fails fast: if any target errors, aborts immediately and returns
+    /// `Err` with context identifying which target failed — subsequent
+    /// targets are NOT invoked. Partial success is not useful in the restore
+    /// case.
+    ///
+    /// After all targets succeed, invokes the schema reloader ONCE if any
+    /// outcome reported schema replays, and the embedding reloader ONCE if
+    /// any outcome reported embedding replays. This avoids redundant
+    /// SchemaCore/EmbeddingIndex refreshes when many targets restore in
+    /// sequence.
+    ///
+    /// Callers are responsible for configuring org targets (via
+    /// `configure_org_sync`) before invoking this method.
+    pub async fn bootstrap_all(&self) -> SyncResult<Vec<BootstrapOutcome>> {
+        // Snapshot target count and release the lock before iterating so
+        // per-target calls can reacquire it.
+        let target_count = self.targets.lock().await.len();
+        log::info!("bootstrap_all: starting restore of {target_count} target(s)");
+
+        let mut outcomes: Vec<BootstrapOutcome> = Vec::with_capacity(target_count);
+        for idx in 0..target_count {
+            match self.bootstrap_target(idx).await {
+                Ok(outcome) => outcomes.push(outcome),
+                Err(e) => {
+                    // Recover the failed target's label for context. We
+                    // re-lock here because the per-target call has already
+                    // returned.
+                    let label = self
+                        .targets
+                        .lock()
+                        .await
+                        .get(idx)
+                        .map(|t| t.label.clone())
+                        .unwrap_or_else(|| format!("idx={idx}"));
+                    return Err(SyncError::Storage(format!(
+                        "bootstrap_all: target '{label}' (idx={idx}) failed: {e}"
+                    )));
+                }
+            }
+        }
+
+        // Fire reloaders once at the end, only if any target reported the
+        // corresponding namespace. Fixes the G2 gap where restored schemas
+        // would otherwise remain stale in the SchemaCore cache.
+        if outcomes.iter().any(|o| o.schemas_replayed) {
+            self.invoke_reloader(&self.schema_reloader, "schema", "bootstrap_all")
+                .await;
+        }
+        if outcomes.iter().any(|o| o.embeddings_replayed) {
+            self.invoke_reloader(&self.embedding_reloader, "embedding", "bootstrap_all")
+                .await;
+        }
+
+        log::info!(
+            "bootstrap_all: completed {} target(s) successfully",
+            outcomes.len()
+        );
+        Ok(outcomes)
     }
 
     /// Replay a single log entry with convergent ref handling.
@@ -1586,5 +1769,79 @@ mod tests {
         let result = SyncEngine::partition_entry(&partitioner, &entry, &targets);
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].0, 2);
+    }
+
+    // ---- BootstrapOutcome tests ----
+    //
+    // Full end-to-end bootstrap_target/bootstrap_all tests would require
+    // mocking AuthClient + S3Client, and no such mocking infrastructure
+    // exists in this crate (integration tests hit a real localhost URL and
+    // never actually invoke bootstrap). Rather than introduce a heavy mock
+    // harness in this PR, we cover the pure logic: the outcome shape, the
+    // default / "nothing to do" case, and the aggregation predicates used
+    // by `bootstrap_all` to decide whether reloaders fire. End-to-end
+    // coverage is deferred to the fold_db_node follow-up that wires
+    // `bootstrap_from_cloud` to the new API.
+
+    #[test]
+    fn bootstrap_outcome_default_is_empty() {
+        let outcome = BootstrapOutcome::default();
+        assert_eq!(outcome.last_seq, 0);
+        assert_eq!(outcome.entries_replayed, 0);
+        assert!(!outcome.schemas_replayed);
+        assert!(!outcome.embeddings_replayed);
+    }
+
+    #[test]
+    fn bootstrap_all_aggregation_fires_schema_reloader_when_any_target_replays_schemas() {
+        // Mirror the predicate `bootstrap_all` uses to decide whether to
+        // invoke the schema reloader exactly once at the end.
+        let outcomes = [
+            BootstrapOutcome {
+                last_seq: 10,
+                entries_replayed: 3,
+                schemas_replayed: false,
+                embeddings_replayed: false,
+            },
+            BootstrapOutcome {
+                last_seq: 20,
+                entries_replayed: 1,
+                schemas_replayed: true,
+                embeddings_replayed: false,
+            },
+            BootstrapOutcome::default(),
+        ];
+        assert!(outcomes.iter().any(|o| o.schemas_replayed));
+        assert!(!outcomes.iter().any(|o| o.embeddings_replayed));
+    }
+
+    #[test]
+    fn bootstrap_all_aggregation_skips_reloaders_when_no_replays() {
+        let outcomes = [BootstrapOutcome::default(), BootstrapOutcome::default()];
+        assert!(!outcomes.iter().any(|o| o.schemas_replayed));
+        assert!(!outcomes.iter().any(|o| o.embeddings_replayed));
+    }
+
+    #[test]
+    fn bootstrap_all_aggregation_independent_schema_and_embedding_flags() {
+        let outcomes = [
+            BootstrapOutcome {
+                last_seq: 5,
+                entries_replayed: 1,
+                schemas_replayed: false,
+                embeddings_replayed: true,
+            },
+            BootstrapOutcome {
+                last_seq: 7,
+                entries_replayed: 2,
+                schemas_replayed: true,
+                embeddings_replayed: false,
+            },
+        ];
+        assert!(outcomes.iter().any(|o| o.schemas_replayed));
+        assert!(outcomes.iter().any(|o| o.embeddings_replayed));
+        // Counts aggregate independently.
+        let total: usize = outcomes.iter().map(|o| o.entries_replayed).sum();
+        assert_eq!(total, 3);
     }
 }
