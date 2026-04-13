@@ -13,7 +13,6 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 
 use crate::db_operations::DbOperations;
-use crate::messaging::AsyncMessageBus;
 use crate::schema::types::Mutation;
 use crate::schema::{SchemaCore, SchemaError};
 use crate::view::resolver::ViewResolver;
@@ -26,21 +25,14 @@ use super::query::StandardSourceQuery;
 pub struct ViewOrchestrator {
     schema_manager: Arc<SchemaCore>,
     db_ops: Arc<DbOperations>,
-    #[allow(dead_code)]
-    message_bus: Arc<AsyncMessageBus>,
 }
 
 impl ViewOrchestrator {
     /// Create a new ViewOrchestrator.
-    pub fn new(
-        schema_manager: Arc<SchemaCore>,
-        db_ops: Arc<DbOperations>,
-        message_bus: Arc<AsyncMessageBus>,
-    ) -> Self {
+    pub fn new(schema_manager: Arc<SchemaCore>, db_ops: Arc<DbOperations>) -> Self {
         Self {
             schema_manager,
             db_ops,
-            message_bus,
         }
     }
 
