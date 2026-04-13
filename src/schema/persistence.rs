@@ -1,4 +1,4 @@
-use super::SchemaCore;
+use super::{SchemaCore, SchemaInterpreter};
 use crate::schema::types::{DeclarativeSchemaDefinition, Schema, SchemaError};
 use std::path::Path;
 
@@ -19,20 +19,6 @@ impl SchemaCore {
             .map_err(|e| {
                 SchemaError::InvalidData(format!("Failed to parse declarative schema: {}", e))
             })?;
-        Ok(Some(
-            self.interpret_declarative_schema(declarative_schema)
-                .await?,
-        ))
-    }
-
-    /// Interprets a declarative schema definition and populates runtime fields.
-    pub async fn interpret_declarative_schema(
-        &self,
-        mut declarative_schema: DeclarativeSchemaDefinition,
-    ) -> Result<Schema, SchemaError> {
-        // Populate runtime_fields using the method on DeclarativeSchemaDefinition
-        declarative_schema.populate_runtime_fields()?;
-
-        Ok(declarative_schema)
+        Ok(Some(SchemaInterpreter::interpret(declarative_schema)?))
     }
 }

@@ -24,6 +24,7 @@
 // Internal modules
 pub mod core;
 pub mod field_mapper;
+pub mod interpreter;
 pub mod persistence;
 pub mod schema_types;
 pub mod types;
@@ -31,6 +32,7 @@ pub mod types;
 // Public re-exports
 pub use core::SchemaCore;
 pub use field_mapper::FieldMapperService;
+pub use interpreter::SchemaInterpreter;
 pub use schema_types::{SchemaState, SchemaWithState};
 pub use types::{Schema, SchemaError};
 
