@@ -312,8 +312,6 @@ impl SchemaCore {
     /// purging an organization — `purge_org_data` only removes org-prefixed
     /// atom/molecule/history keys, but schemas are stored by name (not prefixed).
     pub async fn purge_org_schemas(&self, org_hash: &str) -> Result<Vec<String>, SchemaError> {
-        use crate::storage::traits::TypedStore;
-
         // Find schemas with matching org_hash in the in-memory cache
         let names_to_remove: Vec<String> = {
             let schemas = lock_map(&self.schemas, "schemas")?;
@@ -330,8 +328,8 @@ impl SchemaCore {
             lock_map(&self.schema_states, "schema_states")?.remove(name);
 
             // Delete from persistent stores (ignore errors on missing keys)
-            let _ = self.db_ops.schemas_store().delete_item(name).await;
-            let _ = self.db_ops.schema_states_store().delete_item(name).await;
+            let _ = self.db_ops.schemas().delete_schema(name).await;
+            let _ = self.db_ops.schemas().delete_schema_state(name).await;
         }
 
         if !names_to_remove.is_empty() {

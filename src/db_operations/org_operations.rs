@@ -23,16 +23,16 @@ impl DbOperations {
         let stores: Vec<&Arc<TypedKvStore<dyn KvStore>>> = vec![
             self.metadata_store(),
             self.permissions_store(),
-            self.schema_states_store(),
-            self.schemas_store(),
+            self.schemas().raw_schema_states(),
+            self.schemas().raw_schemas(),
             self.public_keys_store(),
             self.idempotency_store(),
             self.process_results_store(),
-            self.superseded_by_store(),
-            self.views_store(),
-            self.view_states_store(),
-            self.transform_field_states_store(),
-            self.atoms_store(),
+            self.schemas().raw_superseded_by(),
+            self.views().raw_views(),
+            self.views().raw_view_states(),
+            self.views().raw_transform_field_states(),
+            self.atoms().raw(),
         ];
 
         for store in stores {
@@ -88,7 +88,8 @@ mod tests {
         let prefix = format!("{}:", org_hash);
 
         // Put a mix of personal and org data
-        let atoms_store = ops.atoms_store();
+        let atoms_store = ops.atoms().raw().clone();
+        let atoms_store = &atoms_store;
 
         let personal_key = "atom:uuid-personal";
         let org_key = format!("{}atom:uuid-org", prefix);

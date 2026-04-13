@@ -81,7 +81,8 @@ pub async fn fetch_atoms_with_key_metadata_async_with_org(
         let base_key = format!("atom:{}", atom_uuid);
         let storage_key = super::build_storage_key(org_hash, &base_key);
         match db_ops
-            .atoms_store()
+            .atoms()
+            .raw()
             .get_item::<crate::atom::Atom>(&storage_key)
             .await
         {
