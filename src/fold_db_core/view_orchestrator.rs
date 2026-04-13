@@ -14,89 +14,12 @@ use std::sync::Arc;
 
 use crate::db_operations::DbOperations;
 use crate::messaging::AsyncMessageBus;
-use crate::schema::types::{KeyValue, Mutation};
+use crate::schema::types::Mutation;
 use crate::schema::{SchemaCore, SchemaError};
-use crate::view::resolver::{SourceQueryFn, ViewResolver};
+use crate::view::resolver::ViewResolver;
 use crate::view::types::ViewCacheState;
 
-/// Source query implementation for background precomputation.
-/// Resolves sources from schemas or cached views (does NOT recurse into
-/// uncached views — those should already be computed by the time we need them,
-/// since we process in bottom-up order).
-struct PrecomputeSourceQuery {
-    schema_manager: Arc<SchemaCore>,
-    db_ops: Arc<DbOperations>,
-    hash_range_processor: super::query::hash_range_query::HashRangeQueryProcessor,
-    view_resolver: ViewResolver,
-}
-
-#[async_trait::async_trait]
-impl SourceQueryFn for PrecomputeSourceQuery {
-    async fn execute_query(
-        &self,
-        query: &crate::schema::types::operations::Query,
-    ) -> Result<
-        HashMap<String, HashMap<KeyValue, crate::schema::types::field::FieldValue>>,
-        SchemaError,
-    > {
-        // Try as schema first
-        match self.schema_manager.get_schema(&query.schema_name).await? {
-            Some(mut schema) => {
-                self.hash_range_processor
-                    .query_with_filter(
-                        &mut schema,
-                        &query.fields,
-                        query.filter.clone(),
-                        query.as_of,
-                    )
-                    .await
-            }
-            None => {
-                // Try as view — must be cached (computed earlier in bottom-up order)
-                let view = {
-                    let registry =
-                        self.schema_manager.view_registry().lock().map_err(|_| {
-                            SchemaError::InvalidData("view_registry lock".to_string())
-                        })?;
-                    registry
-                        .get_view(&query.schema_name)
-                        .cloned()
-                        .ok_or_else(|| {
-                            SchemaError::NotFound(format!(
-                                "'{}' not found as schema or view during precomputation",
-                                query.schema_name
-                            ))
-                        })?
-                };
-
-                let cache_state = self.db_ops.get_view_cache_state(&view.name).await?;
-
-                // Source view should be Cached (computed earlier in bottom-up order).
-                // If it's still Empty, compute it inline.
-                let effective_cache = if matches!(cache_state, ViewCacheState::Cached { .. }) {
-                    cache_state
-                } else {
-                    ViewCacheState::Empty
-                };
-
-                let (results, new_cache) = self
-                    .view_resolver
-                    .resolve(&view, &query.fields, &effective_cache, self)
-                    .await?;
-
-                // Persist if we just computed it
-                if effective_cache.is_empty() && matches!(new_cache, ViewCacheState::Cached { .. })
-                {
-                    self.db_ops
-                        .set_view_cache_state(&view.name, &new_cache)
-                        .await?;
-                }
-
-                Ok(results)
-            }
-        }
-    }
-}
+use super::query::StandardSourceQuery;
 
 /// Orchestrates view lifecycle: dependency-graph traversal, invalidation,
 /// and precomputation of derived views triggered by mutations.
@@ -404,8 +327,6 @@ impl ViewOrchestrator {
         db_ops: Arc<DbOperations>,
         views_to_compute: Vec<String>,
     ) -> Result<(), SchemaError> {
-        use super::query::hash_range_query::HashRangeQueryProcessor;
-
         let wasm_engine = {
             let registry = schema_manager
                 .view_registry()
@@ -444,12 +365,11 @@ impl ViewOrchestrator {
             }
 
             // Build source query for resolution
-            let source_query = PrecomputeSourceQuery {
-                schema_manager: Arc::clone(&schema_manager),
-                db_ops: Arc::clone(&db_ops),
-                hash_range_processor: HashRangeQueryProcessor::new(Arc::clone(&db_ops)),
-                view_resolver: ViewResolver::new(Arc::clone(&wasm_engine)),
-            };
+            let source_query = StandardSourceQuery::new_precompute(
+                Arc::clone(&schema_manager),
+                Arc::clone(&db_ops),
+                ViewResolver::new(Arc::clone(&wasm_engine)),
+            );
 
             let resolver = ViewResolver::new(Arc::clone(&wasm_engine));
             match resolver
