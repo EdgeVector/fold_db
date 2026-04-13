@@ -455,9 +455,7 @@ impl SchemaCore {
         }
 
         // Convert declarative schema to Schema
-        let schema = self
-            .interpret_declarative_schema(declarative_schema)
-            .await?;
+        let schema = crate::schema::SchemaInterpreter::interpret(declarative_schema)?;
 
         // Load the schema using the existing method
         self.load_schema_internal(schema).await
@@ -889,10 +887,7 @@ mod tests {
         }"#;
         let declarative: crate::schema::types::DeclarativeSchemaDefinition =
             serde_json::from_str(json).expect("parse");
-        let schema = core
-            .interpret_declarative_schema(declarative)
-            .await
-            .expect("interpret");
+        let schema = crate::schema::SchemaInterpreter::interpret(declarative).expect("interpret");
         db_ops
             .store_schema("SyncedSchema", &schema)
             .await
@@ -972,10 +967,7 @@ mod tests {
         }"#;
         let declarative: crate::schema::types::DeclarativeSchemaDefinition =
             serde_json::from_str(json).expect("parse");
-        let schema = core
-            .interpret_declarative_schema(declarative)
-            .await
-            .expect("interpret");
+        let schema = crate::schema::SchemaInterpreter::interpret(declarative).expect("interpret");
         db_ops
             .store_schema("RuntimeTest", &schema)
             .await
