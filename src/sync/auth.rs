@@ -254,7 +254,7 @@ impl AuthClient {
             "ttl_secs": ttl_secs,
         });
 
-        let resp = self.post("/api/sync/lock", body).await?;
+        let resp = self.post("/api/storage-admin/lock", body).await?;
         let parsed: LockResponse = serde_json::from_value(resp)?;
 
         if !parsed.ok {
@@ -279,7 +279,7 @@ impl AuthClient {
             "device_id": device_id,
         });
 
-        let resp = self.post("/api/sync/lock", body).await?;
+        let resp = self.post("/api/storage-admin/lock", body).await?;
         let parsed: LockResponse = serde_json::from_value(resp)?;
 
         if !parsed.ok {
@@ -299,7 +299,7 @@ impl AuthClient {
             "ttl_secs": ttl_secs,
         });
 
-        let resp = self.post("/api/sync/lock", body).await?;
+        let resp = self.post("/api/storage-admin/lock", body).await?;
         let parsed: LockResponse = serde_json::from_value(resp)?;
 
         if !parsed.ok {
