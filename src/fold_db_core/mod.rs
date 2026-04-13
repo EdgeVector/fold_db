@@ -18,6 +18,7 @@ pub mod query;
 // Core components
 
 pub mod mutation_manager;
+pub mod sync_coordinator;
 pub mod view_invalidation;
 
 // Re-export key components
@@ -27,6 +28,7 @@ pub use query::QueryExecutor;
 // Re-export core components
 
 pub use mutation_manager::MutationManager;
+pub use sync_coordinator::SyncCoordinator;
 
 // Re-export the main FoldDB struct
 pub use fold_db::FoldDB;

@@ -21,6 +21,7 @@ use super::infrastructure::{AsyncMessageBus, EventMonitor};
 use super::mutation_manager::MutationManager;
 use super::orchestration::index_status::IndexStatusTracker;
 use super::query::QueryExecutor;
+use super::sync_coordinator::SyncCoordinator;
 use crate::progress::ProgressStore as JobStore;
 use crate::progress::ProgressTracker;
 
@@ -45,12 +46,9 @@ pub struct FoldDB {
     /// Unified progress tracker for all job types (ingestion, indexing, etc.)
     /// This is the single source of truth for progress — uses Sled for persistent storage.
     pub(crate) progress_tracker: ProgressTracker,
-    /// Optional sync engine for S3 replication.
-    /// Present when sync is configured (local mode only).
-    /// Uses RwLock for interior mutability so FoldDB doesn't need &mut self.
-    sync_engine: std::sync::RwLock<Option<Arc<crate::sync::SyncEngine>>>,
-    /// Handle for the background sync timer task.
-    sync_task: std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
+    /// Coordinates the optional cloud sync engine lifecycle.
+    /// In local mode this holds no engine and all sync operations are no-ops.
+    sync_coordinator: SyncCoordinator,
     /// Optional reference to the encrypting store for org crypto registration.
     encrypting_store: Option<Arc<crate::storage::EncryptingNamespacedStore>>,
     /// Optional Sled-backed configuration store for runtime node config.
@@ -86,9 +84,20 @@ impl FoldDB {
         self.flush().await
     }
 
+    /// Returns a reference to the sync coordinator.
+    pub fn sync_coordinator(&self) -> &SyncCoordinator {
+        &self.sync_coordinator
+    }
+
     /// Set the sync engine (called by the factory when sync is configured).
     /// Also registers the schema reloader callback so SchemaCore's in-memory
-    /// cache is refreshed after sync replays schema entries into Sled.
+    /// cache is refreshed after sync replays schema entries into Sled, and
+    /// the embedding reloader so the in-memory EmbeddingIndex is refreshed
+    /// after sync replays native_index entries.
+    ///
+    /// Registration lives here because it needs access to FoldDB-owned
+    /// components (SchemaCore, NativeIndexManager); engine storage is then
+    /// delegated to the SyncCoordinator.
     pub async fn set_sync_engine(&self, engine: Arc<crate::sync::SyncEngine>) {
         let schema_mgr = Arc::clone(&self.schema_manager);
         engine
@@ -117,112 +126,54 @@ impl FoldDB {
                 .await;
         }
 
-        *self.sync_engine.write().unwrap() = Some(engine);
+        self.sync_coordinator.set_engine(engine);
     }
 
-    /// Start the background sync timer.
-    ///
-    /// Spawns a tokio task that calls `sync()` every `interval_ms` when the
-    /// engine is dirty. Does nothing if no sync engine is configured.
+    /// Start the background sync timer. Delegates to the coordinator.
     pub fn start_sync(&self, interval_ms: u64) {
-        let engine = match &*self.sync_engine.read().unwrap() {
-            Some(e) => Arc::clone(e),
-            None => return,
-        };
-        let db_ops = Arc::clone(&self.db_ops);
-        let sled_pool = self.sled_pool.clone();
-
-        let handle = tokio::spawn(async move {
-            let interval = tokio::time::Duration::from_millis(interval_ms);
-            loop {
-                tokio::time::sleep(interval).await;
-                // Always run sync — even without pending writes, we need to
-                // download org data from other members.
-                let has_pending = engine.state().await == crate::sync::SyncState::Dirty;
-                let has_orgs = engine.has_org_sync().await;
-                if has_pending || has_orgs {
-                    if let Err(e) = engine.sync().await {
-                        if let crate::sync::SyncError::OrgMembershipRevoked(ref org_hash) = e {
-                            log::warn!("🚨 SYSTEM ALERT: You have been removed from organization (hash: {}) by an administrator. Proceeding to securely purge all locally cached copies of its data and schema to prevent orphans.", org_hash);
-
-                            // 1. Delete membership structure locally (if running on Sled backend)
-                            if let Some(pool) = &sled_pool {
-                                let _ = crate::org::operations::delete_org(pool, org_hash).map_err(
-                                    |err| log::error!("Failed to delete org structure: {}", err),
-                                );
-                            }
-
-                            // 2. Erase the orphaned physical footprints in local DB
-                            let _ = db_ops
-                                .purge_org_data(org_hash)
-                                .await
-                                .map_err(|err| log::error!("Failed to purge org data: {}", err));
-                        } else {
-                            log::warn!("sync cycle failed: {e}");
-                        }
-                    }
-                }
-            }
-        });
-
-        *self.sync_task.lock().unwrap() = Some(handle);
+        self.sync_coordinator.start_background_sync(
+            interval_ms,
+            Arc::clone(&self.db_ops),
+            self.sled_pool.clone(),
+        );
     }
 
     /// Force an immediate sync (e.g. on shutdown).
     pub async fn force_sync(&self) -> Result<(), crate::sync::SyncError> {
-        let engine = self.sync_engine.read().unwrap().clone();
-        if let Some(engine) = engine {
-            engine.sync().await?;
-        }
-        Ok(())
+        self.sync_coordinator.force_sync().await
     }
 
     /// Stop the background sync timer and run a final sync.
     pub async fn stop_sync(&self) -> Result<(), crate::sync::SyncError> {
-        if let Some(handle) = self.sync_task.lock().unwrap().take() {
-            handle.abort();
-        }
-        self.force_sync().await
+        self.sync_coordinator.stop().await
     }
 
     /// Get the sync engine state, if sync is configured.
     pub async fn sync_state(&self) -> Option<crate::sync::SyncState> {
-        let engine = self.sync_engine.read().unwrap().clone();
-        match engine {
-            Some(engine) => Some(engine.state().await),
-            None => None,
-        }
+        self.sync_coordinator.state().await
     }
 
     /// Get a full sync status snapshot, if sync is configured.
     pub async fn sync_status(&self) -> Option<crate::sync::SyncStatus> {
-        let engine = self.sync_engine.read().unwrap().clone();
-        match engine {
-            Some(engine) => Some(engine.status().await),
-            None => None,
-        }
+        self.sync_coordinator.status().await
     }
 
     /// Get the number of pending (unsynced) log entries.
     /// Returns None if sync is not configured.
     pub async fn sync_pending_count(&self) -> Option<usize> {
-        let engine = self.sync_engine.read().unwrap().clone();
-        match engine {
-            Some(engine) => Some(engine.pending_count().await),
-            None => None,
-        }
+        self.sync_coordinator.pending_count().await
     }
 
     /// Returns true if the sync engine is configured.
     pub fn is_sync_enabled(&self) -> bool {
-        self.sync_engine.read().unwrap().is_some()
+        self.sync_coordinator.is_enabled()
     }
 
     /// Returns a clone of the sync engine Arc, if configured.
     ///
     /// Used by fold_db_node to call `configure_org_sync()` after node startup.
     pub fn sync_engine(&self) -> Option<Arc<crate::sync::SyncEngine>> {
-        self.sync_engine.read().unwrap().clone()
+        self.sync_coordinator.engine()
     }
 
     /// Returns a clone of the Sled-backed config store, if available.
@@ -247,7 +198,7 @@ impl FoldDB {
     ) -> crate::error::FoldDbResult<()> {
         use crate::error::FoldDbError;
 
-        if self.sync_engine.read().unwrap().is_some() {
+        if self.sync_coordinator.is_enabled() {
             return Ok(()); // already running
         }
 
@@ -501,8 +452,7 @@ impl FoldDB {
             mutation_manager,
             pending_tasks,
             progress_tracker,
-            sync_engine: std::sync::RwLock::new(None),
-            sync_task: std::sync::Mutex::new(None),
+            sync_coordinator: SyncCoordinator::new(),
             encrypting_store,
             config_store: std::sync::RwLock::new(None),
         })
@@ -629,8 +579,6 @@ impl Drop for FoldDB {
     fn drop(&mut self) {
         // Abort the background sync task to prevent tokio panic:
         // "Cannot drop a runtime in a context where blocking is not allowed"
-        if let Some(handle) = self.sync_task.get_mut().unwrap().take() {
-            handle.abort();
-        }
+        self.sync_coordinator.abort_task();
     }
 }
