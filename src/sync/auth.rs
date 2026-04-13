@@ -417,7 +417,11 @@ impl AuthClient {
             .and_then(|v| v.as_str())
             .unwrap_or("org_action")
             .to_string();
-        let resp = self.post("/api/sync/org", body).await?;
+        // Org management is now served by the standalone `org_service`
+        // Lambda (split out of storage_service). The cloud endpoint is
+        // `POST /api/org/{action}` — we post to `/api/org/action` and
+        // the Lambda dispatches by the `action` field in the body.
+        let resp = self.post("/api/org/action", body).await?;
         let ok = resp.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
         if !ok {
             let default_msg = format!("{action} failed");
