@@ -278,6 +278,40 @@ pub fn generate_invite(
     })
 }
 
+/// Test helper: insert a pre-built membership under an arbitrary org_hash.
+///
+/// Real code must go through `create_org` / `join_org` which derive the org_hash
+/// from an Ed25519 public key. Tests that work with a fixed, hard-coded hash use
+/// this helper to populate the org_memberships tree directly.
+///
+/// This is always compiled (to keep integration tests simple) but is only
+/// useful for tests — the inserted membership has dummy crypto material.
+pub fn insert_test_membership(
+    pool: &Arc<SledPool>,
+    org_hash: &str,
+) -> Result<OrgMembership, FoldDbError> {
+    let ts = now_secs();
+    let membership = OrgMembership {
+        org_name: format!("Test Org {}", org_hash),
+        org_hash: org_hash.to_string(),
+        org_public_key: "test_pk".to_string(),
+        org_secret_key: None,
+        org_e2e_secret: "test_e2e_secret".to_string(),
+        role: OrgRole::Member,
+        members: Vec::new(),
+        created_at: ts,
+        joined_at: ts,
+    };
+
+    let tree = org_tree(pool)?;
+    let key = org_key(org_hash);
+    let value = serde_json::to_vec(&membership)?;
+    tree.insert(key.as_bytes(), value)
+        .map_err(|e| FoldDbError::Database(format!("Failed to store org membership: {}", e)))?;
+
+    Ok(membership)
+}
+
 /// Delete an organization from local storage.
 pub fn delete_org(pool: &Arc<SledPool>, org_hash: &str) -> Result<(), FoldDbError> {
     let tree = org_tree(pool)?;

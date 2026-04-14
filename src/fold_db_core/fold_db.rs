@@ -405,13 +405,17 @@ impl FoldDB {
             Arc::clone(&db_ops),
         ));
 
-        // Create MutationManager for handling all mutation operations
+        // Create MutationManager for handling all mutation operations.
+        // The sled_pool is plumbed through so the manager can consult the
+        // org memberships tree and reject mutations against org-scoped
+        // schemas the node is not a member of.
         let mutation_manager = MutationManager::new(
             Arc::clone(&db_ops),
             Arc::clone(&schema_manager),
             Arc::clone(&message_bus),
             Arc::clone(&view_orchestrator),
             Some(index_status_tracker.clone()),
+            sled_pool.clone(),
         );
 
         info!("Created MutationManager for mutation operations");
