@@ -43,15 +43,33 @@ impl ScrfdDetector {
 
         let resized = image.resize_exact(input_w, input_h, FilterType::Lanczos3);
 
-        // Convert to CHW float tensor [1, 3, H, W]
+        // Convert to CHW float tensor [1, 3, H, W] with the standard SCRFD
+        // input preprocessing: subtract mean 127.5 and scale by 1/128 so each
+        // channel ends up roughly in [-1, 1]. This matches what insightface
+        // does for the buffalo_sc / scrfd_2.5g_bnkps weights:
+        //
+        //   cv2.dnn.blobFromImage(img, 1.0/128.0, input_size,
+        //                         (127.5, 127.5, 127.5), swapRB=True)
+        //
+        // Without normalization the network sees raw 0–255 pixels, its
+        // activations are wildly off, and it returns a sea of low-confidence
+        // (0.5–0.7) detections at semi-random feature-map positions instead
+        // of the prominent face. Downstream that manifests as bboxes that
+        // are ~0.02–0.05 of the image width regardless of how big the face
+        // actually is, AND face-search across photos of the same person
+        // fails because the embeddings are computed from noise crops, not
+        // actual faces. The cv2 reference also does swapRB=True because cv2
+        // reads BGR; the `image` crate already gives us RGB so we skip the
+        // swap.
         let mut input_tensor = vec![0.0f32; (3 * input_h * input_w) as usize];
+        let plane = (input_h * input_w) as usize;
         for y in 0..input_h {
             for x in 0..input_w {
                 let pixel = resized.get_pixel(x, y);
                 let idx = (y * input_w + x) as usize;
-                input_tensor[idx] = pixel[0] as f32;
-                input_tensor[(input_h * input_w) as usize + idx] = pixel[1] as f32;
-                input_tensor[2 * (input_h * input_w) as usize + idx] = pixel[2] as f32;
+                input_tensor[idx] = (pixel[0] as f32 - 127.5) / 128.0;
+                input_tensor[plane + idx] = (pixel[1] as f32 - 127.5) / 128.0;
+                input_tensor[2 * plane + idx] = (pixel[2] as f32 - 127.5) / 128.0;
             }
         }
 
