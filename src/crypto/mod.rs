@@ -12,6 +12,7 @@ pub mod error;
 pub mod provider;
 
 pub use e2e::E2eKeys;
+pub use envelope::{decrypt_envelope, encrypt_envelope};
 pub use error::{CryptoError, CryptoResult};
 pub use provider::{CryptoProvider, LocalCryptoProvider, NoOpCryptoProvider};
 pub mod inbox;

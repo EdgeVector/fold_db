@@ -84,9 +84,12 @@ async fn create_local_fold_db(
     let pool = Arc::new(SledPool::new(path.to_path_buf()));
     pool.start_idle_reaper(std::time::Duration::from_secs(30));
 
-    // Create the config store for runtime node configuration
-    let config_store = NodeConfigStore::new(Arc::clone(&pool))
-        .map_err(|e| FoldDbError::Config(format!("Failed to open config store: {}", e)))?;
+    // Create the config store for runtime node configuration.
+    // Pass the E2E encryption key so sensitive fields (node identity
+    // private key) are encrypted at rest via AES-256-GCM.
+    let config_store =
+        NodeConfigStore::with_crypto_key(Arc::clone(&pool), Some(e2e_keys.encryption_key()))
+            .map_err(|e| FoldDbError::Config(format!("Failed to open config store: {}", e)))?;
 
     // Use the sync_setup provided by the caller. The caller (fold_db_node) is
     // responsible for loading the API key from the per-device credentials file.
