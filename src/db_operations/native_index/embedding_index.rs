@@ -32,6 +32,15 @@ pub(super) struct StoredEmbedding {
     /// Legacy: old format stored all field names here. Kept for deserialization compat.
     #[serde(default)]
     pub field_names: Vec<String>,
+    /// Face-only: bounding box `[x1, y1, x2, y2]` normalized to `[0, 1]`.
+    /// Only populated for entries with `field_name == "__face__"`. Optional so
+    /// pre-bbox entries deserialize cleanly.
+    #[serde(default)]
+    pub face_bbox: Option<[f32; 4]>,
+    /// Face-only: detector confidence score in `[0, 1]`. Optional for
+    /// pre-bbox entries.
+    #[serde(default)]
+    pub face_confidence: Option<f32>,
 }
 
 /// Entry held in the in-memory index.
@@ -45,6 +54,10 @@ pub(super) struct EmbeddingEntry {
     pub embedding: Vec<f32>,
     /// Legacy field names from old-format entries (for backward-compat search expansion).
     pub legacy_field_names: Vec<String>,
+    /// Face-only bbox + confidence. None for text fragments and for face
+    /// entries written before bbox plumbing existed.
+    pub face_bbox: Option<[f32; 4]>,
+    pub face_confidence: Option<f32>,
 }
 
 impl EmbeddingEntry {
@@ -91,6 +104,11 @@ pub(super) struct FragmentInfo<'a> {
     pub field_name: &'a str,
     pub fragment_idx: usize,
     pub fragment_text: Option<String>,
+    /// Face-only: bbox `[x1, y1, x2, y2]` normalized to `[0, 1]`.
+    /// `None` for text fragments.
+    pub face_bbox: Option<[f32; 4]>,
+    /// Face-only: detector confidence in `[0, 1]`. `None` for text fragments.
+    pub face_confidence: Option<f32>,
 }
 
 /// In-memory nearest-neighbour index backed by Sled for persistence.
@@ -128,6 +146,8 @@ impl EmbeddingIndex {
                         fragment_text: stored.fragment_text,
                         embedding: stored.embedding,
                         legacy_field_names: stored.field_names,
+                        face_bbox: stored.face_bbox,
+                        face_confidence: stored.face_confidence,
                     });
                 }
                 Err(e) => log::warn!("Failed to deserialize StoredEmbedding: {}", e),
@@ -153,6 +173,8 @@ impl EmbeddingIndex {
             fragment_text: info.fragment_text.clone(),
             embedding: embedding.clone(),
             field_names: Vec::new(),
+            face_bbox: info.face_bbox,
+            face_confidence: info.face_confidence,
         };
 
         let storage_key = EmbeddingEntry::fragment_storage_key(
@@ -182,6 +204,8 @@ impl EmbeddingIndex {
             fragment_text: info.fragment_text,
             embedding,
             legacy_field_names: Vec::new(),
+            face_bbox: info.face_bbox,
+            face_confidence: info.face_confidence,
         };
 
         let mut entries = self.entries.write().unwrap();
@@ -367,8 +391,10 @@ impl EmbeddingIndex {
     }
 
     /// List all face embeddings stored for a specific record (schema + key).
-    /// Returns each face's embedding, bbox metadata, and fragment index.
-    pub(super) fn list_faces(&self, schema: &str, key: &KeyValue) -> Vec<(usize, Vec<f32>)> {
+    /// Returns each face's fragment_idx, embedding, normalized bbox, and
+    /// detector confidence. bbox/confidence are `None` for legacy entries
+    /// written before the bbox plumbing existed (see StoredEmbedding).
+    pub(super) fn list_faces(&self, schema: &str, key: &KeyValue) -> Vec<FaceListEntry> {
         let entries = self.entries.read().unwrap();
         entries
             .iter()
@@ -376,9 +402,30 @@ impl EmbeddingIndex {
                 e.field_name == FACE_FIELD_NAME && e.schema == schema && e.key.hash == key.hash
                 // Match by hash only (photo filename)
             })
-            .map(|e| (e.fragment_idx, e.embedding.clone()))
+            .map(|e| FaceListEntry {
+                fragment_idx: e.fragment_idx,
+                embedding: e.embedding.clone(),
+                bbox: e.face_bbox,
+                confidence: e.face_confidence,
+            })
             .collect()
     }
+}
+
+/// A single face entry returned by `EmbeddingIndex::list_faces`.
+///
+/// Carries the embedding (for face-search queries) and the bbox + confidence
+/// (for UI overlays / face-index disambiguation). bbox + confidence are
+/// optional because pre-bbox-plumbing entries don't have them — the caller
+/// must handle `None` (e.g. show "—" in the UI rather than failing).
+#[derive(Debug, Clone)]
+pub struct FaceListEntry {
+    pub fragment_idx: usize,
+    pub embedding: Vec<f32>,
+    /// `[x1, y1, x2, y2]` normalized to `[0, 1]` of the source image.
+    pub bbox: Option<[f32; 4]>,
+    /// Detector confidence in `[0, 1]`.
+    pub confidence: Option<f32>,
 }
 
 pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
