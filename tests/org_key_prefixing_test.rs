@@ -24,6 +24,14 @@ async fn make_folddb(tmp: &tempfile::TempDir) -> FoldDB {
         .expect("Failed to create FoldDB")
 }
 
+/// Helper: register a fake org membership under `ORG_HASH` so mutations
+/// against org-scoped schemas pass the membership check in MutationManager.
+fn register_test_org(db: &FoldDB, org_hash: &str) {
+    let pool = db.sled_pool().expect("Expected sled backend").clone();
+    fold_db::org::operations::insert_test_membership(&pool, org_hash)
+        .expect("Failed to insert test org membership");
+}
+
 /// Helper: register a HashRange schema with optional org_hash via JSON.
 async fn register_schema(db: &FoldDB, name: &str, org_hash: Option<&str>) {
     let mut builder = TestSchemaBuilder::new(name)
@@ -102,6 +110,7 @@ async fn test_org_mutation_produces_prefixed_keys() {
     let tmp = tempfile::tempdir().unwrap();
     let db = make_folddb(&tmp).await;
 
+    register_test_org(&db, ORG_HASH);
     register_schema(&db, "org_notes", Some(ORG_HASH)).await;
     write_mutation(&db, "org_notes", "meeting", "2026-01-01", "org body").await;
 
@@ -147,6 +156,7 @@ async fn test_org_query_reads_from_prefixed_keys() {
     let tmp = tempfile::tempdir().unwrap();
     let db = make_folddb(&tmp).await;
 
+    register_test_org(&db, ORG_HASH);
     register_schema(&db, "org_events", Some(ORG_HASH)).await;
     write_mutation(&db, "org_events", "standup", "2026-03-01", "org event body").await;
 
@@ -183,7 +193,8 @@ async fn test_personal_and_org_data_do_not_collide() {
     register_schema(&db, "notes", None).await;
     write_mutation(&db, "notes", "personal-key", "2026-01-01", "personal body").await;
 
-    // Register org schema with different name
+    // Register org membership + org schema with different name
+    register_test_org(&db, ORG_HASH);
     register_schema(&db, "org_notes", Some(ORG_HASH)).await;
     write_mutation(&db, "org_notes", "org-key", "2026-01-01", "org body").await;
 
@@ -310,4 +321,110 @@ fn test_personal_schema_has_no_org_hash_on_fields() {
             field_name
         );
     }
+}
+
+// === Security test: org membership is required for org-scoped mutations ===
+
+/// Low-level helper that returns the raw Result so tests can assert on errors.
+async fn try_write_mutation(
+    db: &FoldDB,
+    schema_name: &str,
+    title: &str,
+    date: &str,
+    body: &str,
+) -> Result<Vec<String>, fold_db::schema::SchemaError> {
+    let mut fields = HashMap::new();
+    fields.insert("title".to_string(), json!(title));
+    fields.insert("body".to_string(), json!(body));
+    fields.insert("date".to_string(), json!(date));
+
+    let mutation = Mutation::new(
+        schema_name.to_string(),
+        fields,
+        KeyValue::new(Some(title.to_string()), Some(date.to_string())),
+        "attacker-pub-key".to_string(),
+        MutationType::Create,
+    );
+    db.mutation_manager()
+        .write_mutations_batch_async(vec![mutation])
+        .await
+}
+
+/// A local attacker must not be able to inject writes against an org-scoped
+/// schema for an org they are not a member of. Those writes would otherwise
+/// be prefixed with `{org_hash}:` and queued for sync, polluting local Sled
+/// state and attempting to upload under an unauthorized prefix.
+#[tokio::test]
+async fn test_org_mutation_denied_when_not_a_member() {
+    let tmp = tempfile::tempdir().unwrap();
+    let db = make_folddb(&tmp).await;
+
+    // NOTE: no register_test_org — the node is deliberately not a member.
+    register_schema(&db, "stranger_notes", Some(ORG_HASH)).await;
+
+    let err = try_write_mutation(&db, "stranger_notes", "meeting", "2026-01-01", "leaked")
+        .await
+        .expect_err("mutation must be rejected — node is not a member of the org");
+
+    match err {
+        fold_db::schema::SchemaError::PermissionDenied(msg) => {
+            assert!(
+                msg.contains(ORG_HASH),
+                "PermissionDenied message should mention the org hash: {}",
+                msg
+            );
+            assert!(
+                msg.to_lowercase().contains("not a member"),
+                "PermissionDenied message should explain membership failure: {}",
+                msg
+            );
+        }
+        other => panic!("expected SchemaError::PermissionDenied, got {:?}", other),
+    }
+
+    // Also verify no org-prefixed keys were written to the underlying sled store.
+    let pool = db.sled_pool().expect("Expected sled backend");
+    let guard = pool.acquire_arc().unwrap();
+    let main_tree = guard.db().open_tree("main").unwrap();
+
+    let org_prefix = format!("{ORG_HASH}:");
+    let leaked: Vec<String> = main_tree
+        .iter()
+        .filter_map(|r| r.ok())
+        .map(|(k, _)| String::from_utf8_lossy(&k).to_string())
+        .filter(|k| k.starts_with(&org_prefix))
+        .collect();
+    assert!(
+        leaked.is_empty(),
+        "Rejected mutation must not leave any org-prefixed keys in sled: {:?}",
+        leaked
+    );
+}
+
+/// Once a membership is registered for the same org hash, previously-denied
+/// writes are accepted. This verifies the gate is gating on membership state,
+/// not on schema shape.
+#[tokio::test]
+async fn test_org_mutation_allowed_after_joining_org() {
+    let tmp = tempfile::tempdir().unwrap();
+    let db = make_folddb(&tmp).await;
+
+    register_schema(&db, "joined_notes", Some(ORG_HASH)).await;
+
+    // Before joining — denied.
+    let err = try_write_mutation(&db, "joined_notes", "m", "2026-01-01", "pre-join").await;
+    assert!(
+        matches!(err, Err(fold_db::schema::SchemaError::PermissionDenied(_))),
+        "expected PermissionDenied before membership, got {:?}",
+        err
+    );
+
+    // Join.
+    register_test_org(&db, ORG_HASH);
+
+    // After joining — allowed.
+    let ids = try_write_mutation(&db, "joined_notes", "m", "2026-01-01", "post-join")
+        .await
+        .expect("mutation must succeed after org membership is registered");
+    assert_eq!(ids.len(), 1);
 }

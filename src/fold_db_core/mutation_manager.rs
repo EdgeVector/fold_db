@@ -17,6 +17,7 @@ use crate::messaging::{AsyncMessageBus, Event};
 use crate::schema::types::field::{Field, FieldVariant};
 use crate::schema::types::{KeyValue, Mutation, Schema};
 use crate::schema::{SchemaCore, SchemaError};
+use crate::storage::SledPool;
 use chrono::Utc;
 use log::{debug, error, warn};
 use sha2::{Digest, Sha256};
@@ -34,6 +35,11 @@ pub struct MutationManager {
     view_orchestrator: Arc<ViewOrchestrator>,
     /// Index status tracker for reporting indexing progress
     index_status_tracker: Option<IndexStatusTracker>,
+    /// Sled pool for on-demand access to the org memberships tree.
+    /// When present, mutations against org-scoped schemas are gated on
+    /// the node actually being a member of that org. When absent (e.g.
+    /// non-Sled backends, some unit tests), the check is skipped.
+    sled_pool: Option<Arc<SledPool>>,
     /// Flag to track if the event listener is running
     is_listening: Arc<std::sync::atomic::AtomicBool>,
 }
@@ -46,6 +52,7 @@ impl MutationManager {
         message_bus: Arc<AsyncMessageBus>,
         view_orchestrator: Arc<ViewOrchestrator>,
         index_status_tracker: Option<IndexStatusTracker>,
+        sled_pool: Option<Arc<SledPool>>,
     ) -> Self {
         Self {
             db_ops,
@@ -53,7 +60,38 @@ impl MutationManager {
             message_bus,
             view_orchestrator,
             index_status_tracker,
+            sled_pool,
             is_listening: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        }
+    }
+
+    /// Validate that the node is a member of the given org before allowing
+    /// writes against it. Returns `Ok(())` if the membership exists (or if
+    /// membership validation is disabled because no sled pool is available).
+    ///
+    /// This is the authoritative check for org-scoped mutations: a local
+    /// attacker cannot inject writes for an arbitrary `org_hash` they are
+    /// not a member of, because those writes would otherwise get prefixed
+    /// with that org hash and queued for sync.
+    fn validate_org_membership(&self, org_hash: &str) -> Result<(), SchemaError> {
+        let Some(pool) = self.sled_pool.as_ref() else {
+            // No sled pool means we cannot consult the org_memberships tree.
+            // This path is only hit in limited test/non-Sled configurations
+            // where org sync is not in play. Fail-open here would be unsafe
+            // in production, but in production the pool is always present.
+            return Ok(());
+        };
+
+        match crate::org::operations::get_org(pool, org_hash) {
+            Ok(Some(_)) => Ok(()),
+            Ok(None) => Err(SchemaError::PermissionDenied(format!(
+                "Mutation rejected: node is not a member of org '{}'",
+                org_hash
+            ))),
+            Err(e) => Err(SchemaError::InvalidData(format!(
+                "Failed to check org membership for '{}': {}",
+                org_hash, e
+            ))),
         }
     }
 
@@ -95,6 +133,14 @@ impl MutationManager {
                 .ok_or_else(|| {
                     SchemaError::InvalidData(format!("Schema '{}' not found", mutation.schema_name))
                 })?;
+
+            // Security check: org-scoped schemas may only be written by
+            // members of the org. `write_mutations_batch_async` re-checks
+            // this as a defense-in-depth chokepoint, but we fail fast here
+            // so the caller gets a clear error before any side effects.
+            if let Some(org_hash) = schema.org_hash.as_deref() {
+                self.validate_org_membership(org_hash)?;
+            }
 
             for field_name in mutation.fields_and_values.keys() {
                 let policy = schema
@@ -199,6 +245,14 @@ impl MutationManager {
             *timing_breakdown
                 .entry("schema_load")
                 .or_insert(std::time::Duration::ZERO) += load_start.elapsed();
+
+            // Security check: if this schema is org-scoped, verify the node
+            // is a member of the org before persisting. Writes to org-scoped
+            // schemas produce `{org_hash}:`-prefixed sled keys which would
+            // otherwise be queued for sync under that org's prefix.
+            if let Some(org_hash) = schema.org_hash.as_deref() {
+                self.validate_org_membership(org_hash)?;
+            }
 
             // Phase 2: Create atoms and compute key values
             let phase1_start = std::time::Instant::now();
@@ -827,6 +881,7 @@ impl MutationManager {
         let schema_manager = Arc::clone(&self.schema_manager);
         let message_bus = Arc::clone(&self.message_bus);
         let view_orchestrator = Arc::clone(&self.view_orchestrator);
+        let sled_pool = self.sled_pool.clone();
         let is_listening = Arc::clone(&self.is_listening);
 
         is_listening.store(true, std::sync::atomic::Ordering::Release);
@@ -849,6 +904,7 @@ impl MutationManager {
                                     Arc::clone(&message_bus),
                                     Arc::clone(&view_orchestrator),
                                     None,
+                                    sled_pool.clone(),
                                 );
 
                                 if let Err(e) = temp_manager
