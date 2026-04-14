@@ -10,6 +10,7 @@ mod types;
 mod tests;
 
 pub use embedding_index::cosine_similarity;
+pub use embedding_index::FaceListEntry;
 pub use embedding_model::{Embedder, FastEmbedModel};
 #[cfg(any(test, feature = "test-utils"))]
 pub use embedding_model::{MockEmbeddingModel, ScriptedEmbeddingModel};
@@ -85,6 +86,8 @@ impl NativeIndexManager {
                     field_name,
                     fragment_idx: idx,
                     fragment_text: Some(fragment_text.clone()),
+                    face_bbox: None,
+                    face_confidence: None,
                 };
                 self.embedding_index
                     .insert_fragment(&*self.store, info, embedding)
@@ -207,6 +210,8 @@ impl NativeIndexManager {
                 field_name: FACE_FIELD_NAME,
                 fragment_idx: idx,
                 fragment_text: None,
+                face_bbox: Some(face.bbox),
+                face_confidence: Some(face.confidence),
             };
             self.embedding_index
                 .insert_fragment(&*self.store, info, face.embedding)
@@ -231,9 +236,10 @@ impl NativeIndexManager {
         self.embedding_index.search_faces(query_face_vec, k)
     }
 
-    /// List all face embeddings stored for a specific record.
-    /// Returns (fragment_idx, embedding) pairs.
-    pub fn list_faces(&self, schema: &str, key: &KeyValue) -> Vec<(usize, Vec<f32>)> {
+    /// List all face embeddings stored for a specific record. Each entry
+    /// carries fragment_idx, embedding, optional bbox + confidence (None for
+    /// pre-bbox-plumbing entries).
+    pub fn list_faces(&self, schema: &str, key: &KeyValue) -> Vec<FaceListEntry> {
         self.embedding_index.list_faces(schema, key)
     }
 }
