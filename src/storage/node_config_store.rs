@@ -1,19 +1,52 @@
+use base64::{engine::general_purpose::STANDARD as B64, Engine};
 use serde::{Deserialize, Serialize};
 
 use super::sled_pool::SledPool;
+use crate::crypto::{decrypt_envelope, encrypt_envelope};
 use std::sync::Arc;
 
 const TREE_NAME: &str = "node_config";
 
+/// Prefix marker for encrypted string values stored in this tree.
+/// Matches the convention used by `EncryptingKvStore` so that the stored
+/// value is valid UTF-8 and round-trips through the existing string-based
+/// get/set API without changing the wire format of untouched fields.
+const ENCRYPTED_PREFIX: &str = "ENC:";
+
 /// Thin wrapper around a SledPool for storing node configuration.
+///
+/// Sensitive fields (currently: the node's Ed25519 private key) are
+/// transparently encrypted at rest with AES-256-GCM when a 32-byte
+/// encryption key is supplied via [`NodeConfigStore::with_crypto_key`].
+/// Reads transparently handle both legacy plaintext values (pre-migration)
+/// and encrypted values, and writes always produce encrypted output when
+/// a key is configured. Migration is performed implicitly on the next
+/// write — no explicit re-encryption pass is required.
+///
 /// All runtime config (identity, cloud credentials, AI settings) lives here.
 #[derive(Clone)]
 pub struct NodeConfigStore {
     pool: Arc<SledPool>,
+    /// Optional 32-byte key used to encrypt sensitive fields at rest.
+    /// When `None`, sensitive fields are stored in plaintext (legacy mode)
+    /// and reads of previously-encrypted values will fail loudly rather
+    /// than silently returning ciphertext.
+    identity_key: Option<[u8; 32]>,
 }
 
 impl NodeConfigStore {
     pub fn new(pool: Arc<SledPool>) -> Result<Self, sled::Error> {
+        Self::with_crypto_key(pool, None)
+    }
+
+    /// Create a store with an optional at-rest encryption key for sensitive
+    /// fields. Callers that can read the node's identity (e.g. the factory,
+    /// migration path, discovery config loader) should pass `Some(key)` so
+    /// the private key never hits disk in plaintext.
+    pub fn with_crypto_key(
+        pool: Arc<SledPool>,
+        identity_key: Option<[u8; 32]>,
+    ) -> Result<Self, sled::Error> {
         // Validate that we can open the tree by doing a test acquire
         let guard = pool.acquire_arc().map_err(|e| {
             sled::Error::Io(std::io::Error::other(format!(
@@ -23,7 +56,60 @@ impl NodeConfigStore {
         })?;
         guard.db().open_tree(TREE_NAME)?;
         drop(guard);
-        Ok(Self { pool })
+        Ok(Self { pool, identity_key })
+    }
+
+    /// Encrypt a plaintext string into the `ENC:<base64>` wire format.
+    fn encrypt_sensitive(&self, plaintext: &str) -> Result<String, sled::Error> {
+        let key = self.identity_key.ok_or_else(|| {
+            sled::Error::Io(std::io::Error::other(
+                "NodeConfigStore has no identity encryption key configured; \
+                 refusing to write sensitive field in plaintext",
+            ))
+        })?;
+        let ciphertext = encrypt_envelope(&key, plaintext.as_bytes()).map_err(|e| {
+            sled::Error::Io(std::io::Error::other(format!(
+                "identity encryption failed: {}",
+                e
+            )))
+        })?;
+        Ok(format!("{}{}", ENCRYPTED_PREFIX, B64.encode(&ciphertext)))
+    }
+
+    /// Decrypt a stored value. Transparently handles pre-migration plaintext
+    /// (any value that does NOT start with `ENC:` is returned verbatim) and
+    /// the `ENC:<base64>` wire format. Returns an error only if an encrypted
+    /// value is encountered without a configured key, or decryption fails.
+    fn decrypt_sensitive(&self, stored: String) -> Result<String, sled::Error> {
+        if !stored.starts_with(ENCRYPTED_PREFIX) {
+            // Legacy plaintext written by a pre-encryption build.
+            return Ok(stored);
+        }
+        let b64_part = &stored[ENCRYPTED_PREFIX.len()..];
+        let ciphertext = B64.decode(b64_part).map_err(|e| {
+            sled::Error::Io(std::io::Error::other(format!(
+                "identity ciphertext base64 decode failed: {}",
+                e
+            )))
+        })?;
+        let key = self.identity_key.ok_or_else(|| {
+            sled::Error::Io(std::io::Error::other(
+                "encrypted identity field found in Sled but no decryption key \
+                 configured on this NodeConfigStore handle",
+            ))
+        })?;
+        let plaintext_bytes = decrypt_envelope(&key, &ciphertext).map_err(|e| {
+            sled::Error::Io(std::io::Error::other(format!(
+                "identity decryption failed: {}",
+                e
+            )))
+        })?;
+        String::from_utf8(plaintext_bytes).map_err(|e| {
+            sled::Error::Io(std::io::Error::other(format!(
+                "identity plaintext is not valid UTF-8: {}",
+                e
+            )))
+        })
     }
 
     fn tree(&self) -> sled::Tree {
@@ -96,18 +182,42 @@ impl NodeConfigStore {
     }
 
     // --- Node identity ---
+    //
+    // `identity:private_key` is encrypted at rest with AES-256-GCM when a
+    // crypto key is configured on this store handle. The public key is
+    // stored in plaintext — there is no confidentiality requirement and
+    // callers (e.g. discovery_config) sometimes need to read it without
+    // holding the encryption key.
 
     pub fn get_identity(&self) -> Option<NodeIdentity> {
+        let public_key = self.get("identity:public_key")?;
+        let stored_private = self.get("identity:private_key")?;
+        let private_key = match self.decrypt_sensitive(stored_private) {
+            Ok(p) => p,
+            Err(e) => {
+                log::error!("failed to load encrypted node identity: {}", e);
+                return None;
+            }
+        };
         Some(NodeIdentity {
-            private_key: self.get("identity:private_key")?,
-            public_key: self.get("identity:public_key")?,
+            private_key,
+            public_key,
         })
     }
 
     pub fn set_identity(&self, id: &NodeIdentity) -> Result<(), sled::Error> {
-        self.set("identity:private_key", &id.private_key)?;
+        let encrypted_private = self.encrypt_sensitive(&id.private_key)?;
+        self.set("identity:private_key", &encrypted_private)?;
         self.set("identity:public_key", &id.public_key)?;
         Ok(())
+    }
+
+    /// Read the raw stored value for `identity:private_key` without
+    /// decryption. Exposed for tests that need to verify the on-disk
+    /// representation is ciphertext.
+    #[doc(hidden)]
+    pub fn raw_identity_private_key(&self) -> Option<String> {
+        self.get("identity:private_key")
     }
 
     // --- Identity card (display name, contact) ---
@@ -216,8 +326,17 @@ mod tests {
     fn temp_store() -> (NodeConfigStore, tempfile::TempDir) {
         let dir = tempfile::tempdir().unwrap();
         let pool = Arc::new(SledPool::new(dir.path().to_path_buf()));
-        let store = NodeConfigStore::new(pool).unwrap();
+        // Tests exercise encrypted identity by default so the common
+        // path (set_identity → get_identity) covers the encryption flow.
+        let store = NodeConfigStore::with_crypto_key(pool, Some([0x42u8; 32])).unwrap();
         // Return dir to keep tempdir alive
+        (store, dir)
+    }
+
+    fn temp_store_no_crypto() -> (NodeConfigStore, tempfile::TempDir) {
+        let dir = tempfile::tempdir().unwrap();
+        let pool = Arc::new(SledPool::new(dir.path().to_path_buf()));
+        let store = NodeConfigStore::new(pool).unwrap();
         (store, dir)
     }
 
@@ -273,6 +392,117 @@ mod tests {
         let loaded = store.get_identity().unwrap();
         assert_eq!(loaded.private_key, "priv_base64");
         assert_eq!(loaded.public_key, "pub_base64");
+    }
+
+    #[test]
+    fn test_identity_private_key_encrypted_on_disk() {
+        let (store, _dir) = temp_store();
+        let id = NodeIdentity {
+            private_key: "super-secret-ed25519-seed".into(),
+            public_key: "pub_base64".into(),
+        };
+        store.set_identity(&id).unwrap();
+
+        // Raw bytes on disk must NOT contain the plaintext secret and
+        // must use the ENC: envelope prefix.
+        let raw = store.raw_identity_private_key().unwrap();
+        assert!(
+            raw.starts_with("ENC:"),
+            "stored private_key should be encrypted, got: {}",
+            raw
+        );
+        assert!(!raw.contains("super-secret-ed25519-seed"));
+
+        // Public key remains plaintext.
+        assert_eq!(store.get("identity:public_key").unwrap(), "pub_base64");
+    }
+
+    #[test]
+    fn test_identity_plaintext_migration_on_read() {
+        // Simulate a legacy node that wrote the private key before encryption
+        // was introduced. Reading through a crypto-enabled store should
+        // transparently return the plaintext value.
+        let dir = tempfile::tempdir().unwrap();
+        let pool = Arc::new(SledPool::new(dir.path().to_path_buf()));
+
+        // Phase 1: legacy write via a crypto-less store — but bypass
+        // set_identity (which now requires a key) by using the raw kv API.
+        let legacy = NodeConfigStore::new(Arc::clone(&pool)).unwrap();
+        legacy
+            .set("identity:private_key", "legacy-plaintext")
+            .unwrap();
+        legacy.set("identity:public_key", "legacy-pub").unwrap();
+
+        // Phase 2: upgraded store with an encryption key reads the legacy
+        // value successfully via the migration fallback.
+        let upgraded =
+            NodeConfigStore::with_crypto_key(Arc::clone(&pool), Some([0x42u8; 32])).unwrap();
+        let loaded = upgraded.get_identity().unwrap();
+        assert_eq!(loaded.private_key, "legacy-plaintext");
+        assert_eq!(loaded.public_key, "legacy-pub");
+
+        // Phase 3: the next write re-persists the value in encrypted form.
+        upgraded
+            .set_identity(&NodeIdentity {
+                private_key: "new-secret".into(),
+                public_key: "legacy-pub".into(),
+            })
+            .unwrap();
+        let raw = upgraded.raw_identity_private_key().unwrap();
+        assert!(raw.starts_with("ENC:"));
+        assert!(!raw.contains("new-secret"));
+    }
+
+    #[test]
+    fn test_set_identity_without_key_fails_loudly() {
+        let (store, _dir) = temp_store_no_crypto();
+        let id = NodeIdentity {
+            private_key: "priv".into(),
+            public_key: "pub".into(),
+        };
+        // Writing a sensitive field without a configured key must error —
+        // no silent plaintext fallback.
+        assert!(store.set_identity(&id).is_err());
+    }
+
+    #[test]
+    fn test_get_identity_without_key_fails_on_encrypted_value() {
+        let dir = tempfile::tempdir().unwrap();
+        let pool = Arc::new(SledPool::new(dir.path().to_path_buf()));
+
+        // Write an encrypted value with a keyed store.
+        let keyed =
+            NodeConfigStore::with_crypto_key(Arc::clone(&pool), Some([0x42u8; 32])).unwrap();
+        keyed
+            .set_identity(&NodeIdentity {
+                private_key: "priv".into(),
+                public_key: "pub".into(),
+            })
+            .unwrap();
+
+        // A crypto-less handle must NOT silently hand out ciphertext.
+        let unkeyed = NodeConfigStore::new(Arc::clone(&pool)).unwrap();
+        assert!(unkeyed.get_identity().is_none());
+    }
+
+    #[test]
+    fn test_identity_persists_across_handles_with_same_key() {
+        let dir = tempfile::tempdir().unwrap();
+        let pool = Arc::new(SledPool::new(dir.path().to_path_buf()));
+
+        {
+            let a =
+                NodeConfigStore::with_crypto_key(Arc::clone(&pool), Some([0x11u8; 32])).unwrap();
+            a.set_identity(&NodeIdentity {
+                private_key: "persist-me".into(),
+                public_key: "pub".into(),
+            })
+            .unwrap();
+        }
+
+        let b = NodeConfigStore::with_crypto_key(Arc::clone(&pool), Some([0x11u8; 32])).unwrap();
+        let loaded = b.get_identity().unwrap();
+        assert_eq!(loaded.private_key, "persist-me");
     }
 
     #[test]
