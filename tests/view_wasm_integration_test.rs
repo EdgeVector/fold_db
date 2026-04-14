@@ -106,7 +106,7 @@ async fn wasm_view_query_returns_transformed_output() {
 
     // Query the view
     let query = Query::new("SummaryView".to_string(), vec!["summary".to_string()]);
-    let results = db.query_executor().query(query).await.unwrap();
+    let results = db.query_executor().query_with_access(query, &fold_db::access::AccessContext::owner("test"), None).await.unwrap();
 
     assert!(results.contains_key("summary"));
     let summary_values = &results["summary"];
@@ -157,7 +157,7 @@ async fn wasm_view_output_type_validation_works() {
 
     // Query should fail with type validation error
     let query = Query::new("BadTypeView".to_string(), vec!["summary".to_string()]);
-    let result = db.query_executor().query(query).await;
+    let result = db.query_executor().query_with_access(query, &fold_db::access::AccessContext::owner("test"), None).await;
     assert!(result.is_err());
     assert!(
         result.unwrap_err().to_string().contains("type validation"),
@@ -207,7 +207,7 @@ async fn wasm_view_cache_invalidation_works() {
 
     // First query: populates cache
     let query = Query::new("WasmCacheView".to_string(), vec!["summary".to_string()]);
-    db.query_executor().query(query.clone()).await.unwrap();
+    db.query_executor().query_with_access(query.clone(), &fold_db::access::AccessContext::owner("test"), None).await.unwrap();
 
     // Verify cached
     let state = db

@@ -4,6 +4,7 @@ use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::sync::Arc;
+use subtle::ConstantTimeEq;
 
 /// A single KvStore operation recorded for sync.
 ///
@@ -99,7 +100,12 @@ impl LogEntry {
         hasher.update(json_bytes);
         let computed_hash: [u8; 32] = hasher.finalize().into();
 
-        if stored_hash != computed_hash.as_slice() {
+        // Constant-time compare to prevent timing oracle on integrity hash.
+        // A byte-by-byte `!=` can leak the position of the first differing byte
+        // via short-circuit timing, letting an attacker incrementally forge a
+        // valid hash for tampered log entries. `ConstantTimeEq::ct_eq` compares
+        // in time independent of the contents.
+        if !bool::from(stored_hash.ct_eq(computed_hash.as_slice())) {
             return Err(SyncError::CorruptEntry {
                 seq: 0,
                 reason: "hash mismatch — data corrupted".to_string(),
@@ -238,6 +244,39 @@ mod tests {
             assert_eq!(items.len(), 2);
         } else {
             panic!("expected BatchPut");
+        }
+    }
+
+    #[tokio::test]
+    async fn flipped_integrity_hash_is_rejected() {
+        // Build a sealed entry by hand with a bit-flipped stored hash so that
+        // the ciphertext decrypts cleanly but the integrity hash does not match.
+        // This exercises the constant-time hash comparison in `unseal`.
+        let crypto = test_crypto();
+        let entry = sample_entry(42);
+        let json = serde_json::to_vec(&entry).unwrap();
+
+        let mut hasher = Sha256::new();
+        hasher.update(&json);
+        let mut hash: [u8; 32] = hasher.finalize().into();
+        // Flip one bit in the stored hash.
+        hash[0] ^= 0x01;
+
+        let mut plaintext = Vec::with_capacity(HASH_SIZE + json.len());
+        plaintext.extend_from_slice(&hash);
+        plaintext.extend_from_slice(&json);
+
+        let ciphertext = crypto.encrypt(&plaintext).await.unwrap();
+        let result = LogEntry::unseal(&ciphertext, &crypto).await;
+
+        match result {
+            Err(SyncError::CorruptEntry { reason, .. }) => {
+                assert!(
+                    reason.contains("hash mismatch"),
+                    "unexpected reason: {reason}"
+                );
+            }
+            other => panic!("expected CorruptEntry hash mismatch, got {other:?}"),
         }
     }
 

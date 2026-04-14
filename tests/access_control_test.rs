@@ -328,7 +328,11 @@ async fn query_with_no_access_context_returns_all_fields() {
         "Notes".to_string(),
         vec!["title".to_string(), "content".to_string()],
     );
-    let results = db.query_executor().query(query).await.unwrap();
+    let results = db
+        .query_executor()
+        .query_with_access(query, &fold_db::access::AccessContext::owner("test"), None)
+        .await
+        .unwrap();
 
     assert!(results.contains_key("title"));
     assert!(results.contains_key("content"));

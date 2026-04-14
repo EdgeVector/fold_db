@@ -70,7 +70,7 @@ async fn mutating_source_invalidates_view_cache() {
 
     // First query: populates cache
     let query = Query::new("CV".to_string(), vec!["content".to_string()]);
-    let results = db.query_executor().query(query.clone()).await.unwrap();
+    let results = db.query_executor().query_with_access(query.clone(), &fold_db::access::AccessContext::owner("test"), None).await.unwrap();
     let first_value = results["content"].values().next().unwrap().value.clone();
     assert_eq!(first_value, json!("original"));
 
@@ -105,7 +105,7 @@ async fn mutating_source_invalidates_view_cache() {
     );
 
     // Re-query: should fetch fresh data
-    let results2 = db.query_executor().query(query).await.unwrap();
+    let results2 = db.query_executor().query_with_access(query, &fold_db::access::AccessContext::owner("test"), None).await.unwrap();
     let all_values: Vec<_> = results2["content"]
         .values()
         .map(|fv| fv.value.clone())
@@ -150,7 +150,7 @@ async fn re_query_after_invalidation_re_caches() {
 
     // First query: caches
     let query = Query::new("TV".to_string(), vec!["title".to_string()]);
-    db.query_executor().query(query.clone()).await.unwrap();
+    db.query_executor().query_with_access(query.clone(), &fold_db::access::AccessContext::owner("test"), None).await.unwrap();
 
     // Invalidate
     let mut fields2 = HashMap::new();
@@ -173,7 +173,7 @@ async fn re_query_after_invalidation_re_caches() {
     ));
 
     // Re-query: should re-cache
-    db.query_executor().query(query).await.unwrap();
+    db.query_executor().query_with_access(query, &fold_db::access::AccessContext::owner("test"), None).await.unwrap();
 
     assert!(matches!(
         db.db_ops().get_view_cache_state("TV").await.unwrap(),
@@ -228,8 +228,8 @@ async fn cascading_invalidation_through_view_chain() {
     // Query both views to populate caches
     let query_a = Query::new("ViewA".to_string(), vec!["content".to_string()]);
     let query_b = Query::new("ViewB".to_string(), vec!["content".to_string()]);
-    db.query_executor().query(query_a).await.unwrap();
-    db.query_executor().query(query_b).await.unwrap();
+    db.query_executor().query_with_access(query_a, &fold_db::access::AccessContext::owner("test"), None).await.unwrap();
+    db.query_executor().query_with_access(query_b, &fold_db::access::AccessContext::owner("test"), None).await.unwrap();
 
     // Both should be cached
     assert!(matches!(
@@ -326,7 +326,7 @@ async fn view_chain_query_returns_source_data() {
 
     // Query ViewB — should recursively resolve through ViewA to BlogPost
     let query = Query::new("ViewB".to_string(), vec!["title".to_string()]);
-    let results = db.query_executor().query(query).await.unwrap();
+    let results = db.query_executor().query_with_access(query, &fold_db::access::AccessContext::owner("test"), None).await.unwrap();
 
     assert!(results.contains_key("title"));
     let values: Vec<_> = results["title"]
@@ -386,7 +386,7 @@ async fn three_level_chain_resolves_to_source() {
 
     // Query ViewC — resolves through ViewB → ViewA → BlogPost
     let query = Query::new("ViewC".to_string(), vec!["content".to_string()]);
-    let results = db.query_executor().query(query).await.unwrap();
+    let results = db.query_executor().query_with_access(query, &fold_db::access::AccessContext::owner("test"), None).await.unwrap();
 
     let values: Vec<_> = results["content"]
         .values()
@@ -437,7 +437,7 @@ async fn chain_re_query_after_cascade_invalidation_gets_fresh_data() {
 
     // Populate caches
     let query_b = Query::new("ViewB".to_string(), vec!["content".to_string()]);
-    let results = db.query_executor().query(query_b.clone()).await.unwrap();
+    let results = db.query_executor().query_with_access(query_b.clone(), &fold_db::access::AccessContext::owner("test"), None).await.unwrap();
     let val = results["content"].values().next().unwrap().value.clone();
     assert_eq!(val, json!("v1"));
 
@@ -460,7 +460,7 @@ async fn chain_re_query_after_cascade_invalidation_gets_fresh_data() {
     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
 
     // Re-query ViewB — should get fresh "v2" through the entire chain
-    let results2 = db.query_executor().query(query_b).await.unwrap();
+    let results2 = db.query_executor().query_with_access(query_b, &fold_db::access::AccessContext::owner("test"), None).await.unwrap();
     let values: Vec<_> = results2["content"]
         .values()
         .map(|fv| fv.value.clone())
@@ -559,7 +559,7 @@ async fn multi_source_view_from_two_views() {
 
     // Query ViewC — should merge data from both source views
     let query = Query::new("ViewC".to_string(), vec![]);
-    let results = db.query_executor().query(query).await.unwrap();
+    let results = db.query_executor().query_with_access(query, &fold_db::access::AccessContext::owner("test"), None).await.unwrap();
 
     assert!(
         results.contains_key("title"),
@@ -619,7 +619,7 @@ async fn three_level_cascade_invalidation() {
     // Populate all caches
     for name in &["ViewA", "ViewB", "ViewC"] {
         let q = Query::new(name.to_string(), vec!["content".to_string()]);
-        db.query_executor().query(q).await.unwrap();
+        db.query_executor().query_with_access(q, &fold_db::access::AccessContext::owner("test"), None).await.unwrap();
     }
 
     // All should be cached

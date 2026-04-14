@@ -79,7 +79,7 @@ async fn identity_write_redirects_to_source() {
 
     // Query the SOURCE schema to verify the write landed there
     let query = Query::new("BlogPost".to_string(), vec!["title".to_string()]);
-    let results = db.query_executor().query(query).await.unwrap();
+    let results = db.query_executor().query_with_access(query, &fold_db::access::AccessContext::owner("test"), None).await.unwrap();
 
     assert!(
         results.contains_key("title"),
@@ -189,7 +189,7 @@ async fn write_through_view_invalidates_cache() {
 
     // Query the view to populate cache
     let query = Query::new("CacheWrite".to_string(), vec!["content".to_string()]);
-    db.query_executor().query(query.clone()).await.unwrap();
+    db.query_executor().query_with_access(query.clone(), &fold_db::access::AccessContext::owner("test"), None).await.unwrap();
 
     // Cache should be populated
     assert!(matches!(
@@ -215,7 +215,7 @@ async fn write_through_view_invalidates_cache() {
         .unwrap();
 
     // Re-query — should return fresh data including the new write
-    let results = db.query_executor().query(query).await.unwrap();
+    let results = db.query_executor().query_with_access(query, &fold_db::access::AccessContext::owner("test"), None).await.unwrap();
     let values: Vec<_> = results["content"]
         .values()
         .map(|fv| fv.value.clone())
@@ -276,8 +276,8 @@ async fn write_through_view_cascades_invalidation() {
     // Populate caches for both views
     let query_a = Query::new("ViewA".to_string(), vec!["content".to_string()]);
     let query_b = Query::new("ViewB".to_string(), vec!["content".to_string()]);
-    db.query_executor().query(query_a).await.unwrap();
-    db.query_executor().query(query_b.clone()).await.unwrap();
+    db.query_executor().query_with_access(query_a, &fold_db::access::AccessContext::owner("test"), None).await.unwrap();
+    db.query_executor().query_with_access(query_b.clone(), &fold_db::access::AccessContext::owner("test"), None).await.unwrap();
 
     // Both should be cached
     assert!(matches!(
@@ -307,7 +307,7 @@ async fn write_through_view_cascades_invalidation() {
     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
 
     // ViewB (downstream) should also see the new data after cascade invalidation
-    let results = db.query_executor().query(query_b).await.unwrap();
+    let results = db.query_executor().query_with_access(query_b, &fold_db::access::AccessContext::owner("test"), None).await.unwrap();
     let values: Vec<_> = results["content"]
         .values()
         .map(|fv| fv.value.clone())

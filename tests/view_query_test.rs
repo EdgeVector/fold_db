@@ -72,7 +72,7 @@ async fn query_identity_view_returns_source_data() {
 
     // Query the view — should return the source data
     let query = Query::new("ContentView".to_string(), vec!["content".to_string()]);
-    let results = db.query_executor().query(query).await.unwrap();
+    let results = db.query_executor().query_with_access(query, &fold_db::access::AccessContext::owner("test"), None).await.unwrap();
 
     assert!(
         results.contains_key("content"),
@@ -91,7 +91,7 @@ async fn query_nonexistent_name_errors() {
     let db = setup_db().await;
 
     let query = Query::new("DoesNotExist".to_string(), vec![]);
-    let result = db.query_executor().query(query).await;
+    let result = db.query_executor().query_with_access(query, &fold_db::access::AccessContext::owner("test"), None).await;
     assert!(result.is_err());
 }
 
@@ -108,7 +108,7 @@ async fn query_blocked_view_errors() {
     db.schema_manager().block_view("BlockedView").await.unwrap();
 
     let query = Query::new("BlockedView".to_string(), vec!["title".to_string()]);
-    let result = db.query_executor().query(query).await;
+    let result = db.query_executor().query_with_access(query, &fold_db::access::AccessContext::owner("test"), None).await;
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("blocked"));
 }
@@ -159,7 +159,7 @@ async fn query_view_with_empty_fields_returns_all() {
 
     // Query with empty fields — should return all view output fields
     let query = Query::new("FullView".to_string(), vec![]);
-    let results = db.query_executor().query(query).await.unwrap();
+    let results = db.query_executor().query_with_access(query, &fold_db::access::AccessContext::owner("test"), None).await.unwrap();
 
     assert_eq!(results.len(), 2);
     assert!(results.contains_key("title"));
@@ -198,7 +198,7 @@ async fn identity_view_write_redirects_to_source() {
 
     // Query the SOURCE schema to verify the write landed there
     let query = Query::new("BlogPost".to_string(), vec!["content".to_string()]);
-    let results = db.query_executor().query(query).await.unwrap();
+    let results = db.query_executor().query_with_access(query, &fold_db::access::AccessContext::owner("test"), None).await.unwrap();
     assert!(results.contains_key("content"));
     let values: Vec<_> = results["content"]
         .values()
@@ -243,7 +243,7 @@ async fn identity_view_write_invalidates_view_cache() {
 
     // Query view to populate cache
     let query = Query::new("CacheView".to_string(), vec!["content".to_string()]);
-    db.query_executor().query(query.clone()).await.unwrap();
+    db.query_executor().query_with_access(query.clone(), &fold_db::access::AccessContext::owner("test"), None).await.unwrap();
 
     // Write through the view — should invalidate the cache
     let mut mutation_fields = HashMap::new();
@@ -260,7 +260,7 @@ async fn identity_view_write_invalidates_view_cache() {
         .unwrap();
 
     // Re-query view — should return fresh data including the new write
-    let results = db.query_executor().query(query).await.unwrap();
+    let results = db.query_executor().query_with_access(query, &fold_db::access::AccessContext::owner("test"), None).await.unwrap();
     let values: Vec<_> = results["content"]
         .values()
         .map(|fv| fv.value.clone())

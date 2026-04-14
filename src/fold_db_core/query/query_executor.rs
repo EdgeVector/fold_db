@@ -50,14 +50,6 @@ impl QueryExecutor {
         }
     }
 
-    /// Query multiple fields from a schema or view (legacy — no access control)
-    pub async fn query(
-        &self,
-        query: Query,
-    ) -> Result<HashMap<String, HashMap<KeyValue, FieldValue>>, SchemaError> {
-        self.query_internal(query, None, None).await
-    }
-
     /// Query with access control enforcement.
     ///
     /// For schema queries: fields where the caller lacks read access are filtered out.
