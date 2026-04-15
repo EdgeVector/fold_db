@@ -282,16 +282,18 @@ async fn test_get_transform_wasm_after_registration() {
 
     let retrieved = state
         .get_transform_wasm(&record.hash)
+        .await
         .expect("failed to get WASM");
     assert!(retrieved.is_some());
     assert_eq!(retrieved.unwrap(), wasm.to_vec());
 }
 
-#[test]
-fn test_get_transform_wasm_nonexistent() {
+#[tokio::test]
+async fn test_get_transform_wasm_nonexistent() {
     let state = make_test_state();
     let result = state
         .get_transform_wasm("nonexistent_hash")
+        .await
         .expect("should not error");
     assert!(result.is_none());
 }
@@ -685,6 +687,7 @@ async fn test_transforms_persist_across_restart() {
 
         let wasm_bytes = state
             .get_transform_wasm(&hash)
+            .await
             .expect("failed to get WASM")
             .expect("WASM should persist");
         assert_eq!(wasm_bytes, wasm.to_vec());

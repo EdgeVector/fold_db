@@ -7,6 +7,7 @@ use crate::log_feature;
 use crate::logging::features::LogFeature;
 use crate::schema::types::Schema;
 
+use super::external_persistence::ExternalSchemaPersistence;
 use super::state_matching::collect_field_names;
 pub use super::state_matching::jaccard_index;
 use super::types::{
@@ -14,7 +15,14 @@ use super::types::{
     SimilarSchemasResponse, StoredView, TransformRecord, ViewAddOutcome,
 };
 
-/// Storage backend for the schema service
+/// Storage backend for the schema service.
+///
+/// `Sled` is the default local backend used by the self-hosted
+/// binary and by integration tests. `External` plugs in any
+/// backend that implements [`ExternalSchemaPersistence`] — for
+/// example, the S3-backed Lambda deployment lives outside of
+/// `fold_db` and supplies its own implementation so this crate
+/// stays agnostic of any specific cloud service.
 #[derive(Clone)]
 pub enum SchemaStorage {
     /// Local sled database (default)
@@ -22,6 +30,9 @@ pub enum SchemaStorage {
         db: sled::Db,
         schemas_tree: sled::Tree,
     },
+    /// Caller-supplied persistence backend. The schema service
+    /// owns no knowledge of what's behind the trait.
+    External(Arc<dyn ExternalSchemaPersistence>),
 }
 
 /// Shared state for the schema service
@@ -347,7 +358,137 @@ impl SchemaServiceState {
         Ok(state)
     }
 
-    /// Synchronous version of load_schemas for Sled storage
+    /// Create a schema service state backed by a caller-supplied
+    /// persistence implementation.
+    ///
+    /// Used by remote deployments (e.g. the schema-infra Lambda) that
+    /// want to store schema-service data in a cloud service instead
+    /// of a local Sled database. The caller implements
+    /// [`ExternalSchemaPersistence`] and passes it in via `Arc`.
+    ///
+    /// `fold_db` owns no knowledge of what's behind the trait —
+    /// the implementation lives entirely outside this crate.
+    pub async fn new_with_external(
+        backend: Arc<dyn ExternalSchemaPersistence>,
+    ) -> FoldDbResult<Self> {
+        let embedder: Arc<dyn Embedder> = Arc::new(FastEmbedModel::new());
+        let collection_name_anchors = Self::compute_anchor_embeddings(embedder.as_ref());
+
+        let state = Self {
+            schemas: Arc::new(RwLock::new(HashMap::new())),
+            descriptive_name_index: Arc::new(RwLock::new(HashMap::new())),
+            descriptive_name_embeddings: Arc::new(RwLock::new(HashMap::new())),
+            field_embeddings: Arc::new(RwLock::new(HashMap::new())),
+            canonical_fields: Arc::new(RwLock::new(HashMap::new())),
+            canonical_field_embeddings: Arc::new(RwLock::new(HashMap::new())),
+            embedder,
+            storage: SchemaStorage::External(backend),
+            views: Arc::new(RwLock::new(HashMap::new())),
+            transforms: Arc::new(RwLock::new(HashMap::new())),
+            collection_name_anchors,
+        };
+
+        state.load_all_from_external().await?;
+        state.rebuild_descriptive_name_index();
+
+        Ok(state)
+    }
+
+    /// Populate every in-memory cache from the external backend.
+    /// Called from `new_with_external`.
+    async fn load_all_from_external(&self) -> FoldDbResult<()> {
+        let backend = match &self.storage {
+            SchemaStorage::External(b) => b.clone(),
+            SchemaStorage::Sled { .. } => {
+                return Err(FoldDbError::Config(
+                    "load_all_from_external called with non-external storage".to_string(),
+                ));
+            }
+        };
+
+        // Schemas
+        let loaded_schemas = backend.load_all_schemas().await?;
+        {
+            let mut schemas = self.schemas.write().map_err(|_| {
+                FoldDbError::Config("Failed to acquire schemas write lock".to_string())
+            })?;
+            schemas.clear();
+            schemas.extend(loaded_schemas);
+            log_feature!(
+                LogFeature::Schema,
+                info,
+                "Schema service loaded {} schemas from external backend",
+                schemas.len()
+            );
+        }
+
+        // Canonical fields — populate both the registry and the
+        // embeddings cache used for semantic field matching.
+        let loaded_canonical = backend.load_all_canonical_fields().await?;
+        {
+            let mut fields = self.canonical_fields.write().map_err(|_| {
+                FoldDbError::Config("Failed to acquire canonical_fields write lock".to_string())
+            })?;
+            let mut embeddings = self.canonical_field_embeddings.write().map_err(|_| {
+                FoldDbError::Config(
+                    "Failed to acquire canonical_field_embeddings write lock".to_string(),
+                )
+            })?;
+            fields.clear();
+            embeddings.clear();
+            for (name, canonical) in loaded_canonical {
+                let embed_text = Self::build_embedding_text(&name, &canonical.description);
+                if let Ok(vec) = self.embedder.embed_text(&embed_text) {
+                    embeddings.insert(name.clone(), vec);
+                }
+                fields.insert(name, canonical);
+            }
+            log_feature!(
+                LogFeature::Schema,
+                info,
+                "Schema service loaded {} canonical fields from external backend",
+                fields.len()
+            );
+        }
+
+        // Views
+        let loaded_views = backend.load_all_views().await?;
+        {
+            let mut views = self.views.write().map_err(|_| {
+                FoldDbError::Config("Failed to acquire views write lock".to_string())
+            })?;
+            views.clear();
+            views.extend(loaded_views);
+            log_feature!(
+                LogFeature::Schema,
+                info,
+                "Schema service loaded {} views from external backend",
+                views.len()
+            );
+        }
+
+        // Transforms
+        let loaded_transforms = backend.load_all_transforms().await?;
+        {
+            let mut transforms = self.transforms.write().map_err(|_| {
+                FoldDbError::Config("Failed to acquire transforms write lock".to_string())
+            })?;
+            transforms.clear();
+            transforms.extend(loaded_transforms);
+            log_feature!(
+                LogFeature::Schema,
+                info,
+                "Schema service loaded {} transforms from external backend",
+                transforms.len()
+            );
+        }
+
+        Ok(())
+    }
+
+    /// Synchronous version of load_schemas for Sled storage.
+    /// External backends must populate via `load_all_from_external`,
+    /// which is called from `new_with_external`.
     fn load_schemas_sync(&self) -> FoldDbResult<()> {
         let mut schemas = self
             .schemas
@@ -385,6 +526,13 @@ impl SchemaServiceState {
                     "Schema service loaded {} schemas from sled",
                     count
                 );
+            }
+            SchemaStorage::External(_) => {
+                return Err(FoldDbError::Config(
+                    "load_schemas_sync is not supported for external storage; \
+                     use new_with_external which loads asynchronously"
+                        .to_string(),
+                ));
             }
         }
 
@@ -432,6 +580,21 @@ impl SchemaServiceState {
                     LogFeature::Schema,
                     info,
                     "Schema service loaded {} schemas from sled",
+                    count
+                );
+            }
+            SchemaStorage::External(backend) => {
+                let loaded = backend.load_all_schemas().await?;
+                let mut schemas = self.schemas.write().map_err(|_| {
+                    FoldDbError::Config("Failed to acquire schemas write lock".to_string())
+                })?;
+                schemas.clear();
+                let count = loaded.len();
+                schemas.extend(loaded);
+                log_feature!(
+                    LogFeature::Schema,
+                    info,
+                    "Schema service reloaded {} schemas from external backend",
                     count
                 );
             }
@@ -585,6 +748,15 @@ impl SchemaServiceState {
                             if let Ok(bytes) = serde_json::to_vec(&*schema) {
                                 let _ = schemas_tree.insert(schema.name.as_bytes(), bytes);
                             }
+                        }
+                        SchemaStorage::External(_) => {
+                            // TODO(s3-backend): schema-level interest category
+                            // backfill is not yet persisted for external backends.
+                            // The primary canonical_fields registry already carries
+                            // the interest category, so queries still work; only the
+                            // cached projection on the Schema itself is skipped here.
+                            // Fixing this requires collecting pending saves outside
+                            // the schemas write lock and awaiting after drop.
                         }
                     }
                     updated += 1;
@@ -1068,6 +1240,15 @@ impl SchemaServiceState {
                     schema.name
                 );
             }
+            SchemaStorage::External(backend) => {
+                backend.save_schema(schema).await?;
+                log_feature!(
+                    LogFeature::Schema,
+                    info,
+                    "Schema '{}' persisted to external backend",
+                    schema.name
+                );
+            }
         }
         Ok(())
     }
@@ -1422,6 +1603,15 @@ impl SchemaServiceState {
                     view.name
                 );
             }
+            SchemaStorage::External(backend) => {
+                backend.save_view(view).await?;
+                log_feature!(
+                    LogFeature::Schema,
+                    info,
+                    "View '{}' persisted to external backend",
+                    view.name
+                );
+            }
         }
         Ok(())
     }
@@ -1473,6 +1663,21 @@ impl SchemaServiceState {
                     FoldDbError::Config(format!("Failed to open views tree: {}", e))
                 })?;
                 self.load_views_from_tree(&views_tree)?;
+            }
+            SchemaStorage::External(backend) => {
+                let loaded = backend.load_all_views().await?;
+                let mut views = self.views.write().map_err(|_| {
+                    FoldDbError::Config("Failed to acquire views write lock".to_string())
+                })?;
+                views.clear();
+                let count = loaded.len();
+                views.extend(loaded);
+                log_feature!(
+                    LogFeature::Schema,
+                    info,
+                    "Schema service reloaded {} views from external backend",
+                    count
+                );
             }
         }
         Ok(())
