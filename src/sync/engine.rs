@@ -110,25 +110,36 @@ trait MergeMolecule {
 
 impl MergeMolecule for MoleculeHash {
     fn merge_into_conflicts(&mut self, other: &Self) -> Vec<MergeConflict> {
-        self.merge(other)
+        // TODO: Thread node signer through sync engine for proper keypair usage.
+        // Collection merges preserve per-entry signatures so the keypair is unused.
+        let kp = crate::security::Ed25519KeyPair::generate()
+            .expect("Ed25519 key generation must not fail");
+        self.merge(other, &kp)
     }
 }
 
 impl MergeMolecule for MoleculeRange {
     fn merge_into_conflicts(&mut self, other: &Self) -> Vec<MergeConflict> {
-        self.merge(other)
+        let kp = crate::security::Ed25519KeyPair::generate()
+            .expect("Ed25519 key generation must not fail");
+        self.merge(other, &kp)
     }
 }
 
 impl MergeMolecule for MoleculeHashRange {
     fn merge_into_conflicts(&mut self, other: &Self) -> Vec<MergeConflict> {
-        self.merge(other)
+        let kp = crate::security::Ed25519KeyPair::generate()
+            .expect("Ed25519 key generation must not fail");
+        self.merge(other, &kp)
     }
 }
 
 impl MergeMolecule for Molecule {
     fn merge_into_conflicts(&mut self, other: &Self) -> Vec<MergeConflict> {
-        self.merge(other).into_iter().collect()
+        // TODO: Thread node signer through sync engine for proper merge signing.
+        let kp = crate::security::Ed25519KeyPair::generate()
+            .expect("Ed25519 key generation must not fail");
+        self.merge(other, &kp).into_iter().collect()
     }
 }
 
@@ -1488,6 +1499,8 @@ impl SyncEngine {
                 version: 0,
                 is_conflict: true,
                 conflict_loser_atom: Some(conflict.loser_atom.clone()),
+                writer_pubkey: String::new(),
+                signature: String::new(),
             };
             let event_key = format!("history:{}:{:020}", mol_uuid, ts_nanos);
             let event_bytes = serde_json::to_vec(&event)?;

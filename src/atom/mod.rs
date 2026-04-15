@@ -19,6 +19,15 @@ pub struct AtomEntry {
     pub atom_uuid: String,
     #[serde(default)]
     pub written_at: u64, // nanos since epoch
+    /// Base64-encoded public key of the writer who signed this entry.
+    #[serde(default)]
+    pub writer_pubkey: String,
+    /// Base64-encoded Ed25519 signature over canonical bytes.
+    #[serde(default)]
+    pub signature: String,
+    /// Signature scheme version (1 = hand-rolled canonical concat).
+    #[serde(default)]
+    pub signature_version: u8,
 }
 
 /// Returns the current time in nanoseconds since the Unix epoch.

@@ -68,7 +68,7 @@ impl crate::schema::types::field::Field for HashField {
         // For HashField, we use the hash key to store the atom
         if let Some(hash_key) = &key_value.hash {
             if let Some(molecule) = &mut self.base.molecule {
-                molecule.set_atom_uuid(hash_key.clone(), ctx.atom.uuid().to_string());
+                molecule.set_atom_uuid(hash_key.clone(), ctx.atom.uuid().to_string(), &ctx.signer);
                 // Store per-key metadata on the molecule
                 molecule.set_key_metadata(
                     hash_key.clone(),

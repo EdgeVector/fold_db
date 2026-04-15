@@ -78,6 +78,7 @@ impl crate::schema::types::field::Field for HashRangeField {
                         hash_key.clone(),
                         range_key.clone(),
                         ctx.atom.uuid().to_string(),
+                        &ctx.signer,
                     );
                     // Store per-key metadata on the molecule
                     molecule.set_key_metadata(

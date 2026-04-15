@@ -24,12 +24,11 @@ impl DbOperations {
 
     pub fn create_atom(
         schema_name: &str,
-        pub_key: &str,
         value: Value,
         source_file_name: Option<String>,
         metadata: Option<HashMap<String, String>>,
     ) -> Atom {
-        AtomStore::create_atom(schema_name, pub_key, value, source_file_name, metadata)
+        AtomStore::create_atom(schema_name, value, source_file_name, metadata)
     }
 
     pub async fn batch_store_atoms(
@@ -53,7 +52,6 @@ impl DbOperations {
     pub async fn create_and_store_atom_for_mutation_deferred(
         &self,
         schema_name: &str,
-        pub_key: &str,
         value: Value,
         source_file_name: Option<String>,
         metadata: Option<HashMap<String, String>>,
@@ -62,7 +60,6 @@ impl DbOperations {
         self.atoms()
             .create_and_store_atom_for_mutation_deferred(
                 schema_name,
-                pub_key,
                 value,
                 source_file_name,
                 metadata,

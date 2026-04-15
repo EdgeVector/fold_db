@@ -67,12 +67,11 @@ impl AtomStore {
     /// Used for batch operations where atoms are collected first then stored together.
     pub fn create_atom(
         schema_name: &str,
-        pub_key: &str,
         value: Value,
         source_file_name: Option<String>,
         metadata: Option<HashMap<String, String>>,
     ) -> Atom {
-        let mut atom = Atom::new(schema_name.to_string(), pub_key.to_string(), value);
+        let mut atom = Atom::new(schema_name.to_string(), value);
         if let Some(filename) = source_file_name {
             atom = atom.with_source_file_name(filename);
         }
@@ -181,13 +180,12 @@ impl AtomStore {
     pub async fn create_and_store_atom_for_mutation_deferred(
         &self,
         schema_name: &str,
-        pub_key: &str,
         value: Value,
         source_file_name: Option<String>,
         metadata: Option<HashMap<String, String>>,
         org_hash: Option<&str>,
     ) -> Result<Atom, SchemaError> {
-        let mut new_atom = Atom::new(schema_name.to_string(), pub_key.to_string(), value);
+        let mut new_atom = Atom::new(schema_name.to_string(), value);
 
         // Set source filename if provided
         if let Some(filename) = source_file_name {

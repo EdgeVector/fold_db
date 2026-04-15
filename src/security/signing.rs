@@ -14,6 +14,39 @@ use base64::{engine::general_purpose, Engine as _};
 use serde_json::Value;
 use std::sync::{Arc, RwLock};
 
+/// Signs canonical molecule bytes with the given keypair.
+/// Returns (signature_base64, writer_pubkey_base64).
+///
+/// # Panics
+/// Panics if signing somehow fails (indicates broken invariant).
+pub fn sign_molecule_update(
+    canonical_bytes: &[u8],
+    keypair: &crate::security::Ed25519KeyPair,
+) -> (String, String) {
+    let signature = keypair.sign(canonical_bytes);
+    let signature_base64 = KeyUtils::signature_to_base64(&signature);
+    let writer_pubkey_base64 = keypair.public_key_base64();
+    (signature_base64, writer_pubkey_base64)
+}
+
+/// Verifies a molecule signature against canonical bytes.
+/// Returns true if valid, false otherwise. Never panics.
+pub fn verify_molecule_signature(
+    canonical_bytes: &[u8],
+    signature_base64: &str,
+    writer_pubkey_base64: &str,
+) -> bool {
+    let pubkey = match Ed25519PublicKey::from_base64(writer_pubkey_base64) {
+        Ok(pk) => pk,
+        Err(_) => return false,
+    };
+    let signature = match KeyUtils::signature_from_base64(signature_base64) {
+        Ok(sig) => sig,
+        Err(_) => return false,
+    };
+    pubkey.verify(canonical_bytes, &signature)
+}
+
 /// Message signer for client-side use
 pub struct MessageSigner {
     keypair: crate::security::Ed25519KeyPair,

@@ -19,6 +19,12 @@ pub struct MutationEvent {
     /// The atom UUID that lost the conflict (if `is_conflict` is true).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub conflict_loser_atom: Option<String>,
+    /// Base64-encoded public key of the writer at the time of the mutation.
+    #[serde(default)]
+    pub writer_pubkey: String,
+    /// Base64-encoded Ed25519 signature from the molecule at the time of the mutation.
+    #[serde(default)]
+    pub signature: String,
 }
 
 /// Identifies which slot in the molecule was changed
@@ -45,6 +51,8 @@ mod tests {
             version: 0,
             is_conflict: false,
             conflict_loser_atom: None,
+            writer_pubkey: String::new(),
+            signature: String::new(),
         };
 
         let json = serde_json::to_string(&event).unwrap();
@@ -87,6 +95,8 @@ mod tests {
             version: 0,
             is_conflict: false,
             conflict_loser_atom: None,
+            writer_pubkey: String::new(),
+            signature: String::new(),
         };
 
         let json = serde_json::to_string(&event).unwrap();
@@ -107,6 +117,8 @@ mod tests {
             version: 0,
             is_conflict: false,
             conflict_loser_atom: None,
+            writer_pubkey: String::new(),
+            signature: String::new(),
         };
 
         let ts = event.timestamp.timestamp_nanos_opt().unwrap_or(0);
