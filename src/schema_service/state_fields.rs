@@ -154,26 +154,38 @@ impl SchemaServiceState {
             ));
         }
 
-        // Phase 3: Store under write locks
-        let mut fields = self.canonical_fields.write().map_err(|_| {
-            FoldDbError::Config("Failed to acquire canonical_fields write lock".to_string())
-        })?;
-        let mut embeddings = self.canonical_field_embeddings.write().map_err(|_| {
-            FoldDbError::Config(
-                "Failed to acquire canonical_field_embeddings write lock".to_string(),
-            )
-        })?;
+        // Phase 3: Store under write locks. We collect the set that
+        // needs to be persisted in the backend, drop the sync locks,
+        // then await persistence — holding std::sync::RwLockWriteGuard
+        // across an .await is unsound and also deadlocks the external
+        // backend path.
+        let to_persist: Vec<(String, CanonicalField)> = {
+            let mut fields = self.canonical_fields.write().map_err(|_| {
+                FoldDbError::Config("Failed to acquire canonical_fields write lock".to_string())
+            })?;
+            let mut embeddings = self.canonical_field_embeddings.write().map_err(|_| {
+                FoldDbError::Config(
+                    "Failed to acquire canonical_field_embeddings write lock".to_string(),
+                )
+            })?;
 
-        for (field_name, canonical, embedding) in entries {
-            // Re-check in case another thread registered it between phase 1 and 3
-            if fields.contains_key(&field_name) {
-                continue;
+            let mut collected = Vec::new();
+            for (field_name, canonical, embedding) in entries {
+                // Re-check in case another thread registered it between phase 1 and 3
+                if fields.contains_key(&field_name) {
+                    continue;
+                }
+                if let Some(vec) = embedding {
+                    embeddings.insert(field_name.clone(), vec);
+                }
+                collected.push((field_name.clone(), canonical.clone()));
+                fields.insert(field_name, canonical);
             }
-            if let Some(vec) = embedding {
-                embeddings.insert(field_name.clone(), vec);
-            }
-            self.persist_canonical_field(&field_name, &canonical);
-            fields.insert(field_name, canonical);
+            collected
+        };
+
+        for (name, canonical) in to_persist {
+            self.persist_canonical_field(&name, &canonical).await?;
         }
 
         Ok(())
@@ -362,13 +374,30 @@ impl SchemaServiceState {
             let category = super::classify::infer_interest_category(field_name, description).await;
 
             if let Some(ref cat) = category {
-                let mut fields = match self.canonical_fields.write() {
-                    Ok(f) => f,
-                    Err(_) => continue,
+                // Mutate under the write lock, clone the updated entry out,
+                // then drop the lock before awaiting the persistence call.
+                let to_persist: Option<CanonicalField> = {
+                    let mut fields = match self.canonical_fields.write() {
+                        Ok(f) => f,
+                        Err(_) => continue,
+                    };
+                    if let Some(canonical) = fields.get_mut(field_name) {
+                        canonical.interest_category = Some(cat.clone());
+                        Some(canonical.clone())
+                    } else {
+                        None
+                    }
                 };
-                if let Some(canonical) = fields.get_mut(field_name) {
-                    canonical.interest_category = Some(cat.clone());
-                    self.persist_canonical_field(field_name, canonical);
+                if let Some(canonical) = to_persist {
+                    if let Err(e) = self.persist_canonical_field(field_name, &canonical).await {
+                        log_feature!(
+                            LogFeature::Schema,
+                            warn,
+                            "Failed to persist interest category backfill for '{}': {}",
+                            field_name,
+                            e
+                        );
+                    }
                     backfilled += 1;
                 }
             }
@@ -383,15 +412,33 @@ impl SchemaServiceState {
         );
     }
 
-    /// Persist a canonical field to sled storage.
-    pub(super) fn persist_canonical_field(&self, name: &str, canonical: &CanonicalField) {
+    /// Persist a canonical field to the active storage backend.
+    pub(super) async fn persist_canonical_field(
+        &self,
+        name: &str,
+        canonical: &CanonicalField,
+    ) -> FoldDbResult<()> {
         match &self.storage {
             super::state::SchemaStorage::Sled { db, .. } => {
-                if let Ok(tree) = db.open_tree("canonical_fields") {
-                    if let Ok(bytes) = serde_json::to_vec(canonical) {
-                        let _ = tree.insert(name.as_bytes(), bytes);
-                    }
-                }
+                let tree = db.open_tree("canonical_fields").map_err(|e| {
+                    FoldDbError::Config(format!("Failed to open canonical_fields tree: {}", e))
+                })?;
+                let bytes = serde_json::to_vec(canonical).map_err(|e| {
+                    FoldDbError::Serialization(format!(
+                        "Failed to serialize canonical field '{}': {}",
+                        name, e
+                    ))
+                })?;
+                tree.insert(name.as_bytes(), bytes).map_err(|e| {
+                    FoldDbError::Config(format!(
+                        "Failed to insert canonical field '{}' into sled: {}",
+                        name, e
+                    ))
+                })?;
+                Ok(())
+            }
+            super::state::SchemaStorage::External(backend) => {
+                backend.save_canonical_field(name, canonical).await
             }
         }
     }

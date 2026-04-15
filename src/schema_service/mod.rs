@@ -6,6 +6,7 @@
 
 pub mod builtin_schemas;
 pub mod classify;
+pub mod external_persistence;
 pub mod name_validator;
 mod nmi;
 pub mod state;

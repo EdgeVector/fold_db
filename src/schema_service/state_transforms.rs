@@ -103,8 +103,9 @@ impl SchemaServiceState {
         };
 
         // Persist metadata and WASM separately
-        self.persist_transform_metadata(&record)?;
-        self.persist_transform_wasm(&hash, &request.wasm_bytes)?;
+        self.persist_transform_metadata(&record).await?;
+        self.persist_transform_wasm(&hash, &request.wasm_bytes)
+            .await?;
 
         // Insert into in-memory cache
         {
@@ -135,8 +136,8 @@ impl SchemaServiceState {
         Ok(transforms.get(hash).cloned())
     }
 
-    /// Get WASM bytes for a transform by hash (from Sled, not cached in memory).
-    pub fn get_transform_wasm(&self, hash: &str) -> FoldDbResult<Option<Vec<u8>>> {
+    /// Get WASM bytes for a transform by hash (not cached in memory).
+    pub async fn get_transform_wasm(&self, hash: &str) -> FoldDbResult<Option<Vec<u8>>> {
         match &self.storage {
             SchemaStorage::Sled { db, .. } => {
                 let wasm_tree = db.open_tree("transform_wasm").map_err(|e| {
@@ -149,6 +150,7 @@ impl SchemaServiceState {
                     None => Ok(None),
                 }
             }
+            SchemaStorage::External(backend) => backend.load_transform_wasm(hash).await,
         }
     }
 
@@ -220,7 +222,7 @@ impl SchemaServiceState {
 
     // ============== Persistence ==============
 
-    fn persist_transform_metadata(&self, record: &TransformRecord) -> FoldDbResult<()> {
+    async fn persist_transform_metadata(&self, record: &TransformRecord) -> FoldDbResult<()> {
         match &self.storage {
             SchemaStorage::Sled { db, .. } => {
                 let meta_tree = db.open_tree("transform_metadata").map_err(|e| {
@@ -243,11 +245,14 @@ impl SchemaServiceState {
                 db.flush()
                     .map_err(|e| FoldDbError::Config(format!("Failed to flush sled: {}", e)))?;
             }
+            SchemaStorage::External(backend) => {
+                backend.save_transform_metadata(record).await?;
+            }
         }
         Ok(())
     }
 
-    fn persist_transform_wasm(&self, hash: &str, wasm_bytes: &[u8]) -> FoldDbResult<()> {
+    async fn persist_transform_wasm(&self, hash: &str, wasm_bytes: &[u8]) -> FoldDbResult<()> {
         match &self.storage {
             SchemaStorage::Sled { db, .. } => {
                 let wasm_tree = db.open_tree("transform_wasm").map_err(|e| {
@@ -261,6 +266,9 @@ impl SchemaServiceState {
                 })?;
                 db.flush()
                     .map_err(|e| FoldDbError::Config(format!("Failed to flush sled: {}", e)))?;
+            }
+            SchemaStorage::External(backend) => {
+                backend.save_transform_wasm(hash, wasm_bytes).await?;
             }
         }
         Ok(())
