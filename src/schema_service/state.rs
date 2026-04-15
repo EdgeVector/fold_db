@@ -1271,13 +1271,51 @@ impl SchemaServiceState {
         Ok(schemas.values().cloned().collect())
     }
 
-    /// Get a schema by name (public accessor for Lambda integration)
+    /// Get a schema by name (public accessor for Lambda integration).
+    ///
+    /// Accepts either a content-addressed identity hash (the stable
+    /// key every schema is indexed under) or a descriptive name like
+    /// `"Persona"`. Descriptive-name lookups resolve via the
+    /// `descriptive_name_index`, which is populated from the stored
+    /// schemas' `descriptive_name` field on every load/rebuild and
+    /// does NOT depend on the embedding model — so this path works
+    /// even in Lambda environments where fastembed can't fetch its
+    /// ONNX weights.
+    ///
+    /// fold_db_node always fetches Phase 1 built-ins by descriptive
+    /// name at startup, so this fallback is load-bearing for booting
+    /// any node against a fresh schema service.
     pub fn get_schema_by_name(&self, name: &str) -> FoldDbResult<Option<Schema>> {
         let schemas = self
             .schemas
             .read()
             .map_err(|_| FoldDbError::Config("Failed to acquire schemas read lock".to_string()))?;
-        Ok(schemas.get(name).cloned())
+
+        // Fast path: direct lookup by content-addressed identity hash.
+        if let Some(schema) = schemas.get(name).cloned() {
+            return Ok(Some(schema));
+        }
+
+        // Fallback: resolve `name` as a descriptive_name, then look
+        // up the resulting identity_hash. Drop the schemas lock
+        // before re-acquiring to avoid lock upgrade paths.
+        drop(schemas);
+        let resolved_hash: Option<String> = {
+            let index = self.descriptive_name_index.read().map_err(|_| {
+                FoldDbError::Config(
+                    "Failed to acquire descriptive_name_index read lock".to_string(),
+                )
+            })?;
+            index.get(name).cloned()
+        };
+        if let Some(hash) = resolved_hash {
+            let schemas = self.schemas.read().map_err(|_| {
+                FoldDbError::Config("Failed to acquire schemas read lock".to_string())
+            })?;
+            return Ok(schemas.get(&hash).cloned());
+        }
+
+        Ok(None)
     }
 
     /// Get schema count (public accessor for Lambda integration)
