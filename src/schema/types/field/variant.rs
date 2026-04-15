@@ -38,6 +38,8 @@ pub struct FieldValue {
     pub molecule_uuid: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub molecule_version: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub writer_pubkey: Option<String>,
 }
 
 // Macro to reduce boilerplate for Field trait implementation
@@ -156,9 +158,11 @@ impl Field for FieldVariant {
         // Stamp molecule info on each resolved FieldValue
         let mol_uuid = self.common().molecule_uuid().cloned();
         let mol_version = self.molecule_version();
+        let mol_writer_pubkey = self.molecule_writer_pubkey();
         for fv in resolved.values_mut() {
             fv.molecule_uuid = mol_uuid.clone();
             fv.molecule_version = mol_version;
+            fv.writer_pubkey = mol_writer_pubkey.clone();
         }
 
         Ok(resolved)
@@ -216,6 +220,24 @@ impl FieldVariant {
             Self::Range(f) => f.base.molecule.as_ref().map(|m| m.version()),
             Self::HashRange(f) => f.base.molecule.as_ref().map(|m| m.version()),
         }
+    }
+
+    /// Returns the writer public key from the molecule, if present and non-empty.
+    /// Only available for Single molecules; Hash/Range/HashRange molecules store
+    /// per-entry writer pubkeys, so this returns `None` for those variants.
+    #[must_use]
+    pub fn molecule_writer_pubkey(&self) -> Option<String> {
+        let pk: Option<String> = match self {
+            Self::Single(f) => f
+                .base
+                .molecule
+                .as_ref()
+                .map(|m| m.writer_pubkey().to_string()),
+            // Hash/Range/HashRange molecules have per-entry writer pubkeys
+            // in their AtomEntry structs, not a single molecule-level key.
+            Self::Hash(_) | Self::Range(_) | Self::HashRange(_) => None,
+        };
+        pk.filter(|s| !s.is_empty())
     }
 
     /// Rewinds the in-memory molecule to its state at the given point in time

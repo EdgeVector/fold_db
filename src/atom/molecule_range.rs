@@ -178,7 +178,11 @@ impl MoleculeRange {
 
     /// Merges another MoleculeRange into this one using last-writer-wins per key.
     /// Returns a list of conflicts where both sides had different atoms for the same key.
-    pub fn merge(&mut self, other: &MoleculeRange, _keypair: &Ed25519KeyPair) -> Vec<MergeConflict> {
+    pub fn merge(
+        &mut self,
+        other: &MoleculeRange,
+        _keypair: &Ed25519KeyPair,
+    ) -> Vec<MergeConflict> {
         let mut conflicts = Vec::new();
         for (key, other_entry) in &other.atom_uuids {
             match self.atom_uuids.get(key) {

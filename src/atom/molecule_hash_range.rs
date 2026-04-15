@@ -391,7 +391,11 @@ impl MoleculeHashRange {
 
     /// Merges another MoleculeHashRange into this one using last-writer-wins per key.
     /// Returns a list of conflicts where both sides had different atoms for the same key.
-    pub fn merge(&mut self, other: &MoleculeHashRange, _keypair: &Ed25519KeyPair) -> Vec<MergeConflict> {
+    pub fn merge(
+        &mut self,
+        other: &MoleculeHashRange,
+        _keypair: &Ed25519KeyPair,
+    ) -> Vec<MergeConflict> {
         let mut conflicts = Vec::new();
         for (hash, other_range_map) in &other.atom_uuids {
             for (range, other_entry) in other_range_map {

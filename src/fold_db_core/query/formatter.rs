@@ -48,6 +48,8 @@ pub struct FieldMetadata {
     pub molecule_uuid: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub molecule_version: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub writer_pubkey: Option<String>,
 }
 
 /// Represents a single logical record keyed by `KeyValue`.
@@ -88,6 +90,7 @@ pub fn records_from_field_map(
                     metadata: field_val.metadata.clone(),
                     molecule_uuid: field_val.molecule_uuid.clone(),
                     molecule_version: field_val.molecule_version,
+                    writer_pubkey: field_val.writer_pubkey.clone(),
                 },
             );
         }
@@ -123,6 +126,7 @@ mod tests {
                 metadata: None,
                 molecule_uuid: None,
                 molecule_version: None,
+                writer_pubkey: None,
             },
         );
         f1_map.insert(
@@ -134,6 +138,7 @@ mod tests {
                 metadata: None,
                 molecule_uuid: None,
                 molecule_version: None,
+                writer_pubkey: None,
             },
         );
 
@@ -147,6 +152,7 @@ mod tests {
                 metadata: None,
                 molecule_uuid: None,
                 molecule_version: None,
+                writer_pubkey: None,
             },
         );
 
@@ -180,6 +186,7 @@ mod tests {
                 metadata: None,
                 molecule_uuid: None,
                 molecule_version: None,
+                writer_pubkey: None,
             },
         );
 
@@ -193,6 +200,7 @@ mod tests {
                 metadata: None,
                 molecule_uuid: None,
                 molecule_version: None,
+                writer_pubkey: None,
             },
         );
 
@@ -241,6 +249,7 @@ mod tests {
                 metadata: None,
                 molecule_uuid: None,
                 molecule_version: None,
+                writer_pubkey: None,
             },
         );
         field_map.insert(
@@ -252,6 +261,7 @@ mod tests {
                 metadata: None,
                 molecule_uuid: None,
                 molecule_version: None,
+                writer_pubkey: None,
             },
         );
 
@@ -286,6 +296,7 @@ mod tests {
             metadata: None,
             molecule_uuid: None,
             molecule_version: None,
+            writer_pubkey: None,
         };
 
         // Test serialization
