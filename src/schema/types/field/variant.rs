@@ -38,8 +38,6 @@ pub struct FieldValue {
     pub molecule_uuid: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub molecule_version: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub source_pub_key: Option<String>,
 }
 
 // Macro to reduce boilerplate for Field trait implementation
@@ -249,7 +247,8 @@ impl FieldVariant {
                     match &event.old_atom_uuid {
                         Some(old) => {
                             if let Some(mol) = &mut f.base.molecule {
-                                mol.set_atom_uuid(old.clone());
+                                // Rewind is ephemeral in-memory — unsigned is correct
+                                mol.set_atom_uuid_unsigned(old.clone());
                             }
                         }
                         None => {
@@ -262,7 +261,7 @@ impl FieldVariant {
                     if let Some(mol) = &mut f.base.molecule {
                         match &event.old_atom_uuid {
                             Some(old) => {
-                                mol.set_atom_uuid(hash.clone(), old.clone());
+                                mol.set_atom_uuid_unsigned(hash.clone(), old.clone());
                             }
                             None => {
                                 mol.remove_atom_uuid(hash);
@@ -274,7 +273,7 @@ impl FieldVariant {
                     if let Some(mol) = &mut f.base.molecule {
                         match &event.old_atom_uuid {
                             Some(old) => {
-                                mol.set_atom_uuid(range.clone(), old.clone());
+                                mol.set_atom_uuid_unsigned(range.clone(), old.clone());
                             }
                             None => {
                                 mol.remove_atom_uuid(range);
@@ -286,7 +285,7 @@ impl FieldVariant {
                     if let Some(mol) = &mut f.base.molecule {
                         match &event.old_atom_uuid {
                             Some(old) => {
-                                mol.set_atom_uuid_from_values(
+                                mol.set_atom_uuid_from_values_unsigned(
                                     hash.clone(),
                                     range.clone(),
                                     old.clone(),
@@ -328,7 +327,7 @@ mod tests {
     fn make_range_field(entries: &[(&str, &str)], mol_uuid: &str) -> FieldVariant {
         let mut mol = MoleculeRange::new("test_schema", "test_key");
         for (range_key, atom_uuid) in entries {
-            mol.set_atom_uuid(range_key.to_string(), atom_uuid.to_string());
+            mol.set_atom_uuid_unsigned(range_key.to_string(), atom_uuid.to_string());
         }
         let mut field = RangeField::new(HashMap::<String, FieldMapper>::new(), Some(mol));
         field.base.inner.set_molecule_uuid(mol_uuid.to_string());
@@ -339,7 +338,7 @@ mod tests {
     fn make_hash_range_field(entries: &[(&str, &str, &str)], mol_uuid: &str) -> FieldVariant {
         let mut mol = MoleculeHashRange::new("test_schema", "test_key");
         for (hash, range, atom_uuid) in entries {
-            mol.set_atom_uuid_from_values(
+            mol.set_atom_uuid_from_values_unsigned(
                 hash.to_string(),
                 range.to_string(),
                 atom_uuid.to_string(),
@@ -377,6 +376,8 @@ mod tests {
                 version: 0,
                 is_conflict: false,
                 conflict_loser_atom: None,
+                writer_pubkey: String::new(),
+                signature: String::new(),
             },
             MutationEvent {
                 molecule_uuid: mol_uuid.to_string(),
@@ -387,6 +388,8 @@ mod tests {
                 version: 0,
                 is_conflict: false,
                 conflict_loser_atom: None,
+                writer_pubkey: String::new(),
+                signature: String::new(),
             },
         ];
         db_ops
@@ -433,6 +436,8 @@ mod tests {
             version: 0,
             is_conflict: false,
             conflict_loser_atom: None,
+            writer_pubkey: String::new(),
+            signature: String::new(),
         }];
         db_ops
             .batch_store_mutation_events(events, None)
@@ -480,6 +485,8 @@ mod tests {
                 version: 0,
                 is_conflict: false,
                 conflict_loser_atom: None,
+                writer_pubkey: String::new(),
+                signature: String::new(),
             },
             MutationEvent {
                 molecule_uuid: mol_uuid.to_string(),
@@ -492,6 +499,8 @@ mod tests {
                 version: 0,
                 is_conflict: false,
                 conflict_loser_atom: None,
+                writer_pubkey: String::new(),
+                signature: String::new(),
             },
         ];
         db_ops
@@ -545,6 +554,8 @@ mod tests {
                 version: 0,
                 is_conflict: false,
                 conflict_loser_atom: None,
+                writer_pubkey: String::new(),
+                signature: String::new(),
             },
             MutationEvent {
                 molecule_uuid: mol_uuid.to_string(),
@@ -558,6 +569,8 @@ mod tests {
                 version: 0,
                 is_conflict: false,
                 conflict_loser_atom: None,
+                writer_pubkey: String::new(),
+                signature: String::new(),
             },
         ];
         db_ops
@@ -609,6 +622,8 @@ mod tests {
                 version: 0,
                 is_conflict: false,
                 conflict_loser_atom: None,
+                writer_pubkey: String::new(),
+                signature: String::new(),
             },
             MutationEvent {
                 molecule_uuid: mol_uuid.to_string(),
@@ -619,6 +634,8 @@ mod tests {
                 version: 0,
                 is_conflict: false,
                 conflict_loser_atom: None,
+                writer_pubkey: String::new(),
+                signature: String::new(),
             },
             MutationEvent {
                 molecule_uuid: mol_uuid.to_string(),
@@ -629,6 +646,8 @@ mod tests {
                 version: 0,
                 is_conflict: false,
                 conflict_loser_atom: None,
+                writer_pubkey: String::new(),
+                signature: String::new(),
             },
         ];
         db_ops

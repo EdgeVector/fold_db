@@ -23,6 +23,8 @@ pub struct WriteContext {
     pub metadata: Option<std::collections::HashMap<String, String>>,
     pub schema_name: String,
     pub field_name: String,
+    /// The signing keypair for molecule signatures.
+    pub signer: std::sync::Arc<crate::security::Ed25519KeyPair>,
 }
 
 /// Common interface for all schema fields.

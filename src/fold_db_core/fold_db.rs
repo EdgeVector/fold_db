@@ -55,6 +55,11 @@ pub struct FoldDB {
     /// Optional Sled-backed configuration store for runtime node config.
     /// Uses RwLock for interior mutability so FoldDB doesn't need &mut self.
     config_store: std::sync::RwLock<Option<crate::storage::NodeConfigStore>>,
+    /// Signing keypair for molecule signatures. Plumbed to MutationManager.
+    /// Kept on FoldDB so the node layer can access it for future use cases
+    /// (e.g., signing sync uploads, signing query responses).
+    #[allow(dead_code)]
+    pub(crate) signer: Arc<crate::security::Ed25519KeyPair>,
 }
 
 impl FoldDB {
@@ -409,6 +414,13 @@ impl FoldDB {
         // The sled_pool is plumbed through so the manager can consult the
         // org memberships tree and reject mutations against org-scoped
         // schemas the node is not a member of.
+        // Generate a signing keypair for molecule signatures.
+        // TODO: In production, this should be loaded from the node's persistent identity key.
+        let signer = Arc::new(
+            crate::security::Ed25519KeyPair::generate()
+                .expect("Ed25519 key generation must not fail"),
+        );
+
         let mutation_manager = MutationManager::new(
             Arc::clone(&db_ops),
             Arc::clone(&schema_manager),
@@ -416,6 +428,7 @@ impl FoldDB {
             Arc::clone(&view_orchestrator),
             Some(index_status_tracker.clone()),
             sled_pool.clone(),
+            Arc::clone(&signer),
         );
 
         info!("Created MutationManager for mutation operations");
@@ -457,6 +470,7 @@ impl FoldDB {
             sync_coordinator: SyncCoordinator::new(),
             encrypting_store,
             config_store: std::sync::RwLock::new(None),
+            signer,
         })
     }
 

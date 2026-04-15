@@ -20,7 +20,6 @@ use std::collections::HashMap;
 pub struct Atom {
     uuid: String,
     source_schema_name: String,
-    source_pub_key: String,
     source_file_name: Option<String>,
     /// General-purpose metadata (e.g., file_hash, source info).
     /// Not included in content-based UUID — metadata doesn't affect deduplication.
@@ -55,19 +54,17 @@ impl Atom {
     /// # Arguments
     ///
     /// * `source_schema_name` - Name of the schema that defines this Atom's structure
-    /// * `source_pub_key` - Public key of the entity creating this Atom
     /// * `content` - The actual data content stored in this Atom
     ///
     /// # Returns
     ///
     /// A new Atom instance with a content-based UUID and current timestamp
     #[must_use]
-    pub fn new(source_schema_name: String, source_pub_key: String, content: Value) -> Self {
+    pub fn new(source_schema_name: String, content: Value) -> Self {
         let uuid = Self::generate_content_uuid(&source_schema_name, &content);
         Self {
             uuid,
             source_schema_name,
-            source_pub_key,
             source_file_name: None,
             metadata: None,
             created_at: Utc::now(),
@@ -125,15 +122,6 @@ impl Atom {
         &self.source_schema_name
     }
 
-    /// Returns the public key of the entity that created this Atom.
-    ///
-    /// This is used for authentication and permission validation
-    /// when accessing or modifying the data.
-    #[must_use]
-    pub fn source_pub_key(&self) -> &str {
-        &self.source_pub_key
-    }
-
     /// Returns the original filename if this atom was created from a file upload.
     ///
     /// This is used for tracking data provenance and auditing purposes.
@@ -163,14 +151,9 @@ mod tests {
             "value": 42
         });
 
-        let atom = Atom::new(
-            "test_schema".to_string(),
-            "test_key".to_string(),
-            content.clone(),
-        );
+        let atom = Atom::new("test_schema".to_string(), content.clone());
 
         assert_eq!(atom.source_schema_name(), "test_schema");
-        assert_eq!(atom.source_pub_key(), "test_key");
         assert_eq!(atom.content(), &content);
         assert!(!atom.uuid().is_empty());
         assert!(atom.created_at() <= Utc::now());
@@ -179,25 +162,18 @@ mod tests {
     #[test]
     fn test_molecule_creation_and_update() {
         use crate::atom::Molecule;
+        use crate::security::Ed25519KeyPair;
 
-        let atom = Atom::new(
-            "test_schema".to_string(),
-            "test_key".to_string(),
-            json!({"test": true}),
-        );
+        let atom = Atom::new("test_schema".to_string(), json!({"test": true}));
 
-        // Test single molecule
         let molecule = Molecule::new(atom.uuid().to_string(), "test_schema", "test_key");
         assert_eq!(molecule.get_atom_uuid(), &atom.uuid().to_string());
 
-        let new_atom = Atom::new(
-            "test_schema".to_string(),
-            "test_key".to_string(),
-            json!({"test": false}),
-        );
+        let new_atom = Atom::new("test_schema".to_string(), json!({"test": false}));
 
+        let kp = Ed25519KeyPair::generate().unwrap();
         let mut updated_ref = molecule.clone();
-        updated_ref.set_atom_uuid(new_atom.uuid().to_string());
+        updated_ref.set_atom_uuid(new_atom.uuid().to_string(), &kp);
 
         assert_eq!(updated_ref.get_atom_uuid(), &new_atom.uuid().to_string());
         assert!(updated_ref.updated_at() >= molecule.updated_at());

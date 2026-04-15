@@ -63,9 +63,9 @@ impl crate::schema::types::field::Field for SingleField {
             self.base.molecule = Some(new_molecule);
         }
 
-        // For SingleField, we store the atom using the pub_key
+        // For SingleField, we store the atom and sign
         if let Some(molecule) = &mut self.base.molecule {
-            molecule.set_atom_uuid(ctx.atom.uuid().to_string());
+            molecule.set_atom_uuid(ctx.atom.uuid().to_string(), &ctx.signer);
             // Store per-key metadata on the molecule
             molecule.set_key_metadata(crate::atom::KeyMetadata {
                 source_file_name: ctx.source_file_name,

@@ -105,7 +105,6 @@ pub async fn fetch_atoms_with_key_metadata_async_with_org(
                         metadata,
                         molecule_uuid: None,
                         molecule_version: None,
-                        source_pub_key: Some(atom.source_pub_key().to_string()),
                     },
                 );
             }

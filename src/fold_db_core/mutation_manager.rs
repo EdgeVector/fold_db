@@ -42,6 +42,8 @@ pub struct MutationManager {
     sled_pool: Option<Arc<SledPool>>,
     /// Flag to track if the event listener is running
     is_listening: Arc<std::sync::atomic::AtomicBool>,
+    /// Signing keypair for molecule signatures
+    signer: Arc<crate::security::Ed25519KeyPair>,
 }
 
 impl MutationManager {
@@ -53,6 +55,7 @@ impl MutationManager {
         view_orchestrator: Arc<ViewOrchestrator>,
         index_status_tracker: Option<IndexStatusTracker>,
         sled_pool: Option<Arc<SledPool>>,
+        signer: Arc<crate::security::Ed25519KeyPair>,
     ) -> Self {
         Self {
             db_ops,
@@ -62,6 +65,7 @@ impl MutationManager {
             index_status_tracker,
             sled_pool,
             is_listening: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            signer,
         }
     }
 
@@ -534,7 +538,6 @@ impl MutationManager {
 
                 let atom = DbOperations::create_atom(
                     schema_name,
-                    &mutation.pub_key,
                     value.clone(),
                     mutation.source_file_name.clone(),
                     mutation.metadata.clone(),
@@ -636,6 +639,7 @@ impl MutationManager {
                     metadata: mutation.metadata.clone(),
                     schema_name: mutation.schema_name.clone(),
                     field_name: field_name.clone(),
+                    signer: Arc::clone(&self.signer),
                 },
             );
 
@@ -665,6 +669,8 @@ impl MutationManager {
                         version: schema_field.molecule_version().unwrap_or(0),
                         is_conflict: false,
                         conflict_loser_atom: None,
+                        writer_pubkey: String::new(),
+                        signature: String::new(),
                     });
                 }
             }
@@ -882,6 +888,7 @@ impl MutationManager {
         let message_bus = Arc::clone(&self.message_bus);
         let view_orchestrator = Arc::clone(&self.view_orchestrator);
         let sled_pool = self.sled_pool.clone();
+        let signer = Arc::clone(&self.signer);
         let is_listening = Arc::clone(&self.is_listening);
 
         is_listening.store(true, std::sync::atomic::Ordering::Release);
@@ -905,6 +912,7 @@ impl MutationManager {
                                     Arc::clone(&view_orchestrator),
                                     None,
                                     sled_pool.clone(),
+                                    Arc::clone(&signer),
                                 );
 
                                 if let Err(e) = temp_manager

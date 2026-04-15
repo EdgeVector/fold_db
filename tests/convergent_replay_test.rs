@@ -6,6 +6,7 @@
 use fold_db::atom::{Molecule, MoleculeHash};
 use fold_db::crypto::provider::LocalCryptoProvider;
 use fold_db::crypto::CryptoProvider;
+use fold_db::security::Ed25519KeyPair;
 use fold_db::storage::inmemory_backend::InMemoryNamespacedStore;
 use fold_db::storage::traits::NamespacedStore;
 use fold_db::sync::auth::{AuthClient, SyncAuth};
@@ -117,11 +118,12 @@ async fn ref_molecule_merge_hash() {
     let store = Arc::new(InMemoryNamespacedStore::new());
     let engine = make_engine(store.clone());
 
+    let kp = Ed25519KeyPair::generate().unwrap();
     let mut mol_a = MoleculeHash::new("TestSchema", "field1");
-    mol_a.set_atom_uuid("key1".to_string(), "atom-a1".to_string());
+    mol_a.set_atom_uuid("key1".to_string(), "atom-a1".to_string(), &kp);
 
     let mut mol_b = MoleculeHash::new("TestSchema", "field1");
-    mol_b.set_atom_uuid("key2".to_string(), "atom-b2".to_string());
+    mol_b.set_atom_uuid("key2".to_string(), "atom-b2".to_string(), &kp);
 
     let val_a = serde_json::to_vec(&mol_a).unwrap();
     let val_b = serde_json::to_vec(&mol_b).unwrap();
@@ -290,13 +292,14 @@ async fn hash_molecule_merge_conflict_stored() {
     let store = Arc::new(InMemoryNamespacedStore::new());
     let engine = make_engine(store.clone());
 
+    let kp = Ed25519KeyPair::generate().unwrap();
     let mut mol_a = MoleculeHash::new("S", "f");
-    mol_a.set_atom_uuid("shared_key".to_string(), "atom-old".to_string());
+    mol_a.set_atom_uuid("shared_key".to_string(), "atom-old".to_string(), &kp);
 
     std::thread::sleep(std::time::Duration::from_millis(2));
 
     let mut mol_b = MoleculeHash::new("S", "f");
-    mol_b.set_atom_uuid("shared_key".to_string(), "atom-new".to_string());
+    mol_b.set_atom_uuid("shared_key".to_string(), "atom-new".to_string(), &kp);
 
     let val_a = serde_json::to_vec(&mol_a).unwrap();
     let val_b = serde_json::to_vec(&mol_b).unwrap();

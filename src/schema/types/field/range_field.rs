@@ -93,7 +93,7 @@ impl crate::schema::types::field::Field for RangeField {
         // For RangeField, we use the range key to store the atom
         if let Some(range_key) = &key_value.range {
             if let Some(molecule) = &mut self.base.molecule {
-                molecule.set_atom_uuid(range_key.clone(), ctx.atom.uuid().to_string());
+                molecule.set_atom_uuid(range_key.clone(), ctx.atom.uuid().to_string(), &ctx.signer);
                 // Store per-key metadata on the molecule
                 molecule.set_key_metadata(
                     range_key.clone(),

@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 use super::{deterministic_molecule_uuid, now_nanos, AtomEntry, MergeConflict};
+use crate::security::Ed25519KeyPair;
 
 /// A range-based collection of atom references stored in a BTreeMap.
 #[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
@@ -48,10 +49,10 @@ impl MoleculeRange {
         self.updated_at
     }
 
-    /// Updates or adds a reference at the specified key.
+    /// Updates or adds a reference at the specified key and signs the entry.
     /// If the key already exists, the atom_uuid replaces the existing value.
     /// Bumps the version counter only when the atom actually changes.
-    pub fn set_atom_uuid(&mut self, key: String, atom_uuid: String) {
+    pub fn set_atom_uuid(&mut self, key: String, atom_uuid: String, keypair: &Ed25519KeyPair) {
         let changed = self
             .atom_uuids
             .get(&key)
@@ -59,11 +60,17 @@ impl MoleculeRange {
         if changed {
             self.version += 1;
         }
+        let written_at = now_nanos();
+        let canonical = Self::build_canonical_bytes(&self.uuid, &key, &atom_uuid, written_at);
+        let (sig, pubkey) = crate::security::sign_molecule_update(&canonical, keypair);
         self.atom_uuids.insert(
             key,
             AtomEntry {
                 atom_uuid,
-                written_at: now_nanos(),
+                written_at,
+                writer_pubkey: pubkey,
+                signature: sig,
+                signature_version: 1,
             },
         );
         self.updated_at = Utc::now();
@@ -109,9 +116,69 @@ impl MoleculeRange {
         self.key_metadata.get(key)
     }
 
+    /// Updates a key WITHOUT signing. Only for ephemeral in-memory operations (rewind).
+    pub(crate) fn set_atom_uuid_unsigned(&mut self, key: String, atom_uuid: String) {
+        let changed = self
+            .atom_uuids
+            .get(&key)
+            .is_none_or(|e| e.atom_uuid != atom_uuid);
+        if changed {
+            self.version += 1;
+        }
+        self.atom_uuids.insert(
+            key,
+            AtomEntry {
+                atom_uuid,
+                written_at: now_nanos(),
+                writer_pubkey: String::new(),
+                signature: String::new(),
+                signature_version: 0,
+            },
+        );
+        self.updated_at = Utc::now();
+    }
+
+    /// Builds canonical bytes for per-key signing/verification.
+    /// Layout: molecule_uuid | 0x00 | key | 0x00 | atom_uuid | 0x00 | written_at(u64 BE)
+    fn build_canonical_bytes(
+        molecule_uuid: &str,
+        key: &str,
+        atom_uuid: &str,
+        written_at: u64,
+    ) -> Vec<u8> {
+        let mut buf = Vec::new();
+        buf.extend_from_slice(molecule_uuid.as_bytes());
+        buf.push(0x00);
+        buf.extend_from_slice(key.as_bytes());
+        buf.push(0x00);
+        buf.extend_from_slice(atom_uuid.as_bytes());
+        buf.push(0x00);
+        buf.extend_from_slice(&written_at.to_be_bytes());
+        buf
+    }
+
+    /// Verifies the signature for a specific key entry.
+    #[must_use]
+    pub fn verify_key(&self, key: &str) -> bool {
+        let entry = match self.atom_uuids.get(key) {
+            Some(e) => e,
+            None => return false,
+        };
+        if entry.signature_version == 0 {
+            return false;
+        }
+        let canonical =
+            Self::build_canonical_bytes(&self.uuid, key, &entry.atom_uuid, entry.written_at);
+        crate::security::verify_molecule_signature(
+            &canonical,
+            &entry.signature,
+            &entry.writer_pubkey,
+        )
+    }
+
     /// Merges another MoleculeRange into this one using last-writer-wins per key.
     /// Returns a list of conflicts where both sides had different atoms for the same key.
-    pub fn merge(&mut self, other: &MoleculeRange) -> Vec<MergeConflict> {
+    pub fn merge(&mut self, other: &MoleculeRange, _keypair: &Ed25519KeyPair) -> Vec<MergeConflict> {
         let mut conflicts = Vec::new();
         for (key, other_entry) in &other.atom_uuids {
             match self.atom_uuids.get(key) {
@@ -152,6 +219,11 @@ impl MoleculeRange {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::security::Ed25519KeyPair;
+
+    fn test_keypair() -> Ed25519KeyPair {
+        Ed25519KeyPair::generate().unwrap()
+    }
 
     #[test]
     fn test_version_starts_at_zero() {
@@ -161,23 +233,26 @@ mod tests {
 
     #[test]
     fn test_version_bumps_on_insert() {
+        let kp = test_keypair();
         let mut mol = MoleculeRange::new("schema", "field");
-        mol.set_atom_uuid("k1".to_string(), "atom-1".to_string());
+        mol.set_atom_uuid("k1".to_string(), "atom-1".to_string(), &kp);
         assert_eq!(mol.version(), 1);
     }
 
     #[test]
     fn test_version_no_bump_on_same_value() {
+        let kp = test_keypair();
         let mut mol = MoleculeRange::new("schema", "field");
-        mol.set_atom_uuid("k1".to_string(), "atom-1".to_string());
-        mol.set_atom_uuid("k1".to_string(), "atom-1".to_string());
+        mol.set_atom_uuid("k1".to_string(), "atom-1".to_string(), &kp);
+        mol.set_atom_uuid("k1".to_string(), "atom-1".to_string(), &kp);
         assert_eq!(mol.version(), 1);
     }
 
     #[test]
     fn test_version_bumps_on_remove() {
+        let kp = test_keypair();
         let mut mol = MoleculeRange::new("schema", "field");
-        mol.set_atom_uuid("k1".to_string(), "atom-1".to_string());
+        mol.set_atom_uuid("k1".to_string(), "atom-1".to_string(), &kp);
         assert_eq!(mol.version(), 1);
         mol.remove_atom_uuid("k1");
         assert_eq!(mol.version(), 2);
@@ -199,13 +274,14 @@ mod tests {
 
     #[test]
     fn test_merge_new_key() {
+        let kp = test_keypair();
         let mut mol1 = MoleculeRange::new("s", "f");
-        mol1.set_atom_uuid("k1".to_string(), "atom-1".to_string());
+        mol1.set_atom_uuid("k1".to_string(), "atom-1".to_string(), &kp);
 
         let mut mol2 = MoleculeRange::new("s", "f");
-        mol2.set_atom_uuid("k2".to_string(), "atom-2".to_string());
+        mol2.set_atom_uuid("k2".to_string(), "atom-2".to_string(), &kp);
 
-        let conflicts = mol1.merge(&mol2);
+        let conflicts = mol1.merge(&mol2, &kp);
         assert!(conflicts.is_empty());
         assert_eq!(mol1.get_atom_uuid("k1"), Some(&"atom-1".to_string()));
         assert_eq!(mol1.get_atom_uuid("k2"), Some(&"atom-2".to_string()));
@@ -213,15 +289,16 @@ mod tests {
 
     #[test]
     fn test_merge_conflict_later_wins() {
+        let kp = test_keypair();
         let mut mol1 = MoleculeRange::new("s", "f");
-        mol1.set_atom_uuid("k1".to_string(), "atom-old".to_string());
+        mol1.set_atom_uuid("k1".to_string(), "atom-old".to_string(), &kp);
 
         std::thread::sleep(std::time::Duration::from_millis(1));
 
         let mut mol2 = MoleculeRange::new("s", "f");
-        mol2.set_atom_uuid("k1".to_string(), "atom-new".to_string());
+        mol2.set_atom_uuid("k1".to_string(), "atom-new".to_string(), &kp);
 
-        let conflicts = mol1.merge(&mol2);
+        let conflicts = mol1.merge(&mol2, &kp);
         assert_eq!(conflicts.len(), 1);
         assert_eq!(conflicts[0].winner_atom, "atom-new");
         assert_eq!(mol1.get_atom_uuid("k1"), Some(&"atom-new".to_string()));
