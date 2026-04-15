@@ -1323,6 +1323,68 @@ impl SchemaServiceState {
         self.schemas.read().map(|s| s.len()).unwrap_or(0)
     }
 
+    /// Add a canonical field to the registry directly, without running
+    /// the LLM-backed classification pipeline.
+    ///
+    /// Used by `builtin_canonical_fields::seed` to pre-populate the
+    /// registry at service startup with a curated list of common
+    /// concepts (user_email, photo_caption, gps_latitude, …). Each
+    /// entry carries its own `description`, `field_type`,
+    /// `classification`, and `interest_category`, so the service can
+    /// skip LLM calls for the hot cases.
+    ///
+    /// Idempotent: if the field already exists in the registry, this
+    /// is a no-op and returns `Ok(())`. Otherwise the entry is inserted
+    /// into the in-memory registry, an embedding is computed for
+    /// semantic field matching, and the entry is persisted via the
+    /// active storage backend.
+    pub async fn add_canonical_field(
+        &self,
+        name: &str,
+        canonical: super::types::CanonicalField,
+    ) -> FoldDbResult<()> {
+        // Early return if already present — lock-scoped so the check
+        // doesn't hold the write lock across the later embed + persist.
+        {
+            let fields = self.canonical_fields.read().map_err(|_| {
+                FoldDbError::Config("Failed to acquire canonical_fields read lock".to_string())
+            })?;
+            if fields.contains_key(name) {
+                return Ok(());
+            }
+        }
+
+        // Compute the embedding outside any lock. Best-effort: in
+        // environments where the embedding model isn't available
+        // (e.g. fastembed in Lambda), we still insert the field; only
+        // similarity matching is degraded, not exact lookups.
+        let embed_text = Self::build_embedding_text(name, &canonical.description);
+        let embedding = self.embedder.embed_text(&embed_text).ok();
+
+        // Insert under the write locks. Re-check in case another task
+        // raced us into the registry.
+        {
+            let mut fields = self.canonical_fields.write().map_err(|_| {
+                FoldDbError::Config("Failed to acquire canonical_fields write lock".to_string())
+            })?;
+            if fields.contains_key(name) {
+                return Ok(());
+            }
+            let mut embeddings = self.canonical_field_embeddings.write().map_err(|_| {
+                FoldDbError::Config(
+                    "Failed to acquire canonical_field_embeddings write lock".to_string(),
+                )
+            })?;
+            if let Some(vec) = embedding {
+                embeddings.insert(name.to_string(), vec);
+            }
+            fields.insert(name.to_string(), canonical.clone());
+        }
+
+        // Persist through the active backend (Sled or External).
+        self.persist_canonical_field(name, &canonical).await
+    }
+
     /// Find schemas similar to the given schema using Jaccard index on field name sets
     pub fn find_similar_schemas(
         &self,

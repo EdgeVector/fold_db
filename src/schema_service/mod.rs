@@ -4,6 +4,7 @@
 //! semantic similarity matching, field canonicalization, view management,
 //! and a Global Transform Registry.
 
+pub mod builtin_canonical_fields;
 pub mod builtin_schemas;
 pub mod classify;
 pub mod external_persistence;
