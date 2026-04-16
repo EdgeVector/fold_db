@@ -38,6 +38,7 @@ pub mod progress;
 pub mod schema;
 pub mod schema_service;
 pub mod security;
+pub mod sharing;
 pub mod storage;
 pub mod sync;
 pub mod testing_utils;

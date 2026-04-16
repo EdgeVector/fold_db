@@ -551,8 +551,23 @@ impl MutationManager {
         if !atoms_to_store.is_empty() {
             log::info!("💾 Batch storing {} atoms", atoms_to_store.len());
             self.db_ops
-                .batch_store_atoms(atoms_to_store, schema.org_hash.as_deref())
+                .batch_store_atoms(atoms_to_store.clone(), schema.org_hash.as_deref())
                 .await?;
+
+            // Push to share prefixes for personal data
+            if schema.org_hash.is_none() {
+                if let Some(pool) = &self.sled_pool {
+                    if let Ok(rules) = crate::sharing::store::list_share_rules(pool) {
+                        for rule in rules {
+                            if rule.active && rule.scope_matches(schema_name) {
+                                self.db_ops
+                                    .batch_store_atoms(atoms_to_store.clone(), Some(&rule.share_prefix))
+                                    .await?;
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         Ok((mutation_key_values, atom_results))
@@ -709,7 +724,7 @@ impl MutationManager {
         if !molecules_to_store.is_empty() {
             log::info!("💾 Batch storing {} molecules", molecules_to_store.len());
             self.db_ops
-                .batch_store_molecules(molecules_to_store, schema.org_hash.as_deref())
+                .batch_store_molecules(molecules_to_store.clone(), schema.org_hash.as_deref())
                 .await?;
         }
 
@@ -718,11 +733,39 @@ impl MutationManager {
             let phase4_start = std::time::Instant::now();
             log::debug!("💾 Storing {} mutation events", mutation_events.len());
             self.db_ops
-                .batch_store_mutation_events(mutation_events, schema.org_hash.as_deref())
+                .batch_store_mutation_events(mutation_events.clone(), schema.org_hash.as_deref())
                 .await?;
             *timing_breakdown
                 .entry("  - store_mutation_events")
                 .or_insert(std::time::Duration::ZERO) += phase4_start.elapsed();
+        }
+
+        // Push to share prefixes for personal data
+        if schema.org_hash.is_none() {
+            if let Some(pool) = &self.sled_pool {
+                if let Ok(rules) = crate::sharing::store::list_share_rules(pool) {
+                    for rule in rules {
+                        if rule.active && rule.scope_matches(&schema.name) {
+                            if !molecules_to_store.is_empty() {
+                                self.db_ops
+                                    .batch_store_molecules(
+                                        molecules_to_store.clone(),
+                                        Some(&rule.share_prefix),
+                                    )
+                                    .await?;
+                            }
+                            if !mutation_events.is_empty() {
+                                self.db_ops
+                                    .batch_store_mutation_events(
+                                        mutation_events.clone(),
+                                        Some(&rule.share_prefix),
+                                    )
+                                    .await?;
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         Ok(())

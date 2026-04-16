@@ -17,6 +17,7 @@
 
 use crate::crypto::CryptoProvider;
 use crate::org::OrgMembership;
+use base64::Engine;
 use std::sync::Arc;
 
 /// A sync target — one R2 prefix with its own encryption key.
@@ -45,6 +46,12 @@ pub enum SyncDestination {
         org_hash: String,
         org_e2e_secret: String,
     },
+    /// Shared data — sync to `/{share_prefix}/log/{seq}.enc`
+    /// with the share's E2E key for encryption.
+    Share {
+        share_prefix: String,
+        share_e2e_secret: String,
+    },
 }
 
 /// Partitions log entries by destination based on key prefix.
@@ -57,6 +64,8 @@ pub enum SyncDestination {
 pub struct SyncPartitioner {
     /// Known org memberships with their E2E secrets.
     org_memberships: Vec<OrgMembershipEntry>,
+    /// active share targets with their E2E secrets.
+    share_targets: Vec<ShareTargetEntry>,
 }
 
 /// Minimal info needed for partitioning decisions.
@@ -66,9 +75,18 @@ struct OrgMembershipEntry {
     org_e2e_secret: String,
 }
 
+#[derive(Debug, Clone)]
+struct ShareTargetEntry {
+    share_prefix: String,
+    share_e2e_secret: String,
+}
+
 impl SyncPartitioner {
-    /// Create a new partitioner from org memberships.
-    pub fn new(memberships: &[OrgMembership]) -> Self {
+    /// Create a new partitioner from org memberships and share targets.
+    pub fn new(
+        memberships: &[OrgMembership],
+        share_rules: &[crate::sharing::types::ShareRule],
+    ) -> Self {
         let org_memberships = memberships
             .iter()
             .map(|m| OrgMembershipEntry {
@@ -77,13 +95,26 @@ impl SyncPartitioner {
             })
             .collect();
 
-        Self { org_memberships }
+        let share_targets = share_rules
+            .iter()
+            .filter(|r| r.active)
+            .map(|r| ShareTargetEntry {
+                share_prefix: r.share_prefix.clone(),
+                share_e2e_secret: base64::engine::general_purpose::STANDARD.encode(&r.share_e2e_secret),
+            })
+            .collect();
+
+        Self {
+            org_memberships,
+            share_targets,
+        }
     }
 
-    /// Create an empty partitioner (no org memberships — everything is personal).
+    /// Create an empty partitioner (no org memberships or shares — everything is personal).
     pub fn empty() -> Self {
         Self {
             org_memberships: Vec::new(),
+            share_targets: Vec::new(),
         }
     }
 
@@ -99,6 +130,15 @@ impl SyncPartitioner {
                 return SyncDestination::Org {
                     org_hash: entry.org_hash.clone(),
                     org_e2e_secret: entry.org_e2e_secret.clone(),
+                };
+            }
+        }
+        for entry in &self.share_targets {
+            let prefix = format!("{}:", entry.share_prefix);
+            if key.starts_with(&prefix) {
+                return SyncDestination::Share {
+                    share_prefix: entry.share_prefix.clone(),
+                    share_e2e_secret: entry.share_e2e_secret.clone(),
                 };
             }
         }
@@ -203,7 +243,7 @@ mod tests {
     #[test]
     fn test_sync_partitioner_personal_keys() {
         let memberships = vec![make_membership("abc123def456", "secret1")];
-        let partitioner = SyncPartitioner::new(&memberships);
+        let partitioner = SyncPartitioner::new(&memberships, &[]);
 
         assert_eq!(
             partitioner.partition("atom:uuid-1"),
@@ -222,7 +262,7 @@ mod tests {
     #[test]
     fn test_sync_partitioner_org_keys() {
         let memberships = vec![make_membership("abc123def456", "secret1")];
-        let partitioner = SyncPartitioner::new(&memberships);
+        let partitioner = SyncPartitioner::new(&memberships, &[]);
 
         assert_eq!(
             partitioner.partition("abc123def456:atom:uuid-1"),
@@ -246,7 +286,7 @@ mod tests {
             make_membership("org_alpha", "secret_a"),
             make_membership("org_beta", "secret_b"),
         ];
-        let partitioner = SyncPartitioner::new(&memberships);
+        let partitioner = SyncPartitioner::new(&memberships, &[]);
 
         assert_eq!(
             partitioner.partition("org_alpha:atom:uuid-1"),
@@ -310,7 +350,7 @@ mod tests {
         use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 
         let memberships = vec![make_membership("org_alpha", "secret_a")];
-        let partitioner = SyncPartitioner::new(&memberships);
+        let partitioner = SyncPartitioner::new(&memberships, &[]);
 
         // Embedding key: emb:{org_hash}:{schema_hash}:{key_hash}:{field}:{fragment}
         let emb_key = "emb:org_alpha:schema123:keyhash:title:0";
@@ -346,7 +386,7 @@ mod tests {
             make_membership("org_a", "secret_a"),
             make_membership("org_b", "secret_b"),
         ];
-        let partitioner = SyncPartitioner::new(&memberships);
+        let partitioner = SyncPartitioner::new(&memberships, &[]);
         let hashes = partitioner.org_hashes();
         assert_eq!(hashes.len(), 2);
         assert!(hashes.contains(&"org_a".to_string()));
