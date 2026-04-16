@@ -265,17 +265,17 @@ async fn test_org_sync_with_encryption_roundtrip() {
     let unsealed_schema = LogEntry::unseal(&sealed_schema.bytes, &org_crypto)
         .await
         .unwrap();
-    replay_engine.replay_entry(&unsealed_schema).await.unwrap();
+    replay_engine.replay_entry(&unsealed_schema, None).await.unwrap();
 
     let unsealed_state = LogEntry::unseal(&sealed_state.bytes, &org_crypto)
         .await
         .unwrap();
-    replay_engine.replay_entry(&unsealed_state).await.unwrap();
+    replay_engine.replay_entry(&unsealed_state, None).await.unwrap();
 
     // Unseal and replay all org data entries
     for sealed in &sealed_entries {
         let unsealed = LogEntry::unseal(&sealed.bytes, &org_crypto).await.unwrap();
-        replay_engine.replay_entry(&unsealed).await.unwrap();
+        replay_engine.replay_entry(&unsealed, None).await.unwrap();
     }
 
     // --- Load schema into node2's in-memory SchemaManager cache ---
@@ -451,7 +451,7 @@ async fn test_partitioner_classifies_real_org_mutations() {
     .await;
 
     // Use the SyncPartitioner to classify all keys in main tree
-    let partitioner = fold_db::sync::SyncPartitioner::new(std::slice::from_ref(&membership));
+    let partitioner = fold_db::sync::SyncPartitioner::new(std::slice::from_ref(&membership), &[]);
 
     let pool1_ref = node1.sled_pool().unwrap();
     let guard1 = pool1_ref.acquire_arc().unwrap();
@@ -466,6 +466,7 @@ async fn test_partitioner_classifies_real_org_mutations() {
         match partitioner.partition(&key_str) {
             fold_db::sync::SyncDestination::Personal => personal_count += 1,
             fold_db::sync::SyncDestination::Org { .. } => org_count += 1,
+            fold_db::sync::SyncDestination::Share { .. } => {}
         }
     }
 

@@ -645,7 +645,7 @@ async fn test_sync_partitioner_routes_org_writes() {
 
     // Create SyncPartitioner from the real membership
     let memberships = vec![org];
-    let partitioner = SyncPartitioner::new(&memberships);
+    let partitioner = SyncPartitioner::new(&memberships, &[]);
 
     // Collect all sled keys and classify
     let all_keys = all_sled_keys(&db);
