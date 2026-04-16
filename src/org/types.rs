@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 /// Represents a node's membership in an organization.
 /// Stored locally in Sled under the "org_memberships" tree.
+#[cfg_attr(feature = "ts-bindings", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OrgMembership {
     /// Human-readable organization name
@@ -25,6 +26,7 @@ pub struct OrgMembership {
 }
 
 /// Information about a single member of an organization.
+#[cfg_attr(feature = "ts-bindings", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OrgMemberInfo {
     /// Base64-encoded Ed25519 public key of the member's node
@@ -38,6 +40,7 @@ pub struct OrgMemberInfo {
 }
 
 /// Role within an organization.
+#[cfg_attr(feature = "ts-bindings", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum OrgRole {
     /// Can add/remove members, generate invites, delete the org
@@ -48,6 +51,7 @@ pub enum OrgRole {
 
 /// Bundle sent to a new member to join an organization.
 /// Contains everything needed to participate in org sync.
+#[cfg_attr(feature = "ts-bindings", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OrgInviteBundle {
     /// Human-readable organization name
