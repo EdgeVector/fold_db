@@ -426,6 +426,7 @@ impl SchemaServiceState {
 
     /// Run the full NMI estimation pipeline (Phase 2).
     /// Only compiled when transform-wasm feature is enabled.
+    #[allow(clippy::type_complexity)]
     #[cfg(feature = "transform-wasm")]
     fn run_nmi_estimation(
         &self,
@@ -469,7 +470,7 @@ impl SchemaServiceState {
         let mut output_classification = DataClassification::low();
         for (input_field, output_scores) in &nmi_matrix {
             let input_classification = classify_field_from_schema(input_field, input_schema);
-            for (_output_field, &nmi_score) in output_scores {
+            for &nmi_score in output_scores.values() {
                 if nmi_score > NMI_LEAKAGE_THRESHOLD {
                     output_classification =
                         std::cmp::max(output_classification, input_classification.clone());

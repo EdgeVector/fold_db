@@ -36,6 +36,7 @@ pub const MAX_SENSITIVITY_LEVEL: u8 = 4;
 /// │   4   │ Highly Restricted │ Regulated data (HIPAA, financial, biometric). │
 /// └───────┴───────────────────┴──────────────────────────────────────────────┘
 /// ```
+#[cfg_attr(feature = "ts-bindings", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct DataClassification {
     /// Sensitivity level: 0 (Public) through 4 (Highly Restricted).
