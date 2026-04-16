@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 
+#[cfg_attr(feature = "ts-bindings", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ShareScope {
     Schema(String),
@@ -7,6 +8,7 @@ pub enum ShareScope {
     AllSchemas,
 }
 
+#[cfg_attr(feature = "ts-bindings", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ShareRule {
     pub rule_id: String,
@@ -31,6 +33,7 @@ impl ShareRule {
     }
 }
 
+#[cfg_attr(feature = "ts-bindings", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ShareInvite {
     pub sender_pubkey: String,
@@ -40,6 +43,7 @@ pub struct ShareInvite {
     pub scope_description: String,
 }
 
+#[cfg_attr(feature = "ts-bindings", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ShareSubscription {
     pub sender_pubkey: String,
