@@ -31,7 +31,6 @@ impl ShareRule {
     }
 }
 
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ShareInvite {
     pub sender_pubkey: String,

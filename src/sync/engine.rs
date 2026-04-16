@@ -1342,8 +1342,14 @@ impl SyncEngine {
                 value,
             } => {
                 let final_key = Self::rewrite_key_if_needed(key, target)?;
-                self.replay_put(namespace, &LogOp::encode_bytes(&final_key), value, entry.timestamp_ms, &entry.device_id)
-                    .await?;
+                self.replay_put(
+                    namespace,
+                    &LogOp::encode_bytes(&final_key),
+                    value,
+                    entry.timestamp_ms,
+                    &entry.device_id,
+                )
+                .await?;
             }
             LogOp::Delete { namespace, key } => {
                 let kv = self.store.open_namespace(namespace).await?;
@@ -1353,8 +1359,14 @@ impl SyncEngine {
             LogOp::BatchPut { namespace, items } => {
                 for (key, value) in items {
                     let final_key = Self::rewrite_key_if_needed(key, target)?;
-                    self.replay_put(namespace, &LogOp::encode_bytes(&final_key), value, entry.timestamp_ms, &entry.device_id)
-                        .await?;
+                    self.replay_put(
+                        namespace,
+                        &LogOp::encode_bytes(&final_key),
+                        value,
+                        entry.timestamp_ms,
+                        &entry.device_id,
+                    )
+                    .await?;
                 }
             }
             LogOp::BatchDelete { namespace, keys } => {
@@ -1372,7 +1384,7 @@ impl SyncEngine {
     /// Rewrites log entry keys based on namespace isolation rules for ShareSubscriptions.
     fn rewrite_key_if_needed(key_b64: &str, target: Option<&SyncTarget>) -> SyncResult<Vec<u8>> {
         let key_bytes = LogOp::decode_bytes(key_b64)?;
-        
+
         if let Some(t) = target {
             if t.prefix.starts_with("share:") {
                 let mut parts = t.prefix.split(':');
@@ -1380,23 +1392,23 @@ impl SyncEngine {
                 if let Some(sender_hash) = parts.next() {
                     let prefix_str = format!("{}:", t.prefix);
                     let prefix_bytes = prefix_str.as_bytes();
-                    
+
                     if key_bytes.starts_with(prefix_bytes) {
                         let new_prefix_str = format!("from:{}:", sender_hash);
                         let new_prefix_bytes = new_prefix_str.as_bytes();
-                        
+
                         let mut final_key = Vec::with_capacity(
-                            new_prefix_bytes.len() + key_bytes.len() - prefix_bytes.len()
+                            new_prefix_bytes.len() + key_bytes.len() - prefix_bytes.len(),
                         );
                         final_key.extend_from_slice(new_prefix_bytes);
                         final_key.extend_from_slice(&key_bytes[prefix_bytes.len()..]);
-                        
+
                         return Ok(final_key);
                     }
                 }
             }
         }
-        
+
         Ok(key_bytes)
     }
 

@@ -561,7 +561,10 @@ impl MutationManager {
                         for rule in rules {
                             if rule.active && rule.scope_matches(schema_name) {
                                 self.db_ops
-                                    .batch_store_atoms(atoms_to_store.clone(), Some(&rule.share_prefix))
+                                    .batch_store_atoms(
+                                        atoms_to_store.clone(),
+                                        Some(&rule.share_prefix),
+                                    )
                                     .await?;
                             }
                         }

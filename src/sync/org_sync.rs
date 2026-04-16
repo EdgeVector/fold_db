@@ -100,7 +100,8 @@ impl SyncPartitioner {
             .filter(|r| r.active)
             .map(|r| ShareTargetEntry {
                 share_prefix: r.share_prefix.clone(),
-                share_e2e_secret: base64::engine::general_purpose::STANDARD.encode(&r.share_e2e_secret),
+                share_e2e_secret: base64::engine::general_purpose::STANDARD
+                    .encode(&r.share_e2e_secret),
             })
             .collect();
 

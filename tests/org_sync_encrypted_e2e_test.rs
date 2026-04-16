@@ -265,12 +265,18 @@ async fn test_org_sync_with_encryption_roundtrip() {
     let unsealed_schema = LogEntry::unseal(&sealed_schema.bytes, &org_crypto)
         .await
         .unwrap();
-    replay_engine.replay_entry(&unsealed_schema, None).await.unwrap();
+    replay_engine
+        .replay_entry(&unsealed_schema, None)
+        .await
+        .unwrap();
 
     let unsealed_state = LogEntry::unseal(&sealed_state.bytes, &org_crypto)
         .await
         .unwrap();
-    replay_engine.replay_entry(&unsealed_state, None).await.unwrap();
+    replay_engine
+        .replay_entry(&unsealed_state, None)
+        .await
+        .unwrap();
 
     // Unseal and replay all org data entries
     for sealed in &sealed_entries {
