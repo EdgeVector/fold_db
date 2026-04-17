@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 
-/// Trust tier — unified scale matching data sensitivity levels.
+/// Access tier — unified scale matching data sensitivity levels.
 ///
 /// ```text
 /// ┌───────┬───────────┬──────────────────┬─────────────────────────────────┐
@@ -17,11 +17,16 @@ use std::fmt;
 /// ```
 ///
 /// Access check: `caller_tier >= field_min_tier`.
-/// Higher tier = more trusted = more access.
+/// Higher tier = more access.
+///
+/// Name choice: "access" over "trust" because this type is an access-control
+/// integer. The word "trust" is reserved for the informal concept (and for
+/// trust-invite + org membership mechanisms, which are distinct from this).
+/// See `docs/designs/platform_manifesto.md` for the full naming rationale.
 #[cfg_attr(feature = "ts-bindings", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[repr(u8)]
-pub enum TrustTier {
+pub enum AccessTier {
     Public = 0,
     Outer = 1,
     Trusted = 2,
@@ -29,16 +34,16 @@ pub enum TrustTier {
     Owner = 4,
 }
 
-impl TrustTier {
-    /// Convert a sensitivity level (0-4) to the corresponding trust tier.
+impl AccessTier {
+    /// Convert a sensitivity level (0-4) to the corresponding access tier.
     /// Panics if level > 4 (callers must validate via DataClassification).
     pub fn from_sensitivity(level: u8) -> Self {
         match level {
-            0 => TrustTier::Public,
-            1 => TrustTier::Outer,
-            2 => TrustTier::Trusted,
-            3 => TrustTier::Inner,
-            4 => TrustTier::Owner,
+            0 => AccessTier::Public,
+            1 => AccessTier::Outer,
+            2 => AccessTier::Trusted,
+            3 => AccessTier::Inner,
+            4 => AccessTier::Owner,
             _ => panic!("invalid sensitivity level: {} (must be 0-4)", level),
         }
     }
@@ -49,20 +54,34 @@ impl TrustTier {
     }
 }
 
-impl fmt::Display for TrustTier {
+impl fmt::Display for AccessTier {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            TrustTier::Public => write!(f, "Public"),
-            TrustTier::Outer => write!(f, "Outer"),
-            TrustTier::Trusted => write!(f, "Trusted"),
-            TrustTier::Inner => write!(f, "Inner"),
-            TrustTier::Owner => write!(f, "Owner"),
+            AccessTier::Public => write!(f, "Public"),
+            AccessTier::Outer => write!(f, "Outer"),
+            AccessTier::Trusted => write!(f, "Trusted"),
+            AccessTier::Inner => write!(f, "Inner"),
+            AccessTier::Owner => write!(f, "Owner"),
         }
     }
 }
 
-/// Flat trust map: public key → tier. One map per domain, stored in Sled.
-pub type TrustMap = HashMap<String, TrustTier>;
+/// Flat access-graph map: public key → tier. One map per domain, stored in Sled.
+pub type AccessMap = HashMap<String, AccessTier>;
+
+// ─── Backward-compat aliases (manifesto proposal #4: TrustX → AccessX) ────
+//
+// These exist so the rename rolls out across repos incrementally without a
+// big-bang migration. Consumers in fold_db_node, exemem-infra, tests, and
+// the rest of this crate continue to compile unchanged. Remove once every
+// call site in the workspace has migrated to `AccessTier` / `AccessMap`.
+// See `docs/designs/platform_manifesto.md`.
+
+/// Deprecated alias — use [`AccessTier`] instead.
+pub type TrustTier = AccessTier;
+
+/// Deprecated alias — use [`AccessMap`] instead.
+pub type TrustMap = AccessMap;
 
 /// Well-known trust domain names.
 pub const DOMAIN_PERSONAL: &str = "personal";
@@ -100,7 +119,7 @@ pub struct AccessContext {
     pub is_owner: bool,
     /// Per-domain trust tiers. Key = domain name, value = caller's tier.
     #[serde(default)]
-    pub tiers: HashMap<String, TrustTier>,
+    pub tiers: HashMap<String, AccessTier>,
     /// Caller's public keys (base64-encoded) for capability matching
     pub public_keys: Vec<String>,
     /// Schema names the caller has paid for
@@ -110,9 +129,9 @@ pub struct AccessContext {
 impl AccessContext {
     /// Resolve trust tier for a specific domain.
     /// Owner always returns Owner. Otherwise looks up the tiers map.
-    pub fn tier_for_domain(&self, domain: &str) -> Option<TrustTier> {
+    pub fn tier_for_domain(&self, domain: &str) -> Option<AccessTier> {
         if self.is_owner {
-            return Some(TrustTier::Owner);
+            return Some(AccessTier::Owner);
         }
         self.tiers.get(domain).copied()
     }
@@ -129,7 +148,7 @@ impl AccessContext {
     }
 
     /// Create a remote context with per-domain tiers.
-    pub fn remote(user_id: impl Into<String>, tiers: HashMap<String, TrustTier>) -> Self {
+    pub fn remote(user_id: impl Into<String>, tiers: HashMap<String, AccessTier>) -> Self {
         Self {
             user_id: user_id.into(),
             is_owner: false,
@@ -140,7 +159,7 @@ impl AccessContext {
     }
 
     /// Create a remote context with a single domain tier (convenience).
-    pub fn remote_single(user_id: impl Into<String>, domain: &str, tier: TrustTier) -> Self {
+    pub fn remote_single(user_id: impl Into<String>, domain: &str, tier: AccessTier) -> Self {
         let mut tiers = HashMap::new();
         tiers.insert(domain.to_string(), tier);
         Self::remote(user_id, tiers)
@@ -169,8 +188,8 @@ impl AccessDecision {
 pub enum AccessDenialReason {
     InsufficientTrust {
         domain: String,
-        required: TrustTier,
-        actual: TrustTier,
+        required: AccessTier,
+        actual: AccessTier,
     },
     NoDomainTrust {
         domain: String,
@@ -232,11 +251,11 @@ pub struct FieldAccessPolicy {
     /// Minimum trust tier required to read this field.
     /// Default: Owner (only the data owner can read).
     #[serde(default = "default_tier")]
-    pub min_read_tier: TrustTier,
+    pub min_read_tier: AccessTier,
     /// Minimum trust tier required to write this field.
     /// Default: Owner (only the data owner can write).
     #[serde(default = "default_tier")]
-    pub min_write_tier: TrustTier,
+    pub min_write_tier: AccessTier,
     /// Capability tokens required for access
     pub capabilities: Vec<super::capability::CapabilityConstraint>,
 }
@@ -245,16 +264,16 @@ fn default_trust_domain() -> String {
     DOMAIN_PERSONAL.to_string()
 }
 
-fn default_tier() -> TrustTier {
-    TrustTier::Owner
+fn default_tier() -> AccessTier {
+    AccessTier::Owner
 }
 
 impl Default for FieldAccessPolicy {
     fn default() -> Self {
         Self {
             trust_domain: default_trust_domain(),
-            min_read_tier: TrustTier::Owner,
-            min_write_tier: TrustTier::Owner,
+            min_read_tier: AccessTier::Owner,
+            min_write_tier: AccessTier::Owner,
             capabilities: Vec::new(),
         }
     }
@@ -266,31 +285,31 @@ mod tests {
 
     #[test]
     fn test_trust_tier_ordering() {
-        assert!(TrustTier::Public < TrustTier::Outer);
-        assert!(TrustTier::Outer < TrustTier::Trusted);
-        assert!(TrustTier::Trusted < TrustTier::Inner);
-        assert!(TrustTier::Inner < TrustTier::Owner);
+        assert!(AccessTier::Public < AccessTier::Outer);
+        assert!(AccessTier::Outer < AccessTier::Trusted);
+        assert!(AccessTier::Trusted < AccessTier::Inner);
+        assert!(AccessTier::Inner < AccessTier::Owner);
     }
 
     #[test]
     fn test_trust_tier_from_sensitivity() {
-        assert_eq!(TrustTier::from_sensitivity(0), TrustTier::Public);
-        assert_eq!(TrustTier::from_sensitivity(1), TrustTier::Outer);
-        assert_eq!(TrustTier::from_sensitivity(2), TrustTier::Trusted);
-        assert_eq!(TrustTier::from_sensitivity(3), TrustTier::Inner);
-        assert_eq!(TrustTier::from_sensitivity(4), TrustTier::Owner);
+        assert_eq!(AccessTier::from_sensitivity(0), AccessTier::Public);
+        assert_eq!(AccessTier::from_sensitivity(1), AccessTier::Outer);
+        assert_eq!(AccessTier::from_sensitivity(2), AccessTier::Trusted);
+        assert_eq!(AccessTier::from_sensitivity(3), AccessTier::Inner);
+        assert_eq!(AccessTier::from_sensitivity(4), AccessTier::Owner);
     }
 
     #[test]
     #[should_panic(expected = "invalid sensitivity level")]
     fn test_trust_tier_from_invalid_sensitivity() {
-        TrustTier::from_sensitivity(5);
+        AccessTier::from_sensitivity(5);
     }
 
     #[test]
     fn test_trust_tier_as_u8() {
-        assert_eq!(TrustTier::Public.as_u8(), 0);
-        assert_eq!(TrustTier::Owner.as_u8(), 4);
+        assert_eq!(AccessTier::Public.as_u8(), 0);
+        assert_eq!(AccessTier::Owner.as_u8(), 4);
     }
 
     #[test]
@@ -311,27 +330,27 @@ mod tests {
         let ctx = AccessContext::owner("alice");
         assert_eq!(ctx.user_id, "alice");
         assert!(ctx.is_owner);
-        assert_eq!(ctx.tier_for_domain("personal"), Some(TrustTier::Owner));
-        assert_eq!(ctx.tier_for_domain("health"), Some(TrustTier::Owner));
-        assert_eq!(ctx.tier_for_domain("anything"), Some(TrustTier::Owner));
+        assert_eq!(ctx.tier_for_domain("personal"), Some(AccessTier::Owner));
+        assert_eq!(ctx.tier_for_domain("health"), Some(AccessTier::Owner));
+        assert_eq!(ctx.tier_for_domain("anything"), Some(AccessTier::Owner));
     }
 
     #[test]
     fn test_remote_context() {
         let mut tiers = HashMap::new();
-        tiers.insert("personal".to_string(), TrustTier::Trusted);
-        tiers.insert("medical".to_string(), TrustTier::Inner);
+        tiers.insert("personal".to_string(), AccessTier::Trusted);
+        tiers.insert("medical".to_string(), AccessTier::Inner);
         let ctx = AccessContext::remote("bob", tiers);
         assert!(!ctx.is_owner);
-        assert_eq!(ctx.tier_for_domain("personal"), Some(TrustTier::Trusted));
-        assert_eq!(ctx.tier_for_domain("medical"), Some(TrustTier::Inner));
+        assert_eq!(ctx.tier_for_domain("personal"), Some(AccessTier::Trusted));
+        assert_eq!(ctx.tier_for_domain("medical"), Some(AccessTier::Inner));
         assert_eq!(ctx.tier_for_domain("financial"), None);
     }
 
     #[test]
     fn test_remote_single_context() {
-        let ctx = AccessContext::remote_single("bob", "health", TrustTier::Trusted);
-        assert_eq!(ctx.tier_for_domain("health"), Some(TrustTier::Trusted));
+        let ctx = AccessContext::remote_single("bob", "health", AccessTier::Trusted);
+        assert_eq!(ctx.tier_for_domain("health"), Some(AccessTier::Trusted));
         assert_eq!(ctx.tier_for_domain("personal"), None);
     }
 
@@ -350,8 +369,8 @@ mod tests {
     fn test_denial_reason_display() {
         let reason = AccessDenialReason::InsufficientTrust {
             domain: "health".to_string(),
-            required: TrustTier::Inner,
-            actual: TrustTier::Outer,
+            required: AccessTier::Inner,
+            actual: AccessTier::Outer,
         };
         let msg = format!("{}", reason);
         assert!(msg.contains("health"));
@@ -363,22 +382,22 @@ mod tests {
     fn test_field_access_policy_default() {
         let policy = FieldAccessPolicy::default();
         assert_eq!(policy.trust_domain, "personal");
-        assert_eq!(policy.min_read_tier, TrustTier::Owner);
-        assert_eq!(policy.min_write_tier, TrustTier::Owner);
+        assert_eq!(policy.min_read_tier, AccessTier::Owner);
+        assert_eq!(policy.min_write_tier, AccessTier::Owner);
         assert!(policy.capabilities.is_empty());
     }
 
     #[test]
     fn test_field_access_policy_serialization() {
         let policy = FieldAccessPolicy {
-            min_read_tier: TrustTier::Trusted,
-            min_write_tier: TrustTier::Inner,
+            min_read_tier: AccessTier::Trusted,
+            min_write_tier: AccessTier::Inner,
             ..Default::default()
         };
         let json = serde_json::to_string(&policy).unwrap();
         let deserialized: FieldAccessPolicy = serde_json::from_str(&json).unwrap();
-        assert_eq!(deserialized.min_read_tier, TrustTier::Trusted);
-        assert_eq!(deserialized.min_write_tier, TrustTier::Inner);
+        assert_eq!(deserialized.min_read_tier, AccessTier::Trusted);
+        assert_eq!(deserialized.min_write_tier, AccessTier::Inner);
     }
 
     #[test]
@@ -388,11 +407,11 @@ mod tests {
 
     #[test]
     fn test_trust_tier_access_check_logic() {
-        assert!(TrustTier::Owner >= TrustTier::Owner);
-        assert!(TrustTier::Owner >= TrustTier::Public);
-        assert!(TrustTier::Inner >= TrustTier::Inner);
-        assert!(TrustTier::Inner >= TrustTier::Trusted);
-        assert!(TrustTier::Outer < TrustTier::Inner);
-        assert!(TrustTier::Public < TrustTier::Outer);
+        assert!(AccessTier::Owner >= AccessTier::Owner);
+        assert!(AccessTier::Owner >= AccessTier::Public);
+        assert!(AccessTier::Inner >= AccessTier::Inner);
+        assert!(AccessTier::Inner >= AccessTier::Trusted);
+        assert!(AccessTier::Outer < AccessTier::Inner);
+        assert!(AccessTier::Public < AccessTier::Outer);
     }
 }
