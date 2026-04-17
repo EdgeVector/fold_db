@@ -255,3 +255,74 @@ async fn store_with_data_detected_as_non_empty() {
         "store with data should be detected as non-empty"
     );
 }
+
+#[tokio::test]
+async fn reconfigure_sharing_replaces_extra_targets_atomically() {
+    use fold_db::sharing::types::{ShareRule, ShareScope};
+    use fold_db::sync::org_sync::{SyncPartitioner, SyncTarget};
+
+    let base = Arc::new(InMemoryNamespacedStore::new());
+    let crypto = test_crypto();
+    let http = Arc::new(reqwest::Client::new());
+    let s3 = S3Client::new(http.clone());
+    let auth = AuthClient::new(
+        http,
+        "http://localhost:0".to_string(),
+        SyncAuth::ApiKey("test".to_string()),
+    );
+
+    let engine = SyncEngine::new(
+        "test-device".to_string(),
+        crypto.clone(),
+        s3,
+        auth,
+        base.clone() as Arc<dyn NamespacedStore>,
+        SyncConfig::default(),
+    );
+
+    // Personal-only at startup.
+    let prefixes = engine.target_prefixes().await;
+    assert_eq!(prefixes.len(), 1, "only personal target at startup");
+    assert!(!engine.has_org_sync().await);
+
+    // Simulate runtime creation of a share rule (sender side).
+    let rule = ShareRule {
+        rule_id: "r1".to_string(),
+        recipient_pubkey: "alice_pubkey".to_string(),
+        recipient_display_name: "Alice".to_string(),
+        scope: ShareScope::AllSchemas,
+        share_prefix: "share:me:alice".to_string(),
+        share_e2e_secret: vec![7u8; 32],
+        active: true,
+        created_at: 0,
+        writer_pubkey: "me".to_string(),
+        signature: String::new(),
+    };
+
+    let mut key = [0u8; 32];
+    key.copy_from_slice(&rule.share_e2e_secret);
+    let share_crypto = Arc::new(LocalCryptoProvider::from_key(key));
+    let share_target = SyncTarget {
+        label: format!("share -> {}", rule.recipient_display_name),
+        prefix: rule.share_prefix.clone(),
+        crypto: share_crypto,
+    };
+
+    let partitioner = SyncPartitioner::new(&[], std::slice::from_ref(&rule));
+    engine
+        .reconfigure_sharing(partitioner, vec![share_target])
+        .await;
+
+    let prefixes = engine.target_prefixes().await;
+    assert_eq!(prefixes.len(), 2, "personal + share target");
+    assert!(prefixes.contains(&"share:me:alice".to_string()));
+    assert!(engine.has_org_sync().await);
+
+    // Deactivating the rule: caller rebuilds with no extra targets.
+    let empty_partitioner = SyncPartitioner::new(&[], &[]);
+    engine.reconfigure_sharing(empty_partitioner, vec![]).await;
+
+    let prefixes = engine.target_prefixes().await;
+    assert_eq!(prefixes.len(), 1, "back to personal-only after dectivation");
+    assert!(!engine.has_org_sync().await);
+}
