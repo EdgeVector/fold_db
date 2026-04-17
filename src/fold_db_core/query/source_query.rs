@@ -58,7 +58,7 @@ impl StandardSourceQuery {
         db_ops: Arc<DbOperations>,
         view_resolver: ViewResolver,
     ) -> Self {
-        let hash_range_processor = HashRangeQueryProcessor::new(Arc::clone(&db_ops));
+        let hash_range_processor = HashRangeQueryProcessor::new(Arc::clone(&db_ops), None);
         Self {
             schema_manager,
             db_ops,
@@ -74,7 +74,7 @@ impl StandardSourceQuery {
         db_ops: Arc<DbOperations>,
         view_resolver: ViewResolver,
     ) -> Self {
-        let hash_range_processor = HashRangeQueryProcessor::new(Arc::clone(&db_ops));
+        let hash_range_processor = HashRangeQueryProcessor::new(Arc::clone(&db_ops), None);
         Self {
             schema_manager,
             db_ops,
@@ -137,7 +137,7 @@ impl StandardSourceQuery {
         let nested_source = Self {
             schema_manager: Arc::clone(&self.schema_manager),
             db_ops: Arc::clone(&self.db_ops),
-            hash_range_processor: HashRangeQueryProcessor::new(Arc::clone(&self.db_ops)),
+            hash_range_processor: HashRangeQueryProcessor::new(Arc::clone(&self.db_ops), None),
             view_resolver: ViewResolver::new(Arc::clone(self.view_resolver.wasm_engine())),
             mode: self.mode,
         };

@@ -10,6 +10,7 @@ use crate::schema::types::key_value::KeyValue;
 use crate::schema::types::Query;
 use crate::schema::SchemaError;
 use crate::schema::{SchemaCore, SchemaState};
+use crate::storage::SledPool;
 use crate::view::registry::ViewState;
 use crate::view::resolver::ViewResolver;
 use crate::view::types::ViewCacheState;
@@ -28,9 +29,18 @@ pub struct QueryExecutor {
 }
 
 impl QueryExecutor {
-    /// Create a new query executor with storage abstraction
-    pub fn new(db_ops: Arc<DbOperations>, schema_manager: Arc<SchemaCore>) -> Self {
-        let hash_range_processor = HashRangeQueryProcessor::new(Arc::clone(&db_ops));
+    /// Create a new query executor with storage abstraction.
+    ///
+    /// `sled_pool` is optional but required to enable cross-user shared-data
+    /// lookup via ShareSubscriptions. When `None`, queries only scan the
+    /// personal (and org) namespaces.
+    pub fn new(
+        db_ops: Arc<DbOperations>,
+        schema_manager: Arc<SchemaCore>,
+        sled_pool: Option<Arc<SledPool>>,
+    ) -> Self {
+        let hash_range_processor =
+            HashRangeQueryProcessor::new(Arc::clone(&db_ops), sled_pool.clone());
 
         // Get the WASM engine from the view registry
         let wasm_engine = {
