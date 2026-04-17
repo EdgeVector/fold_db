@@ -1599,30 +1599,71 @@ impl SyncEngine {
     }
 
     // =========================================================================
-    // Org sync configuration
+    // Non-personal sync configuration (orgs + cross-user shares)
     // =========================================================================
 
-    /// Configure org sync partitioning.
+    /// Configure non-personal sync targets (orgs + cross-user shares).
     ///
-    /// Configure org sync targets.
+    /// Replaces all non-personal targets atomically. The personal target at
+    /// index 0 is always preserved. The partitioner classifies pending log
+    /// entries to the correct target by key prefix.
     ///
-    /// Appends org targets after the personal target (index 0). Each target
-    /// has its own R2 prefix and crypto provider. The partitioner classifies
-    /// pending entries to the correct target.
+    /// This is the runtime reconfiguration entry point: callers MUST invoke
+    /// this every time org membership, share rules, or share subscriptions
+    /// change in Sled so the sync engine picks up new upload/download prefixes
+    /// without restarting the node.
+    ///
+    /// `extra_targets` should contain one `SyncTarget` per:
+    /// - active org membership (uploads + downloads under `{org_hash}/log/`)
+    /// - active outbound share rule (uploads under `{share_prefix}/log/`)
+    /// - active inbound share subscription (downloads under
+    ///   `{share_prefix}/log/`)
+    ///
+    /// The `partitioner` must be built from the same memberships + share
+    /// rules so write routing stays consistent with the target list.
     pub async fn configure_org_sync(
         &self,
         partitioner: SyncPartitioner,
-        org_targets: Vec<SyncTarget>,
+        extra_targets: Vec<SyncTarget>,
     ) {
         *self.partitioner.lock().await = Some(partitioner);
         let mut targets = self.targets.lock().await;
         targets.truncate(1); // Keep personal target
-        targets.extend(org_targets);
+        targets.extend(extra_targets);
     }
 
-    /// Check if org sync is configured (any targets beyond personal).
+    /// Alias for [`configure_org_sync`] used by sharing-related call sites.
+    ///
+    /// Semantically identical — provided so callers that are wiring up a
+    /// share rule or subscription can express intent more clearly than
+    /// "configure_org_sync". Both names accept the full set of non-personal
+    /// targets (orgs, outbound shares, inbound shares).
+    pub async fn reconfigure_sharing(
+        &self,
+        partitioner: SyncPartitioner,
+        extra_targets: Vec<SyncTarget>,
+    ) {
+        self.configure_org_sync(partitioner, extra_targets).await;
+    }
+
+    /// Check if any non-personal sync targets (orgs or shares) are configured.
     pub async fn has_org_sync(&self) -> bool {
         self.targets.lock().await.len() > 1
+    }
+
+    /// Return the R2 prefix of every configured sync target, in order.
+    ///
+    /// Index 0 is the personal prefix. Remaining entries are org or share
+    /// prefixes in the order they were registered via `configure_org_sync`
+    /// / `reconfigure_sharing`. Primarily intended for tests and status
+    /// endpoints that need to verify runtime reconfiguration took effect.
+    pub async fn target_prefixes(&self) -> Vec<String> {
+        self.targets
+            .lock()
+            .await
+            .iter()
+            .map(|t| t.prefix.clone())
+            .collect()
     }
 }
 
