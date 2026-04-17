@@ -197,7 +197,10 @@ impl HashRangeQueryProcessor {
 
     /// Extract the sender hash from a `from:{sender_hash}` namespace prefix.
     fn sender_hash_from_namespace(namespace: &str) -> String {
-        namespace.strip_prefix("from:").unwrap_or(namespace).to_string()
+        namespace
+            .strip_prefix("from:")
+            .unwrap_or(namespace)
+            .to_string()
     }
 
     /// Resolve a field's values from a specific storage namespace by

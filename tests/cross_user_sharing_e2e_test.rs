@@ -216,12 +216,8 @@ async fn test_alice_shares_notes_with_bob() {
 
     let src_full_prefix = format!("{}:", share_prefix);
     let dst_full_prefix = "from:alice_pubkey:".to_string();
-    let copied = copy_and_rewrite_prefixed_keys(
-        &main_alice,
-        &main_bob,
-        &src_full_prefix,
-        &dst_full_prefix,
-    );
+    let copied =
+        copy_and_rewrite_prefixed_keys(&main_alice, &main_bob, &src_full_prefix, &dst_full_prefix);
     assert!(copied > 0, "Expected to copy some share-prefixed keys");
     println!("Copied + rewrote {} keys into Bob's sled", copied);
 
