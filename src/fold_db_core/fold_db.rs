@@ -396,7 +396,11 @@ impl FoldDB {
         info!("Started EventMonitor for system-wide event tracking");
 
         // Create QueryExecutor for handling all query operations
-        let query_executor = QueryExecutor::new(Arc::clone(&db_ops), Arc::clone(&schema_manager));
+        let query_executor = QueryExecutor::new(
+            Arc::clone(&db_ops),
+            Arc::clone(&schema_manager),
+            sled_pool.clone(),
+        );
         info!("Created QueryExecutor for query operations");
 
         // Create shared IndexStatusTracker for tracking indexing progress
