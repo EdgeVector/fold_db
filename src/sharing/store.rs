@@ -1,10 +1,11 @@
-use super::types::{ShareRule, ShareSubscription};
+use super::types::{ShareInvite, ShareRule, ShareSubscription};
 use crate::error::FoldDbError;
 use crate::storage::SledPool;
 use std::sync::Arc;
 
 const SHARE_RULE_TREE: &str = "share_rules";
 const SHARE_SUB_TREE: &str = "share_subscriptions";
+const SHARE_PENDING_INVITE_TREE: &str = "share_pending_invites";
 
 fn rule_tree(pool: &Arc<SledPool>) -> Result<sled::Tree, FoldDbError> {
     let guard = pool
@@ -94,6 +95,51 @@ pub fn list_share_subscriptions(
         subs.push(sub);
     }
     Ok(subs)
+}
+
+fn pending_invite_tree(pool: &Arc<SledPool>) -> Result<sled::Tree, FoldDbError> {
+    let guard = pool
+        .acquire_arc()
+        .map_err(|e| FoldDbError::Database(format!("Failed to acquire SledPool: {}", e)))?;
+    guard
+        .db()
+        .open_tree(SHARE_PENDING_INVITE_TREE)
+        .map_err(|e| {
+            FoldDbError::Database(format!("Failed to open share_pending_invites tree: {}", e))
+        })
+}
+
+/// Store a pending share invite received from the bulletin board.
+/// Keyed by the sender's pubkey — only one pending invite per sender at a time;
+/// newer invites overwrite older ones.
+pub fn store_pending_invite(pool: &Arc<SledPool>, invite: ShareInvite) -> Result<(), FoldDbError> {
+    let tree = pending_invite_tree(pool)?;
+    let key = format!("pending_invite:{}", invite.sender_pubkey);
+    let value = serde_json::to_vec(&invite)?;
+    tree.insert(key.as_bytes(), value)
+        .map_err(|e| FoldDbError::Database(format!("Failed to store pending invite: {}", e)))?;
+    Ok(())
+}
+
+pub fn list_pending_invites(pool: &Arc<SledPool>) -> Result<Vec<ShareInvite>, FoldDbError> {
+    let tree = pending_invite_tree(pool)?;
+    let mut invites = Vec::new();
+    for entry in tree.iter() {
+        let (_, value) = entry.map_err(|e| {
+            FoldDbError::Database(format!("Failed to iterate pending invites tree: {}", e))
+        })?;
+        let invite: ShareInvite = serde_json::from_slice(&value)?;
+        invites.push(invite);
+    }
+    Ok(invites)
+}
+
+pub fn remove_pending_invite(pool: &Arc<SledPool>, sender_pubkey: &str) -> Result<(), FoldDbError> {
+    let tree = pending_invite_tree(pool)?;
+    let key = format!("pending_invite:{}", sender_pubkey);
+    tree.remove(key.as_bytes())
+        .map_err(|e| FoldDbError::Database(format!("Failed to remove pending invite: {}", e)))?;
+    Ok(())
 }
 
 pub fn get_share_subscription(
