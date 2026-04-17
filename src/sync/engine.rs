@@ -1906,4 +1906,53 @@ mod tests {
         let total: usize = outcomes.iter().map(|o| o.entries_replayed).sum();
         assert_eq!(total, 3);
     }
+
+    // ---- rewrite_key_if_needed tests (share prefix -> from: namespace) ----
+
+    fn share_target(prefix: &str) -> SyncTarget {
+        use crate::crypto::provider::LocalCryptoProvider;
+        SyncTarget {
+            label: "share".to_string(),
+            prefix: prefix.to_string(),
+            crypto: Arc::new(LocalCryptoProvider::from_key([0x09u8; 32])),
+        }
+    }
+
+    #[test]
+    fn test_rewrite_key_share_prefix_to_from_prefix() {
+        let target = share_target("share:alice:me");
+        let key_b64 = LogOp::encode_bytes(b"share:alice:me:atom:uuid-1");
+        let result = SyncEngine::rewrite_key_if_needed(&key_b64, Some(&target)).unwrap();
+        assert_eq!(result, b"from:alice:atom:uuid-1");
+    }
+
+    #[test]
+    fn test_rewrite_key_no_target_passes_through() {
+        let key_b64 = LogOp::encode_bytes(b"atom:uuid-1");
+        let result = SyncEngine::rewrite_key_if_needed(&key_b64, None).unwrap();
+        assert_eq!(result, b"atom:uuid-1");
+    }
+
+    #[test]
+    fn test_rewrite_key_non_share_target_passes_through() {
+        use crate::crypto::provider::LocalCryptoProvider;
+        let target = SyncTarget {
+            label: "org".to_string(),
+            prefix: "org_hash_abc".to_string(),
+            crypto: Arc::new(LocalCryptoProvider::from_key([0x10u8; 32])),
+        };
+        let key_b64 = LogOp::encode_bytes(b"org_hash_abc:atom:uuid-1");
+        let result = SyncEngine::rewrite_key_if_needed(&key_b64, Some(&target)).unwrap();
+        // Non-share target: no rewriting
+        assert_eq!(result, b"org_hash_abc:atom:uuid-1");
+    }
+
+    #[test]
+    fn test_rewrite_key_share_target_but_key_not_matching_passes_through() {
+        let target = share_target("share:alice:me");
+        // Key has a different prefix than the target
+        let key_b64 = LogOp::encode_bytes(b"atom:uuid-1");
+        let result = SyncEngine::rewrite_key_if_needed(&key_b64, Some(&target)).unwrap();
+        assert_eq!(result, b"atom:uuid-1");
+    }
 }

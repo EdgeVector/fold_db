@@ -382,6 +382,55 @@ mod tests {
     }
 
     #[test]
+    fn test_sync_partitioner_share_keys() {
+        use crate::sharing::types::{ShareRule, ShareScope};
+        let rules = vec![ShareRule {
+            rule_id: "r1".to_string(),
+            recipient_pubkey: "alice".to_string(),
+            recipient_display_name: "Alice".to_string(),
+            scope: ShareScope::AllSchemas,
+            share_prefix: "share:me:alice".to_string(),
+            share_e2e_secret: vec![1, 2, 3],
+            active: true,
+            created_at: 0,
+            writer_pubkey: "me".to_string(),
+            signature: String::new(),
+        }];
+        let partitioner = SyncPartitioner::new(&[], &rules);
+
+        match partitioner.partition("share:me:alice:atom:uuid-1") {
+            SyncDestination::Share { share_prefix, .. } => {
+                assert_eq!(share_prefix, "share:me:alice");
+            }
+            other => panic!("expected Share, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_sync_partitioner_inactive_share_rule_skipped() {
+        use crate::sharing::types::{ShareRule, ShareScope};
+        let rules = vec![ShareRule {
+            rule_id: "r1".to_string(),
+            recipient_pubkey: "alice".to_string(),
+            recipient_display_name: "Alice".to_string(),
+            scope: ShareScope::AllSchemas,
+            share_prefix: "share:me:alice".to_string(),
+            share_e2e_secret: vec![1, 2, 3],
+            active: false, // inactive
+            created_at: 0,
+            writer_pubkey: "me".to_string(),
+            signature: String::new(),
+        }];
+        let partitioner = SyncPartitioner::new(&[], &rules);
+
+        // Inactive rule should not match — falls through to Personal
+        assert_eq!(
+            partitioner.partition("share:me:alice:atom:uuid-1"),
+            SyncDestination::Personal
+        );
+    }
+
+    #[test]
     fn test_org_hashes() {
         let memberships = vec![
             make_membership("org_a", "secret_a"),

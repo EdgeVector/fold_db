@@ -747,24 +747,20 @@ impl MutationManager {
         if schema.org_hash.is_none() {
             if let Some(pool) = &self.sled_pool {
                 if let Ok(rules) = crate::sharing::store::list_share_rules(pool) {
+                    // MutationEvents are local-only and must NOT be shared
+                    // across the wire (per cross-user sharing protocol —
+                    // receiver namespace Q3). Only molecules get multiplexed.
                     for rule in rules {
-                        if rule.active && rule.scope_matches(&schema.name) {
-                            if !molecules_to_store.is_empty() {
-                                self.db_ops
-                                    .batch_store_molecules(
-                                        molecules_to_store.clone(),
-                                        Some(&rule.share_prefix),
-                                    )
-                                    .await?;
-                            }
-                            if !mutation_events.is_empty() {
-                                self.db_ops
-                                    .batch_store_mutation_events(
-                                        mutation_events.clone(),
-                                        Some(&rule.share_prefix),
-                                    )
-                                    .await?;
-                            }
+                        if rule.active
+                            && rule.scope_matches(&schema.name)
+                            && !molecules_to_store.is_empty()
+                        {
+                            self.db_ops
+                                .batch_store_molecules(
+                                    molecules_to_store.clone(),
+                                    Some(&rule.share_prefix),
+                                )
+                                .await?;
                         }
                     }
                 }
