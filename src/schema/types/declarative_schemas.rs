@@ -906,8 +906,8 @@ mod tests {
             .as_ref()
             .expect("body should have an access policy after populate");
         assert_eq!(policy.trust_domain, "personal");
-        assert_eq!(policy.min_read_tier, crate::access::TrustTier::Owner);
-        assert_eq!(policy.min_write_tier, crate::access::TrustTier::Owner);
+        assert_eq!(policy.min_read_tier, crate::access::AccessTier::Owner);
+        assert_eq!(policy.min_write_tier, crate::access::AccessTier::Owner);
 
         // title should NOT have a policy (not in field_access_policies)
         let title_field = schema

@@ -1,6 +1,6 @@
 use fold_db::access::{
-    check_access, AccessContext, AccessDecision, AccessDenialReason, CapabilityConstraint,
-    CapabilityKind, FieldAccessPolicy, PaymentGate, TrustTier,
+    check_access, AccessContext, AccessDecision, AccessDenialReason, AccessTier,
+    CapabilityConstraint, CapabilityKind, FieldAccessPolicy, PaymentGate,
 };
 use fold_db::fold_db_core::FoldDB;
 use fold_db::schema::types::field::Field;
@@ -97,8 +97,8 @@ fn owner_always_has_access_in_any_domain() {
     // Health domain policy requiring Inner
     let health_policy = FieldAccessPolicy {
         trust_domain: "health".to_string(),
-        min_read_tier: TrustTier::Inner,
-        min_write_tier: TrustTier::Inner,
+        min_read_tier: AccessTier::Inner,
+        min_write_tier: AccessTier::Inner,
         capabilities: vec![],
     };
     assert!(check_access(Some(&health_policy), &ctx, "schema", None, false).is_granted());
@@ -111,22 +111,22 @@ fn owner_always_has_access_in_any_domain() {
 
 #[test]
 fn remote_caller_granted_when_tier_gte_min() {
-    let ctx = AccessContext::remote_single("bob", "personal", TrustTier::Trusted);
+    let ctx = AccessContext::remote_single("bob", "personal", AccessTier::Trusted);
 
     let policy = FieldAccessPolicy {
         trust_domain: "personal".to_string(),
-        min_read_tier: TrustTier::Trusted, // exact match
-        min_write_tier: TrustTier::Owner,
+        min_read_tier: AccessTier::Trusted, // exact match
+        min_write_tier: AccessTier::Owner,
         capabilities: vec![],
     };
     assert!(check_access(Some(&policy), &ctx, "schema", None, false).is_granted());
 
     // Higher tier than required
-    let ctx_inner = AccessContext::remote_single("bob", "personal", TrustTier::Inner);
+    let ctx_inner = AccessContext::remote_single("bob", "personal", AccessTier::Inner);
     let policy_outer = FieldAccessPolicy {
         trust_domain: "personal".to_string(),
-        min_read_tier: TrustTier::Outer,
-        min_write_tier: TrustTier::Owner,
+        min_read_tier: AccessTier::Outer,
+        min_write_tier: AccessTier::Owner,
         capabilities: vec![],
     };
     assert!(check_access(Some(&policy_outer), &ctx_inner, "schema", None, false).is_granted());
@@ -134,12 +134,12 @@ fn remote_caller_granted_when_tier_gte_min() {
 
 #[test]
 fn remote_caller_denied_when_tier_lt_min() {
-    let ctx = AccessContext::remote_single("bob", "personal", TrustTier::Outer);
+    let ctx = AccessContext::remote_single("bob", "personal", AccessTier::Outer);
 
     let policy = FieldAccessPolicy {
         trust_domain: "personal".to_string(),
-        min_read_tier: TrustTier::Trusted, // Outer(1) < Trusted(2)
-        min_write_tier: TrustTier::Owner,
+        min_read_tier: AccessTier::Trusted, // Outer(1) < Trusted(2)
+        min_write_tier: AccessTier::Owner,
         capabilities: vec![],
     };
     let result = check_access(Some(&policy), &ctx, "schema", None, false);
@@ -151,8 +151,8 @@ fn remote_caller_denied_when_tier_lt_min() {
     }) = result
     {
         assert_eq!(domain, "personal");
-        assert_eq!(required, TrustTier::Trusted);
-        assert_eq!(actual, TrustTier::Outer);
+        assert_eq!(required, AccessTier::Trusted);
+        assert_eq!(actual, AccessTier::Outer);
     } else {
         panic!("expected InsufficientTrust denial");
     }
@@ -165,8 +165,8 @@ fn remote_caller_denied_when_no_domain_entry() {
 
     let policy = FieldAccessPolicy {
         trust_domain: "personal".to_string(),
-        min_read_tier: TrustTier::Public,
-        min_write_tier: TrustTier::Owner,
+        min_read_tier: AccessTier::Public,
+        min_write_tier: AccessTier::Owner,
         capabilities: vec![],
     };
     let result = check_access(Some(&policy), &ctx, "schema", None, false);
@@ -181,15 +181,15 @@ fn remote_caller_denied_when_no_domain_entry() {
 #[test]
 fn multi_domain_context_independence() {
     let mut tiers = HashMap::new();
-    tiers.insert("health".to_string(), TrustTier::Inner);
-    tiers.insert("personal".to_string(), TrustTier::Trusted);
+    tiers.insert("health".to_string(), AccessTier::Inner);
+    tiers.insert("personal".to_string(), AccessTier::Trusted);
     let ctx = AccessContext::remote("bob", tiers);
 
     // Health field requiring Trusted — Bob has Inner(3) >= Trusted(2) -> granted
     let health_policy = FieldAccessPolicy {
         trust_domain: "health".to_string(),
-        min_read_tier: TrustTier::Trusted,
-        min_write_tier: TrustTier::Owner,
+        min_read_tier: AccessTier::Trusted,
+        min_write_tier: AccessTier::Owner,
         capabilities: vec![],
     };
     assert!(check_access(Some(&health_policy), &ctx, "schema", None, false).is_granted());
@@ -197,8 +197,8 @@ fn multi_domain_context_independence() {
     // Personal field requiring Inner — Bob has Trusted(2) < Inner(3) -> denied
     let personal_policy = FieldAccessPolicy {
         trust_domain: "personal".to_string(),
-        min_read_tier: TrustTier::Inner,
-        min_write_tier: TrustTier::Owner,
+        min_read_tier: AccessTier::Inner,
+        min_write_tier: AccessTier::Owner,
         capabilities: vec![],
     };
     assert!(check_access(Some(&personal_policy), &ctx, "schema", None, false).is_denied());
@@ -206,8 +206,8 @@ fn multi_domain_context_independence() {
     // Financial field — Bob has no entry -> NoDomainTrust
     let financial_policy = FieldAccessPolicy {
         trust_domain: "financial".to_string(),
-        min_read_tier: TrustTier::Outer,
-        min_write_tier: TrustTier::Owner,
+        min_read_tier: AccessTier::Outer,
+        min_write_tier: AccessTier::Owner,
         capabilities: vec![],
     };
     let result = check_access(Some(&financial_policy), &ctx, "schema", None, false);
@@ -219,11 +219,11 @@ fn multi_domain_context_independence() {
 
 #[test]
 fn unified_check_access_read_vs_write() {
-    let ctx = AccessContext::remote_single("bob", "personal", TrustTier::Trusted);
+    let ctx = AccessContext::remote_single("bob", "personal", AccessTier::Trusted);
     let policy = FieldAccessPolicy {
         trust_domain: "personal".to_string(),
-        min_read_tier: TrustTier::Outer,  // Trusted(2) >= Outer(1)
-        min_write_tier: TrustTier::Inner, // Trusted(2) < Inner(3)
+        min_read_tier: AccessTier::Outer,  // Trusted(2) >= Outer(1)
+        min_write_tier: AccessTier::Inner, // Trusted(2) < Inner(3)
         capabilities: vec![],
     };
 
@@ -236,8 +236,8 @@ fn unified_check_access_read_vs_write() {
         required, actual, ..
     }) = result
     {
-        assert_eq!(required, TrustTier::Inner);
-        assert_eq!(actual, TrustTier::Trusted);
+        assert_eq!(required, AccessTier::Inner);
+        assert_eq!(actual, AccessTier::Trusted);
     } else {
         panic!("expected InsufficientTrust for write");
     }
@@ -245,11 +245,11 @@ fn unified_check_access_read_vs_write() {
 
 #[test]
 fn payment_gate_fixed_blocks_unpaid() {
-    let ctx = AccessContext::remote_single("bob", "personal", TrustTier::Inner);
+    let ctx = AccessContext::remote_single("bob", "personal", AccessTier::Inner);
     let policy = FieldAccessPolicy {
         trust_domain: "personal".to_string(),
-        min_read_tier: TrustTier::Public,
-        min_write_tier: TrustTier::Owner,
+        min_read_tier: AccessTier::Public,
+        min_write_tier: AccessTier::Owner,
         capabilities: vec![],
     };
     let gate = PaymentGate::Fixed(5.0);
@@ -264,7 +264,7 @@ fn payment_gate_fixed_blocks_unpaid() {
     }
 
     // Paid -> granted
-    let mut paid_ctx = AccessContext::remote_single("bob", "personal", TrustTier::Inner);
+    let mut paid_ctx = AccessContext::remote_single("bob", "personal", AccessTier::Inner);
     paid_ctx.paid_schemas.insert("paid_schema".to_string());
     assert!(check_access(Some(&policy), &paid_ctx, "paid_schema", Some(&gate), false).is_granted());
 }
@@ -273,8 +273,8 @@ fn payment_gate_fixed_blocks_unpaid() {
 fn combined_trust_capability_payment() {
     let policy = FieldAccessPolicy {
         trust_domain: "personal".to_string(),
-        min_read_tier: TrustTier::Outer,
-        min_write_tier: TrustTier::Owner,
+        min_read_tier: AccessTier::Outer,
+        min_write_tier: AccessTier::Owner,
         capabilities: vec![CapabilityConstraint::new(
             "pk_bob",
             CapabilityKind::Read,
@@ -284,7 +284,7 @@ fn combined_trust_capability_payment() {
     let gate = PaymentGate::Fixed(1.0);
 
     // All three layers satisfied
-    let mut ctx = AccessContext::remote_single("bob", "personal", TrustTier::Inner);
+    let mut ctx = AccessContext::remote_single("bob", "personal", AccessTier::Inner);
     ctx.public_keys = vec!["pk_bob".to_string()];
     ctx.paid_schemas.insert("schema".to_string());
     assert!(check_access(Some(&policy), &ctx, "schema", Some(&gate), false).is_granted());
@@ -309,7 +309,7 @@ fn combined_trust_capability_payment() {
     // Restore capability, drop tier below min -> denied (InsufficientTrust)
     ctx.public_keys = vec!["pk_bob".to_string()];
     let mut low_tiers = HashMap::new();
-    low_tiers.insert("personal".to_string(), TrustTier::Public);
+    low_tiers.insert("personal".to_string(), AccessTier::Public);
     ctx.tiers = low_tiers;
     let result = check_access(Some(&policy), &ctx, "schema", Some(&gate), false);
     assert!(matches!(
@@ -339,7 +339,7 @@ async fn query_default_policy_owner_only() {
     let db = setup_db_with_notes().await;
 
     // No explicit policies — defaults to owner-only, remote users denied
-    let ctx = AccessContext::remote_single("bob", "personal", TrustTier::Trusted);
+    let ctx = AccessContext::remote_single("bob", "personal", AccessTier::Trusted);
     let query = Query::new(
         "Notes".to_string(),
         vec!["title".to_string(), "content".to_string()],
@@ -379,8 +379,8 @@ async fn query_owner_always_has_access() {
         "content",
         FieldAccessPolicy {
             trust_domain: "personal".to_string(),
-            min_read_tier: TrustTier::Owner,
-            min_write_tier: TrustTier::Owner,
+            min_read_tier: AccessTier::Owner,
+            min_write_tier: AccessTier::Owner,
             capabilities: vec![],
         },
     )
@@ -412,8 +412,8 @@ async fn query_remote_filtered_by_trust_tier() {
         "content",
         FieldAccessPolicy {
             trust_domain: "personal".to_string(),
-            min_read_tier: TrustTier::Owner,
-            min_write_tier: TrustTier::Owner,
+            min_read_tier: AccessTier::Owner,
+            min_write_tier: AccessTier::Owner,
             capabilities: vec![],
         },
     )
@@ -426,14 +426,14 @@ async fn query_remote_filtered_by_trust_tier() {
         "title",
         FieldAccessPolicy {
             trust_domain: "personal".to_string(),
-            min_read_tier: TrustTier::Public,
-            min_write_tier: TrustTier::Owner,
+            min_read_tier: AccessTier::Public,
+            min_write_tier: AccessTier::Owner,
             capabilities: vec![],
         },
     )
     .await;
 
-    let ctx = AccessContext::remote_single("bob", "personal", TrustTier::Trusted);
+    let ctx = AccessContext::remote_single("bob", "personal", AccessTier::Trusted);
     let query = Query::new(
         "Notes".to_string(),
         vec!["title".to_string(), "content".to_string()],
@@ -459,15 +459,15 @@ async fn query_payment_gate_blocks_unpaid() {
         "content",
         FieldAccessPolicy {
             trust_domain: "personal".to_string(),
-            min_read_tier: TrustTier::Public,
-            min_write_tier: TrustTier::Owner,
+            min_read_tier: AccessTier::Public,
+            min_write_tier: AccessTier::Owner,
             capabilities: vec![],
         },
     )
     .await;
 
     let gate = PaymentGate::Fixed(5.0);
-    let ctx = AccessContext::remote_single("bob", "personal", TrustTier::Inner);
+    let ctx = AccessContext::remote_single("bob", "personal", AccessTier::Inner);
 
     let query = Query::new("Notes".to_string(), vec!["content".to_string()]);
     let results = db
@@ -493,14 +493,14 @@ async fn mutation_blocked_by_insufficient_tier() {
         "content",
         FieldAccessPolicy {
             trust_domain: "personal".to_string(),
-            min_read_tier: TrustTier::Public,
-            min_write_tier: TrustTier::Owner,
+            min_read_tier: AccessTier::Public,
+            min_write_tier: AccessTier::Owner,
             capabilities: vec![],
         },
     )
     .await;
 
-    let ctx = AccessContext::remote_single("bob", "personal", TrustTier::Inner);
+    let ctx = AccessContext::remote_single("bob", "personal", AccessTier::Inner);
     let mut fields = HashMap::new();
     fields.insert("content".to_string(), json!("hacked!"));
     let mutation = Mutation::new(
@@ -535,8 +535,8 @@ async fn mutation_allowed_for_owner() {
         "content",
         FieldAccessPolicy {
             trust_domain: "personal".to_string(),
-            min_read_tier: TrustTier::Public,
-            min_write_tier: TrustTier::Owner,
+            min_read_tier: AccessTier::Public,
+            min_write_tier: AccessTier::Owner,
             capabilities: vec![],
         },
     )
