@@ -78,6 +78,7 @@ mod tests {
             }
         };
 
+        #[allow(deprecated)]
         let home_path = std::env::var("FOLDDB_HOME")
             .map(std::path::PathBuf::from)
             .unwrap_or_else(|_| tempfile::tempdir().unwrap().into_path());

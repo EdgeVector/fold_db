@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 /// Privacy classification for a schema field, controlling whether its fragments
 /// can be published to the discovery network.
+#[cfg_attr(feature = "ts-bindings", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum FieldPrivacyClass {
     /// Fragments from this field are never published (contains PII by nature).

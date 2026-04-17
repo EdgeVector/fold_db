@@ -146,3 +146,4 @@ sample_*.json
 
 # Local static-react dev (not part of this repo)
 src/server/static-react/
+clippy_out*.txt

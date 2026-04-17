@@ -956,7 +956,7 @@ impl SyncEngine {
                             "native_index" => embeddings_replayed = true,
                             _ => {}
                         }
-                        self.replay_entry(&entry).await?;
+                        self.replay_entry(&entry, Some(target)).await?;
                         total_replayed += 1;
                         if *seq > max_seq {
                             max_seq = *seq;
@@ -1208,7 +1208,7 @@ impl SyncEngine {
                                 "native_index" => embeddings_replayed = true,
                                 _ => {}
                             }
-                            self.replay_entry(&entry).await?;
+                            self.replay_entry(&entry, Some(&target)).await?;
                             entries_replayed += 1;
                         }
                         Err(e) => {
@@ -1330,37 +1330,86 @@ impl SyncEngine {
     /// Non-ref keys (atoms, history) are written unconditionally.
     /// Ref keys (`ref:` or `{org_hash}:ref:`) use molecule merge so all
     /// nodes converge to the same state regardless of replay order.
-    pub async fn replay_entry(&self, entry: &LogEntry) -> SyncResult<()> {
+    pub async fn replay_entry(
+        &self,
+        entry: &LogEntry,
+        target: Option<&SyncTarget>,
+    ) -> SyncResult<()> {
         match &entry.op {
             LogOp::Put {
                 namespace,
                 key,
                 value,
             } => {
-                self.replay_put(namespace, key, value, entry.timestamp_ms, &entry.device_id)
-                    .await?;
+                let final_key = Self::rewrite_key_if_needed(key, target)?;
+                self.replay_put(
+                    namespace,
+                    &LogOp::encode_bytes(&final_key),
+                    value,
+                    entry.timestamp_ms,
+                    &entry.device_id,
+                )
+                .await?;
             }
             LogOp::Delete { namespace, key } => {
                 let kv = self.store.open_namespace(namespace).await?;
-                let key_bytes = LogOp::decode_bytes(key)?;
-                kv.delete(&key_bytes).await?;
+                let final_key = Self::rewrite_key_if_needed(key, target)?;
+                kv.delete(&final_key).await?;
             }
             LogOp::BatchPut { namespace, items } => {
                 for (key, value) in items {
-                    self.replay_put(namespace, key, value, entry.timestamp_ms, &entry.device_id)
-                        .await?;
+                    let final_key = Self::rewrite_key_if_needed(key, target)?;
+                    self.replay_put(
+                        namespace,
+                        &LogOp::encode_bytes(&final_key),
+                        value,
+                        entry.timestamp_ms,
+                        &entry.device_id,
+                    )
+                    .await?;
                 }
             }
             LogOp::BatchDelete { namespace, keys } => {
                 let kv = self.store.open_namespace(namespace).await?;
                 let decoded: Vec<Vec<u8>> = keys
                     .iter()
-                    .map(|k| LogOp::decode_bytes(k))
+                    .map(|k| Self::rewrite_key_if_needed(k, target))
                     .collect::<SyncResult<Vec<_>>>()?;
                 kv.batch_delete(decoded).await?;
             }
         }
         Ok(())
+    }
+
+    /// Rewrites log entry keys based on namespace isolation rules for ShareSubscriptions.
+    fn rewrite_key_if_needed(key_b64: &str, target: Option<&SyncTarget>) -> SyncResult<Vec<u8>> {
+        let key_bytes = LogOp::decode_bytes(key_b64)?;
+
+        if let Some(t) = target {
+            if t.prefix.starts_with("share:") {
+                let mut parts = t.prefix.split(':');
+                parts.next(); // skip "share"
+                if let Some(sender_hash) = parts.next() {
+                    let prefix_str = format!("{}:", t.prefix);
+                    let prefix_bytes = prefix_str.as_bytes();
+
+                    if key_bytes.starts_with(prefix_bytes) {
+                        let new_prefix_str = format!("from:{}:", sender_hash);
+                        let new_prefix_bytes = new_prefix_str.as_bytes();
+
+                        let mut final_key = Vec::with_capacity(
+                            new_prefix_bytes.len() + key_bytes.len() - prefix_bytes.len(),
+                        );
+                        final_key.extend_from_slice(new_prefix_bytes);
+                        final_key.extend_from_slice(&key_bytes[prefix_bytes.len()..]);
+
+                        return Ok(final_key);
+                    }
+                }
+            }
+        }
+
+        Ok(key_bytes)
     }
 
     /// Replay a single put. Ref keys use molecule merge; everything else is unconditional.
@@ -1656,7 +1705,7 @@ mod tests {
                 joined_at: 0,
             },
         ];
-        SyncPartitioner::new(&memberships)
+        SyncPartitioner::new(&memberships, &[])
     }
 
     fn batch_put(items: &[&[u8]]) -> LogEntry {
@@ -1856,5 +1905,54 @@ mod tests {
         // Counts aggregate independently.
         let total: usize = outcomes.iter().map(|o| o.entries_replayed).sum();
         assert_eq!(total, 3);
+    }
+
+    // ---- rewrite_key_if_needed tests (share prefix -> from: namespace) ----
+
+    fn share_target(prefix: &str) -> SyncTarget {
+        use crate::crypto::provider::LocalCryptoProvider;
+        SyncTarget {
+            label: "share".to_string(),
+            prefix: prefix.to_string(),
+            crypto: Arc::new(LocalCryptoProvider::from_key([0x09u8; 32])),
+        }
+    }
+
+    #[test]
+    fn test_rewrite_key_share_prefix_to_from_prefix() {
+        let target = share_target("share:alice:me");
+        let key_b64 = LogOp::encode_bytes(b"share:alice:me:atom:uuid-1");
+        let result = SyncEngine::rewrite_key_if_needed(&key_b64, Some(&target)).unwrap();
+        assert_eq!(result, b"from:alice:atom:uuid-1");
+    }
+
+    #[test]
+    fn test_rewrite_key_no_target_passes_through() {
+        let key_b64 = LogOp::encode_bytes(b"atom:uuid-1");
+        let result = SyncEngine::rewrite_key_if_needed(&key_b64, None).unwrap();
+        assert_eq!(result, b"atom:uuid-1");
+    }
+
+    #[test]
+    fn test_rewrite_key_non_share_target_passes_through() {
+        use crate::crypto::provider::LocalCryptoProvider;
+        let target = SyncTarget {
+            label: "org".to_string(),
+            prefix: "org_hash_abc".to_string(),
+            crypto: Arc::new(LocalCryptoProvider::from_key([0x10u8; 32])),
+        };
+        let key_b64 = LogOp::encode_bytes(b"org_hash_abc:atom:uuid-1");
+        let result = SyncEngine::rewrite_key_if_needed(&key_b64, Some(&target)).unwrap();
+        // Non-share target: no rewriting
+        assert_eq!(result, b"org_hash_abc:atom:uuid-1");
+    }
+
+    #[test]
+    fn test_rewrite_key_share_target_but_key_not_matching_passes_through() {
+        let target = share_target("share:alice:me");
+        // Key has a different prefix than the target
+        let key_b64 = LogOp::encode_bytes(b"atom:uuid-1");
+        let result = SyncEngine::rewrite_key_if_needed(&key_b64, Some(&target)).unwrap();
+        assert_eq!(result, b"atom:uuid-1");
     }
 }

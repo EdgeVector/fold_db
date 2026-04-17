@@ -476,7 +476,7 @@ impl MutationManager {
             if key_value.hash.is_none() && key_value.range.is_none() {
                 let mut hasher = Sha256::new();
                 let mut sorted: Vec<_> = mutation.fields_and_values.iter().collect();
-                sorted.sort_by(|(a, _), (b, _)| a.cmp(b));
+                sorted.sort_by_key(|(a, _)| (*a).clone());
                 for (k, v) in sorted {
                     hasher.update(k.as_bytes());
                     hasher.update(v.to_string().as_bytes());
@@ -507,13 +507,13 @@ impl MutationManager {
                             schema_name, mutation.uuid
                         )));
                     }
-                    DeclarativeSchemaType::HashRange => {
-                        if key_value.hash.is_none() || key_value.range.is_none() {
-                            return Err(SchemaError::InvalidData(format!(
-                                "HashRange schema '{}' mutation {} requires both hash and range keys, got hash={:?} range={:?}",
-                                schema_name, mutation.uuid, key_value.hash, key_value.range
-                            )));
-                        }
+                    DeclarativeSchemaType::HashRange
+                        if key_value.hash.is_none() || key_value.range.is_none() =>
+                    {
+                        return Err(SchemaError::InvalidData(format!(
+                            "HashRange schema '{}' mutation {} requires both hash and range keys, got hash={:?} range={:?}",
+                            schema_name, mutation.uuid, key_value.hash, key_value.range
+                        )));
                     }
                     _ => {}
                 }
@@ -551,8 +551,26 @@ impl MutationManager {
         if !atoms_to_store.is_empty() {
             log::info!("💾 Batch storing {} atoms", atoms_to_store.len());
             self.db_ops
-                .batch_store_atoms(atoms_to_store, schema.org_hash.as_deref())
+                .batch_store_atoms(atoms_to_store.clone(), schema.org_hash.as_deref())
                 .await?;
+
+            // Push to share prefixes for personal data
+            if schema.org_hash.is_none() {
+                if let Some(pool) = &self.sled_pool {
+                    if let Ok(rules) = crate::sharing::store::list_share_rules(pool) {
+                        for rule in rules {
+                            if rule.active && rule.scope_matches(schema_name) {
+                                self.db_ops
+                                    .batch_store_atoms(
+                                        atoms_to_store.clone(),
+                                        Some(&rule.share_prefix),
+                                    )
+                                    .await?;
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         Ok((mutation_key_values, atom_results))
@@ -709,7 +727,7 @@ impl MutationManager {
         if !molecules_to_store.is_empty() {
             log::info!("💾 Batch storing {} molecules", molecules_to_store.len());
             self.db_ops
-                .batch_store_molecules(molecules_to_store, schema.org_hash.as_deref())
+                .batch_store_molecules(molecules_to_store.clone(), schema.org_hash.as_deref())
                 .await?;
         }
 
@@ -718,11 +736,35 @@ impl MutationManager {
             let phase4_start = std::time::Instant::now();
             log::debug!("💾 Storing {} mutation events", mutation_events.len());
             self.db_ops
-                .batch_store_mutation_events(mutation_events, schema.org_hash.as_deref())
+                .batch_store_mutation_events(mutation_events.clone(), schema.org_hash.as_deref())
                 .await?;
             *timing_breakdown
                 .entry("  - store_mutation_events")
                 .or_insert(std::time::Duration::ZERO) += phase4_start.elapsed();
+        }
+
+        // Push to share prefixes for personal data
+        if schema.org_hash.is_none() {
+            if let Some(pool) = &self.sled_pool {
+                if let Ok(rules) = crate::sharing::store::list_share_rules(pool) {
+                    // MutationEvents are local-only and must NOT be shared
+                    // across the wire (per cross-user sharing protocol —
+                    // receiver namespace Q3). Only molecules get multiplexed.
+                    for rule in rules {
+                        if rule.active
+                            && rule.scope_matches(&schema.name)
+                            && !molecules_to_store.is_empty()
+                        {
+                            self.db_ops
+                                .batch_store_molecules(
+                                    molecules_to_store.clone(),
+                                    Some(&rule.share_prefix),
+                                )
+                                .await?;
+                        }
+                    }
+                }
+            }
         }
 
         Ok(())

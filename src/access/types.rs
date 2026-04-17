@@ -18,6 +18,7 @@ use std::fmt;
 ///
 /// Access check: `caller_tier >= field_min_tier`.
 /// Higher tier = more trusted = more access.
+#[cfg_attr(feature = "ts-bindings", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum TrustTier {
@@ -221,6 +222,7 @@ impl fmt::Display for AccessDenialReason {
 
 /// Per-field access policy combining trust tier and capability checks.
 /// Attached to `FieldCommon`. If `None`, field uses default (owner-only).
+#[cfg_attr(feature = "ts-bindings", derive(ts_rs::TS))]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FieldAccessPolicy {
     /// Which trust domain governs this field's access.

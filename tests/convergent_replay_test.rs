@@ -56,8 +56,8 @@ async fn atoms_always_accepted() {
     let e1 = put_entry(1, 200, "dev-a", b"atom:uuid-aaa", b"atom-data-a");
     let e2 = put_entry(2, 100, "dev-b", b"atom:uuid-bbb", b"atom-data-b");
 
-    engine.replay_entry(&e1).await.unwrap();
-    engine.replay_entry(&e2).await.unwrap();
+    engine.replay_entry(&e1, None).await.unwrap();
+    engine.replay_entry(&e2, None).await.unwrap();
 
     let kv = store.open_namespace("main").await.unwrap();
     assert_eq!(
@@ -78,8 +78,8 @@ async fn history_always_accepted() {
     let e1 = put_entry(1, 100, "dev-a", b"history:mol1:00100", b"event-a");
     let e2 = put_entry(2, 200, "dev-b", b"history:mol1:00200", b"event-b");
 
-    engine.replay_entry(&e1).await.unwrap();
-    engine.replay_entry(&e2).await.unwrap();
+    engine.replay_entry(&e1, None).await.unwrap();
+    engine.replay_entry(&e2, None).await.unwrap();
 
     let kv = store.open_namespace("main").await.unwrap();
     assert!(kv.get(b"history:mol1:00100").await.unwrap().is_some());
@@ -100,10 +100,10 @@ async fn ref_molecule_merge_single() {
 
     // Replay first, then second — second has a later written_at (created after)
     let e1 = put_entry(1, 100, "dev-a", b"ref:mol-1", &val_a);
-    engine.replay_entry(&e1).await.unwrap();
+    engine.replay_entry(&e1, None).await.unwrap();
 
     let e2 = put_entry(2, 200, "dev-b", b"ref:mol-1", &val_b);
-    engine.replay_entry(&e2).await.unwrap();
+    engine.replay_entry(&e2, None).await.unwrap();
 
     let kv = store.open_namespace("main").await.unwrap();
     let stored = kv.get(b"ref:mol-1").await.unwrap().unwrap();
@@ -129,10 +129,10 @@ async fn ref_molecule_merge_hash() {
     let val_b = serde_json::to_vec(&mol_b).unwrap();
 
     let e1 = put_entry(1, 100, "dev-a", b"ref:mol-hash-1", &val_a);
-    engine.replay_entry(&e1).await.unwrap();
+    engine.replay_entry(&e1, None).await.unwrap();
 
     let e2 = put_entry(2, 200, "dev-b", b"ref:mol-hash-1", &val_b);
-    engine.replay_entry(&e2).await.unwrap();
+    engine.replay_entry(&e2, None).await.unwrap();
 
     let kv = store.open_namespace("main").await.unwrap();
     let stored = kv.get(b"ref:mol-hash-1").await.unwrap().unwrap();
@@ -159,7 +159,7 @@ async fn ref_no_local_writes_incoming() {
     let val = serde_json::to_vec(&mol).unwrap();
 
     let e1 = put_entry(1, 100, "dev-a", b"ref:mol-new", &val);
-    engine.replay_entry(&e1).await.unwrap();
+    engine.replay_entry(&e1, None).await.unwrap();
 
     let kv = store.open_namespace("main").await.unwrap();
     let stored = kv.get(b"ref:mol-new").await.unwrap().unwrap();
@@ -180,10 +180,10 @@ async fn org_prefixed_ref_merges() {
     let val_b = serde_json::to_vec(&mol_b).unwrap();
 
     let e1 = put_entry(1, 100, "dev-a", b"org_abc:ref:mol-1", &val_a);
-    engine.replay_entry(&e1).await.unwrap();
+    engine.replay_entry(&e1, None).await.unwrap();
 
     let e2 = put_entry(2, 200, "dev-b", b"org_abc:ref:mol-1", &val_b);
-    engine.replay_entry(&e2).await.unwrap();
+    engine.replay_entry(&e2, None).await.unwrap();
 
     let kv = store.open_namespace("main").await.unwrap();
     let stored = kv.get(b"org_abc:ref:mol-1").await.unwrap().unwrap();
@@ -200,11 +200,11 @@ async fn ref_non_molecule_bytes_uses_incoming() {
 
     // Write raw bytes first (not valid molecule JSON)
     let e1 = put_entry(1, 100, "dev-a", b"ref:mol-raw", b"not-json");
-    engine.replay_entry(&e1).await.unwrap();
+    engine.replay_entry(&e1, None).await.unwrap();
 
     // Write more raw bytes — should overwrite since merge can't parse either
     let e2 = put_entry(2, 200, "dev-b", b"ref:mol-raw", b"also-not-json");
-    engine.replay_entry(&e2).await.unwrap();
+    engine.replay_entry(&e2, None).await.unwrap();
 
     let kv = store.open_namespace("main").await.unwrap();
     let stored = kv.get(b"ref:mol-raw").await.unwrap().unwrap();
@@ -231,10 +231,10 @@ async fn merge_conflict_stored_as_sync_conflict() {
     let ref_key = format!("ref:{}", mol_uuid);
 
     let e1 = put_entry(1, 100, "dev-a", ref_key.as_bytes(), &val_a);
-    engine.replay_entry(&e1).await.unwrap();
+    engine.replay_entry(&e1, None).await.unwrap();
 
     let e2 = put_entry(2, 200, "dev-b", ref_key.as_bytes(), &val_b);
-    engine.replay_entry(&e2).await.unwrap();
+    engine.replay_entry(&e2, None).await.unwrap();
 
     // Verify the merge result: mol_b (later written_at) should win
     let kv = store.open_namespace("main").await.unwrap();
@@ -272,10 +272,10 @@ async fn merge_no_conflict_for_same_atom() {
     let ref_key = format!("ref:{}", mol_uuid);
 
     let e1 = put_entry(1, 100, "dev-a", ref_key.as_bytes(), &val_a);
-    engine.replay_entry(&e1).await.unwrap();
+    engine.replay_entry(&e1, None).await.unwrap();
 
     let e2 = put_entry(2, 200, "dev-b", ref_key.as_bytes(), &val_b);
-    engine.replay_entry(&e2).await.unwrap();
+    engine.replay_entry(&e2, None).await.unwrap();
 
     // No conflict should be stored
     let kv = store.open_namespace("main").await.unwrap();
@@ -308,10 +308,10 @@ async fn hash_molecule_merge_conflict_stored() {
     let ref_key = format!("ref:{}", mol_uuid);
 
     let e1 = put_entry(1, 100, "dev-a", ref_key.as_bytes(), &val_a);
-    engine.replay_entry(&e1).await.unwrap();
+    engine.replay_entry(&e1, None).await.unwrap();
 
     let e2 = put_entry(2, 200, "dev-b", ref_key.as_bytes(), &val_b);
-    engine.replay_entry(&e2).await.unwrap();
+    engine.replay_entry(&e2, None).await.unwrap();
 
     // Verify merge result
     let kv = store.open_namespace("main").await.unwrap();
