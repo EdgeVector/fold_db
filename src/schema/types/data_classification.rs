@@ -1,4 +1,4 @@
-use crate::access::{trust_domain_for_data_domain, TrustTier};
+use crate::access::{trust_domain_for_data_domain, AccessTier};
 use serde::Serialize;
 
 /// Standard sensitivity levels for data classification.
@@ -123,8 +123,8 @@ impl DataClassification {
     }
 
     /// Returns the default trust tier for this classification's sensitivity level.
-    pub fn default_trust_tier(&self) -> TrustTier {
-        TrustTier::from_sensitivity(self.sensitivity_level)
+    pub fn default_trust_tier(&self) -> AccessTier {
+        AccessTier::from_sensitivity(self.sensitivity_level)
     }
 
     /// Returns the trust domain that governs access for this classification's data domain.
@@ -232,14 +232,14 @@ mod tests {
 
     #[test]
     fn test_default_trust_tier() {
-        use crate::access::TrustTier;
+        use crate::access::AccessTier;
 
         let cases = [
-            (0, TrustTier::Public),
-            (1, TrustTier::Outer),
-            (2, TrustTier::Trusted),
-            (3, TrustTier::Inner),
-            (4, TrustTier::Owner),
+            (0, AccessTier::Public),
+            (1, AccessTier::Outer),
+            (2, AccessTier::Trusted),
+            (3, AccessTier::Inner),
+            (4, AccessTier::Owner),
         ];
         for (level, expected_tier) in cases {
             let c = DataClassification::new(level, "general").unwrap();

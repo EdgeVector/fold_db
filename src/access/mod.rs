@@ -16,7 +16,7 @@ pub use capability::{CapabilityConstraint, CapabilityKind};
 pub use payment::PaymentGate;
 pub use types::{
     org_domain, trust_domain_for_data_domain, AccessContext, AccessDecision, AccessDenialReason,
-    FieldAccessPolicy, TrustMap, TrustTier, DOMAIN_FAMILY, DOMAIN_FINANCIAL, DOMAIN_HEALTH,
+    AccessMap, AccessTier, FieldAccessPolicy, DOMAIN_FAMILY, DOMAIN_FINANCIAL, DOMAIN_HEALTH,
     DOMAIN_MEDICAL, DOMAIN_PERSONAL,
 };
 
@@ -83,8 +83,8 @@ mod tests {
 
     fn policy_public_read() -> FieldAccessPolicy {
         FieldAccessPolicy {
-            min_read_tier: TrustTier::Public,
-            min_write_tier: TrustTier::Owner,
+            min_read_tier: AccessTier::Public,
+            min_write_tier: AccessTier::Owner,
             ..Default::default()
         }
     }
@@ -95,7 +95,7 @@ mod tests {
 
     #[test]
     fn test_no_policy_defaults_to_owner_only() {
-        let ctx = AccessContext::remote_single("bob", "personal", TrustTier::Trusted);
+        let ctx = AccessContext::remote_single("bob", "personal", AccessTier::Trusted);
         assert!(check_access(None, &ctx, "schema", None, false).is_denied());
         assert!(check_access(None, &ctx, "schema", None, true).is_denied());
 
@@ -114,24 +114,24 @@ mod tests {
 
     #[test]
     fn test_public_read_allows_any_tier() {
-        let ctx = AccessContext::remote_single("bob", "personal", TrustTier::Public);
+        let ctx = AccessContext::remote_single("bob", "personal", AccessTier::Public);
         let policy = policy_public_read();
         assert!(check_access(Some(&policy), &ctx, "schema", None, false).is_granted());
     }
 
     #[test]
     fn test_owner_only_blocks_remote_read() {
-        let ctx = AccessContext::remote_single("bob", "personal", TrustTier::Inner);
+        let ctx = AccessContext::remote_single("bob", "personal", AccessTier::Inner);
         let policy = policy_owner_only();
         assert!(check_access(Some(&policy), &ctx, "schema", None, false).is_denied());
     }
 
     #[test]
     fn test_write_requires_higher_tier() {
-        let ctx = AccessContext::remote_single("bob", "personal", TrustTier::Trusted);
+        let ctx = AccessContext::remote_single("bob", "personal", AccessTier::Trusted);
         let policy = FieldAccessPolicy {
-            min_read_tier: TrustTier::Outer,
-            min_write_tier: TrustTier::Inner,
+            min_read_tier: AccessTier::Outer,
+            min_write_tier: AccessTier::Inner,
             ..Default::default()
         };
         // Trusted (2) >= Outer (1) → read granted
@@ -158,7 +158,7 @@ mod tests {
 
     #[test]
     fn test_payment_gate_blocks_unpaid() {
-        let ctx = AccessContext::remote_single("bob", "personal", TrustTier::Inner);
+        let ctx = AccessContext::remote_single("bob", "personal", AccessTier::Inner);
         let policy = policy_public_read();
         let gate = PaymentGate::Fixed(5.0);
         assert!(check_access(Some(&policy), &ctx, "paid_schema", Some(&gate), false).is_denied());
@@ -166,7 +166,7 @@ mod tests {
 
     #[test]
     fn test_payment_gate_allows_paid() {
-        let mut ctx = AccessContext::remote_single("bob", "personal", TrustTier::Inner);
+        let mut ctx = AccessContext::remote_single("bob", "personal", AccessTier::Inner);
         ctx.paid_schemas.insert("paid_schema".to_string());
         let policy = policy_public_read();
         let gate = PaymentGate::Fixed(5.0);
@@ -176,15 +176,15 @@ mod tests {
     #[test]
     fn test_domain_aware_access_check() {
         let mut tiers = HashMap::new();
-        tiers.insert("health".to_string(), TrustTier::Inner);
-        tiers.insert("personal".to_string(), TrustTier::Trusted);
+        tiers.insert("health".to_string(), AccessTier::Inner);
+        tiers.insert("personal".to_string(), AccessTier::Trusted);
         let ctx = AccessContext::remote("bob", tiers);
 
         // Health field with min Trusted → Bob at Inner(3) → granted
         let health_policy = FieldAccessPolicy {
             trust_domain: "health".to_string(),
-            min_read_tier: TrustTier::Trusted,
-            min_write_tier: TrustTier::Owner,
+            min_read_tier: AccessTier::Trusted,
+            min_write_tier: AccessTier::Owner,
             capabilities: vec![],
         };
         assert!(check_access(Some(&health_policy), &ctx, "schema", None, false).is_granted());
@@ -192,8 +192,8 @@ mod tests {
         // Personal field with min Inner → Bob at Trusted(2) → denied
         let personal_policy = FieldAccessPolicy {
             trust_domain: "personal".to_string(),
-            min_read_tier: TrustTier::Inner,
-            min_write_tier: TrustTier::Owner,
+            min_read_tier: AccessTier::Inner,
+            min_write_tier: AccessTier::Owner,
             capabilities: vec![],
         };
         assert!(check_access(Some(&personal_policy), &ctx, "schema", None, false).is_denied());
@@ -201,8 +201,8 @@ mod tests {
         // Financial field → Bob not in financial domain → denied
         let financial_policy = FieldAccessPolicy {
             trust_domain: "financial".to_string(),
-            min_read_tier: TrustTier::Outer,
-            min_write_tier: TrustTier::Owner,
+            min_read_tier: AccessTier::Outer,
+            min_write_tier: AccessTier::Owner,
             capabilities: vec![],
         };
         assert!(check_access(Some(&financial_policy), &ctx, "schema", None, false).is_denied());
@@ -211,8 +211,8 @@ mod tests {
     #[test]
     fn test_all_layers_combined() {
         let policy = FieldAccessPolicy {
-            min_read_tier: TrustTier::Outer,
-            min_write_tier: TrustTier::Owner,
+            min_read_tier: AccessTier::Outer,
+            min_write_tier: AccessTier::Owner,
             capabilities: vec![CapabilityConstraint::new(
                 "pk_bob",
                 CapabilityKind::Read,
@@ -222,7 +222,7 @@ mod tests {
         };
         let gate = PaymentGate::Fixed(1.0);
 
-        let mut ctx = AccessContext::remote_single("bob", "personal", TrustTier::Inner);
+        let mut ctx = AccessContext::remote_single("bob", "personal", AccessTier::Inner);
         ctx.public_keys = vec!["pk_bob".to_string()];
         ctx.paid_schemas.insert("schema".to_string());
 

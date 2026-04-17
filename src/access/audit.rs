@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use super::types::{AccessDecision, TrustTier};
+use super::types::{AccessDecision, AccessTier};
 
 /// What kind of action was audited
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -21,7 +21,7 @@ pub enum AuditAction {
     },
     TrustGrant {
         user_id: String,
-        tier: TrustTier,
+        tier: AccessTier,
     },
     TrustRevoke {
         user_id: String,
@@ -35,7 +35,7 @@ pub struct AuditEvent {
     pub timestamp: DateTime<Utc>,
     pub user_id: String,
     pub action: AuditAction,
-    pub trust_tier: Option<TrustTier>,
+    pub trust_tier: Option<AccessTier>,
     pub decision_granted: bool,
 }
 
@@ -43,7 +43,7 @@ impl AuditEvent {
     pub fn new(
         user_id: impl Into<String>,
         action: AuditAction,
-        trust_tier: Option<TrustTier>,
+        trust_tier: Option<AccessTier>,
         decision: &AccessDecision,
     ) -> Self {
         Self {
@@ -63,7 +63,7 @@ impl AuditEvent {
             timestamp: Utc::now(),
             user_id: user_id.into(),
             action,
-            trust_tier: Some(TrustTier::Owner),
+            trust_tier: Some(AccessTier::Owner),
             decision_granted: true,
         }
     }
@@ -132,7 +132,7 @@ mod tests {
                 schema_name: "contacts".into(),
                 fields: vec!["name".into(), "email".into()],
             },
-            Some(TrustTier::Owner),
+            Some(AccessTier::Owner),
             &AccessDecision::Granted,
         ));
 
@@ -142,11 +142,11 @@ mod tests {
                 schema_name: "contacts".into(),
                 reason: "insufficient trust tier".into(),
             },
-            Some(TrustTier::Outer),
+            Some(AccessTier::Outer),
             &AccessDecision::Denied(super::super::types::AccessDenialReason::InsufficientTrust {
                 domain: "personal".into(),
-                required: TrustTier::Trusted,
-                actual: TrustTier::Outer,
+                required: AccessTier::Trusted,
+                actual: AccessTier::Outer,
             }),
         ));
 
@@ -164,11 +164,11 @@ mod tests {
             "alice",
             AuditAction::TrustGrant {
                 user_id: "bob".into(),
-                tier: TrustTier::Trusted,
+                tier: AccessTier::Trusted,
             },
         );
         assert!(event.decision_granted);
-        assert_eq!(event.trust_tier, Some(TrustTier::Owner));
+        assert_eq!(event.trust_tier, Some(AccessTier::Owner));
     }
 
     #[test]
@@ -181,7 +181,7 @@ mod tests {
                     schema_name: "test".into(),
                     fields: vec![],
                 },
-                Some(TrustTier::Owner),
+                Some(AccessTier::Owner),
                 &AccessDecision::Granted,
             ));
         }
@@ -198,7 +198,7 @@ mod tests {
                 schema_name: "notes".into(),
                 fields: vec!["content".into()],
             },
-            Some(TrustTier::Owner),
+            Some(AccessTier::Owner),
             &AccessDecision::Granted,
         ));
 

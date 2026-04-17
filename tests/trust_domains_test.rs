@@ -1,15 +1,15 @@
 //! Trust domains integration tests.
 //!
-//! Verifies that TrustMap (HashMap<String, TrustTier>) per-domain storage works:
+//! Verifies that AccessMap (HashMap<String, AccessTier>) per-domain storage works:
 //! grant/revoke trust, domain independence, well-known constants, org domains.
 
 use std::collections::HashMap;
 
 use fold_db::access::types::{
-    org_domain, TrustTier, DOMAIN_FAMILY, DOMAIN_FINANCIAL, DOMAIN_HEALTH, DOMAIN_MEDICAL,
+    org_domain, AccessTier, DOMAIN_FAMILY, DOMAIN_FINANCIAL, DOMAIN_HEALTH, DOMAIN_MEDICAL,
     DOMAIN_PERSONAL,
 };
-use fold_db::access::TrustMap;
+use fold_db::access::AccessMap;
 use fold_db::fold_db_core::FoldDB;
 
 async fn make_folddb(tmp: &tempfile::TempDir) -> FoldDB {
@@ -18,7 +18,7 @@ async fn make_folddb(tmp: &tempfile::TempDir) -> FoldDB {
         .expect("Failed to create FoldDB")
 }
 
-// ===== Load/Store TrustMap =====
+// ===== Load/Store AccessMap =====
 
 #[tokio::test]
 async fn load_empty_trust_map_returns_empty() {
@@ -39,9 +39,9 @@ async fn store_and_load_trust_map() {
     let db = make_folddb(&tmp).await;
     let ops = db.get_db_ops();
 
-    let mut map: TrustMap = HashMap::new();
-    map.insert("bob".to_string(), TrustTier::Trusted);
-    map.insert("charlie".to_string(), TrustTier::Inner);
+    let mut map: AccessMap = HashMap::new();
+    map.insert("bob".to_string(), AccessTier::Trusted);
+    map.insert("charlie".to_string(), AccessTier::Inner);
 
     ops.store_trust_map_for_domain(DOMAIN_PERSONAL, &map)
         .await
@@ -51,8 +51,8 @@ async fn store_and_load_trust_map() {
         .load_trust_map_for_domain(DOMAIN_PERSONAL)
         .await
         .unwrap();
-    assert_eq!(loaded.get("bob"), Some(&TrustTier::Trusted));
-    assert_eq!(loaded.get("charlie"), Some(&TrustTier::Inner));
+    assert_eq!(loaded.get("bob"), Some(&AccessTier::Trusted));
+    assert_eq!(loaded.get("charlie"), Some(&AccessTier::Inner));
     assert_eq!(loaded.get("dave"), None);
 }
 
@@ -64,17 +64,17 @@ async fn grant_trust_inserts_into_map() {
     let db = make_folddb(&tmp).await;
     let ops = db.get_db_ops();
 
-    let mut map: TrustMap = ops.load_trust_map_for_domain(DOMAIN_HEALTH).await.unwrap();
+    let mut map: AccessMap = ops.load_trust_map_for_domain(DOMAIN_HEALTH).await.unwrap();
     assert!(map.is_empty());
 
     // Grant trust
-    map.insert("doctor".to_string(), TrustTier::Inner);
+    map.insert("doctor".to_string(), AccessTier::Inner);
     ops.store_trust_map_for_domain(DOMAIN_HEALTH, &map)
         .await
         .unwrap();
 
     let loaded = ops.load_trust_map_for_domain(DOMAIN_HEALTH).await.unwrap();
-    assert_eq!(loaded.get("doctor"), Some(&TrustTier::Inner));
+    assert_eq!(loaded.get("doctor"), Some(&AccessTier::Inner));
 }
 
 #[tokio::test]
@@ -83,9 +83,9 @@ async fn revoke_trust_removes_from_map() {
     let db = make_folddb(&tmp).await;
     let ops = db.get_db_ops();
 
-    let mut map: TrustMap = HashMap::new();
-    map.insert("bob".to_string(), TrustTier::Trusted);
-    map.insert("charlie".to_string(), TrustTier::Outer);
+    let mut map: AccessMap = HashMap::new();
+    map.insert("bob".to_string(), AccessTier::Trusted);
+    map.insert("charlie".to_string(), AccessTier::Outer);
     ops.store_trust_map_for_domain(DOMAIN_PERSONAL, &map)
         .await
         .unwrap();
@@ -101,7 +101,7 @@ async fn revoke_trust_removes_from_map() {
         .await
         .unwrap();
     assert_eq!(loaded.get("bob"), None);
-    assert_eq!(loaded.get("charlie"), Some(&TrustTier::Outer));
+    assert_eq!(loaded.get("charlie"), Some(&AccessTier::Outer));
 }
 
 // ===== Multiple Domains Stored Independently =====
@@ -113,15 +113,15 @@ async fn domains_are_independent() {
     let ops = db.get_db_ops();
 
     // Grant trust in personal domain
-    let mut personal: TrustMap = HashMap::new();
-    personal.insert("bob".to_string(), TrustTier::Trusted);
+    let mut personal: AccessMap = HashMap::new();
+    personal.insert("bob".to_string(), AccessTier::Trusted);
     ops.store_trust_map_for_domain(DOMAIN_PERSONAL, &personal)
         .await
         .unwrap();
 
     // Grant trust in health domain
-    let mut health: TrustMap = HashMap::new();
-    health.insert("doctor".to_string(), TrustTier::Inner);
+    let mut health: AccessMap = HashMap::new();
+    health.insert("doctor".to_string(), AccessTier::Inner);
     ops.store_trust_map_for_domain(DOMAIN_HEALTH, &health)
         .await
         .unwrap();
@@ -131,12 +131,12 @@ async fn domains_are_independent() {
         .load_trust_map_for_domain(DOMAIN_PERSONAL)
         .await
         .unwrap();
-    assert_eq!(personal_loaded.get("bob"), Some(&TrustTier::Trusted));
+    assert_eq!(personal_loaded.get("bob"), Some(&AccessTier::Trusted));
     assert_eq!(personal_loaded.get("doctor"), None);
 
     // Verify: doctor is in health, not in personal
     let health_loaded = ops.load_trust_map_for_domain(DOMAIN_HEALTH).await.unwrap();
-    assert_eq!(health_loaded.get("doctor"), Some(&TrustTier::Inner));
+    assert_eq!(health_loaded.get("doctor"), Some(&AccessTier::Inner));
     assert_eq!(health_loaded.get("bob"), None);
 }
 
@@ -156,15 +156,15 @@ async fn many_domains_coexist() {
 
     // Store distinct users in each domain with different tiers
     let tiers = [
-        TrustTier::Outer,
-        TrustTier::Trusted,
-        TrustTier::Inner,
-        TrustTier::Trusted,
-        TrustTier::Inner,
+        AccessTier::Outer,
+        AccessTier::Trusted,
+        AccessTier::Inner,
+        AccessTier::Trusted,
+        AccessTier::Inner,
     ];
 
     for (i, domain) in domains.iter().enumerate() {
-        let mut map: TrustMap = HashMap::new();
+        let mut map: AccessMap = HashMap::new();
         let user = format!("user_{}", i);
         map.insert(user, tiers[i]);
         ops.store_trust_map_for_domain(domain, &map).await.unwrap();
@@ -217,7 +217,7 @@ async fn list_domains_after_storing() {
     let db = make_folddb(&tmp).await;
     let ops = db.get_db_ops();
 
-    let empty: TrustMap = HashMap::new();
+    let empty: AccessMap = HashMap::new();
     ops.store_trust_map_for_domain(DOMAIN_PERSONAL, &empty)
         .await
         .unwrap();
@@ -241,15 +241,15 @@ async fn delete_domain_removes_it() {
     let db = make_folddb(&tmp).await;
     let ops = db.get_db_ops();
 
-    let mut map: TrustMap = HashMap::new();
-    map.insert("bob".to_string(), TrustTier::Inner);
+    let mut map: AccessMap = HashMap::new();
+    map.insert("bob".to_string(), AccessTier::Inner);
     ops.store_trust_map_for_domain(DOMAIN_HEALTH, &map)
         .await
         .unwrap();
 
     // Verify it exists
     let loaded = ops.load_trust_map_for_domain(DOMAIN_HEALTH).await.unwrap();
-    assert_eq!(loaded.get("bob"), Some(&TrustTier::Inner));
+    assert_eq!(loaded.get("bob"), Some(&AccessTier::Inner));
 
     // Delete it
     ops.delete_trust_domain(DOMAIN_HEALTH).await.unwrap();
@@ -285,15 +285,15 @@ async fn org_domain_stored_and_listed() {
     let ops = db.get_db_ops();
 
     let domain = org_domain("my_org_hash");
-    let mut map: TrustMap = HashMap::new();
-    map.insert("member1".to_string(), TrustTier::Trusted);
-    map.insert("member2".to_string(), TrustTier::Inner);
+    let mut map: AccessMap = HashMap::new();
+    map.insert("member1".to_string(), AccessTier::Trusted);
+    map.insert("member2".to_string(), AccessTier::Inner);
     ops.store_trust_map_for_domain(&domain, &map).await.unwrap();
 
     // Load it back
     let loaded = ops.load_trust_map_for_domain(&domain).await.unwrap();
-    assert_eq!(loaded.get("member1"), Some(&TrustTier::Trusted));
-    assert_eq!(loaded.get("member2"), Some(&TrustTier::Inner));
+    assert_eq!(loaded.get("member1"), Some(&AccessTier::Trusted));
+    assert_eq!(loaded.get("member2"), Some(&AccessTier::Inner));
 
     // Verify it shows up in domain list
     let domains = ops.list_trust_domains().await.unwrap();
@@ -310,7 +310,7 @@ async fn backwards_compatible_load_store_uses_personal() {
 
     // Use the backwards-compatible methods (no domain param)
     let mut map = ops.load_trust_map().await.unwrap();
-    map.insert("bob".to_string(), TrustTier::Trusted);
+    map.insert("bob".to_string(), AccessTier::Trusted);
     ops.store_trust_map(&map).await.unwrap();
 
     // Should be stored in "personal" domain
@@ -318,5 +318,5 @@ async fn backwards_compatible_load_store_uses_personal() {
         .load_trust_map_for_domain(DOMAIN_PERSONAL)
         .await
         .unwrap();
-    assert_eq!(personal.get("bob"), Some(&TrustTier::Trusted));
+    assert_eq!(personal.get("bob"), Some(&AccessTier::Trusted));
 }
