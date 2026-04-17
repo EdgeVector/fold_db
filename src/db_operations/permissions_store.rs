@@ -10,7 +10,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::access::types::{TrustMap, DOMAIN_PERSONAL};
+use crate::access::types::{AccessMap, DOMAIN_PERSONAL};
 use crate::access::{AuditEvent, AuditLog};
 use crate::constants::SINGLE_PUBLIC_KEY_ID;
 use crate::schema::SchemaError;
@@ -92,15 +92,15 @@ impl PermissionsStore {
     /// On first call for `personal`, migrates the legacy `trust_graph` key to
     /// `trust_graph:personal`. If deserialization of old format fails, returns
     /// an empty map (graceful migration).
-    pub async fn load_trust_map_for_domain(&self, domain: &str) -> Result<TrustMap, SchemaError> {
+    pub async fn load_trust_map_for_domain(&self, domain: &str) -> Result<AccessMap, SchemaError> {
         let key = Self::trust_graph_key(domain);
-        match self.permissions_store.get_item::<TrustMap>(&key).await {
+        match self.permissions_store.get_item::<AccessMap>(&key).await {
             Ok(Some(map)) => Ok(map),
             Ok(None) => {
                 if domain == DOMAIN_PERSONAL {
                     if let Ok(Some(legacy)) = self
                         .permissions_store
-                        .get_item::<TrustMap>(LEGACY_TRUST_GRAPH_KEY)
+                        .get_item::<AccessMap>(LEGACY_TRUST_GRAPH_KEY)
                         .await
                     {
                         let _ = self.permissions_store.put_item(&key, &legacy).await;
@@ -118,7 +118,7 @@ impl PermissionsStore {
     }
 
     /// Load the trust map (default "personal" domain).
-    pub async fn load_trust_map(&self) -> Result<TrustMap, SchemaError> {
+    pub async fn load_trust_map(&self) -> Result<AccessMap, SchemaError> {
         self.load_trust_map_for_domain(DOMAIN_PERSONAL).await
     }
 
@@ -126,7 +126,7 @@ impl PermissionsStore {
     pub async fn store_trust_map_for_domain(
         &self,
         domain: &str,
-        map: &TrustMap,
+        map: &AccessMap,
     ) -> Result<(), SchemaError> {
         let key = Self::trust_graph_key(domain);
         self.permissions_store
@@ -141,7 +141,7 @@ impl PermissionsStore {
     }
 
     /// Persist the trust map (default "personal" domain).
-    pub async fn store_trust_map(&self, map: &TrustMap) -> Result<(), SchemaError> {
+    pub async fn store_trust_map(&self, map: &AccessMap) -> Result<(), SchemaError> {
         self.store_trust_map_for_domain(DOMAIN_PERSONAL, map).await
     }
 

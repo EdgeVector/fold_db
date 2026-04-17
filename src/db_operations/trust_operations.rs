@@ -2,7 +2,7 @@
 //! persistence. Real implementations live on
 //! [`super::permissions_store::PermissionsStore`].
 
-use crate::access::types::TrustMap;
+use crate::access::types::AccessMap;
 use crate::access::{AuditEvent, AuditLog};
 use crate::schema::SchemaError;
 
@@ -10,12 +10,12 @@ use super::DbOperations;
 
 impl DbOperations {
     /// Load the trust map for a specific domain.
-    pub async fn load_trust_map_for_domain(&self, domain: &str) -> Result<TrustMap, SchemaError> {
+    pub async fn load_trust_map_for_domain(&self, domain: &str) -> Result<AccessMap, SchemaError> {
         self.permissions().load_trust_map_for_domain(domain).await
     }
 
     /// Load the trust map (default "personal" domain).
-    pub async fn load_trust_map(&self) -> Result<TrustMap, SchemaError> {
+    pub async fn load_trust_map(&self) -> Result<AccessMap, SchemaError> {
         self.permissions().load_trust_map().await
     }
 
@@ -23,7 +23,7 @@ impl DbOperations {
     pub async fn store_trust_map_for_domain(
         &self,
         domain: &str,
-        map: &TrustMap,
+        map: &AccessMap,
     ) -> Result<(), SchemaError> {
         self.permissions()
             .store_trust_map_for_domain(domain, map)
@@ -31,7 +31,7 @@ impl DbOperations {
     }
 
     /// Persist the trust map (default "personal" domain).
-    pub async fn store_trust_map(&self, map: &TrustMap) -> Result<(), SchemaError> {
+    pub async fn store_trust_map(&self, map: &AccessMap) -> Result<(), SchemaError> {
         self.permissions().store_trust_map(map).await
     }
 

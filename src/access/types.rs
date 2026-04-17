@@ -69,20 +69,6 @@ impl fmt::Display for AccessTier {
 /// Flat access-graph map: public key → tier. One map per domain, stored in Sled.
 pub type AccessMap = HashMap<String, AccessTier>;
 
-// ─── Backward-compat aliases (manifesto proposal #4: TrustX → AccessX) ────
-//
-// These exist so the rename rolls out across repos incrementally without a
-// big-bang migration. Consumers in fold_db_node, exemem-infra, tests, and
-// the rest of this crate continue to compile unchanged. Remove once every
-// call site in the workspace has migrated to `AccessTier` / `AccessMap`.
-// See `docs/designs/platform_manifesto.md`.
-
-/// Deprecated alias — use [`AccessTier`] instead.
-pub type TrustTier = AccessTier;
-
-/// Deprecated alias — use [`AccessMap`] instead.
-pub type TrustMap = AccessMap;
-
 /// Well-known trust domain names.
 pub const DOMAIN_PERSONAL: &str = "personal";
 pub const DOMAIN_FAMILY: &str = "family";
