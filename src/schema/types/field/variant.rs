@@ -260,7 +260,7 @@ impl FieldVariant {
         // Get events AFTER as_of, in reverse chronological order
         let mut events_to_undo: Vec<&MutationEvent> =
             events.iter().filter(|e| e.timestamp > as_of).collect();
-        events_to_undo.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+        events_to_undo.sort_by_key(|e| std::cmp::Reverse(e.timestamp));
 
         // Undo each event (restore old state)
         for event in events_to_undo {

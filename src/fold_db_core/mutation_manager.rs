@@ -476,7 +476,7 @@ impl MutationManager {
             if key_value.hash.is_none() && key_value.range.is_none() {
                 let mut hasher = Sha256::new();
                 let mut sorted: Vec<_> = mutation.fields_and_values.iter().collect();
-                sorted.sort_by(|(a, _), (b, _)| a.cmp(b));
+                sorted.sort_by_key(|(a, _)| (*a).clone());
                 for (k, v) in sorted {
                     hasher.update(k.as_bytes());
                     hasher.update(v.to_string().as_bytes());
@@ -507,13 +507,13 @@ impl MutationManager {
                             schema_name, mutation.uuid
                         )));
                     }
-                    DeclarativeSchemaType::HashRange => {
-                        if key_value.hash.is_none() || key_value.range.is_none() {
-                            return Err(SchemaError::InvalidData(format!(
-                                "HashRange schema '{}' mutation {} requires both hash and range keys, got hash={:?} range={:?}",
-                                schema_name, mutation.uuid, key_value.hash, key_value.range
-                            )));
-                        }
+                    DeclarativeSchemaType::HashRange
+                        if key_value.hash.is_none() || key_value.range.is_none() =>
+                    {
+                        return Err(SchemaError::InvalidData(format!(
+                            "HashRange schema '{}' mutation {} requires both hash and range keys, got hash={:?} range={:?}",
+                            schema_name, mutation.uuid, key_value.hash, key_value.range
+                        )));
                     }
                     _ => {}
                 }
