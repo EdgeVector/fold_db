@@ -215,3 +215,20 @@ async fn test_null_field_skipped() {
     assert_eq!(entries.len(), 1, "Null field should be skipped");
     assert_eq!(entries[0].field_name, "content");
 }
+
+#[cfg(feature = "face-detection")]
+#[tokio::test]
+async fn test_detect_faces_errors_without_processor() {
+    let mgr = make_manager().await;
+    let result = mgr.detect_faces(b"not-an-image");
+    assert!(
+        result.is_err(),
+        "expected error when no face processor configured"
+    );
+    let msg = format!("{:?}", result.unwrap_err());
+    assert!(
+        msg.contains("No face processor configured"),
+        "unexpected error: {}",
+        msg
+    );
+}

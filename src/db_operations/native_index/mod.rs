@@ -14,6 +14,7 @@ pub use embedding_index::FaceListEntry;
 pub use embedding_model::{Embedder, FastEmbedModel};
 #[cfg(any(test, feature = "test-utils"))]
 pub use embedding_model::{MockEmbeddingModel, ScriptedEmbeddingModel};
+pub use face::FaceEmbedding;
 pub use types::IndexResult;
 
 use crate::schema::types::key_value::KeyValue;
@@ -185,6 +186,16 @@ impl NativeIndexManager {
     #[cfg(feature = "face-detection")]
     pub fn set_face_processor(&self, processor: Arc<dyn FaceProcessor>) {
         let _ = self.face_processor.set(processor);
+    }
+
+    /// Detect faces and return embeddings without mutating the index. Callers that also want the index updated should use `index_faces`.
+    #[cfg(feature = "face-detection")]
+    pub fn detect_faces(&self, image_bytes: &[u8]) -> Result<Vec<FaceEmbedding>, SchemaError> {
+        let processor = self
+            .face_processor
+            .get()
+            .ok_or_else(|| SchemaError::InvalidData("No face processor configured".to_string()))?;
+        processor.detect_and_embed(image_bytes)
     }
 
     /// Detect faces in an image, embed each face, and store the embeddings.
