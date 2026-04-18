@@ -12,9 +12,9 @@ mod tests;
 pub use embedding_index::cosine_similarity;
 pub use embedding_index::FaceListEntry;
 pub use embedding_model::{Embedder, FastEmbedModel};
-pub use face::FaceEmbedding;
 #[cfg(any(test, feature = "test-utils"))]
 pub use embedding_model::{MockEmbeddingModel, ScriptedEmbeddingModel};
+pub use face::FaceEmbedding;
 pub use types::IndexResult;
 
 use crate::schema::types::key_value::KeyValue;
@@ -190,10 +190,7 @@ impl NativeIndexManager {
 
     /// Detect faces and return embeddings without mutating the index. Callers that also want the index updated should use `index_faces`.
     #[cfg(feature = "face-detection")]
-    pub fn detect_faces(
-        &self,
-        image_bytes: &[u8],
-    ) -> Result<Vec<FaceEmbedding>, SchemaError> {
+    pub fn detect_faces(&self, image_bytes: &[u8]) -> Result<Vec<FaceEmbedding>, SchemaError> {
         let processor = self
             .face_processor
             .get()
