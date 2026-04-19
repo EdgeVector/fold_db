@@ -1575,6 +1575,48 @@ impl SyncEngine {
     }
 
     // =========================================================================
+    // User-triggered snapshot backup
+    // =========================================================================
+
+    /// Create a snapshot of the current local store and upload it to the cloud.
+    ///
+    /// The snapshot is sealed with the personal crypto provider, uploaded under
+    /// both `snapshots/{seq}.enc` (point-in-time) and `snapshots/latest.enc`
+    /// (the key read by `bootstrap_target(0)` on new-device restore). Unlike
+    /// `compact`, this does NOT delete any log entries — it is an explicit
+    /// backup checkpoint users or the CLI can trigger on demand.
+    ///
+    /// Returns the sequence number of the uploaded snapshot.
+    pub async fn backup_snapshot(&self) -> SyncResult<u64> {
+        let current_seq = *self.seq.lock().await;
+        log::info!(
+            "backup_snapshot: creating snapshot at seq {} (device='{}')",
+            current_seq,
+            self.device_id,
+        );
+
+        let snapshot = Snapshot::create(self.store.as_ref(), &self.device_id, current_seq).await?;
+        let namespace_count = snapshot.namespaces.len();
+        let sealed = snapshot.seal(&self.crypto).await?;
+
+        let seq_name = format!("{current_seq}.enc");
+        let seq_url = self.auth.presign_snapshot_upload(&seq_name).await?;
+        self.s3.upload(&seq_url, sealed.clone()).await?;
+
+        let latest_url = self.auth.presign_snapshot_upload("latest.enc").await?;
+        self.s3.upload(&latest_url, sealed).await?;
+
+        log::info!(
+            "backup_snapshot: uploaded {} namespaces at seq {} as 'latest.enc' and '{}' (device='{}')",
+            namespace_count,
+            current_seq,
+            seq_name,
+            self.device_id,
+        );
+        Ok(current_seq)
+    }
+
+    // =========================================================================
     // Lock management
     // =========================================================================
 
