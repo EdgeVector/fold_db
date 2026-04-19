@@ -825,28 +825,64 @@ impl SyncEngine {
     }
 
     /// Upload entries to a single sync target.
+    ///
+    /// Personal targets (empty prefix) upload under each entry's own
+    /// client-assigned nanosecond `entry.seq`. Org targets let the server
+    /// atomically allocate a contiguous block of seqs via
+    /// `presign_upload_alloc`; each entry's `seq` is rewritten to its
+    /// server-assigned value before sealing so the S3 key, the sealed
+    /// payload, and the downloader's parsed seq all agree.
     async fn upload_entries(&self, target: &SyncTarget, entries: &[LogEntry]) -> SyncResult<usize> {
         if entries.is_empty() {
             return Ok(0);
         }
 
-        let mut sealed = Vec::with_capacity(entries.len());
-        for entry in entries {
-            let s = entry.seal(&target.crypto).await?;
-            sealed.push((entry.seq, s));
-        }
+        let is_org = !target.prefix.is_empty();
 
-        let seq_numbers: Vec<u64> = sealed.iter().map(|(seq, _)| *seq).collect();
-        let urls = self.auth.presign_upload(target, &seq_numbers).await?;
-
-        if urls.len() != sealed.len() {
-            return Err(SyncError::Auth(format!(
-                "expected {} presigned URLs for '{}', got {}",
-                sealed.len(),
-                target.label,
-                urls.len()
-            )));
-        }
+        let (sealed, urls): (
+            Vec<(u64, super::log::SealedLogEntry)>,
+            Vec<super::s3::PresignedUrl>,
+        ) = if is_org {
+            let pairs = self
+                .auth
+                .presign_upload_alloc(target, entries.len() as u32)
+                .await?;
+            if pairs.len() != entries.len() {
+                return Err(SyncError::Auth(format!(
+                    "expected {} server-assigned seqs for '{}', got {}",
+                    entries.len(),
+                    target.label,
+                    pairs.len(),
+                )));
+            }
+            let mut sealed = Vec::with_capacity(entries.len());
+            let mut urls = Vec::with_capacity(entries.len());
+            for (entry, (server_seq, url)) in entries.iter().zip(pairs) {
+                let mut rewritten = entry.clone();
+                rewritten.seq = server_seq;
+                let s = rewritten.seal(&target.crypto).await?;
+                sealed.push((server_seq, s));
+                urls.push(url);
+            }
+            (sealed, urls)
+        } else {
+            let mut sealed = Vec::with_capacity(entries.len());
+            for entry in entries {
+                let s = entry.seal(&target.crypto).await?;
+                sealed.push((entry.seq, s));
+            }
+            let seq_numbers: Vec<u64> = sealed.iter().map(|(seq, _)| *seq).collect();
+            let urls = self.auth.presign_upload(target, &seq_numbers).await?;
+            if urls.len() != sealed.len() {
+                return Err(SyncError::Auth(format!(
+                    "expected {} presigned URLs for '{}', got {}",
+                    sealed.len(),
+                    target.label,
+                    urls.len()
+                )));
+            }
+            (sealed, urls)
+        };
 
         let mut uploaded_count = 0;
         for ((seq, s), url) in sealed.into_iter().zip(urls.iter()) {

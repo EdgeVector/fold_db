@@ -53,6 +53,10 @@ pub struct PresignedResponse {
     pub ok: bool,
     #[serde(default)]
     pub urls: Vec<PresignedUrl>,
+    /// Sequence numbers assigned by the server (only populated for
+    /// server-allocated org uploads). Ordered alongside `urls`.
+    #[serde(default)]
+    pub seq_numbers: Vec<u64>,
     #[serde(default)]
     pub error: Option<String>,
 }
@@ -317,6 +321,13 @@ impl AuthClient {
 
     /// Post to the presign endpoint and parse the response, returning all URLs.
     async fn presign_urls(&self, body: serde_json::Value) -> SyncResult<Vec<PresignedUrl>> {
+        self.presign_response(body).await.map(|r| r.urls)
+    }
+
+    /// Post to the presign endpoint and return the full parsed response —
+    /// including any server-assigned `seq_numbers` (for server-allocated org
+    /// uploads).
+    async fn presign_response(&self, body: serde_json::Value) -> SyncResult<PresignedResponse> {
         let action = body
             .get("action")
             .and_then(|v| v.as_str())
@@ -329,7 +340,7 @@ impl AuthClient {
                 parsed.error.unwrap_or_else(|| format!("{action} failed")),
             ));
         }
-        Ok(parsed.urls)
+        Ok(parsed)
     }
 
     /// Presign multiple URLs for a log action (upload or download) on a sync target.
@@ -357,6 +368,50 @@ impl AuthClient {
     ) -> SyncResult<Vec<PresignedUrl>> {
         self.presign_log_urls("presign_log_upload", target, seq_numbers)
             .await
+    }
+
+    /// Ask the server to atomically allocate `count` sequence numbers for an
+    /// org upload and presign matching URLs in the same request. Returns the
+    /// server-assigned seqs paired with their presigned URLs, sorted in
+    /// ascending seq order.
+    ///
+    /// Only valid for org targets (non-empty prefix) — personal uploads
+    /// must keep client-assigned nanosecond seqs because they use the
+    /// single-writer device lock for ordering.
+    pub async fn presign_upload_alloc(
+        &self,
+        target: &super::org_sync::SyncTarget,
+        count: u32,
+    ) -> SyncResult<Vec<(u64, PresignedUrl)>> {
+        if target.prefix.is_empty() {
+            return Err(SyncError::Auth(
+                "presign_upload_alloc requires an org target (empty prefix)".to_string(),
+            ));
+        }
+        if count == 0 {
+            return Ok(Vec::new());
+        }
+        let body = serde_json::json!({
+            "action": "presign_log_upload",
+            "org_hash": target.prefix,
+            "count": count,
+        });
+        let resp = self.presign_response(body).await?;
+        if resp.seq_numbers.len() != resp.urls.len() {
+            return Err(SyncError::Auth(format!(
+                "presign_upload_alloc: seq_numbers ({}) and urls ({}) length mismatch",
+                resp.seq_numbers.len(),
+                resp.urls.len(),
+            )));
+        }
+        if resp.seq_numbers.len() != count as usize {
+            return Err(SyncError::Auth(format!(
+                "presign_upload_alloc: expected {} seqs, got {}",
+                count,
+                resp.seq_numbers.len(),
+            )));
+        }
+        Ok(resp.seq_numbers.into_iter().zip(resp.urls).collect())
     }
 
     /// Presign URLs for downloading log entries from a sync target.
@@ -571,5 +626,86 @@ mod tests {
         let result = cb().await;
         assert!(result.is_err());
         assert_eq!(result.unwrap_err(), "network down");
+    }
+
+    #[tokio::test]
+    async fn presign_upload_alloc_rejects_personal_target() {
+        use crate::crypto::CryptoProvider;
+        use crate::sync::org_sync::SyncTarget;
+
+        let http = Arc::new(Client::new());
+        let client = AuthClient::new(
+            http,
+            "http://localhost:9999".to_string(),
+            SyncAuth::ApiKey("test".into()),
+        );
+
+        // Personal target (empty prefix) must be rejected — server-allocated
+        // seqs are only valid for orgs.
+        let target = SyncTarget {
+            label: "personal".to_string(),
+            prefix: String::new(),
+            crypto: Arc::new(crate::crypto::NoOpCryptoProvider) as Arc<dyn CryptoProvider>,
+        };
+        let result = client.presign_upload_alloc(&target, 3).await;
+        assert!(result.is_err(), "personal target should be rejected");
+        let msg = format!("{:?}", result.unwrap_err());
+        assert!(
+            msg.contains("org target"),
+            "error message should mention org target requirement: {msg}"
+        );
+    }
+
+    #[tokio::test]
+    async fn presign_upload_alloc_count_zero_returns_empty() {
+        use crate::crypto::CryptoProvider;
+        use crate::sync::org_sync::SyncTarget;
+
+        let http = Arc::new(Client::new());
+        let client = AuthClient::new(
+            http,
+            "http://localhost:9999".to_string(),
+            SyncAuth::ApiKey("test".into()),
+        );
+
+        let target = SyncTarget {
+            label: "test-org".to_string(),
+            prefix: "0".repeat(64),
+            crypto: Arc::new(crate::crypto::NoOpCryptoProvider) as Arc<dyn CryptoProvider>,
+        };
+        // count = 0 returns immediately with an empty vec and does not hit
+        // the network (so the localhost:9999 non-server does not matter).
+        let result = client.presign_upload_alloc(&target, 0).await.unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn presigned_response_parses_server_assigned_seq_numbers() {
+        // When the server allocates seqs for an org upload, it returns them
+        // alongside the URLs. Old servers (personal upload path) return only
+        // `urls` and the default empty `seq_numbers` must deserialize cleanly.
+        let json_with_seqs = serde_json::json!({
+            "ok": true,
+            "urls": [
+                {"url": "https://s3.example/put-42", "method": "PUT", "expires_in_secs": 900},
+                {"url": "https://s3.example/put-43", "method": "PUT", "expires_in_secs": 900},
+            ],
+            "seq_numbers": [42, 43],
+        });
+        let parsed: PresignedResponse = serde_json::from_value(json_with_seqs).unwrap();
+        assert!(parsed.ok);
+        assert_eq!(parsed.urls.len(), 2);
+        assert_eq!(parsed.seq_numbers, vec![42, 43]);
+
+        let json_without_seqs = serde_json::json!({
+            "ok": true,
+            "urls": [
+                {"url": "https://s3.example/put-1", "method": "PUT", "expires_in_secs": 900},
+            ],
+        });
+        let parsed: PresignedResponse = serde_json::from_value(json_without_seqs).unwrap();
+        assert!(parsed.ok);
+        assert_eq!(parsed.urls.len(), 1);
+        assert!(parsed.seq_numbers.is_empty());
     }
 }
