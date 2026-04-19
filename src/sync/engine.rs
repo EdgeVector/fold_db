@@ -1595,8 +1595,7 @@ impl SyncEngine {
             self.device_id,
         );
 
-        let snapshot =
-            Snapshot::create(self.store.as_ref(), &self.device_id, current_seq).await?;
+        let snapshot = Snapshot::create(self.store.as_ref(), &self.device_id, current_seq).await?;
         let namespace_count = snapshot.namespaces.len();
         let sealed = snapshot.seal(&self.crypto).await?;
 
