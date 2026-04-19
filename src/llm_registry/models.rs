@@ -5,12 +5,15 @@
 
 // ---- Anthropic Models ----
 
-/// Fast, cheap model for structured classification tasks.
-/// Used by: schema service field classification (`fold_db`).
+/// Fast, cheap model for structured classification tasks. Default for ingestion.
+/// Used by: schema service field classification (`fold_db`),
+/// `fold_db_node` ingestion schema analysis (matches Sonnet quality at ~67%
+/// the cost and ~2.5x the speed — see `autoresearch-ingestion/evaluate_anthropic.py`).
 pub const ANTHROPIC_HAIKU: &str = "claude-haiku-4-5-20251001";
 
-/// Default model for complex reasoning tasks (ingestion, query analysis, agents).
-/// Used by: `fold_db_node` ingestion + LLM query service.
+/// Higher-reasoning model for natural-language query analysis and agents.
+/// Used by: `fold_db_node` LLM query service (override on top of the
+/// ingestion default in `IngestionConfig::default()`).
 pub const ANTHROPIC_SONNET: &str = "claude-sonnet-4-20250514";
 
 /// OpenRouter-style model path for Sonnet.
