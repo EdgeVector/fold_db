@@ -25,7 +25,8 @@ pub(super) struct StoredEmbedding {
     /// Per-fragment: index within the field's fragment list.
     #[serde(default)]
     pub fragment_idx: usize,
-    /// The original fragment text (needed for anonymity gate during discovery publish).
+    /// The original fragment text (used by discovery publish to recover the
+    /// pre-embedding source for indexing).
     #[serde(default)]
     pub fragment_text: Option<String>,
     pub embedding: Vec<f32>,
@@ -44,7 +45,7 @@ pub(super) struct StoredEmbedding {
 }
 
 /// Entry held in the in-memory index.
-#[allow(dead_code)] // fragment_text read by discovery publisher in Phase 5
+#[allow(dead_code)] // fragment_text read by discovery publisher
 pub(super) struct EmbeddingEntry {
     pub schema: String,
     pub key: KeyValue,
