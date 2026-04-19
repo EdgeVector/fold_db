@@ -61,7 +61,11 @@ Visit [http://localhost:5173](http://localhost:5173) — that's it. No API key r
 - **Encryption at Rest** — AES-256-GCM encryption with local key management
 - **Dynamic Schemas** — Schemas evolve with your data, no migrations needed
 - **Keyword Indexing** — AI extracts and normalizes searchable terms (dates, names, topics)
-- **Web UI** — Browse schemas, ingest data, query, and manage everything from your browser
+- **Native Face Detection** — On-device face detection (SCRFD model) for photo fingerprinting; no cloud calls
+- **Fingerprints, Personas, Identities** — Observe identity signals during ingestion; cluster into Personas; anchor to verified Identities via signed Identity Cards exchanged over E2E messaging
+- **Cross-User Sharing** — Share schema records with other nodes via signed share rules; query `from:{sender}` namespaces; sync engine auto-refreshes on rule changes
+- **AccessTier access control** — Field-level tiers (0=Public … 4=Owner) plus capability tokens and payment gates; every molecule write is signed with Ed25519 for cryptographic provenance
+- **Web UI** — Browse schemas, ingest data, query, manage personas/fingerprints/identities, and configure sharing from your browser
 - **CLI** — Full command-line interface for scripting and power users
 - **Runs 100% Local** — No cloud account required. Sled embedded storage, Ollama for AI
 
@@ -123,15 +127,17 @@ Start with `./run.sh --local` and visit `http://localhost:5173`. The UI provides
 - Natural language and structured queries
 - Native index search
 - Word graph visualization
-- System status and configuration
+- People tab: Personas, Identities, fingerprints, sharing
+- System status and AI configuration (vision backend picker)
 
 The main UI has tabs for:
 - **Schemas** — browse, approve, and inspect schemas
-- **Ingestion** — upload files, configure smart folders, import Twitter/social data
+- **Ingestion** — upload files, configure smart folders, import Twitter/Apple/social data
 - **Query** — natural language questions, structured field queries, full-text search
 - **Native Index** — keyword-based search across all ingested data
 - **Word Graph** — visual exploration of how your data connects
-- **Settings** — AI provider configuration, system status, database management
+- **People** — Personas (filter, sort, undo-delete), Identity Cards (issue/receive/import), Fingerprints
+- **Settings** — AI provider config, vision backend picker, system status, database management
 
 ## CLI Reference
 
