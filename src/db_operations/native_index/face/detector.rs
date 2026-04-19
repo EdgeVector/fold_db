@@ -15,7 +15,20 @@ pub struct FaceDetection {
 
 pub struct ScrfdDetector {
     session: Session,
-    input_size: (u32, u32), // (640, 640)
+    /// Input sizes to evaluate per image. SCRFD det_500m exported from
+    /// buffalo_sc v0.7 is trained with anchors that miss faces occupying
+    /// most of the frame at 640×640 — a close-up portrait (e.g. the
+    /// `test-framework/fixtures/face-*.jpg` selfies) scores max ~0.2 and
+    /// falls below the 0.5 threshold, so no detection is emitted. At
+    /// 320×320 the same face scores ~0.83. To cover both close-ups and
+    /// smaller faces in wider photos we run inference at each listed
+    /// size and merge via NMS.
+    ///
+    /// Reference: InsightFace's own FaceAnalysis with `det_size=(640,640)`
+    /// misses these same fixtures; switching to `det_size=(320,320)`
+    /// detects them. See `fold_db/docs/...` or the face-detection PR
+    /// description for the investigation.
+    input_sizes: Vec<(u32, u32)>,
     conf_threshold: f32,
     nms_threshold: f32,
 }
@@ -31,15 +44,29 @@ impl ScrfdDetector {
 
         Ok(Self {
             session,
-            input_size: (640, 640),
+            input_sizes: vec![(320, 320), (640, 640)],
             conf_threshold: 0.5,
             nms_threshold: 0.4,
         })
     }
 
     pub fn detect(&self, image: &DynamicImage) -> Result<Vec<FaceDetection>, SchemaError> {
+        let mut all = Vec::new();
+        for &size in &self.input_sizes {
+            let dets = self.detect_at_size(image, size)?;
+            all.extend(dets);
+        }
+        self.nms(&mut all);
+        Ok(all)
+    }
+
+    fn detect_at_size(
+        &self,
+        image: &DynamicImage,
+        input_size: (u32, u32),
+    ) -> Result<Vec<FaceDetection>, SchemaError> {
         let (orig_w, orig_h) = image.dimensions();
-        let (input_w, input_h) = self.input_size;
+        let (input_w, input_h) = input_size;
 
         let resized = image.resize_exact(input_w, input_h, FilterType::Lanczos3);
 
