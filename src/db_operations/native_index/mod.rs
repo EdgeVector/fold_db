@@ -1,4 +1,3 @@
-pub mod anonymity;
 mod embedding_index;
 mod embedding_model;
 pub mod face;
