@@ -444,3 +444,150 @@ async fn test_org_sync_does_not_leak_personal_data() {
         "Personal schema should not exist on node2"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Test: org schema propagates to peer via org-prefixed sync routing
+//
+// Regression cover for alpha BLOCKER af4ba: before the `SchemaStore`
+// dual-write + `SyncEngine::rewrite_key_if_needed` org-prefix strip,
+// org-tagged schemas were only stored under the bare key. The
+// SyncPartitioner then routed them to the writer's personal log, so
+// peers downloading from the org log never received the schema and any
+// molecules they did receive were orphaned.
+//
+// This test simulates the full sync path without the manual
+// `load_schema_internal` shortcut used by earlier tests:
+//
+// 1. Node 1 registers a schema with `org_hash` set — the dual-write puts
+//    both `sync_notes` and `{org_hash}:sync_notes` into the schemas
+//    namespace.
+// 2. The org-log sync is simulated by copying ONLY `{org_hash}:`-prefixed
+//    keys across the `schemas`, `schema_states`, and `main` namespaces to
+//    node 2, then applying the replay-side rewrite (strip org prefix for
+//    the schemas and schema_states namespaces) so node 2's store matches
+//    what `SyncEngine::replay_entry` would produce.
+// 3. Node 2 refreshes its SchemaCore via `reload_from_store` (the same
+//    callback the sync engine fires on schema replay) and must surface
+//    the schema under its bare name and return all 3 molecules.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn test_org_schema_propagates_via_org_prefixed_sync() {
+    let tmp1 = tempfile::tempdir().unwrap();
+    let tmp2 = tempfile::tempdir().unwrap();
+    let node1 = make_folddb(&tmp1).await;
+    let node2 = make_folddb(&tmp2).await;
+
+    let pool1 = node1.sled_pool().cloned().unwrap();
+    let membership =
+        org_ops::create_org(&pool1, "Propagation Corp", "pubkey_alice", "Alice").unwrap();
+    let org_hash = membership.org_hash.clone();
+
+    register_schema(&node1, "propagation_notes", Some(&org_hash)).await;
+    for i in 1..=3 {
+        write_mutation(
+            &node1,
+            "propagation_notes",
+            &format!("note-{i}"),
+            &format!("2026-04-{i:02}"),
+            &format!("body from node1 #{i}"),
+        )
+        .await;
+    }
+
+    // The dual-write must leave the schema in node 1's Sled under both the
+    // bare name (so local lookup works) and the org-prefixed name (so
+    // partitioning routes the sync copy to the org log).
+    let pool1 = node1.sled_pool().unwrap();
+    let pool2 = node2.sled_pool().unwrap();
+    let guard1 = pool1.acquire_arc().unwrap();
+    let guard2 = pool2.acquire_arc().unwrap();
+    let sled1 = guard1.db();
+    let sled2 = guard2.db();
+
+    let org_prefix = format!("{}:", org_hash);
+    let schemas1 = sled1.open_tree("schemas").unwrap();
+    let states1 = sled1.open_tree("schema_states").unwrap();
+    let main1 = sled1.open_tree("main").unwrap();
+
+    assert!(
+        schemas1
+            .get("propagation_notes".as_bytes())
+            .unwrap()
+            .is_some(),
+        "bare schema key must exist on node 1 for local lookup"
+    );
+    assert!(
+        schemas1
+            .get(format!("{}propagation_notes", org_prefix).as_bytes())
+            .unwrap()
+            .is_some(),
+        "org-prefixed schema key must exist on node 1 so SyncPartitioner routes it to the org log"
+    );
+
+    // Simulate the org-log replay: only `{org_hash}:`-prefixed entries
+    // reach node 2. For schemas and schema_states, the replay rewrite
+    // strips the org prefix before writing, so the schema lands under its
+    // bare name. For the main namespace (atoms, refs), the org prefix is
+    // preserved — peers store org molecules under the same key Alice did.
+    let schemas2 = sled2.open_tree("schemas").unwrap();
+    let states2 = sled2.open_tree("schema_states").unwrap();
+    let main2 = sled2.open_tree("main").unwrap();
+
+    let org_schema_key = format!("{}propagation_notes", org_prefix);
+    let schema_bytes = schemas1
+        .get(org_schema_key.as_bytes())
+        .unwrap()
+        .expect("org-prefixed schema must exist on node 1");
+    schemas2
+        .insert("propagation_notes".as_bytes(), schema_bytes)
+        .unwrap();
+
+    let org_state_key = format!("{}propagation_notes", org_prefix);
+    if let Some(state_bytes) = states1.get(org_state_key.as_bytes()).unwrap() {
+        states2
+            .insert("propagation_notes".as_bytes(), state_bytes)
+            .unwrap();
+    }
+
+    let synced_main = copy_prefixed_keys(&main1, &main2, &org_prefix);
+    assert!(
+        synced_main > 0,
+        "expected org-prefixed atom/ref entries to sync"
+    );
+
+    // The schema reloader callback is what `SyncEngine` fires after a
+    // successful schema replay. Exercise the same entrypoint.
+    node2.schema_manager().reload_from_store().await.unwrap();
+
+    // Node 2 must now see the schema under its bare name — not under the
+    // org-prefixed name, not both. get_all_schemas filters the companion
+    // on the writer side, and the replay strip ensures the peer only has
+    // the bare entry to begin with.
+    let visible: Vec<String> = node2
+        .schema_manager()
+        .get_schemas()
+        .unwrap()
+        .keys()
+        .cloned()
+        .collect();
+    assert!(
+        visible.contains(&"propagation_notes".to_string()),
+        "node 2 schemas must include propagation_notes by its bare name — got {:?}",
+        visible
+    );
+    assert!(
+        visible.iter().all(|k| !k.starts_with(&org_prefix)),
+        "node 2 must not surface org-prefixed schema names, got {:?}",
+        visible
+    );
+
+    // Molecules must resolve against the replayed schema — the alpha
+    // thesis in one assertion.
+    let node2_bodies = query_field_values(&node2, "propagation_notes", "body").await;
+    assert_eq!(
+        node2_bodies.len(),
+        3,
+        "node 2 must query all 3 org molecules through the propagated schema"
+    );
+}
