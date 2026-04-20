@@ -74,19 +74,12 @@ where
             if self.inner.org_hash().is_some() {
                 match store.get_item::<M>(&base_key).await {
                     Ok(Some(molecule)) => {
-                        log::debug!(
-                            "FieldBase: resolved molecule {} via pre-tag (unprefixed) key",
-                            molecule_uuid
-                        );
+                        log::debug!("FieldBase: resolved molecule via pre-tag (unprefixed) key");
                         self.molecule = Some(molecule);
                     }
                     Ok(None) => {}
                     Err(e) => {
-                        log::warn!(
-                            "FieldBase: pre-tag fallback for molecule ref {} failed: {}",
-                            molecule_uuid,
-                            e
-                        );
+                        log::warn!("FieldBase: pre-tag fallback for molecule ref failed: {}", e);
                     }
                 }
             }
