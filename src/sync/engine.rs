@@ -942,32 +942,73 @@ impl SyncEngine {
 
     /// Download new entries from a sync target.
     ///
-    /// Lists `/{prefix}/log/{seq}.enc` starting after the local cursor,
-    /// downloads, unseals with the target's crypto, and replays.
+    /// Lists `/{prefix}/log/{seq}.enc`, downloads, unseals with the target's
+    /// crypto, and replays.
+    ///
+    /// ### Why we list the full log prefix (no S3 `start_after`)
+    ///
+    /// S3 `start_after` orders keys **lexicographically**, not numerically.
+    /// Our keys use unpadded decimal seqs (`log/52.enc`, `log/100.enc`), so
+    /// `log/100.enc` lex-sorts *before* `log/52.enc` (because `'1' < '5'`).
+    /// Using the local numeric cursor as a lex `start_after` would silently
+    /// hide every key whose seq crosses a digit-length boundary under the
+    /// cursor's lex prefix — e.g., cursor=52 hides seqs 100..104 permanently.
+    /// That is alpha BLOCKER 30a7b: Alice uploads 104 entries, Bob's second
+    /// poll sees `start_after=log/52.enc` and misses seqs 100..104.
+    ///
+    /// The server-side `list_objects_v2` handler already paginates via
+    /// `continuation_token`, so a full prefix list is bounded by the log's
+    /// current size (which compaction keeps small). We filter `seq > cursor`
+    /// client-side and sort numerically to preserve replay order.
     async fn download_entries(&self, target: &SyncTarget) -> SyncResult<u64> {
         let cursor = {
             let cursors = self.download_cursors.lock().await;
             cursors.get(&target.prefix).copied().unwrap_or(0)
         };
 
-        // Use start_after to filter server-side instead of listing everything
-        let start_after = if cursor > 0 {
-            Some(format!("log/{cursor}.enc"))
-        } else {
-            None
-        };
-        let objects = self
-            .auth
-            .list_log_objects_after(target, start_after.as_deref())
-            .await?;
+        let objects = self.auth.list_log_objects(target).await?;
 
-        // Parse flat log keys: log/{seq}.enc
+        // Parse flat log keys: log/{seq}.enc. Filter numerically — see the
+        // method docstring for why we cannot use S3 `start_after` against
+        // unpadded decimal seq keys.
         let mut new_seqs: Vec<u64> = objects
             .iter()
             .filter_map(|obj| parse_flat_log_key(&obj.key))
             .filter(|s| *s > cursor)
             .collect();
         new_seqs.sort();
+
+        // Loud-failure invariant: once we see any new seq, the set of new
+        // seqs must be contiguous (no holes between the smallest and
+        // largest). A hole here means S3 returned a partial view of the log
+        // — the exact silent-drop pattern 30a7b produced — and would cause
+        // `max_contiguous_seq` to advance past a seq that later appears.
+        if let (Some(&first), Some(&last)) = (new_seqs.first(), new_seqs.last()) {
+            let expected = (last - first + 1) as usize;
+            if new_seqs.len() != expected {
+                let set: std::collections::BTreeSet<u64> = new_seqs.iter().copied().collect();
+                let missing: Vec<u64> = (first..=last).filter(|s| !set.contains(s)).collect();
+                log::error!(
+                    "sync list '{}' returned non-contiguous seqs after cursor={}: first={} last={} count={} expected={} missing_sample={:?}",
+                    target.label,
+                    cursor,
+                    first,
+                    last,
+                    new_seqs.len(),
+                    expected,
+                    missing.iter().take(16).collect::<Vec<_>>()
+                );
+                return Err(SyncError::S3(format!(
+                    "non-contiguous log listing for '{}': cursor={} got {} seqs in range {}..={} (expected {})",
+                    target.label,
+                    cursor,
+                    new_seqs.len(),
+                    first,
+                    last,
+                    expected
+                )));
+            }
+        }
 
         if new_seqs.is_empty() {
             log::info!(
@@ -1890,6 +1931,73 @@ mod tests {
         assert_eq!(config.compaction_threshold, 100);
         assert_eq!(config.lock_ttl_secs, 300);
         assert_eq!(config.max_retries, 2);
+    }
+
+    /// Regression for alpha BLOCKER 30a7b: the old `download_entries` built a
+    /// `start_after` bound as `log/{cursor}.enc` using unpadded decimal seqs.
+    /// S3 `start_after` is **lexicographic**, so a numeric cursor of 52
+    /// excludes `log/100.enc..log/104.enc` (they lex-sort *before*
+    /// `log/52.enc` because `'1' < '5'`). On dogfood run-8 this dropped
+    /// exactly 5 entries from Bob's view (seqs 100..=104).
+    ///
+    /// This test models both paths:
+    /// - "old buggy" path: simulate S3 lex filter on `start_after=log/52.enc`,
+    ///   then apply the numeric `seq > cursor` client filter. Shows the 5-entry
+    ///   drop.
+    /// - "new fixed" path: no `start_after`, numeric filter only. Shows the
+    ///   full 52 post-cursor seqs.
+    #[test]
+    fn lex_start_after_drops_keys_across_digit_boundaries_30a7b() {
+        // Alice uploads seqs 1..=104 with keys `log/{seq}.enc`.
+        let keys: Vec<String> = (1u64..=104).map(|s| format!("log/{s}.enc")).collect();
+
+        let cursor: u64 = 52;
+
+        // ---- Old buggy path: S3 lex start_after + client numeric filter ----
+        let lex_bound = format!("log/{cursor}.enc");
+        let mut lex_filtered: Vec<String> = keys
+            .iter()
+            .filter(|k| k.as_str() > lex_bound.as_str())
+            .cloned()
+            .collect();
+        lex_filtered.sort();
+        let buggy_new_seqs: Vec<u64> = lex_filtered
+            .iter()
+            .filter_map(|k| parse_flat_log_key(k))
+            .filter(|s| *s > cursor)
+            .collect();
+        assert_eq!(
+            buggy_new_seqs.len(),
+            47,
+            "sanity: the old lex-ordered path must drop seqs 100..=104 (5 entries) exactly as seen on dogfood run-8"
+        );
+        for missed in 100u64..=104 {
+            assert!(
+                !buggy_new_seqs.contains(&missed),
+                "old lex path should miss seq {missed}, regression check"
+            );
+        }
+
+        // ---- New fixed path: full prefix list + numeric filter ------------
+        let mut fixed_new_seqs: Vec<u64> = keys
+            .iter()
+            .filter_map(|k| parse_flat_log_key(k))
+            .filter(|s| *s > cursor)
+            .collect();
+        fixed_new_seqs.sort();
+        assert_eq!(
+            fixed_new_seqs.len(),
+            52,
+            "fixed path must return every seq 53..=104 (52 entries); digit-boundary keys MUST NOT be hidden"
+        );
+        assert_eq!(fixed_new_seqs.first().copied(), Some(53));
+        assert_eq!(fixed_new_seqs.last().copied(), Some(104));
+        for expected in 53u64..=104 {
+            assert!(
+                fixed_new_seqs.contains(&expected),
+                "fixed path must include seq {expected}"
+            );
+        }
     }
 
     #[test]
