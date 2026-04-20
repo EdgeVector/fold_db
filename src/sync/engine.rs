@@ -579,20 +579,32 @@ impl SyncEngine {
     /// Attempt to refresh auth credentials and retry do_sync once.
     /// Falls through to the original auth error if refresh isn't available or fails.
     async fn try_refresh_and_retry(&self) -> SyncResult<bool> {
+        self.refresh_auth_once("sync").await?;
+        self.do_sync().await
+    }
+
+    /// Invoke the auth-refresh callback (if any) and update the shared
+    /// `AuthClient` with the new credential. Errors if no callback is wired
+    /// or the callback itself fails.
+    ///
+    /// `context` is a short label used only in log messages so on-demand
+    /// paths (snapshot backup, restore) can be distinguished from the
+    /// periodic sync cycle in logs.
+    async fn refresh_auth_once(&self, context: &str) -> SyncResult<()> {
         let refresh_cb = match self.auth_refresh {
             Some(ref cb) => cb.clone(),
             None => return Err(SyncError::Auth("authentication failed".to_string())),
         };
 
-        log::info!("sync auth failed, attempting token refresh");
+        log::info!("{context} auth failed, attempting token refresh");
         let new_auth = refresh_cb().await.map_err(|e| {
-            log::warn!("token refresh failed: {e}");
+            log::warn!("{context} token refresh failed: {e}");
             SyncError::Auth("authentication failed after token refresh failure".to_string())
         })?;
 
         self.auth.update_auth(new_auth).await;
-        log::info!("token refreshed, retrying sync");
-        self.do_sync().await
+        log::info!("{context} token refreshed");
+        Ok(())
     }
 
     async fn do_sync(&self) -> SyncResult<bool> {
@@ -1624,6 +1636,17 @@ impl SyncEngine {
     ///
     /// Returns the sequence number of the uploaded snapshot.
     pub async fn backup_snapshot(&self) -> SyncResult<u64> {
+        match self.backup_snapshot_once().await {
+            Ok(seq) => Ok(seq),
+            Err(SyncError::Auth(_)) if self.auth_refresh.is_some() => {
+                self.refresh_auth_once("backup_snapshot").await?;
+                self.backup_snapshot_once().await
+            }
+            Err(e) => Err(e),
+        }
+    }
+
+    async fn backup_snapshot_once(&self) -> SyncResult<u64> {
         let current_seq = *self.seq.lock().await;
         log::info!(
             "backup_snapshot: creating snapshot at seq {} (device='{}')",
@@ -2073,5 +2096,104 @@ mod tests {
         let key_b64 = LogOp::encode_bytes(b"atom:uuid-1");
         let result = SyncEngine::rewrite_key_if_needed(&key_b64, Some(&target)).unwrap();
         assert_eq!(result, b"atom:uuid-1");
+    }
+
+    // ---- auth refresh helper tests ----
+
+    use crate::sync::auth::SyncAuth;
+
+    fn make_auth_refresh_engine() -> SyncEngine {
+        use crate::crypto::provider::LocalCryptoProvider;
+        use crate::storage::inmemory_backend::InMemoryNamespacedStore;
+        use crate::sync::auth::AuthClient;
+        use crate::sync::s3::S3Client;
+
+        let http = Arc::new(reqwest::Client::new());
+        let auth = AuthClient::new(
+            http.clone(),
+            "http://127.0.0.1:1".to_string(),
+            SyncAuth::ApiKey("stale-key".to_string()),
+        );
+        let s3 = S3Client::new(http);
+        let crypto: Arc<dyn CryptoProvider> = Arc::new(LocalCryptoProvider::from_key([0x77u8; 32]));
+        let store: Arc<dyn NamespacedStore> = Arc::new(InMemoryNamespacedStore::new());
+        SyncEngine::new(
+            "test-device".to_string(),
+            crypto,
+            s3,
+            auth,
+            store,
+            SyncConfig::default(),
+        )
+    }
+
+    #[tokio::test]
+    async fn refresh_auth_once_without_callback_returns_auth_error() {
+        let engine = make_auth_refresh_engine();
+        let err = engine
+            .refresh_auth_once("test")
+            .await
+            .expect_err("expected auth error with no callback wired");
+        match err {
+            SyncError::Auth(msg) => assert_eq!(msg, "authentication failed"),
+            other => panic!("expected SyncError::Auth, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn refresh_auth_once_invokes_callback_and_updates_auth() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let mut engine = make_auth_refresh_engine();
+        assert!(
+            !engine.auth.is_bearer_token().await,
+            "engine should start with ApiKey auth"
+        );
+
+        let call_count = Arc::new(AtomicUsize::new(0));
+        let cb_calls = call_count.clone();
+        let cb: AuthRefreshCallback = Arc::new(move || {
+            let cb_calls = cb_calls.clone();
+            Box::pin(async move {
+                cb_calls.fetch_add(1, Ordering::SeqCst);
+                Ok(SyncAuth::BearerToken("fresh-token".to_string()))
+            })
+        });
+        engine.set_auth_refresh(cb);
+
+        engine
+            .refresh_auth_once("test")
+            .await
+            .expect("refresh should succeed when callback returns new auth");
+
+        assert_eq!(
+            call_count.load(Ordering::SeqCst),
+            1,
+            "callback must run exactly once per refresh call"
+        );
+        assert!(
+            engine.auth.is_bearer_token().await,
+            "AuthClient must be updated to the new credential"
+        );
+    }
+
+    #[tokio::test]
+    async fn refresh_auth_once_surfaces_callback_error() {
+        let mut engine = make_auth_refresh_engine();
+        let cb: AuthRefreshCallback =
+            Arc::new(|| Box::pin(async { Err("exemem returned 403: banned".to_string()) }));
+        engine.set_auth_refresh(cb);
+
+        let err = engine
+            .refresh_auth_once("test")
+            .await
+            .expect_err("refresh must fail when callback errors");
+        match err {
+            SyncError::Auth(msg) => assert!(
+                msg.contains("after token refresh failure"),
+                "error must mention refresh-after-failure, got: {msg}"
+            ),
+            other => panic!("expected SyncError::Auth, got {other:?}"),
+        }
     }
 }
