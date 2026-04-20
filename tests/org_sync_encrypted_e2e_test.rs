@@ -520,8 +520,7 @@ async fn test_org_prefix_replay_dispatches_schema_and_molecules() {
 
     // Alice creates an org and derives its E2E crypto.
     let pool1 = node1.sled_pool().cloned().unwrap();
-    let membership =
-        org_ops::create_org(&pool1, "Replay Corp", "pubkey_alice", "Alice").unwrap();
+    let membership = org_ops::create_org(&pool1, "Replay Corp", "pubkey_alice", "Alice").unwrap();
     let org_hash = membership.org_hash.clone();
 
     let org_key_bytes: [u8; 32] = {
@@ -654,8 +653,7 @@ async fn test_org_prefix_replay_state_only_triggers_reload() {
     let node2 = make_folddb(&tmp2).await;
 
     let pool1 = node1.sled_pool().cloned().unwrap();
-    let membership =
-        org_ops::create_org(&pool1, "State Corp", "pubkey_alice", "Alice").unwrap();
+    let membership = org_ops::create_org(&pool1, "State Corp", "pubkey_alice", "Alice").unwrap();
     let org_hash = membership.org_hash.clone();
 
     let org_key_bytes: [u8; 32] = {
