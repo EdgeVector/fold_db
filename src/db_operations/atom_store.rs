@@ -49,7 +49,13 @@ impl AtomStore {
 
     /// Retrieve a single atom by its UUID.
     ///
-    /// When `org_hash` is `Some`, the key is prefixed with `{org_hash}:`.
+    /// When `org_hash` is `Some`, the key is prefixed with `{org_hash}:`. If
+    /// no atom exists at the org-prefixed key, falls back to the unprefixed
+    /// (personal) key so atoms written before a schema was tagged with an
+    /// `org_hash` remain readable after the tag. See
+    /// `docs/designs/org_shared_sync.md` — `set-org-hash` does not rewrite
+    /// pre-existing keys, so dual-read is required until an explicit migration
+    /// re-keys them.
     pub async fn get_atom_by_uuid(
         &self,
         atom_uuid: &str,
@@ -57,8 +63,16 @@ impl AtomStore {
     ) -> Result<Option<Atom>, SchemaError> {
         let base_key = format!("atom:{}", atom_uuid);
         let key = build_storage_key(org_hash, &base_key);
-        self.main_store
+        let primary = self
+            .main_store
             .get_item::<Atom>(&key)
+            .await
+            .map_err(|e| SchemaError::InvalidData(format!("Failed to fetch atom: {}", e)))?;
+        if primary.is_some() || org_hash.is_none() {
+            return Ok(primary);
+        }
+        self.main_store
+            .get_item::<Atom>(&base_key)
             .await
             .map_err(|e| SchemaError::InvalidData(format!("Failed to fetch atom: {}", e)))
     }
@@ -264,6 +278,8 @@ impl AtomStore {
     /// Load all mutation events for a molecule, sorted chronologically.
     ///
     /// When `org_hash` is `Some`, the scan prefix is `{org_hash}:history:{mol}:`.
+    /// If the org-prefixed scan returns nothing, falls back to the unprefixed
+    /// (personal) prefix so history for pre-tag molecules remains readable.
     pub async fn get_mutation_events(
         &self,
         molecule_uuid: &str,
@@ -278,6 +294,17 @@ impl AtomStore {
             .map_err(|e| {
                 SchemaError::InvalidData(format!("Failed to load mutation events: {}", e))
             })?;
+
+        let items = if items.is_empty() && org_hash.is_some() {
+            self.main_store
+                .scan_items_with_prefix(&base_prefix)
+                .await
+                .map_err(|e| {
+                    SchemaError::InvalidData(format!("Failed to load mutation events: {}", e))
+                })?
+        } else {
+            items
+        };
 
         // Items from scan_prefix are already in lexicographic order (= chronological due to zero-padding)
         let events: Vec<MutationEvent> = items.into_iter().map(|(_, e)| e).collect();
