@@ -433,6 +433,15 @@ impl AuthClient {
     }
 
     /// List log objects for a sync target, optionally starting after a given key.
+    ///
+    /// **WARNING — lex-ordered `start_after`:** S3 `start_after` filters keys
+    /// by **lexicographic** order, not numeric. Do not pass a key built from
+    /// an unpadded decimal seq (`log/52.enc`) expecting it to bound keys with
+    /// higher numeric seqs — `log/100.enc` lex-sorts *before* `log/52.enc`
+    /// and would be silently hidden. This caused alpha BLOCKER 30a7b. Only
+    /// use `start_after` against keys whose natural ordering is already
+    /// lexicographic (e.g., ISO-8601 timestamps, fixed-width hex). Numeric
+    /// log seqs must be filtered client-side after a full prefix list.
     pub async fn list_log_objects_after(
         &self,
         target: &super::org_sync::SyncTarget,
