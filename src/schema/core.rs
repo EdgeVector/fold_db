@@ -1190,4 +1190,83 @@ mod tests {
             "runtime_fields should contain 'content'"
         );
     }
+
+    #[tokio::test]
+    async fn trust_domain_persists_across_schema_core_restart() {
+        // Regression test for alpha papercut 903af: after `set-org-hash`, both
+        // `org_hash` and `trust_domain` must survive a node restart. Before the
+        // fix, `org_hash` persisted but `trust_domain` did not — the node would
+        // boot with a tagged-but-untrusted schema, breaking access checks that
+        // rely on `trust_domain = "org:<hash>"`.
+        let tmp = tempfile::TempDir::new().expect("tmpdir");
+        let db_path = tmp.path().to_path_buf();
+        let org_hash = "a".repeat(64);
+
+        {
+            let pool = std::sync::Arc::new(crate::storage::SledPool::new(db_path.clone()));
+            let db_ops = std::sync::Arc::new(
+                crate::db_operations::DbOperations::from_sled(pool)
+                    .await
+                    .expect("db_ops"),
+            );
+            let message_bus = Arc::new(AsyncMessageBus::new());
+            let core = SchemaCore::new(Arc::clone(&db_ops), Arc::clone(&message_bus))
+                .await
+                .expect("init core");
+
+            let json = r#"{
+                "name": "TaggedNotes",
+                "key": { "range_field": "created_at" },
+                "fields": { "body": {}, "created_at": {} }
+            }"#;
+            let declarative: crate::schema::types::DeclarativeSchemaDefinition =
+                serde_json::from_str(json).expect("parse");
+            let mut schema =
+                crate::schema::SchemaInterpreter::interpret(declarative).expect("interpret");
+            schema.org_hash = Some(org_hash.clone());
+            schema.trust_domain = Some(format!("org:{}", org_hash));
+            core.update_schema(&schema).await.expect("tag + store");
+
+            let before = core
+                .get_schema_metadata("TaggedNotes")
+                .expect("read")
+                .expect("present");
+            assert_eq!(before.org_hash.as_deref(), Some(org_hash.as_str()));
+            assert_eq!(
+                before.trust_domain.as_deref(),
+                Some(format!("org:{}", org_hash).as_str()),
+                "trust_domain must be set after tagging",
+            );
+
+            db_ops.flush().await.expect("flush");
+        }
+
+        // Fresh SchemaCore pointed at the same Sled directory — simulates
+        // process restart. Both fields must round-trip.
+        let pool = std::sync::Arc::new(crate::storage::SledPool::new(db_path));
+        let db_ops = std::sync::Arc::new(
+            crate::db_operations::DbOperations::from_sled(pool)
+                .await
+                .expect("db_ops reopen"),
+        );
+        let message_bus = Arc::new(AsyncMessageBus::new());
+        let core = SchemaCore::new(Arc::clone(&db_ops), Arc::clone(&message_bus))
+            .await
+            .expect("reopen core");
+
+        let after = core
+            .get_schema_metadata("TaggedNotes")
+            .expect("read")
+            .expect("present after restart");
+        assert_eq!(
+            after.org_hash.as_deref(),
+            Some(org_hash.as_str()),
+            "org_hash must persist across restart",
+        );
+        assert_eq!(
+            after.trust_domain.as_deref(),
+            Some(format!("org:{}", org_hash).as_str()),
+            "trust_domain must persist across restart — regression 903af",
+        );
+    }
 }
