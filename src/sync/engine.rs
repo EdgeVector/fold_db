@@ -1389,7 +1389,7 @@ impl SyncEngine {
                 key,
                 value,
             } => {
-                let final_key = Self::rewrite_key_if_needed(key, target)?;
+                let final_key = Self::rewrite_key_if_needed(namespace, key, target)?;
                 self.replay_put(
                     namespace,
                     &LogOp::encode_bytes(&final_key),
@@ -1401,12 +1401,12 @@ impl SyncEngine {
             }
             LogOp::Delete { namespace, key } => {
                 let kv = self.store.open_namespace(namespace).await?;
-                let final_key = Self::rewrite_key_if_needed(key, target)?;
+                let final_key = Self::rewrite_key_if_needed(namespace, key, target)?;
                 kv.delete(&final_key).await?;
             }
             LogOp::BatchPut { namespace, items } => {
                 for (key, value) in items {
-                    let final_key = Self::rewrite_key_if_needed(key, target)?;
+                    let final_key = Self::rewrite_key_if_needed(namespace, key, target)?;
                     self.replay_put(
                         namespace,
                         &LogOp::encode_bytes(&final_key),
@@ -1421,7 +1421,7 @@ impl SyncEngine {
                 let kv = self.store.open_namespace(namespace).await?;
                 let decoded: Vec<Vec<u8>> = keys
                     .iter()
-                    .map(|k| Self::rewrite_key_if_needed(k, target))
+                    .map(|k| Self::rewrite_key_if_needed(namespace, k, target))
                     .collect::<SyncResult<Vec<_>>>()?;
                 kv.batch_delete(decoded).await?;
             }
@@ -1429,8 +1429,26 @@ impl SyncEngine {
         Ok(())
     }
 
-    /// Rewrites log entry keys based on namespace isolation rules for ShareSubscriptions.
-    fn rewrite_key_if_needed(key_b64: &str, target: Option<&SyncTarget>) -> SyncResult<Vec<u8>> {
+    /// Rewrites log entry keys based on namespace isolation rules.
+    ///
+    /// Two rewrites apply:
+    ///
+    /// 1. **Share subscriptions** — `{share_prefix}:…` keys replayed from an
+    ///    inbound share become `from:{sender_hash}:…` locally, so the
+    ///    receiver reads shared data through a distinct namespace.
+    /// 2. **Org schemas** — `{org_hash}:{schema_name}` entries replayed into
+    ///    the `schemas` or `schema_states` namespaces from an org target are
+    ///    stripped back to the bare `{schema_name}`. Schemas are addressed
+    ///    by name locally; the org prefix exists only to drive sync routing
+    ///    on the writer side. Without this rewrite, peers would store the
+    ///    schema under a name like `{org_hash}:sync_notes` and name-based
+    ///    lookups (`/api/schemas`, `get_schema`) would miss it — orphaning
+    ///    every org-prefixed molecule (alpha BLOCKER af4ba).
+    fn rewrite_key_if_needed(
+        namespace: &str,
+        key_b64: &str,
+        target: Option<&SyncTarget>,
+    ) -> SyncResult<Vec<u8>> {
         let key_bytes = LogOp::decode_bytes(key_b64)?;
 
         if let Some(t) = target {
@@ -1453,6 +1471,14 @@ impl SyncEngine {
 
                         return Ok(final_key);
                     }
+                }
+            } else if !t.prefix.is_empty()
+                && (namespace == "schemas" || namespace == "schema_states")
+            {
+                let prefix_str = format!("{}:", t.prefix);
+                let prefix_bytes = prefix_str.as_bytes();
+                if key_bytes.starts_with(prefix_bytes) {
+                    return Ok(key_bytes[prefix_bytes.len()..].to_vec());
                 }
             }
         }
@@ -2064,19 +2090,19 @@ mod tests {
     fn test_rewrite_key_share_prefix_to_from_prefix() {
         let target = share_target("share:alice:me");
         let key_b64 = LogOp::encode_bytes(b"share:alice:me:atom:uuid-1");
-        let result = SyncEngine::rewrite_key_if_needed(&key_b64, Some(&target)).unwrap();
+        let result = SyncEngine::rewrite_key_if_needed("main", &key_b64, Some(&target)).unwrap();
         assert_eq!(result, b"from:alice:atom:uuid-1");
     }
 
     #[test]
     fn test_rewrite_key_no_target_passes_through() {
         let key_b64 = LogOp::encode_bytes(b"atom:uuid-1");
-        let result = SyncEngine::rewrite_key_if_needed(&key_b64, None).unwrap();
+        let result = SyncEngine::rewrite_key_if_needed("main", &key_b64, None).unwrap();
         assert_eq!(result, b"atom:uuid-1");
     }
 
     #[test]
-    fn test_rewrite_key_non_share_target_passes_through() {
+    fn test_rewrite_key_org_target_main_namespace_passes_through() {
         use crate::crypto::provider::LocalCryptoProvider;
         let target = SyncTarget {
             label: "org".to_string(),
@@ -2084,9 +2110,50 @@ mod tests {
             crypto: Arc::new(LocalCryptoProvider::from_key([0x10u8; 32])),
         };
         let key_b64 = LogOp::encode_bytes(b"org_hash_abc:atom:uuid-1");
-        let result = SyncEngine::rewrite_key_if_needed(&key_b64, Some(&target)).unwrap();
-        // Non-share target: no rewriting
+        let result = SyncEngine::rewrite_key_if_needed("main", &key_b64, Some(&target)).unwrap();
+        // Non-schema namespace: org prefix stays, because atom/ref keys are
+        // stored org-prefixed locally on every peer.
         assert_eq!(result, b"org_hash_abc:atom:uuid-1");
+    }
+
+    #[test]
+    fn test_rewrite_key_org_target_schemas_namespace_strips_prefix() {
+        use crate::crypto::provider::LocalCryptoProvider;
+        let target = SyncTarget {
+            label: "org".to_string(),
+            prefix: "org_hash_abc".to_string(),
+            crypto: Arc::new(LocalCryptoProvider::from_key([0x10u8; 32])),
+        };
+        let key_b64 = LogOp::encode_bytes(b"org_hash_abc:sync_notes");
+        let result = SyncEngine::rewrite_key_if_needed("schemas", &key_b64, Some(&target)).unwrap();
+        assert_eq!(result, b"sync_notes");
+    }
+
+    #[test]
+    fn test_rewrite_key_org_target_schema_states_namespace_strips_prefix() {
+        use crate::crypto::provider::LocalCryptoProvider;
+        let target = SyncTarget {
+            label: "org".to_string(),
+            prefix: "org_hash_abc".to_string(),
+            crypto: Arc::new(LocalCryptoProvider::from_key([0x10u8; 32])),
+        };
+        let key_b64 = LogOp::encode_bytes(b"org_hash_abc:sync_notes");
+        let result =
+            SyncEngine::rewrite_key_if_needed("schema_states", &key_b64, Some(&target)).unwrap();
+        assert_eq!(result, b"sync_notes");
+    }
+
+    #[test]
+    fn test_rewrite_key_personal_target_schemas_namespace_passes_through() {
+        use crate::crypto::provider::LocalCryptoProvider;
+        let target = SyncTarget {
+            label: "personal".to_string(),
+            prefix: String::new(),
+            crypto: Arc::new(LocalCryptoProvider::from_key([0x10u8; 32])),
+        };
+        let key_b64 = LogOp::encode_bytes(b"sync_notes");
+        let result = SyncEngine::rewrite_key_if_needed("schemas", &key_b64, Some(&target)).unwrap();
+        assert_eq!(result, b"sync_notes");
     }
 
     #[test]
@@ -2094,7 +2161,7 @@ mod tests {
         let target = share_target("share:alice:me");
         // Key has a different prefix than the target
         let key_b64 = LogOp::encode_bytes(b"atom:uuid-1");
-        let result = SyncEngine::rewrite_key_if_needed(&key_b64, Some(&target)).unwrap();
+        let result = SyncEngine::rewrite_key_if_needed("main", &key_b64, Some(&target)).unwrap();
         assert_eq!(result, b"atom:uuid-1");
     }
 
