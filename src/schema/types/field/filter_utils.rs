@@ -88,9 +88,7 @@ pub async fn fetch_atoms_with_key_metadata_async_with_org(
         let store = db_ops.atoms().raw();
         let primary_lookup = store.get_item::<crate::atom::Atom>(&storage_key).await;
         let lookup = match primary_lookup {
-            Ok(None) if org_hash.is_some() => {
-                store.get_item::<crate::atom::Atom>(&base_key).await
-            }
+            Ok(None) if org_hash.is_some() => store.get_item::<crate::atom::Atom>(&base_key).await,
             other => other,
         };
         match lookup {
