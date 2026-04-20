@@ -75,6 +75,12 @@ impl SchemaStore {
     /// org sync log. Without the dual-write, the partitioner only ever sees
     /// the bare key and the schema never reaches org peers, leaving them with
     /// orphaned molecules (alpha BLOCKER af4ba).
+    ///
+    /// The current schema_state (if any) is mirrored to the org-prefixed key
+    /// too, so peers receive approval status together with the schema body.
+    /// Without this, tagging an already-approved schema via `set-org-hash`
+    /// would propagate the schema but leave peers stuck at `Available`
+    /// (alpha papercut d2f07).
     pub async fn store_schema(
         &self,
         schema_name: &str,
@@ -84,6 +90,15 @@ impl SchemaStore {
         if let Some(org_hash) = schema.org_hash.as_deref() {
             let org_key = format!("{org_hash}:{schema_name}");
             self.schemas_store.put_item(&org_key, schema).await?;
+
+            if let Some(state) = self
+                .schema_states_store
+                .get_item::<SchemaState>(schema_name)
+                .await?
+            {
+                self.schema_states_store.put_item(&org_key, &state).await?;
+                self.schema_states_store.inner().flush().await?;
+            }
         }
         self.schemas_store.inner().flush().await?;
         Ok(())
@@ -336,6 +351,60 @@ mod tests {
         let states = store.get_all_schema_states().await.unwrap();
         assert_eq!(states.len(), 1);
         assert_eq!(states.get("org_notes"), Some(&SchemaState::Approved));
+    }
+
+    #[tokio::test]
+    async fn store_schema_mirrors_existing_state_to_org_prefixed_key() {
+        // Ordering: approve the schema first (bare-only state write), then
+        // tag it with org_hash. The subsequent store_schema must carry the
+        // pre-existing state onto the org-prefixed key so peers receive
+        // approval alongside the tagged schema body (papercut d2f07).
+        let store = build_store().await;
+        let org_hash = "f".repeat(64);
+
+        let personal = build_schema("later_tagged", None);
+        store.store_schema("later_tagged", &personal).await.unwrap();
+        store
+            .store_schema_state("later_tagged", &SchemaState::Approved)
+            .await
+            .unwrap();
+
+        // At this point the state lives under the bare key only.
+        let org_key = format!("{}:later_tagged", org_hash);
+        let pre_tag_prefixed: Option<SchemaState> =
+            store.schema_states_store.get_item(&org_key).await.unwrap();
+        assert!(pre_tag_prefixed.is_none());
+
+        // Tagging: store the same schema with org_hash set.
+        let tagged = build_schema("later_tagged", Some(&org_hash));
+        store.store_schema("later_tagged", &tagged).await.unwrap();
+
+        let mirrored: Option<SchemaState> =
+            store.schema_states_store.get_item(&org_key).await.unwrap();
+        assert_eq!(
+            mirrored,
+            Some(SchemaState::Approved),
+            "store_schema must mirror the pre-existing state to the org-prefixed key so the org log carries approval",
+        );
+    }
+
+    #[tokio::test]
+    async fn store_schema_without_prior_state_does_not_mirror_state() {
+        // If no state has been recorded yet, store_schema should not
+        // fabricate one on the org-prefixed key — state propagates later
+        // when the caller explicitly sets it via store_schema_state.
+        let store = build_store().await;
+        let org_hash = "9".repeat(64);
+        let schema = build_schema("fresh_org", Some(&org_hash));
+        store.store_schema("fresh_org", &schema).await.unwrap();
+
+        let org_key = format!("{}:fresh_org", org_hash);
+        let prefixed: Option<SchemaState> =
+            store.schema_states_store.get_item(&org_key).await.unwrap();
+        assert!(
+            prefixed.is_none(),
+            "no state should be written when none exists",
+        );
     }
 
     #[tokio::test]

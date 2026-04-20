@@ -83,36 +83,81 @@ impl SchemaCore {
         Ok(schema_core)
     }
 
-    /// Reload schemas from the persistent store, merging any newly-discovered
-    /// schemas into the in-memory cache. Existing entries are NOT overwritten
-    /// (additive merge only). Returns the count of newly added schemas.
+    /// Reload schemas from the persistent store.
+    ///
+    /// Refreshes the in-memory cache from disk for both new and changed
+    /// schemas — needed because sync replay writes directly to the
+    /// persistent store and the cache must follow. Existing entries are
+    /// overwritten only when the disk copy differs from the cached copy.
+    ///
+    /// After refresh, any schema carrying an `org_hash` is auto-approved
+    /// if its current state is `Available` (or unset): membership in the
+    /// org implies trust in the schema, so peers shouldn't have to
+    /// manually approve org-shared schemas (alpha papercut d2f07).
+    /// `Blocked` state is preserved.
+    ///
+    /// Returns the number of schemas that were added or refreshed.
     pub async fn reload_from_store(&self) -> Result<usize, SchemaError> {
         let stored_schemas = self.db_ops.get_all_schemas().await?;
         let stored_states = self.db_ops.get_all_schema_states().await?;
 
-        let mut schemas = lock_map(&self.schemas, "schemas")?;
-        let mut states = lock_map(&self.schema_states, "schema_states")?;
+        let mut auto_approve: Vec<String> = Vec::new();
+        let mut changed = 0usize;
 
-        let mut added = 0usize;
-        for (name, mut schema) in stored_schemas {
-            if !schemas.contains_key(&name) {
+        {
+            let mut schemas = lock_map(&self.schemas, "schemas")?;
+            let mut states = lock_map(&self.schema_states, "schema_states")?;
+
+            for (name, mut schema) in stored_schemas {
                 // Ensure runtime_fields are populated — schemas coming from
                 // sync replay won't have them (runtime_fields is #[serde(skip)]).
                 if schema.runtime_fields.is_empty() {
                     schema.populate_runtime_fields()?;
                 }
-                schemas.insert(name.clone(), schema);
-                let state = stored_states.get(&name).copied().unwrap_or_default();
-                states.insert(name, state);
-                added += 1;
+
+                let schema_changed = schemas.get(&name) != Some(&schema);
+                if schema_changed {
+                    schemas.insert(name.clone(), schema);
+                    changed += 1;
+                }
+
+                if let Some(disk_state) = stored_states.get(&name).copied() {
+                    states.insert(name.clone(), disk_state);
+                } else {
+                    states.entry(name.clone()).or_default();
+                }
+            }
+
+            for (name, schema) in schemas.iter() {
+                if schema.org_hash.is_some()
+                    && matches!(
+                        states.get(name).copied().unwrap_or_default(),
+                        SchemaState::Available
+                    )
+                {
+                    auto_approve.push(name.clone());
+                }
+            }
+
+            for name in &auto_approve {
+                states.insert(name.clone(), SchemaState::Approved);
             }
         }
 
-        if added > 0 {
-            log::info!("reload_from_store: added {} new schema(s) to cache", added);
+        for name in auto_approve {
+            self.db_ops
+                .store_schema_state(&name, &SchemaState::Approved)
+                .await?;
         }
 
-        Ok(added)
+        if changed > 0 {
+            log::info!(
+                "reload_from_store: refreshed {} schema(s) in cache",
+                changed
+            );
+        }
+
+        Ok(changed)
     }
 
     pub fn get_schemas(&self) -> Result<HashMap<String, Schema>, SchemaError> {
@@ -916,8 +961,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn reload_from_store_preserves_existing() {
-        // Verify that reload_from_store does NOT overwrite schemas already in cache.
+    async fn reload_from_store_is_noop_when_disk_matches_cache() {
+        // Verify that reload_from_store does not report changes when the
+        // persistent store matches the in-memory cache.
         let tmp = tempfile::TempDir::new().expect("tmpdir");
         let pool = std::sync::Arc::new(crate::storage::SledPool::new(tmp.path().to_path_buf()));
         let db_ops = std::sync::Arc::new(
@@ -930,17 +976,172 @@ mod tests {
             .await
             .expect("init core");
 
-        // Load a schema normally (into both cache and Sled)
+        // Load a schema normally (into both cache and Sled).
         core.load_schema_from_json(&blogpost_schema_json())
             .await
             .expect("load");
 
-        // Reload should add 0 new schemas (BlogPost is already in cache)
-        let added = core.reload_from_store().await.expect("reload");
-        assert_eq!(added, 0);
+        // Reload sees no difference — disk == cache.
+        let changed = core.reload_from_store().await.expect("reload");
+        assert_eq!(changed, 0);
 
-        // Still exactly one schema
+        // Still exactly one schema.
         assert_eq!(core.get_schemas().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn reload_from_store_refreshes_changed_schemas() {
+        // A schema written directly to Sled (simulating sync replay) that
+        // differs from the cached copy must refresh the cache.
+        let tmp = tempfile::TempDir::new().expect("tmpdir");
+        let pool = std::sync::Arc::new(crate::storage::SledPool::new(tmp.path().to_path_buf()));
+        let db_ops = std::sync::Arc::new(
+            crate::db_operations::DbOperations::from_sled(pool)
+                .await
+                .expect("db_ops"),
+        );
+        let message_bus = Arc::new(AsyncMessageBus::new());
+        let core = SchemaCore::new(Arc::clone(&db_ops), Arc::clone(&message_bus))
+            .await
+            .expect("init core");
+
+        // Seed cache + Sled with a pre-tag version of a schema.
+        let json = r#"{
+            "name": "SharedNotes",
+            "key": { "range_field": "created_at" },
+            "fields": { "body": {}, "created_at": {} }
+        }"#;
+        let declarative: crate::schema::types::DeclarativeSchemaDefinition =
+            serde_json::from_str(json).expect("parse");
+        let pre_tag = crate::schema::SchemaInterpreter::interpret(declarative).expect("interpret");
+        core.update_schema(&pre_tag).await.expect("seed");
+
+        // Simulate sync replay overwriting the on-disk entry with an
+        // org-tagged version — peer node sees a tagged schema arrive.
+        let mut tagged = pre_tag.clone();
+        tagged.org_hash = Some("a".repeat(64));
+        tagged.trust_domain = Some(format!("org:{}", "a".repeat(64)));
+        db_ops
+            .store_schema("SharedNotes", &tagged)
+            .await
+            .expect("replay put");
+
+        let changed = core.reload_from_store().await.expect("reload");
+        assert_eq!(
+            changed, 1,
+            "reload must refresh the cached copy when disk differs"
+        );
+
+        let refreshed = core
+            .get_schema_metadata("SharedNotes")
+            .expect("read")
+            .expect("present");
+        assert_eq!(refreshed.org_hash.as_deref(), Some("a".repeat(64).as_str()));
+        assert!(
+            refreshed
+                .trust_domain
+                .as_deref()
+                .is_some_and(|d| d.starts_with("org:")),
+            "trust_domain must survive replay",
+        );
+    }
+
+    #[tokio::test]
+    async fn reload_from_store_auto_approves_org_tagged_schemas() {
+        // Org schemas arriving via sync replay should be auto-approved on
+        // the receiving node — membership in the org implies trust.
+        let tmp = tempfile::TempDir::new().expect("tmpdir");
+        let pool = std::sync::Arc::new(crate::storage::SledPool::new(tmp.path().to_path_buf()));
+        let db_ops = std::sync::Arc::new(
+            crate::db_operations::DbOperations::from_sled(pool)
+                .await
+                .expect("db_ops"),
+        );
+        let message_bus = Arc::new(AsyncMessageBus::new());
+        let core = SchemaCore::new(Arc::clone(&db_ops), Arc::clone(&message_bus))
+            .await
+            .expect("init core");
+
+        let json = r#"{
+            "name": "OrgShared",
+            "key": { "range_field": "created_at" },
+            "fields": { "body": {}, "created_at": {} }
+        }"#;
+        let declarative: crate::schema::types::DeclarativeSchemaDefinition =
+            serde_json::from_str(json).expect("parse");
+        let mut schema =
+            crate::schema::SchemaInterpreter::interpret(declarative).expect("interpret");
+        schema.org_hash = Some("b".repeat(64));
+        schema.trust_domain = Some(format!("org:{}", "b".repeat(64)));
+
+        // Simulate replay: schema on disk, no state entry, cache empty.
+        db_ops
+            .store_schema("OrgShared", &schema)
+            .await
+            .expect("store");
+
+        let _ = core.reload_from_store().await.expect("reload");
+
+        let state = core
+            .get_schema_states()
+            .expect("states")
+            .get("OrgShared")
+            .copied();
+        assert_eq!(
+            state,
+            Some(SchemaState::Approved),
+            "org-tagged schema arriving via sync must be auto-approved",
+        );
+    }
+
+    #[tokio::test]
+    async fn reload_from_store_preserves_blocked_state_for_org_schemas() {
+        // Blocked schemas must NOT get auto-promoted to Approved even when
+        // they carry an org_hash — Blocked means the user explicitly rejected.
+        let tmp = tempfile::TempDir::new().expect("tmpdir");
+        let pool = std::sync::Arc::new(crate::storage::SledPool::new(tmp.path().to_path_buf()));
+        let db_ops = std::sync::Arc::new(
+            crate::db_operations::DbOperations::from_sled(pool)
+                .await
+                .expect("db_ops"),
+        );
+        let message_bus = Arc::new(AsyncMessageBus::new());
+        let core = SchemaCore::new(Arc::clone(&db_ops), Arc::clone(&message_bus))
+            .await
+            .expect("init core");
+
+        let json = r#"{
+            "name": "BlockedOrg",
+            "key": { "range_field": "created_at" },
+            "fields": { "body": {}, "created_at": {} }
+        }"#;
+        let declarative: crate::schema::types::DeclarativeSchemaDefinition =
+            serde_json::from_str(json).expect("parse");
+        let mut schema =
+            crate::schema::SchemaInterpreter::interpret(declarative).expect("interpret");
+        schema.org_hash = Some("c".repeat(64));
+
+        db_ops
+            .store_schema("BlockedOrg", &schema)
+            .await
+            .expect("store");
+        db_ops
+            .store_schema_state("BlockedOrg", &SchemaState::Blocked)
+            .await
+            .expect("block");
+
+        let _ = core.reload_from_store().await.expect("reload");
+
+        let state = core
+            .get_schema_states()
+            .expect("states")
+            .get("BlockedOrg")
+            .copied();
+        assert_eq!(
+            state,
+            Some(SchemaState::Blocked),
+            "Blocked must be preserved"
+        );
     }
 
     #[tokio::test]
