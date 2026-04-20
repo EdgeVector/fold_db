@@ -9,30 +9,37 @@ Drop in files, JSON, or social media exports — FoldDB detects schemas, extract
 **Try it now** — install with one command and have a working database in under a minute:
 
 ```bash
-brew tap EdgeVector/fold_db && brew install folddb
-folddb_server --port 9001
-# Open http://localhost:9001 — drag in a JSON file, ask a question
+brew install edgevector/folddb/folddb
+folddb daemon start
+# Open http://localhost:9101 — drag in a JSON file, ask a question
 ```
 
 ## Quick Start
 
 ### Option A: Desktop App (macOS)
 
-Download the latest `.dmg` from [GitHub Releases](https://github.com/EdgeVector/fold_db/releases), open it, and drag **FoldDB.app** to Applications. Double-click to launch — no terminal needed.
+Download the latest `.dmg` from [GitHub Releases](https://github.com/EdgeVector/fold_db_node/releases), open it, and drag **FoldDB.app** to Applications. Double-click to launch — no terminal needed.
 
-> **First launch:** macOS will block the unsigned app. Right-click the app → **Open** → click **Open** in the dialog, or go to **System Settings → Privacy & Security → Open Anyway**.
-
-### Option B: Install via Homebrew
+### Option B: Install via Homebrew (macOS + Linux x86_64)
 
 ```bash
-brew tap EdgeVector/fold_db
-brew install folddb
+brew install edgevector/folddb/folddb
 ```
+
+Ships `folddb` (CLI), `folddb_server` (daemon), and `schema_service` (local schema registry). Handles upgrades via `brew upgrade folddb`.
 
 ### Option C: Install from Source
 
+Fallback for platforms not covered by the tap (Linux arm64, air-gapped). Downloads the latest release tarball from the `EdgeVector/fold_db` mirror and verifies its sha256:
+
 ```bash
-curl -fsSL https://raw.githubusercontent.com/EdgeVector/fold_db/master/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/EdgeVector/fold_db_node/main/install.sh | sh
+```
+
+Or build from source:
+
+```bash
+cargo install --git https://github.com/EdgeVector/fold_db_node folddb folddb_server schema_service
 ```
 
 ### Run
