@@ -404,8 +404,11 @@ impl SyncEngine {
         let max = self.config.max_pending;
         if max > 0 && pending.len() > max {
             let overflow = pending.len() - max;
-            log::warn!(
-                "pending queue exceeded max_pending ({}), dropping {} oldest entries",
+            // Dropping pending entries silently would cause permanent data
+            // loss on peers — upgrade from warn to error so this is
+            // unmissable in logs (alpha BLOCKER 4439b class of bug).
+            log::error!(
+                "SYNC DATA LOSS: pending queue exceeded max_pending ({}), dropping {} oldest entries — these writes will NOT reach sync peers",
                 max,
                 overflow
             );
@@ -985,7 +988,10 @@ impl SyncEngine {
         let urls = self.auth.presign_download(target, &new_seqs).await?;
 
         let mut total_replayed = 0u64;
-        let mut max_seq = cursor;
+        // Advance the cursor contiguously: if any seq in this batch fails, we
+        // stop before it so the next cycle re-downloads it. Silent drops (where
+        // the cursor skips past a failed entry) caused alpha BLOCKER 4439b.
+        let mut max_contiguous_seq = cursor;
         let mut schemas_replayed = false;
         let mut embeddings_replayed = false;
 
@@ -996,38 +1002,61 @@ impl SyncEngine {
                     async move { self.s3.download(&url).await }
                 })
                 .await?;
-            match downloaded {
-                Some(bytes) => match LogEntry::unseal(&bytes, &target.crypto).await {
-                    Ok(entry) => {
-                        // `schema_states` shares the schema reloader: replaying a
-                        // pure state flip on an org schema (approve/block) must
-                        // still refresh the in-memory state cache, otherwise
-                        // `/api/schemas` lags the on-disk truth until the next
-                        // schemas-namespace write lands.
-                        match entry.op.namespace() {
-                            "schemas" | "schema_states" => schemas_replayed = true,
-                            "native_index" => embeddings_replayed = true,
-                            _ => {}
-                        }
-                        self.replay_entry(&entry, Some(target)).await?;
-                        total_replayed += 1;
-                        if *seq > max_seq {
-                            max_seq = *seq;
-                        }
-                    }
-                    Err(e) => {
-                        log::warn!(
-                            "skipping corrupt entry in '{}' seq={}: {}",
-                            target.label,
-                            seq,
-                            e
-                        );
-                    }
-                },
-                None => {
-                    log::warn!("entry not found in '{}' seq={}", target.label, seq);
+            let bytes = downloaded.ok_or_else(|| {
+                log::error!(
+                    "sync replay aborted: entry not found in '{}' seq={} (server listed this seq but S3 returned 404); cursor will NOT advance past seq={}",
+                    target.label,
+                    seq,
+                    max_contiguous_seq
+                );
+                SyncError::CorruptEntry {
+                    seq: *seq,
+                    reason: format!(
+                        "object missing from '{}' after server listed it",
+                        target.label
+                    ),
                 }
+            })?;
+            let entry = LogEntry::unseal(&bytes, &target.crypto).await.map_err(|e| {
+                log::error!(
+                    "sync replay aborted: failed to unseal entry in '{}' seq={}: {}; cursor will NOT advance past seq={}",
+                    target.label,
+                    seq,
+                    e,
+                    max_contiguous_seq
+                );
+                SyncError::CorruptEntry {
+                    seq: *seq,
+                    reason: format!("unseal failed: {e}"),
+                }
+            })?;
+            // `schema_states` shares the schema reloader: replaying a pure
+            // state flip on an org schema (approve/block) must still refresh
+            // the in-memory state cache, otherwise `/api/schemas` lags the
+            // on-disk truth until the next schemas-namespace write lands.
+            match entry.op.namespace() {
+                "schemas" | "schema_states" => schemas_replayed = true,
+                "native_index" => embeddings_replayed = true,
+                _ => {}
             }
+            log::info!(
+                "replay '{}' seq={}: {}",
+                target.label,
+                seq,
+                entry.op.describe()
+            );
+            self.replay_entry(&entry, Some(target)).await.map_err(|e| {
+                log::error!(
+                    "sync replay aborted: apply failed in '{}' seq={}: {}; cursor will NOT advance past seq={}",
+                    target.label,
+                    seq,
+                    e,
+                    max_contiguous_seq
+                );
+                e
+            })?;
+            total_replayed += 1;
+            max_contiguous_seq = *seq;
         }
 
         // Invoke reloaders for any namespaces that received new entries
@@ -1040,12 +1069,15 @@ impl SyncEngine {
                 .await;
         }
 
-        // Update cursor
-        if max_seq > cursor {
+        // Update cursor to the highest contiguously-replayed seq. We never
+        // advance past a seq that failed to replay — the next sync cycle
+        // will retry from there.
+        if max_contiguous_seq > cursor {
             let mut cursors = self.download_cursors.lock().await;
-            cursors.insert(target.prefix.clone(), max_seq);
+            cursors.insert(target.prefix.clone(), max_contiguous_seq);
             drop(cursors);
-            self.save_download_cursor(&target.prefix, max_seq).await;
+            self.save_download_cursor(&target.prefix, max_contiguous_seq)
+                .await;
         }
 
         Ok(total_replayed)
@@ -1253,36 +1285,51 @@ impl SyncEngine {
 
             for (seq, url) in log_seqs.iter().zip(urls.iter()) {
                 let data = self.s3.download(url).await?;
-                match data {
-                    Some(bytes) => match LogEntry::unseal(&bytes, &target.crypto).await {
-                        Ok(entry) => {
-                            // `schema_states` shares the schema reloader: see
-                            // `download_entries` for rationale.
-                            match entry.op.namespace() {
-                                "schemas" | "schema_states" => schemas_replayed = true,
-                                "native_index" => embeddings_replayed = true,
-                                _ => {}
-                            }
-                            self.replay_entry(&entry, Some(&target)).await?;
-                            entries_replayed += 1;
-                        }
-                        Err(e) => {
-                            log::warn!(
-                                "skipping corrupt log entry for '{}' seq={seq}: {e}",
-                                target.label
-                            );
-                        }
-                    },
-                    None => {
-                        log::warn!(
-                            "log entry for '{}' seq={seq} not found in S3, skipping",
+                let bytes = data.ok_or_else(|| {
+                    log::error!(
+                        "bootstrap aborted: log entry for '{}' seq={seq} not found in S3 after listing",
+                        target.label
+                    );
+                    SyncError::CorruptEntry {
+                        seq: *seq,
+                        reason: format!(
+                            "object missing from '{}' after bootstrap listed it",
+                            target.label
+                        ),
+                    }
+                })?;
+                let entry = LogEntry::unseal(&bytes, &target.crypto)
+                    .await
+                    .map_err(|e| {
+                        log::error!(
+                            "bootstrap aborted: failed to unseal log entry for '{}' seq={seq}: {e}",
                             target.label
                         );
-                    }
+                        SyncError::CorruptEntry {
+                            seq: *seq,
+                            reason: format!("unseal failed: {e}"),
+                        }
+                    })?;
+                // `schema_states` shares the schema reloader: see
+                // `download_entries` for rationale.
+                match entry.op.namespace() {
+                    "schemas" | "schema_states" => schemas_replayed = true,
+                    "native_index" => embeddings_replayed = true,
+                    _ => {}
                 }
+                log::info!(
+                    "bootstrap replay '{}' seq={}: {}",
+                    target.label,
+                    seq,
+                    entry.op.describe()
+                );
+                self.replay_entry(&entry, Some(&target)).await?;
+                entries_replayed += 1;
             }
         }
 
+        // Bootstrap replayed every listed seq contiguously (we return Err on
+        // any failure), so `last_seq` is safe to advance to the max listed.
         let last_seq = log_seqs.last().copied().unwrap_or(snapshot_last_seq);
 
         // Advance the local sequence counter only from the personal target.
@@ -1412,8 +1459,22 @@ impl SyncEngine {
                 kv.delete(&final_key).await?;
             }
             LogOp::BatchPut { namespace, items } => {
-                for (key, value) in items {
-                    let final_key = Self::rewrite_key_if_needed(namespace, key, target)?;
+                // Per-item apply — any failure aborts the whole entry so the
+                // cursor doesn't advance past a partial replay (alpha BLOCKER
+                // 4439b).
+                let total = items.len();
+                for (idx, (key, value)) in items.iter().enumerate() {
+                    let final_key =
+                        Self::rewrite_key_if_needed(namespace, key, target).map_err(|e| {
+                            log::error!(
+                                "replay BatchPut abort: key rewrite failed at item {}/{} ns={}: {}",
+                                idx + 1,
+                                total,
+                                namespace,
+                                e
+                            );
+                            e
+                        })?;
                     self.replay_put(
                         namespace,
                         &LogOp::encode_bytes(&final_key),
@@ -1421,7 +1482,17 @@ impl SyncEngine {
                         entry.timestamp_ms,
                         &entry.device_id,
                     )
-                    .await?;
+                    .await
+                    .map_err(|e| {
+                        log::error!(
+                            "replay BatchPut abort: item {}/{} ns={} failed to apply: {}",
+                            idx + 1,
+                            total,
+                            namespace,
+                            e
+                        );
+                        e
+                    })?;
                 }
             }
             LogOp::BatchDelete { namespace, keys } => {

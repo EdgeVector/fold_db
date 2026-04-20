@@ -122,6 +122,22 @@ impl LogOp {
         }
     }
 
+    /// Short human-readable description: op kind, namespace, item count.
+    /// Used by sync replay instrumentation so every replayed entry shows up
+    /// in the log with enough detail to diagnose drops (alpha BLOCKER 4439b).
+    pub fn describe(&self) -> String {
+        match self {
+            LogOp::Put { namespace, .. } => format!("Put ns={namespace}"),
+            LogOp::Delete { namespace, .. } => format!("Delete ns={namespace}"),
+            LogOp::BatchPut { namespace, items } => {
+                format!("BatchPut ns={} items={}", namespace, items.len())
+            }
+            LogOp::BatchDelete { namespace, keys } => {
+                format!("BatchDelete ns={} keys={}", namespace, keys.len())
+            }
+        }
+    }
+
     /// Encode key bytes to base64 for storage in the log entry.
     pub fn encode_bytes(bytes: &[u8]) -> String {
         BASE64.encode(bytes)
