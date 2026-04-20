@@ -495,3 +495,255 @@ async fn test_partitioner_classifies_real_org_mutations() {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Test: Org-prefix replay via replay_entry(target=Some) — the real sync path.
+//
+// `test_org_sync_with_encryption_roundtrip` uses `replay_entry(…, None)` which
+// bypasses `rewrite_key_if_needed`, so it never exercises the af4ba strip-on-
+// replay path that real `download_entries` takes. This test drives the full
+// sender → sealed → unsealed → replay_entry(Some(&org_target)) → schema
+// reloader flow and asserts the receiver sees the schema under its bare name
+// and can resolve molecules through it.
+//
+// Alpha BLOCKER 2767c: without this coverage the af4ba replay regressed on
+// real dev Exemem because schema-namespace rows stripped to a bare key never
+// made it into the receiver's SchemaCore.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn test_org_prefix_replay_dispatches_schema_and_molecules() {
+    let tmp1 = tempfile::tempdir().unwrap();
+    let tmp2 = tempfile::tempdir().unwrap();
+    let node1 = make_folddb(&tmp1).await;
+    let node2 = make_folddb(&tmp2).await;
+
+    // Alice creates an org and derives its E2E crypto.
+    let pool1 = node1.sled_pool().cloned().unwrap();
+    let membership =
+        org_ops::create_org(&pool1, "Replay Corp", "pubkey_alice", "Alice").unwrap();
+    let org_hash = membership.org_hash.clone();
+
+    let org_key_bytes: [u8; 32] = {
+        use sha2::{Digest, Sha256};
+        let mut hasher = Sha256::new();
+        hasher.update(membership.org_e2e_secret.as_bytes());
+        hasher.finalize().into()
+    };
+    let org_crypto: Arc<dyn CryptoProvider> =
+        Arc::new(LocalCryptoProvider::from_key(org_key_bytes));
+
+    // Alice registers an org-tagged schema and writes 5 molecules against it.
+    register_schema(&node1, "replay_notes", Some(&org_hash)).await;
+    for i in 1..=5 {
+        write_mutation(
+            &node1,
+            "replay_notes",
+            &format!("note-{i}"),
+            &format!("2026-04-{i:02}"),
+            &format!("body {i}"),
+        )
+        .await;
+    }
+
+    // Pull every org-prefixed log entry that a real SyncEngine would partition
+    // onto the org prefix: schema body, schema state, and all main-namespace
+    // atom/ref/history writes.
+    let pool1_ref = node1.sled_pool().unwrap();
+    let org_prefix = format!("{}:", org_hash);
+    let schema_entries = extract_org_entries(pool1_ref, "schemas", &org_prefix);
+    let state_entries = extract_org_entries(pool1_ref, "schema_states", &org_prefix);
+    let main_entries = extract_org_entries(pool1_ref, "main", &org_prefix);
+    assert!(
+        !schema_entries.is_empty(),
+        "Alice must have org-prefixed schema entry after af4ba dual-write"
+    );
+    assert!(
+        !main_entries.is_empty(),
+        "Alice must have org-prefixed molecule entries"
+    );
+
+    // Seal every entry with the org crypto — this is what `upload_entries`
+    // produces.
+    let mut sealed = Vec::new();
+    for e in schema_entries
+        .iter()
+        .chain(state_entries.iter())
+        .chain(main_entries.iter())
+    {
+        sealed.push(e.seal(&org_crypto).await.unwrap());
+    }
+
+    // Bob: build a replay engine over his Sled and a SyncTarget that names the
+    // org prefix. `replay_entry(Some(&org_target))` must trigger the
+    // af4ba strip-on-replay for the schemas/schema_states namespaces.
+    let pool2 = node2.sled_pool().cloned().unwrap();
+    let node2_store =
+        Arc::new(fold_db::storage::SledNamespacedStore::new(pool2)) as Arc<dyn NamespacedStore>;
+    let replay_engine = build_replay_engine(node2_store, org_crypto.clone());
+
+    let org_target = fold_db::sync::org_sync::SyncTarget {
+        label: membership.org_name.clone(),
+        prefix: org_hash.clone(),
+        crypto: org_crypto.clone(),
+    };
+
+    for s in &sealed {
+        let unsealed = LogEntry::unseal(&s.bytes, &org_crypto).await.unwrap();
+        replay_engine
+            .replay_entry(&unsealed, Some(&org_target))
+            .await
+            .expect("org-prefix replay must dispatch schema/main entries");
+    }
+
+    // Fire the schema reloader callback — `download_entries` triggers this
+    // when any replayed entry wrote to the schemas namespace.
+    node2.schema_manager().reload_from_store().await.unwrap();
+    // Auto-approve so the query path resolves against the schema.
+    node2
+        .schema_manager()
+        .set_schema_state("replay_notes", SchemaState::Approved)
+        .await
+        .unwrap();
+
+    // `/api/schemas` must expose the schema under its bare name — not under
+    // `{org_hash}:replay_notes` — so UIs and queries can find it.
+    let visible: Vec<String> = node2
+        .schema_manager()
+        .get_schemas()
+        .unwrap()
+        .keys()
+        .cloned()
+        .collect();
+    assert!(
+        visible.contains(&"replay_notes".to_string()),
+        "Bob must surface replay_notes under bare name after org-prefix replay — got {:?}",
+        visible
+    );
+    assert!(
+        visible.iter().all(|k| !k.starts_with(&org_prefix)),
+        "Bob must not surface org-prefixed schema names — got {:?}",
+        visible
+    );
+
+    // Molecules must resolve against the replayed schema — the alpha-thesis
+    // assertion for 2767c.
+    let bodies = query_field_values(&node2, "replay_notes", "body").await;
+    assert_eq!(
+        bodies.len(),
+        5,
+        "Bob must query all 5 org molecules through the propagated schema"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Guard for the `schema_states` leg of the reloader dispatch.
+//
+// If a peer flips an org schema's state in isolation (approve / block) the org
+// log receives ONLY a `schema_states` entry — no accompanying `schemas` entry.
+// `download_entries` must still fire the schema reloader so the in-memory
+// state cache converges. Without this, UIs and permission checks lag the
+// on-disk truth until the next `schemas`-namespace write lands.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn test_org_prefix_replay_state_only_triggers_reload() {
+    let tmp1 = tempfile::tempdir().unwrap();
+    let tmp2 = tempfile::tempdir().unwrap();
+    let node1 = make_folddb(&tmp1).await;
+    let node2 = make_folddb(&tmp2).await;
+
+    let pool1 = node1.sled_pool().cloned().unwrap();
+    let membership =
+        org_ops::create_org(&pool1, "State Corp", "pubkey_alice", "Alice").unwrap();
+    let org_hash = membership.org_hash.clone();
+
+    let org_key_bytes: [u8; 32] = {
+        use sha2::{Digest, Sha256};
+        let mut hasher = Sha256::new();
+        hasher.update(membership.org_e2e_secret.as_bytes());
+        hasher.finalize().into()
+    };
+    let org_crypto: Arc<dyn CryptoProvider> =
+        Arc::new(LocalCryptoProvider::from_key(org_key_bytes));
+
+    // Pre-propagate the schema + initial Approved state to Bob so we can
+    // isolate the state-only replay path.
+    register_schema(&node1, "state_notes", Some(&org_hash)).await;
+    let pool1_ref = node1.sled_pool().unwrap();
+    let org_prefix = format!("{}:", org_hash);
+    let schema_entries = extract_org_entries(pool1_ref, "schemas", &org_prefix);
+    let initial_state_entries = extract_org_entries(pool1_ref, "schema_states", &org_prefix);
+
+    let pool2 = node2.sled_pool().cloned().unwrap();
+    let node2_store =
+        Arc::new(fold_db::storage::SledNamespacedStore::new(pool2)) as Arc<dyn NamespacedStore>;
+    let replay_engine = build_replay_engine(node2_store, org_crypto.clone());
+    let org_target = fold_db::sync::org_sync::SyncTarget {
+        label: membership.org_name.clone(),
+        prefix: org_hash.clone(),
+        crypto: org_crypto.clone(),
+    };
+    for e in schema_entries.iter().chain(initial_state_entries.iter()) {
+        let sealed = e.seal(&org_crypto).await.unwrap();
+        let unsealed = LogEntry::unseal(&sealed.bytes, &org_crypto).await.unwrap();
+        replay_engine
+            .replay_entry(&unsealed, Some(&org_target))
+            .await
+            .unwrap();
+    }
+    node2.schema_manager().reload_from_store().await.unwrap();
+    // Bob must start from `Available` so the next replay demonstrably flips
+    // the state.
+    node2
+        .schema_manager()
+        .set_schema_state("state_notes", SchemaState::Available)
+        .await
+        .unwrap();
+
+    // Alice blocks the schema — triggers a `schema_states`-namespace dual-
+    // write. No `schemas` entry is produced for a pure state flip.
+    node1
+        .schema_manager()
+        .set_schema_state("state_notes", SchemaState::Blocked)
+        .await
+        .unwrap();
+
+    let block_state_entries = extract_org_entries(pool1_ref, "schema_states", &org_prefix);
+    // The newly-captured state must encode `Blocked`; find the entry whose
+    // decoded value is `Blocked` (it may share the org-prefixed key with the
+    // earlier `Available` write if the writer reused it).
+    let blocked_entry = block_state_entries
+        .iter()
+        .find(|e| match &e.op {
+            LogOp::Put { value, .. } => {
+                let bytes = LogOp::decode_bytes(value).unwrap_or_default();
+                serde_json::from_slice::<SchemaState>(&bytes)
+                    .map(|s| matches!(s, SchemaState::Blocked))
+                    .unwrap_or(false)
+            }
+            _ => false,
+        })
+        .expect("blocked state entry must be present on the org prefix");
+
+    // Simulate a download cycle carrying ONLY the state entry. If the
+    // reloader dispatch omits `schema_states`, Bob's cache stays stuck at
+    // whatever it was before — surfacing the regression this guards against.
+    let sealed = blocked_entry.seal(&org_crypto).await.unwrap();
+    let unsealed = LogEntry::unseal(&sealed.bytes, &org_crypto).await.unwrap();
+    replay_engine
+        .replay_entry(&unsealed, Some(&org_target))
+        .await
+        .unwrap();
+
+    // Drive the reloader the way `download_entries` would — per this PR, a
+    // `schema_states`-namespace entry counts as a schema replay.
+    node2.schema_manager().reload_from_store().await.unwrap();
+
+    let states = node2.schema_manager().get_schema_states().unwrap();
+    assert_eq!(
+        states.get("state_notes"),
+        Some(&SchemaState::Blocked),
+        "Bob's schema_states cache must converge after a state-only org replay"
+    );
+}

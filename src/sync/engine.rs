@@ -999,8 +999,13 @@ impl SyncEngine {
             match downloaded {
                 Some(bytes) => match LogEntry::unseal(&bytes, &target.crypto).await {
                     Ok(entry) => {
+                        // `schema_states` shares the schema reloader: replaying a
+                        // pure state flip on an org schema (approve/block) must
+                        // still refresh the in-memory state cache, otherwise
+                        // `/api/schemas` lags the on-disk truth until the next
+                        // schemas-namespace write lands.
                         match entry.op.namespace() {
-                            "schemas" => schemas_replayed = true,
+                            "schemas" | "schema_states" => schemas_replayed = true,
                             "native_index" => embeddings_replayed = true,
                             _ => {}
                         }
@@ -1251,8 +1256,10 @@ impl SyncEngine {
                 match data {
                     Some(bytes) => match LogEntry::unseal(&bytes, &target.crypto).await {
                         Ok(entry) => {
+                            // `schema_states` shares the schema reloader: see
+                            // `download_entries` for rationale.
                             match entry.op.namespace() {
-                                "schemas" => schemas_replayed = true,
+                                "schemas" | "schema_states" => schemas_replayed = true,
                                 "native_index" => embeddings_replayed = true,
                                 _ => {}
                             }
