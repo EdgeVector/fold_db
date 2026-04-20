@@ -1605,11 +1605,26 @@ impl SchemaServiceState {
             }
         };
 
+        // Compute the transform hash from the inline WASM bytes (if any)
+        // so the StoredView is always linked to a content-addressed
+        // identifier. Without this, `transform_hash` was perpetually None
+        // and a view registered with WASM had no audit trail back to the
+        // Global Transform Registry. The hash matches whatever
+        // `register_transform` would compute for the same bytes, so a
+        // transform registered separately will have the same hash here.
+        //
+        // The bytes themselves still live on the StoredView for backwards
+        // compatibility with `stored_view_to_transform_view`, which reads
+        // them directly. A future platform improvement: drop inline bytes
+        // and have the view-load path fetch from the transform registry
+        // by hash.
+        let transform_hash = request.wasm_bytes.as_deref().map(Self::compute_wasm_hash);
+
         // Build the StoredView
         let view = StoredView {
             name: request.name.clone(),
             input_queries: request.input_queries,
-            transform_hash: None,
+            transform_hash,
             wasm_bytes: request.wasm_bytes,
             output_schema_name: output_schema.name.clone(),
             schema_type: request.schema_type,

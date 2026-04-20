@@ -782,3 +782,151 @@ async fn test_stored_view_without_transform_hash() {
     let view: StoredView = serde_json::from_str(json).expect("deserialize failed");
     assert!(view.transform_hash.is_none());
 }
+
+/// Verify that `SchemaServiceState::add_view` populates `StoredView.transform_hash`
+/// with the sha256 of the supplied `wasm_bytes`. This is the linkage between a
+/// view and its transform in the Global Transform Registry — without it, views
+/// with inline bytes had no audit trail back to the registry entry, and the
+/// invariant "every view references its transform" was only nominally enforced.
+///
+/// This test was added when Tom caught during Phase 1a review that
+/// `StoredView.transform_hash` was always `None` in the prior implementation.
+#[tokio::test]
+async fn add_view_populates_transform_hash_from_wasm_bytes() {
+    use fold_db::schema_service::types::AddViewRequest;
+
+    let state = make_test_state();
+
+    // Seed a source schema the view will read from.
+    add_test_schema(
+        &state,
+        "source_schema",
+        &[
+            ("id", FieldValueType::String),
+            ("body", FieldValueType::String),
+        ],
+        &[("id", "low"), ("body", "low")],
+    )
+    .await;
+
+    // Minimal valid WASM header — the bytes aren't executed here; we're just
+    // checking that they get hashed and stored correctly on the StoredView.
+    let wasm_bytes = vec![0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00];
+    let expected_hash = SchemaServiceState::compute_wasm_hash(&wasm_bytes);
+
+    let mut output_field_types = HashMap::new();
+    output_field_types.insert("summary".to_string(), FieldValueType::String);
+
+    let mut field_descriptions = HashMap::new();
+    field_descriptions.insert("summary".to_string(), "cluster summary".to_string());
+    // Provide classifications up-front so add_schema doesn't fall back to
+    // an Ollama classify call (fails in test environments without Ollama).
+    let mut field_classifications = HashMap::new();
+    field_classifications.insert("summary".to_string(), vec!["low".to_string()]);
+    let mut field_data_classifications = HashMap::new();
+    field_data_classifications.insert(
+        "summary".to_string(),
+        DataClassification::new(0, "general").unwrap(),
+    );
+
+    let add_view_request = AddViewRequest {
+        name: "TestView".to_string(),
+        descriptive_name: "TestView".to_string(),
+        input_queries: vec![Query::new(
+            "source_schema".to_string(),
+            vec!["body".to_string()],
+        )],
+        output_fields: vec!["summary".to_string()],
+        field_descriptions,
+        field_classifications,
+        field_data_classifications,
+        wasm_bytes: Some(wasm_bytes.clone()),
+        schema_type: fold_db::schema::types::schema::DeclarativeSchemaType::Range,
+    };
+
+    let outcome = state
+        .add_view(add_view_request)
+        .await
+        .expect("add_view must succeed");
+
+    // Extract the StoredView from the outcome.
+    use fold_db::schema_service::types::ViewAddOutcome;
+    let stored_view = match outcome {
+        ViewAddOutcome::Added(v, _)
+        | ViewAddOutcome::AddedWithExistingSchema(v, _)
+        | ViewAddOutcome::Expanded(v, _, _) => v,
+    };
+
+    // THE CORE INVARIANT: transform_hash is populated, not None.
+    assert!(
+        stored_view.transform_hash.is_some(),
+        "add_view must populate transform_hash when wasm_bytes is provided; got None"
+    );
+
+    // And it matches the sha256 of the provided bytes — same hash that
+    // `register_transform` would compute for the same bytes.
+    assert_eq!(
+        stored_view.transform_hash.as_deref(),
+        Some(expected_hash.as_str()),
+        "StoredView.transform_hash must be sha256(wasm_bytes)"
+    );
+
+    // The bytes are still present for backward compatibility with the
+    // view-load path that reads them directly.
+    assert_eq!(
+        stored_view.wasm_bytes.as_deref(),
+        Some(wasm_bytes.as_slice())
+    );
+}
+
+/// Complement: when no wasm_bytes are provided (identity view), transform_hash
+/// stays None. Identity views don't need a transform.
+#[tokio::test]
+async fn add_view_identity_leaves_transform_hash_none() {
+    use fold_db::schema_service::types::AddViewRequest;
+
+    let state = make_test_state();
+
+    add_test_schema(
+        &state,
+        "source_schema",
+        &[("body", FieldValueType::String)],
+        &[("body", "low")],
+    )
+    .await;
+
+    let mut field_descriptions = HashMap::new();
+    field_descriptions.insert("body".to_string(), "passthrough body".to_string());
+
+    let add_view_request = AddViewRequest {
+        name: "IdentityTestView".to_string(),
+        descriptive_name: "IdentityTestView".to_string(),
+        input_queries: vec![Query::new(
+            "source_schema".to_string(),
+            vec!["body".to_string()],
+        )],
+        output_fields: vec!["body".to_string()],
+        field_descriptions,
+        field_classifications: HashMap::new(),
+        field_data_classifications: HashMap::new(),
+        wasm_bytes: None,
+        schema_type: fold_db::schema::types::schema::DeclarativeSchemaType::Single,
+    };
+
+    let outcome = state
+        .add_view(add_view_request)
+        .await
+        .expect("add_view must succeed for identity view");
+    use fold_db::schema_service::types::ViewAddOutcome;
+    let stored_view = match outcome {
+        ViewAddOutcome::Added(v, _)
+        | ViewAddOutcome::AddedWithExistingSchema(v, _)
+        | ViewAddOutcome::Expanded(v, _, _) => v,
+    };
+
+    assert!(
+        stored_view.transform_hash.is_none(),
+        "identity view (no wasm_bytes) must have transform_hash = None"
+    );
+    assert!(stored_view.wasm_bytes.is_none());
+}
