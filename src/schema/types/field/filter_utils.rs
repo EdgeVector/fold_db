@@ -125,13 +125,10 @@ pub async fn fetch_atoms_with_key_metadata_async_with_org(
             }
             Ok(None) => {
                 let key_str = key.to_string();
-                if let Some(org) = org_hash {
+                if org_hash.is_some() {
                     log::warn!(
-                        "Skipping unresolvable atom ref '{}' (org='{}', key='{}') — \
-                         pre-tag molecule ref leaked without atom data (alpha BLOCKER 4b171)",
-                        atom_uuid,
-                        org,
-                        key_str
+                        "Skipping unresolvable atom ref — pre-tag molecule ref leaked \
+                         without atom data (alpha BLOCKER 4b171)"
                     );
                     continue;
                 }
