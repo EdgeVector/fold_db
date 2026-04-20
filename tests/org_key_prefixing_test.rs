@@ -587,3 +587,155 @@ async fn test_pre_tag_molecules_remain_queryable_after_set_org_hash() {
         all_keys
     );
 }
+
+// === Unresolvable pre-tag ref leak: graceful skip on unfiltered query ===
+
+/// Alpha BLOCKER 4b171 regression: when a pre-tag molecule's ref replays to a
+/// peer via the org log but its backing atom never ships (because
+/// `set-org-hash` doesn't migrate pre-tag data), the receiver holds an orphan
+/// ref. A previous implementation returned
+/// `InvalidField("Atom … not found for key …")` on the entire unfiltered
+/// query, rendering every shared-schema query unusable for the receiver.
+///
+/// The fix: for org-scoped reads, if an atom is missing at BOTH the
+/// org-prefixed and unprefixed keys, log a warning and skip the ref — the
+/// query still returns the resolvable molecules. Simulated here by deleting an
+/// atom at the Sled level after ingest, which mirrors the on-receiver state
+/// without the two-node sync harness.
+#[tokio::test]
+async fn test_org_query_skips_unresolvable_pretag_atom_refs_with_warn() {
+    let tmp = tempfile::tempdir().unwrap();
+    let db = make_folddb(&tmp).await;
+
+    register_test_org(&db, ORG_HASH);
+    register_schema(&db, "leaky_notes", Some(ORG_HASH)).await;
+
+    // Write two molecules — both end up fully org-prefixed.
+    write_mutation(&db, "leaky_notes", "m1", "2026-04-01", "present body").await;
+    write_mutation(&db, "leaky_notes", "m2", "2026-04-02", "orphan body").await;
+
+    // Simulate the sync gap: remove exactly one org-prefixed atom key while
+    // leaving its ref intact. This mirrors a receiver that replayed a pre-tag
+    // ref without the matching atom data.
+    let pool = db.sled_pool().expect("Expected sled backend");
+    let guard = pool.acquire_arc().unwrap();
+    let main_tree = guard.db().open_tree("main").unwrap();
+
+    let atom_prefix = format!("{ORG_HASH}:atom:");
+    let atom_keys: Vec<Vec<u8>> = main_tree
+        .iter()
+        .filter_map(|r| r.ok())
+        .filter(|(k, _)| k.starts_with(atom_prefix.as_bytes()))
+        .map(|(k, _)| k.to_vec())
+        .collect();
+    assert!(
+        atom_keys.len() >= 2,
+        "expected at least 2 org-prefixed atom keys before gap simulation, got {}",
+        atom_keys.len()
+    );
+    // Delete ALL atoms at the org prefix for ONE of the molecules. Pick the
+    // first atom, figure out its uuid, and delete that uuid's atom at every
+    // key variant (org-prefixed + unprefixed) so both lookups miss — this is
+    // the exact on-wire state for a pre-tag-ref leak.
+    let victim_bytes = atom_keys.first().expect("at least one atom").clone();
+    let victim_str = String::from_utf8_lossy(&victim_bytes).to_string();
+    let victim_uuid = victim_str
+        .strip_prefix(&atom_prefix)
+        .expect("victim key must start with org atom prefix")
+        .to_string();
+    let unprefixed = format!("atom:{}", victim_uuid);
+
+    main_tree
+        .remove(&victim_bytes)
+        .expect("remove org-prefixed victim");
+    main_tree
+        .remove(unprefixed.as_bytes())
+        .expect("remove unprefixed victim (idempotent if absent)");
+    main_tree.flush().expect("flush after remove");
+    drop(guard);
+
+    // Unfiltered query must NOT fail — it should skip the unresolvable ref.
+    let access = AccessContext::owner("test-owner");
+    let result = db
+        .query_executor()
+        .query_with_access(
+            Query::new("leaky_notes".to_string(), vec!["body".to_string()]),
+            &access,
+            None,
+        )
+        .await
+        .expect("unfiltered query must gracefully skip orphan atom refs (4b171)");
+
+    let bodies: Vec<serde_json::Value> = result
+        .get("body")
+        .expect("missing body field")
+        .values()
+        .map(|fv| fv.value.clone())
+        .collect();
+
+    // At least one body survives — before the fix, the whole query errored
+    // with `Atom … not found`. After the fix, unresolvable refs are skipped
+    // with a warn log and the query still returns the resolvable molecules.
+    assert!(
+        !bodies.is_empty(),
+        "expected at least one resolved molecule after gap simulation, got empty"
+    );
+    for b in &bodies {
+        assert!(
+            b == &json!("present body") || b == &json!("orphan body"),
+            "resolved body must be one of the two ingested values, got {:?}",
+            b
+        );
+    }
+}
+
+/// Personal-mode reads keep the strict error behavior so genuine data
+/// integrity bugs still surface. The graceful skip is intentionally scoped to
+/// org reads (`org_hash.is_some()`) because the sync gap only exists there.
+#[tokio::test]
+async fn test_personal_query_still_errors_on_missing_atom() {
+    let tmp = tempfile::tempdir().unwrap();
+    let db = make_folddb(&tmp).await;
+
+    register_schema(&db, "strict_notes", None).await;
+    write_mutation(&db, "strict_notes", "k1", "2026-04-01", "body").await;
+
+    // Remove the personal atom key at the Sled level.
+    let pool = db.sled_pool().expect("Expected sled backend");
+    let guard = pool.acquire_arc().unwrap();
+    let main_tree = guard.db().open_tree("main").unwrap();
+    let atom_key: Vec<u8> = main_tree
+        .iter()
+        .filter_map(|r| r.ok())
+        .find(|(k, _)| {
+            let s = String::from_utf8_lossy(k);
+            s.starts_with("atom:")
+        })
+        .map(|(k, _)| k.to_vec())
+        .expect("expected at least one personal atom key");
+    main_tree.remove(&atom_key).unwrap();
+    main_tree.flush().expect("flush after remove");
+    drop(guard);
+
+    let access = AccessContext::owner("test-owner");
+    let err = db
+        .query_executor()
+        .query_with_access(
+            Query::new("strict_notes".to_string(), vec!["body".to_string()]),
+            &access,
+            None,
+        )
+        .await
+        .expect_err("personal query with missing atom must return an error");
+
+    match err {
+        fold_db::schema::SchemaError::InvalidField(msg) => {
+            assert!(
+                msg.contains("Atom") && msg.contains("not found"),
+                "expected 'Atom … not found' error, got: {}",
+                msg
+            );
+        }
+        other => panic!("expected SchemaError::InvalidField, got {:?}", other),
+    }
+}

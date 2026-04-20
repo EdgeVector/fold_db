@@ -74,6 +74,14 @@ pub async fn fetch_atoms_with_key_metadata_async(
 /// falls back to the unprefixed (personal) key so atoms written before the
 /// schema was tagged remain readable. See `docs/designs/org_shared_sync.md` —
 /// `set-org-hash` does not rewrite pre-existing keys.
+///
+/// For org-scoped reads, if BOTH lookups miss we log a warning and SKIP the
+/// ref rather than returning an error (alpha BLOCKER 4b171). Rationale: when
+/// Alice tags a schema post-ingest, only post-tag atoms ship through the org
+/// log; a receiver (Bob) may hold a molecule ref whose pre-tag atom never
+/// replayed. Failing the whole query on one orphan ref would make every
+/// unfiltered query on a shared schema unusable. Personal reads keep the
+/// strict error so genuine data integrity bugs still surface.
 pub async fn fetch_atoms_with_key_metadata_async_with_org(
     db_ops: &Arc<DbOperations>,
     matches: impl IntoIterator<Item = (KeyValue, String, Option<crate::atom::KeyMetadata>)>,
@@ -117,6 +125,16 @@ pub async fn fetch_atoms_with_key_metadata_async_with_org(
             }
             Ok(None) => {
                 let key_str = key.to_string();
+                if let Some(org) = org_hash {
+                    log::warn!(
+                        "Skipping unresolvable atom ref '{}' (org='{}', key='{}') — \
+                         pre-tag molecule ref leaked without atom data (alpha BLOCKER 4b171)",
+                        atom_uuid,
+                        org,
+                        key_str
+                    );
+                    continue;
+                }
                 if key_str.is_empty() {
                     return Err(SchemaError::InvalidField(format!(
                         "Atom '{}' not found",
