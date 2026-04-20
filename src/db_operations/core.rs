@@ -76,9 +76,28 @@ impl DbOperations {
         let metadata_store =
             MetadataStore::new(metadata_typed, idempotency_typed, process_results_typed);
 
-        // Create native index manager and load any previously stored embeddings
-        let native_index_manager = NativeIndexManager::new(native_index_kv);
-        native_index_manager.restore_from_store().await;
+        // Create native index manager and load any previously stored embeddings.
+        //
+        // Setting `FOLD_DISABLE_NATIVE_INDEX=1` skips the manager entirely, which
+        // causes `inline_index_mutations` in the mutation manager to become a no-op
+        // (it guards on `native_index_manager().is_some()`). This is the headless /
+        // agent-brain path: no fastembed init, no ONNX runtime dependency, no model
+        // download. Search by embedding is unavailable — plain hash/range queries
+        // still work unchanged.
+        let native_index_disabled = std::env::var("FOLD_DISABLE_NATIVE_INDEX")
+            .map(|v| matches!(v.trim(), "1" | "true" | "TRUE" | "yes" | "YES"))
+            .unwrap_or(false);
+        let native_index_manager = if native_index_disabled {
+            log::info!(
+                "Native index disabled via FOLD_DISABLE_NATIVE_INDEX — \
+                 embedding-based search will not function; hash/range queries still work."
+            );
+            None
+        } else {
+            let mgr = NativeIndexManager::new(native_index_kv);
+            mgr.restore_from_store().await;
+            Some(mgr)
+        };
 
         Ok(Self {
             schema_store,
@@ -86,7 +105,7 @@ impl DbOperations {
             view_store,
             permissions_store,
             metadata_store,
-            native_index_manager: Some(native_index_manager),
+            native_index_manager,
         })
     }
 
@@ -141,5 +160,68 @@ impl DbOperations {
     /// Flush all pending writes to durable storage
     pub async fn flush(&self) -> Result<(), SchemaError> {
         Ok(self.atom_store.flush().await?)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::storage::SledPool;
+    use tempfile::TempDir;
+
+    async fn build_ops() -> (TempDir, DbOperations) {
+        let tmp = TempDir::new().unwrap();
+        let pool = Arc::new(SledPool::new(tmp.path().to_path_buf()));
+        let ops = DbOperations::from_sled(pool).await.unwrap();
+        (tmp, ops)
+    }
+
+    /// Guards against the tokio runtime being held across env-var mutations.
+    /// `temp_env::with_var` is sync — calling `block_on` inside it keeps the
+    /// env mutation atomic to this thread, which matters because `cargo test`
+    /// runs tests in parallel on a shared process env.
+    #[test]
+    fn native_index_enabled_by_default() {
+        temp_env::with_var_unset("FOLD_DISABLE_NATIVE_INDEX", || {
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            rt.block_on(async {
+                let (_tmp, ops) = build_ops().await;
+                assert!(
+                    ops.native_index_manager().is_some(),
+                    "native_index_manager is present when env var unset"
+                );
+            });
+        });
+    }
+
+    #[test]
+    fn native_index_disabled_via_env() {
+        temp_env::with_var("FOLD_DISABLE_NATIVE_INDEX", Some("1"), || {
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            rt.block_on(async {
+                let (_tmp, ops) = build_ops().await;
+                assert!(
+                    ops.native_index_manager().is_none(),
+                    "native_index_manager is None when FOLD_DISABLE_NATIVE_INDEX=1"
+                );
+            });
+        });
+    }
+
+    #[test]
+    fn native_index_disabled_accepts_true_variants() {
+        for val in ["1", "true", "TRUE", "yes", "YES"] {
+            temp_env::with_var("FOLD_DISABLE_NATIVE_INDEX", Some(val), || {
+                let rt = tokio::runtime::Runtime::new().unwrap();
+                rt.block_on(async {
+                    let (_tmp, ops) = build_ops().await;
+                    assert!(
+                        ops.native_index_manager().is_none(),
+                        "FOLD_DISABLE_NATIVE_INDEX={} should disable",
+                        val
+                    );
+                });
+            });
+        }
     }
 }
