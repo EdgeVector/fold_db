@@ -428,3 +428,162 @@ async fn test_org_mutation_allowed_after_joining_org() {
         .expect("mutation must succeed after org membership is registered");
     assert_eq!(ids.len(), 1);
 }
+
+// === Dual-read regression: pre-tag molecules stay queryable after set-org-hash ===
+
+/// Alpha BLOCKER regression: when a user tags an existing schema with an
+/// `org_hash`, molecules that were ingested BEFORE the tag must still be
+/// queryable. `set-org-hash` intentionally does not re-key pre-existing data
+/// (see `docs/designs/org_shared_sync.md`), but the previous implementation
+/// returned `InvalidField("Atom not found for key …")` because the read path
+/// looked up the org-prefixed keys while the atoms lived at the unprefixed
+/// keys. The fix: dual-read — on miss at the org-prefixed key, fall back to
+/// the unprefixed (personal) key at each atom/molecule lookup site.
+#[tokio::test]
+async fn test_pre_tag_molecules_remain_queryable_after_set_org_hash() {
+    let tmp = tempfile::tempdir().unwrap();
+    let db = make_folddb(&tmp).await;
+
+    // Register membership up front so post-tag mutations would be accepted;
+    // pre-tag mutations don't need membership because the schema is personal.
+    register_test_org(&db, ORG_HASH);
+
+    // Stage 1: personal schema + ingest molecules (pre-tag).
+    register_schema(&db, "notes_to_tag", None).await;
+    write_mutation(&db, "notes_to_tag", "m1", "2026-04-01", "alpha body").await;
+    write_mutation(&db, "notes_to_tag", "m2", "2026-04-02", "beta body").await;
+
+    // Sanity: query before tag succeeds.
+    let access = AccessContext::owner("test-owner");
+    let pre_tag = db
+        .query_executor()
+        .query_with_access(
+            Query::new("notes_to_tag".to_string(), vec!["body".to_string()]),
+            &access,
+            None,
+        )
+        .await
+        .expect("pre-tag query failed");
+    let pre_tag_bodies: Vec<_> = pre_tag
+        .get("body")
+        .expect("missing body pre-tag")
+        .values()
+        .map(|fv| fv.value.clone())
+        .collect();
+    assert!(
+        pre_tag_bodies.iter().any(|v| v == &json!("alpha body")),
+        "pre-tag query should see 'alpha body', got {:?}",
+        pre_tag_bodies
+    );
+    assert!(
+        pre_tag_bodies.iter().any(|v| v == &json!("beta body")),
+        "pre-tag query should see 'beta body', got {:?}",
+        pre_tag_bodies
+    );
+
+    // Stage 2: tag the schema with an org_hash, mirroring the node's
+    // `set_schema_org_hash` operation (which lives in fold_db_node). We
+    // update the schema in place: set `org_hash`, derive `trust_domain`, and
+    // propagate the org_hash onto each runtime field so `storage_key()`
+    // construction picks up the org prefix.
+    let mut schema = db
+        .schema_manager()
+        .get_schema_metadata("notes_to_tag")
+        .expect("get_schema_metadata")
+        .expect("schema must exist");
+    schema.org_hash = Some(ORG_HASH.to_string());
+    schema.trust_domain = Some(format!("org:{}", ORG_HASH));
+    for field in schema.runtime_fields.values_mut() {
+        field.common_mut().set_org_hash(Some(ORG_HASH.to_string()));
+    }
+    db.schema_manager()
+        .update_schema(&schema)
+        .await
+        .expect("update_schema after tagging");
+
+    // Stage 3: query AFTER tag — pre-tag molecules must still resolve via
+    // the dual-read fallback. Previously this returned
+    // `InvalidField("Atom … not found for key …")`.
+    let post_tag = db
+        .query_executor()
+        .query_with_access(
+            Query::new("notes_to_tag".to_string(), vec!["body".to_string()]),
+            &access,
+            None,
+        )
+        .await
+        .expect("post-tag query failed — dual-read fallback broken");
+    let post_tag_bodies: Vec<_> = post_tag
+        .get("body")
+        .expect("missing body post-tag")
+        .values()
+        .map(|fv| fv.value.clone())
+        .collect();
+    assert!(
+        post_tag_bodies.iter().any(|v| v == &json!("alpha body")),
+        "post-tag query should still see 'alpha body' via dual-read, got {:?}",
+        post_tag_bodies
+    );
+    assert!(
+        post_tag_bodies.iter().any(|v| v == &json!("beta body")),
+        "post-tag query should still see 'beta body' via dual-read, got {:?}",
+        post_tag_bodies
+    );
+
+    // Stage 4: writes AFTER the tag go to the org prefix, AND reads mix
+    // pre-tag (unprefixed) and post-tag (org-prefixed) molecules.
+    write_mutation(&db, "notes_to_tag", "m3", "2026-04-03", "gamma body").await;
+    let mixed = db
+        .query_executor()
+        .query_with_access(
+            Query::new("notes_to_tag".to_string(), vec!["body".to_string()]),
+            &access,
+            None,
+        )
+        .await
+        .expect("mixed query failed");
+    let mixed_bodies: Vec<_> = mixed
+        .get("body")
+        .expect("missing body mixed")
+        .values()
+        .map(|fv| fv.value.clone())
+        .collect();
+    for expected in ["alpha body", "beta body", "gamma body"] {
+        assert!(
+            mixed_bodies.iter().any(|v| v == &json!(expected)),
+            "mixed query should see {:?} after dual-read + post-tag write, got {:?}",
+            expected,
+            mixed_bodies
+        );
+    }
+
+    // Verify at the Sled level that we have BOTH unprefixed and org-prefixed
+    // keys — the fix is read-side only, we do not migrate old keys.
+    let pool = db.sled_pool().expect("Expected sled backend");
+    let guard = pool.acquire_arc().unwrap();
+    let main_tree = guard.db().open_tree("main").unwrap();
+
+    let org_prefix = format!("{ORG_HASH}:");
+    let all_keys: Vec<String> = main_tree
+        .iter()
+        .filter_map(|r| r.ok())
+        .map(|(k, _)| String::from_utf8_lossy(&k).to_string())
+        .collect();
+
+    let has_personal_atoms = all_keys
+        .iter()
+        .any(|k| !k.starts_with(&org_prefix) && k.starts_with("atom:"));
+    let has_org_atoms = all_keys
+        .iter()
+        .any(|k| k.starts_with(&format!("{ORG_HASH}:atom:")));
+    assert!(
+        has_personal_atoms,
+        "expected at least one pre-tag (unprefixed) atom key, keys={:?}",
+        all_keys
+    );
+    assert!(
+        has_org_atoms,
+        "expected at least one post-tag (org-prefixed) atom key, keys={:?}",
+        all_keys
+    );
+}

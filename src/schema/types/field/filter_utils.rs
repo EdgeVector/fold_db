@@ -69,6 +69,11 @@ pub async fn fetch_atoms_with_key_metadata_async(
 }
 
 /// Resolve atom UUID matches into concrete FieldValue map with org_hash prefix support.
+///
+/// When `org_hash` is `Some` and an atom is missing at the org-prefixed key,
+/// falls back to the unprefixed (personal) key so atoms written before the
+/// schema was tagged remain readable. See `docs/designs/org_shared_sync.md` —
+/// `set-org-hash` does not rewrite pre-existing keys.
 pub async fn fetch_atoms_with_key_metadata_async_with_org(
     db_ops: &Arc<DbOperations>,
     matches: impl IntoIterator<Item = (KeyValue, String, Option<crate::atom::KeyMetadata>)>,
@@ -80,12 +85,13 @@ pub async fn fetch_atoms_with_key_metadata_async_with_org(
     for (key, atom_uuid, key_meta) in matches.into_iter() {
         let base_key = format!("atom:{}", atom_uuid);
         let storage_key = super::build_storage_key(org_hash, &base_key);
-        match db_ops
-            .atoms()
-            .raw()
-            .get_item::<crate::atom::Atom>(&storage_key)
-            .await
-        {
+        let store = db_ops.atoms().raw();
+        let primary_lookup = store.get_item::<crate::atom::Atom>(&storage_key).await;
+        let lookup = match primary_lookup {
+            Ok(None) if org_hash.is_some() => store.get_item::<crate::atom::Atom>(&base_key).await,
+            other => other,
+        };
+        match lookup {
             Ok(Some(atom)) => {
                 // Prefer molecule per-key metadata, fall back to atom metadata
                 let (source_file_name, metadata) = match key_meta {
