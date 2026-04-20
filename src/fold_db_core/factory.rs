@@ -29,6 +29,25 @@ pub async fn create_fold_db_with_auth_refresh(
     e2e_keys: &E2eKeys,
     auth_refresh: Option<crate::sync::AuthRefreshCallback>,
 ) -> FoldDbResult<Arc<FoldDB>> {
+    create_fold_db_with_pool_and_auth_refresh(config, e2e_keys, auth_refresh, None).await
+}
+
+/// Like [`create_fold_db_with_auth_refresh`], but accepts an optional pre-existing
+/// [`SledPool`] to reuse across FoldDB lifetimes.
+///
+/// Why reuse matters: each `SledPool` holds an exclusive OS file lock on the Sled
+/// database directory. Two pools pointing at the same path cannot both be open at
+/// the same time. When a caller (e.g. NodeManager) invalidates and recreates the
+/// FoldDB for the same path — for instance, after `/api/auth/register` activates
+/// cloud sync — handing the same pool into the new instance avoids a
+/// `WouldBlock` race where the old pool's Sled handle is still closing while the
+/// new instance tries to open the same path.
+pub async fn create_fold_db_with_pool_and_auth_refresh(
+    config: &DatabaseConfig,
+    e2e_keys: &E2eKeys,
+    auth_refresh: Option<crate::sync::AuthRefreshCallback>,
+    pool: Option<Arc<SledPool>>,
+) -> FoldDbResult<Arc<FoldDB>> {
     let sync_setup = if let Some(cloud) = &config.cloud_sync {
         let path = std::env::var("FOLD_STORAGE_PATH").unwrap_or_else(|_| "data".to_string());
         let mut setup = SyncSetup::from_exemem(&cloud.api_url, &cloud.api_key, &path);
@@ -38,7 +57,7 @@ pub async fn create_fold_db_with_auth_refresh(
         None
     };
 
-    let db = create_local_fold_db(&config.path, e2e_keys, sync_setup).await?;
+    let db = create_local_fold_db(&config.path, e2e_keys, sync_setup, pool).await?;
 
     // If cloud sync is configured, persist ONLY api_url and user_hash to Sled.
     // API keys and session tokens are per-device secrets stored in credentials.json
@@ -76,13 +95,20 @@ async fn create_local_fold_db(
     path: &std::path::Path,
     e2e_keys: &E2eKeys,
     sync_setup: Option<SyncSetup>,
+    injected_pool: Option<Arc<SledPool>>,
 ) -> FoldDbResult<Arc<FoldDB>> {
     let path_str = path
         .to_str()
         .ok_or_else(|| FoldDbError::Config("Invalid storage path".to_string()))?;
 
-    let pool = Arc::new(SledPool::new(path.to_path_buf()));
-    pool.start_idle_reaper(std::time::Duration::from_secs(30));
+    let pool = match injected_pool {
+        Some(pool) => pool,
+        None => {
+            let pool = Arc::new(SledPool::new(path.to_path_buf()));
+            pool.start_idle_reaper(std::time::Duration::from_secs(30));
+            pool
+        }
+    };
 
     // Create the config store for runtime node configuration.
     // Pass the E2E encryption key so sensitive fields (node identity
