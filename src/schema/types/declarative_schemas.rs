@@ -136,6 +136,8 @@ impl<'de> serde::Deserialize<'de> for DeclarativeSchemaDefinition {
             identity_hash: Option<String>,
             #[serde(skip_serializing_if = "Option::is_none", default)]
             org_hash: Option<String>,
+            #[serde(skip_serializing_if = "Option::is_none", default)]
+            trust_domain: Option<String>,
             #[serde(default)]
             field_access_policies: HashMap<String, crate::access::types::FieldAccessPolicy>,
         }
@@ -221,6 +223,7 @@ impl<'de> serde::Deserialize<'de> for DeclarativeSchemaDefinition {
         schema.field_types = helper.field_types;
         schema.identity_hash = helper.identity_hash;
         schema.org_hash = helper.org_hash;
+        schema.trust_domain = helper.trust_domain;
         schema.field_access_policies = helper.field_access_policies;
 
         Ok(schema)
@@ -829,6 +832,40 @@ mod tests {
         assert_eq!(
             deserialized.name, "UserProfile",
             "Schema name should be preserved"
+        );
+    }
+
+    #[test]
+    fn test_trust_domain_round_trip() {
+        // The custom Deserialize impl previously dropped `trust_domain`,
+        // so tagging a schema with `set-org-hash` sent `trust_domain=None`
+        // to peers even though the serialized form carried it. Regression
+        // guard for alpha papercut d2f07.
+        use crate::schema::types::schema::DeclarativeSchemaType as SchemaType;
+
+        let mut schema = DeclarativeSchemaDefinition::new(
+            "OrgNotes".to_string(),
+            SchemaType::Single,
+            None,
+            Some(vec!["body".to_string()]),
+            None,
+            None,
+        );
+        schema.org_hash = Some("a".repeat(64));
+        schema.trust_domain = Some(format!("org:{}", "a".repeat(64)));
+
+        let serialized = serde_json::to_string(&schema).expect("serialize");
+        assert!(
+            serialized.contains("trust_domain"),
+            "serialized form must contain trust_domain when set"
+        );
+
+        let deserialized: DeclarativeSchemaDefinition =
+            serde_json::from_str(&serialized).expect("deserialize");
+        assert_eq!(
+            deserialized.trust_domain,
+            Some(format!("org:{}", "a".repeat(64))),
+            "trust_domain must survive JSON round-trip"
         );
     }
 
