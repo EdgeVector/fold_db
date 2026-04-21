@@ -249,6 +249,12 @@ pub struct TransformRecord {
     /// Optional description
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    /// The input queries the transform was registered against. Views linked
+    /// to this transform must query the same (schema_name, field) pairs so
+    /// the Phase 1/2 classification stays coherent with what the transform
+    /// actually sees at runtime.
+    #[serde(default)]
+    pub input_queries: Vec<Query>,
     /// Input field types expected by the transform (resolved from input_queries)
     pub input_schema: HashMap<String, FieldValueType>,
     /// Output field types produced by the transform
