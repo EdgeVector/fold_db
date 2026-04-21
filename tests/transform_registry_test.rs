@@ -7,7 +7,9 @@ use fold_db::schema::types::field_value_type::FieldValueType;
 use fold_db::schema::types::operations::Query;
 use fold_db::schema::types::Schema;
 use fold_db::schema_service::state::SchemaServiceState;
-use fold_db::schema_service::types::{RegisterTransformRequest, TransformAddOutcome};
+use fold_db::schema_service::types::{
+    AddViewRequest, RegisterTransformRequest, TransformAddOutcome,
+};
 use tempfile::tempdir;
 
 /// Create a test state with a temp directory.
@@ -781,4 +783,30 @@ async fn test_stored_view_without_transform_hash() {
 
     let view: StoredView = serde_json::from_str(json).expect("deserialize failed");
     assert!(view.transform_hash.is_none());
+}
+
+#[tokio::test]
+async fn add_view_rejects_empty_input_queries() {
+    let state = make_test_state();
+
+    let request = AddViewRequest {
+        name: "NoSourceView".to_string(),
+        descriptive_name: "No Source View".to_string(),
+        input_queries: vec![],
+        output_fields: vec!["summary".to_string()],
+        field_descriptions: HashMap::from([("summary".to_string(), "summary field".to_string())]),
+        field_classifications: HashMap::new(),
+        field_data_classifications: HashMap::new(),
+        wasm_bytes: None,
+        schema_type: fold_db::schema::types::schema::DeclarativeSchemaType::Single,
+    };
+
+    let err = state
+        .add_view(request)
+        .await
+        .expect_err("expected add_view to reject empty input_queries");
+    assert!(
+        err.to_string().contains("at least one input query"),
+        "unexpected error message: {err}"
+    );
 }
