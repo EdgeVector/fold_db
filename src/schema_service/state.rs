@@ -1613,12 +1613,56 @@ impl SchemaServiceState {
             }
         };
 
+        // Resolve (wasm_bytes, transform_hash) per the AddViewRequest contract:
+        //   (Some, None)  — derive hash from bytes (content-addressed link)
+        //   (None, Some)  — look up registry, fetch bytes, reject if missing
+        //   (Some, Some)  — verify sha256(bytes) == hash, reject on mismatch
+        //   (None, None)  — identity view, no transform
+        // Supplied inline bytes are kept on the StoredView for
+        // `stored_view_to_transform_view`; registry-fetched bytes are cached
+        // the same way.
+        let (resolved_wasm_bytes, resolved_transform_hash) = match (
+            request.wasm_bytes,
+            request.transform_hash,
+        ) {
+            (Some(bytes), None) => {
+                let hash = Self::compute_wasm_hash(&bytes);
+                (Some(bytes), Some(hash))
+            }
+            (None, Some(hash)) => {
+                if self.get_transform_by_hash(&hash)?.is_none() {
+                    return Err(FoldDbError::Config(format!(
+                            "Transform with hash '{}' is not registered in the Global Transform Registry",
+                            hash
+                        )));
+                }
+                let bytes = self.get_transform_wasm(&hash).await?.ok_or_else(|| {
+                    FoldDbError::Config(format!(
+                        "Transform '{}' is registered but WASM bytes are missing from storage",
+                        hash
+                    ))
+                })?;
+                (Some(bytes), Some(hash))
+            }
+            (Some(bytes), Some(hash)) => {
+                let computed = Self::compute_wasm_hash(&bytes);
+                if computed != hash {
+                    return Err(FoldDbError::Config(format!(
+                        "wasm_bytes hash '{}' does not match supplied transform_hash '{}'",
+                        computed, hash
+                    )));
+                }
+                (Some(bytes), Some(hash))
+            }
+            (None, None) => (None, None),
+        };
+
         // Build the StoredView
         let view = StoredView {
             name: request.name.clone(),
             input_queries: request.input_queries,
-            transform_hash: None,
-            wasm_bytes: request.wasm_bytes,
+            transform_hash: resolved_transform_hash,
+            wasm_bytes: resolved_wasm_bytes,
             output_schema_name: output_schema.name.clone(),
             schema_type: request.schema_type,
         };
