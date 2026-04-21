@@ -1584,6 +1584,26 @@ impl SchemaServiceState {
             }
         }
 
+        // Identity views (no wasm_bytes, no transform_hash) use pass-through semantics
+        // (see view::resolver::identity_pass_through): each output field maps from a
+        // source field with the same name. Reject at registration if any output field
+        // has no matching source — otherwise mismatches surface only at first query.
+        if request.wasm_bytes.is_none() {
+            let source_fields: HashSet<&str> = request
+                .input_queries
+                .iter()
+                .flat_map(|q| q.fields.iter().map(String::as_str))
+                .collect();
+            for output_field in &request.output_fields {
+                if !source_fields.contains(output_field.as_str()) {
+                    return Err(FoldDbError::Config(format!(
+                        "Identity view '{}' output field '{}' has no matching source field in any input query",
+                        request.name, output_field
+                    )));
+                }
+            }
+        }
+
         // Build an output schema from the view's fields and run it through add_schema.
         // Use descriptive_name as the initial schema name — add_schema replaces it with
         // the identity hash, but having a meaningful name prevents infer_name_from_fields

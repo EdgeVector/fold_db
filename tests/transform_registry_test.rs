@@ -810,3 +810,95 @@ async fn add_view_rejects_empty_input_queries() {
         "unexpected error message: {err}"
     );
 }
+
+// ============== Identity view output validation ==============
+
+fn make_identity_view_request(
+    name: &str,
+    descriptive_name: &str,
+    schema_name: &str,
+    input_fields: &[&str],
+    output_fields: &[&str],
+) -> AddViewRequest {
+    let mut field_descriptions = HashMap::new();
+    for f in output_fields {
+        field_descriptions.insert(f.to_string(), format!("{} description", f));
+    }
+    AddViewRequest {
+        name: name.to_string(),
+        descriptive_name: descriptive_name.to_string(),
+        input_queries: vec![Query::new(
+            schema_name.to_string(),
+            input_fields.iter().map(|f| f.to_string()).collect(),
+        )],
+        output_fields: output_fields.iter().map(|f| f.to_string()).collect(),
+        field_descriptions,
+        field_classifications: HashMap::new(),
+        field_data_classifications: HashMap::new(),
+        wasm_bytes: None,
+        schema_type: fold_db::schema::types::schema::DeclarativeSchemaType::Single,
+    }
+}
+
+#[tokio::test]
+async fn add_view_identity_rejects_output_field_not_in_sources() {
+    let state = make_test_state();
+    let schema_name = add_test_schema(
+        &state,
+        "Identity Source",
+        &[
+            ("title", FieldValueType::String),
+            ("body", FieldValueType::String),
+        ],
+        &[("title", "word"), ("body", "word")],
+    )
+    .await;
+
+    // Output field "summary" is not in the input query's fields ["title", "body"]
+    let request = make_identity_view_request(
+        "BadIdentityView",
+        "Bad Identity View Output",
+        &schema_name,
+        &["title", "body"],
+        &["title", "summary"],
+    );
+
+    let err = state
+        .add_view(request)
+        .await
+        .expect_err("expected identity view registration to fail");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("summary") && msg.contains("BadIdentityView"),
+        "expected error to mention missing source 'summary' and view name, got: {}",
+        msg
+    );
+}
+
+#[tokio::test]
+async fn add_view_identity_accepts_matching_output_fields() {
+    let state = make_test_state();
+    let schema_name = add_test_schema(
+        &state,
+        "Identity Source Happy",
+        &[
+            ("title", FieldValueType::String),
+            ("body", FieldValueType::String),
+        ],
+        &[("title", "word"), ("body", "word")],
+    )
+    .await;
+
+    let request = make_identity_view_request(
+        "GoodIdentityView",
+        "Good Identity View Output",
+        &schema_name,
+        &["title", "body"],
+        &["title", "body"],
+    );
+
+    state
+        .add_view(request)
+        .await
+        .expect("identity view with matching output fields should register");
+}
