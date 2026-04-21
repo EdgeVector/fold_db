@@ -157,6 +157,8 @@ log_feature!(LogFeature::HttpServer, info, "Server started on {}", addr);
 
 ## Schema Service Environments
 
-- **Prod**: `https://axo709qs11.execute-api.us-east-1.amazonaws.com` (default)
-- **Dev**: `https://y0q3m6vk75.execute-api.us-west-2.amazonaws.com` (use `--dev` flag)
-- **Local**: `http://127.0.0.1:9002` (use `--local-schema` flag)
+The schema service is a separate cloud service deployed at `schema.folddb.com`. Source code lives in [EdgeVector/schema_service](https://github.com/EdgeVector/schema_service); deploy spec in [EdgeVector/schema-infra](https://github.com/EdgeVector/schema-infra). fold_db consumes it as a client.
+
+- **Prod**: `https://axo709qs11.execute-api.us-east-1.amazonaws.com/v1/*` (default)
+- **Dev**: `https://y0q3m6vk75.execute-api.us-west-2.amazonaws.com/v1/*` (use `--dev` flag)
+- **Local**: `http://127.0.0.1:9102` (use `--local-schema` flag; runs the actix dev binary from the `schema_service` submodule)

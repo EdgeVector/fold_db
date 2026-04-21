@@ -26,7 +26,7 @@ Download the latest `.dmg` from [GitHub Releases](https://github.com/EdgeVector/
 brew install edgevector/folddb/folddb
 ```
 
-Ships `folddb` (CLI), `folddb_server` (daemon), and `schema_service` (local schema registry). Handles upgrades via `brew upgrade folddb`.
+Ships `folddb` (CLI) and `folddb_server` (daemon). Handles upgrades via `brew upgrade folddb`. The schema service runs in the cloud at `schema.folddb.com` — no local binary is installed.
 
 ### Option C: Install from Source
 
@@ -39,7 +39,7 @@ curl -fsSL https://raw.githubusercontent.com/EdgeVector/fold_db_node/main/instal
 Or build from source:
 
 ```bash
-cargo install --git https://github.com/EdgeVector/fold_db_node folddb folddb_server schema_service
+cargo install --git https://github.com/EdgeVector/fold_db_node folddb folddb_server
 ```
 
 ### Run
