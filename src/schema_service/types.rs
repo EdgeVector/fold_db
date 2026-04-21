@@ -186,6 +186,12 @@ pub struct AddViewRequest {
     /// Optional WASM transform bytes
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub wasm_bytes: Option<Vec<u8>>,
+    /// Optional reference to a pre-registered transform in the Global Transform
+    /// Registry. When set without `wasm_bytes`, the bytes are fetched from the
+    /// registry. When set with `wasm_bytes`, the hash must match
+    /// `sha256(wasm_bytes)` or the request is rejected.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transform_hash: Option<String>,
     /// Schema type for the view output
     #[serde(default = "default_schema_type")]
     pub schema_type: DeclarativeSchemaType,

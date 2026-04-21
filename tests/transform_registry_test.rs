@@ -798,6 +798,7 @@ async fn add_view_rejects_empty_input_queries() {
         field_classifications: HashMap::new(),
         field_data_classifications: HashMap::new(),
         wasm_bytes: None,
+        transform_hash: None,
         schema_type: fold_db::schema::types::schema::DeclarativeSchemaType::Single,
     };
 
@@ -809,4 +810,190 @@ async fn add_view_rejects_empty_input_queries() {
         err.to_string().contains("at least one input query"),
         "unexpected error message: {err}"
     );
+}
+
+// ============== add_view transform_hash linkage ==============
+
+fn make_add_view_request(
+    name: &str,
+    source_schema: &str,
+    input_field: &str,
+    output_field: &str,
+    wasm_bytes: Option<Vec<u8>>,
+    transform_hash: Option<String>,
+) -> AddViewRequest {
+    let mut field_descriptions = HashMap::new();
+    field_descriptions.insert(output_field.to_string(), "view output".to_string());
+    let mut field_classifications = HashMap::new();
+    field_classifications.insert(output_field.to_string(), vec!["low".to_string()]);
+    let mut field_data_classifications = HashMap::new();
+    field_data_classifications.insert(output_field.to_string(), DataClassification::low());
+
+    AddViewRequest {
+        name: name.to_string(),
+        descriptive_name: name.to_string(),
+        input_queries: vec![Query::new(
+            source_schema.to_string(),
+            vec![input_field.to_string()],
+        )],
+        output_fields: vec![output_field.to_string()],
+        field_descriptions,
+        field_classifications,
+        field_data_classifications,
+        wasm_bytes,
+        transform_hash,
+        schema_type: fold_db::schema::types::schema::DeclarativeSchemaType::Single,
+    }
+}
+
+fn extract_stored_view(
+    outcome: fold_db::schema_service::types::ViewAddOutcome,
+) -> fold_db::schema_service::types::StoredView {
+    use fold_db::schema_service::types::ViewAddOutcome;
+    match outcome {
+        ViewAddOutcome::Added(v, _)
+        | ViewAddOutcome::AddedWithExistingSchema(v, _)
+        | ViewAddOutcome::Expanded(v, _, _) => v,
+    }
+}
+
+/// Register a transform in the registry, then register a view supplying only
+/// `transform_hash`. The view must link to the registry entry by hash and
+/// cache the WASM bytes fetched from the registry on the StoredView.
+#[tokio::test]
+async fn add_view_accepts_transform_hash_without_bytes() {
+    let state = make_test_state();
+    let schema_name = add_test_schema(
+        &state,
+        "source_schema_a",
+        &[("body", FieldValueType::String)],
+        &[("body", "word")],
+    )
+    .await;
+
+    let wasm = b"registered_transform_bytes".to_vec();
+    let (record, _) = state
+        .register_transform(make_register_request(
+            "summarizer",
+            &schema_name,
+            &["body"],
+            &[("summary", FieldValueType::String)],
+            &wasm,
+        ))
+        .await
+        .expect("register_transform failed");
+
+    let request = make_add_view_request(
+        "ViewByHash",
+        &schema_name,
+        "body",
+        "summary",
+        None,
+        Some(record.hash.clone()),
+    );
+
+    let view = extract_stored_view(state.add_view(request).await.expect("add_view failed"));
+
+    assert_eq!(view.transform_hash.as_deref(), Some(record.hash.as_str()));
+    assert_eq!(view.wasm_bytes.as_deref(), Some(wasm.as_slice()));
+}
+
+/// Supplying a `transform_hash` that doesn't exist in the registry must fail.
+#[tokio::test]
+async fn add_view_rejects_transform_hash_not_in_registry() {
+    let state = make_test_state();
+    let schema_name = add_test_schema(
+        &state,
+        "source_schema_b",
+        &[("body", FieldValueType::String)],
+        &[("body", "word")],
+    )
+    .await;
+
+    let unknown_hash = "0".repeat(64);
+    let request = make_add_view_request(
+        "ViewMissingHash",
+        &schema_name,
+        "body",
+        "summary",
+        None,
+        Some(unknown_hash.clone()),
+    );
+
+    let err = state
+        .add_view(request)
+        .await
+        .expect_err("add_view must reject unknown transform_hash");
+    let msg = format!("{}", err);
+    assert!(
+        msg.contains(&unknown_hash) && msg.contains("not registered"),
+        "expected missing-registry error, got: {}",
+        msg
+    );
+}
+
+/// Supplying both `wasm_bytes` and `transform_hash` where
+/// `sha256(wasm_bytes) != transform_hash` must fail — no silent acceptance.
+#[tokio::test]
+async fn add_view_rejects_mismatched_bytes_and_hash() {
+    let state = make_test_state();
+    let schema_name = add_test_schema(
+        &state,
+        "source_schema_c",
+        &[("body", FieldValueType::String)],
+        &[("body", "word")],
+    )
+    .await;
+
+    let bytes = b"real_bytes".to_vec();
+    let wrong_hash = "f".repeat(64);
+    let request = make_add_view_request(
+        "ViewMismatch",
+        &schema_name,
+        "body",
+        "summary",
+        Some(bytes),
+        Some(wrong_hash.clone()),
+    );
+
+    let err = state
+        .add_view(request)
+        .await
+        .expect_err("add_view must reject mismatched bytes/hash");
+    let msg = format!("{}", err);
+    assert!(
+        msg.contains("does not match"),
+        "expected mismatch error, got: {}",
+        msg
+    );
+}
+
+/// Happy path: both fields supplied and the hash matches sha256(bytes).
+/// The StoredView carries the supplied hash and the supplied bytes.
+#[tokio::test]
+async fn add_view_accepts_matching_bytes_and_hash() {
+    let state = make_test_state();
+    let schema_name = add_test_schema(
+        &state,
+        "source_schema_d",
+        &[("body", FieldValueType::String)],
+        &[("body", "word")],
+    )
+    .await;
+
+    let bytes = b"matching_bytes_payload".to_vec();
+    let hash = SchemaServiceState::compute_wasm_hash(&bytes);
+
+    let request = make_add_view_request(
+        "ViewMatching",
+        &schema_name,
+        "body",
+        "summary",
+        Some(bytes.clone()),
+        Some(hash.clone()),
+    );
+
+    let view = extract_stored_view(state.add_view(request).await.expect("add_view failed"));
+    assert_eq!(view.transform_hash.as_deref(), Some(hash.as_str()));
+    assert_eq!(view.wasm_bytes.as_deref(), Some(bytes.as_slice()));
 }
