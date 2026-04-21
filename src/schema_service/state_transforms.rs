@@ -14,6 +14,7 @@ use super::types::{
     RegisterTransformRequest, SimilarTransformEntry, SimilarTransformsResponse,
     TransformAddOutcome, TransformListEntry, TransformRecord,
 };
+use super::wasm_compiler;
 
 /// NMI leakage threshold — above this, an output field carries meaningful
 /// information about the corresponding input field.
@@ -23,7 +24,7 @@ const NMI_LEAKAGE_THRESHOLD: f32 = 0.1;
 impl SchemaServiceState {
     // ============== Transform Storage ==============
 
-    /// Compute sha256 hex digest of WASM bytes.
+    /// Compute sha256 hex digest of arbitrary bytes (used for both WASM and source).
     pub fn compute_wasm_hash(wasm_bytes: &[u8]) -> String {
         let mut hasher = Sha256::new();
         hasher.update(wasm_bytes);
@@ -40,11 +41,6 @@ impl SchemaServiceState {
                 "Transform name must be non-empty".to_string(),
             ));
         }
-        if request.wasm_bytes.is_empty() {
-            return Err(FoldDbError::Config(
-                "Transform wasm_bytes must be non-empty".to_string(),
-            ));
-        }
         if request.version.trim().is_empty() {
             return Err(FoldDbError::Config(
                 "Transform version must be non-empty".to_string(),
@@ -56,7 +52,40 @@ impl SchemaServiceState {
             ));
         }
 
-        let hash = Self::compute_wasm_hash(&request.wasm_bytes);
+        let has_source = request
+            .rust_source
+            .as_ref()
+            .map(|s| !s.trim().is_empty())
+            .unwrap_or(false);
+        let has_bytes = !request.wasm_bytes.is_empty();
+
+        if has_source && has_bytes {
+            return Err(FoldDbError::Config(
+                "Transform request must provide either rust_source or wasm_bytes, not both"
+                    .to_string(),
+            ));
+        }
+        if !has_source && !has_bytes {
+            return Err(FoldDbError::Config(
+                "Transform request must provide either rust_source or wasm_bytes".to_string(),
+            ));
+        }
+
+        // Resolve the compiled bytes + (optional) source.
+        let (wasm_bytes, rust_source, source_hash) = if has_source {
+            let source = request
+                .rust_source
+                .clone()
+                .expect("rust_source presence already checked");
+            let bytes = wasm_compiler::compile_rust_to_wasm(&source)
+                .map_err(|e| FoldDbError::Config(format!("Rust→WASM compile failed: {}", e)))?;
+            let source_hash = Self::compute_wasm_hash(source.as_bytes());
+            (bytes, Some(source), Some(source_hash))
+        } else {
+            (request.wasm_bytes.clone(), None, None)
+        };
+
+        let hash = Self::compute_wasm_hash(&wasm_bytes);
 
         // Check if already registered (idempotent)
         if let Some(existing) = self.get_transform_by_hash(&hash)? {
@@ -70,7 +99,7 @@ impl SchemaServiceState {
         // Phase 2: NMI estimation (feature-gated)
         let (output_classification, nmi_matrix, classification_verified, sample_count) = self
             .estimate_output_classification(
-                &request.wasm_bytes,
+                &wasm_bytes,
                 &input_schema,
                 &request.output_fields,
                 input_ceiling.clone(),
@@ -93,6 +122,7 @@ impl SchemaServiceState {
             input_schema,
             output_schema: request.output_fields,
             source_url: request.source_url,
+            source_hash,
             registered_at: now,
             input_ceiling,
             output_classification,
@@ -102,10 +132,12 @@ impl SchemaServiceState {
             assigned_classification,
         };
 
-        // Persist metadata and WASM separately
+        // Persist metadata, WASM, and (when present) source.
         self.persist_transform_metadata(&record).await?;
-        self.persist_transform_wasm(&hash, &request.wasm_bytes)
-            .await?;
+        self.persist_transform_wasm(&hash, &wasm_bytes).await?;
+        if let Some(src) = &rust_source {
+            self.persist_transform_source(&hash, src).await?;
+        }
 
         // Insert into in-memory cache
         {
@@ -151,6 +183,34 @@ impl SchemaServiceState {
                 }
             }
             SchemaStorage::External(backend) => backend.load_transform_wasm(hash).await,
+        }
+    }
+
+    /// Get the Rust source for a transform by hash. Returns `None` if the
+    /// transform was registered from pre-compiled bytes (no source recorded)
+    /// or the hash is unknown.
+    pub async fn get_transform_source(&self, hash: &str) -> FoldDbResult<Option<String>> {
+        match &self.storage {
+            SchemaStorage::Sled { db, .. } => {
+                let src_tree = db.open_tree("transform_source").map_err(|e| {
+                    FoldDbError::Config(format!("Failed to open transform_source tree: {}", e))
+                })?;
+                match src_tree.get(hash.as_bytes()).map_err(|e| {
+                    FoldDbError::Config(format!("Failed to get transform source: {}", e))
+                })? {
+                    Some(bytes) => {
+                        let s = String::from_utf8(bytes.to_vec()).map_err(|e| {
+                            FoldDbError::Config(format!(
+                                "Stored transform source for '{}' is not valid UTF-8: {}",
+                                hash, e
+                            ))
+                        })?;
+                        Ok(Some(s))
+                    }
+                    None => Ok(None),
+                }
+            }
+            SchemaStorage::External(backend) => backend.load_transform_source(hash).await,
         }
     }
 
@@ -269,6 +329,30 @@ impl SchemaServiceState {
             }
             SchemaStorage::External(backend) => {
                 backend.save_transform_wasm(hash, wasm_bytes).await?;
+            }
+        }
+        Ok(())
+    }
+
+    async fn persist_transform_source(&self, hash: &str, source: &str) -> FoldDbResult<()> {
+        match &self.storage {
+            SchemaStorage::Sled { db, .. } => {
+                let src_tree = db.open_tree("transform_source").map_err(|e| {
+                    FoldDbError::Config(format!("Failed to open transform_source tree: {}", e))
+                })?;
+                src_tree
+                    .insert(hash.as_bytes(), source.as_bytes())
+                    .map_err(|e| {
+                        FoldDbError::Config(format!(
+                            "Failed to insert transform source '{}': {}",
+                            hash, e
+                        ))
+                    })?;
+                db.flush()
+                    .map_err(|e| FoldDbError::Config(format!("Failed to flush sled: {}", e)))?;
+            }
+            SchemaStorage::External(backend) => {
+                backend.save_transform_source(hash, source).await?;
             }
         }
         Ok(())

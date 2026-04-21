@@ -17,3 +17,4 @@ mod state_matching;
 mod state_transforms;
 pub mod transform_resolver;
 pub mod types;
+pub mod wasm_compiler;

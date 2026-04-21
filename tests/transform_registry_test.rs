@@ -108,6 +108,7 @@ fn make_register_request(
             .map(|(k, v)| (k.to_string(), v.clone()))
             .collect(),
         source_url: None,
+        rust_source: None,
         wasm_bytes: wasm_bytes.to_vec(),
     }
 }
@@ -471,6 +472,7 @@ async fn test_unknown_schema_in_query_fails_registration() {
         )],
         output_fields: HashMap::from([("out".to_string(), FieldValueType::String)]),
         source_url: None,
+        rust_source: None,
         wasm_bytes: b"some_wasm".to_vec(),
     };
 
@@ -496,6 +498,7 @@ async fn test_register_rejects_empty_name() {
         input_queries: vec![],
         output_fields: HashMap::from([("out".to_string(), FieldValueType::String)]),
         source_url: None,
+        rust_source: None,
         wasm_bytes: b"wasm".to_vec(),
     };
 
@@ -505,7 +508,7 @@ async fn test_register_rejects_empty_name() {
 }
 
 #[tokio::test]
-async fn test_register_rejects_empty_wasm() {
+async fn test_register_rejects_neither_source_nor_bytes() {
     let state = make_test_state();
     let request = RegisterTransformRequest {
         name: "test".to_string(),
@@ -514,12 +517,42 @@ async fn test_register_rejects_empty_wasm() {
         input_queries: vec![],
         output_fields: HashMap::from([("out".to_string(), FieldValueType::String)]),
         source_url: None,
+        rust_source: None,
         wasm_bytes: vec![],
     };
 
     let result = state.register_transform(request).await;
     assert!(result.is_err());
-    assert!(format!("{}", result.unwrap_err()).contains("non-empty"));
+    let err = format!("{}", result.unwrap_err());
+    assert!(
+        err.contains("rust_source or wasm_bytes"),
+        "Expected either/or error, got: {}",
+        err,
+    );
+}
+
+#[tokio::test]
+async fn test_register_rejects_both_source_and_bytes() {
+    let state = make_test_state();
+    let request = RegisterTransformRequest {
+        name: "test".to_string(),
+        version: "1.0.0".to_string(),
+        description: None,
+        input_queries: vec![],
+        output_fields: HashMap::from([("out".to_string(), FieldValueType::String)]),
+        source_url: None,
+        rust_source: Some("fn transform_impl(input: Value) -> Value { input }".to_string()),
+        wasm_bytes: b"wasm".to_vec(),
+    };
+
+    let result = state.register_transform(request).await;
+    assert!(result.is_err());
+    let err = format!("{}", result.unwrap_err());
+    assert!(
+        err.contains("not both"),
+        "Expected 'not both' error, got: {}",
+        err,
+    );
 }
 
 #[tokio::test]
@@ -532,6 +565,7 @@ async fn test_register_rejects_empty_version() {
         input_queries: vec![],
         output_fields: HashMap::from([("out".to_string(), FieldValueType::String)]),
         source_url: None,
+        rust_source: None,
         wasm_bytes: b"wasm".to_vec(),
     };
 
@@ -549,6 +583,7 @@ async fn test_register_rejects_empty_output_fields() {
         input_queries: vec![],
         output_fields: HashMap::new(),
         source_url: None,
+        rust_source: None,
         wasm_bytes: b"wasm".to_vec(),
     };
 
@@ -809,4 +844,196 @@ async fn add_view_rejects_empty_input_queries() {
         err.to_string().contains("at least one input query"),
         "unexpected error message: {err}"
     );
+}
+
+// ============== Rust source compilation ==============
+
+/// The tests below exercise the `cargo build --target wasm32-unknown-unknown`
+/// path. They're skipped on hosts without the wasm target installed so the
+/// main test job stays green on machines that only run library tests.
+fn wasm_toolchain_available() -> bool {
+    fold_db::schema_service::wasm_compiler::check_wasm_toolchain().is_ok()
+}
+
+fn minimal_transform_source() -> &'static str {
+    // Full `fn transform_impl(...)` definition that the scaffold wraps.
+    // Kept tiny to keep compile time bounded.
+    r#"
+fn transform_impl(input: Value) -> Value {
+    serde_json::json!({ "fields": { "summary": input } })
+}
+"#
+}
+
+#[tokio::test]
+async fn test_register_transform_accepts_rust_source_compiles_and_stores() {
+    if !wasm_toolchain_available() {
+        eprintln!("Skipping: wasm32-unknown-unknown not installed");
+        return;
+    }
+
+    let state = make_test_state();
+    let schema_name = add_test_schema(
+        &state,
+        "Notes",
+        &[("body", FieldValueType::String)],
+        &[("body", "word")],
+    )
+    .await;
+
+    let request = RegisterTransformRequest {
+        name: "summarize_notes".to_string(),
+        version: "1.0.0".to_string(),
+        description: Some("compile-from-source test".to_string()),
+        input_queries: vec![Query::new(schema_name.clone(), vec!["body".to_string()])],
+        output_fields: HashMap::from([("summary".to_string(), FieldValueType::String)]),
+        source_url: None,
+        rust_source: Some(minimal_transform_source().to_string()),
+        wasm_bytes: vec![],
+    };
+
+    let (record, outcome) = state
+        .register_transform(request)
+        .await
+        .expect("register_transform should succeed with rust_source");
+
+    assert!(matches!(outcome, TransformAddOutcome::Added));
+    assert!(!record.hash.is_empty(), "wasm hash must be populated");
+    let source_hash = record
+        .source_hash
+        .as_ref()
+        .expect("source_hash must be populated when rust_source is submitted");
+    assert_eq!(source_hash.len(), 64, "sha256 hex is 64 chars");
+    assert_ne!(
+        &record.hash, source_hash,
+        "wasm hash and source hash are distinct"
+    );
+
+    let wasm = state
+        .get_transform_wasm(&record.hash)
+        .await
+        .expect("wasm lookup should not error")
+        .expect("wasm bytes must be retrievable by hash");
+    assert_eq!(
+        &wasm[..4],
+        b"\0asm",
+        "stored artifact must be a valid WASM module"
+    );
+
+    let source = state
+        .get_transform_source(&record.hash)
+        .await
+        .expect("source lookup should not error")
+        .expect("source must be retrievable by hash");
+    assert_eq!(source, minimal_transform_source());
+}
+
+#[tokio::test]
+async fn test_register_transform_deterministic_compile_from_same_source() {
+    if !wasm_toolchain_available() {
+        eprintln!("Skipping: wasm32-unknown-unknown not installed");
+        return;
+    }
+
+    let state = make_test_state();
+    let schema_name = add_test_schema(
+        &state,
+        "Posts",
+        &[("text", FieldValueType::String)],
+        &[("text", "word")],
+    )
+    .await;
+
+    let build = |name: &str| RegisterTransformRequest {
+        name: name.to_string(),
+        version: "1.0.0".to_string(),
+        description: None,
+        input_queries: vec![Query::new(schema_name.clone(), vec!["text".to_string()])],
+        output_fields: HashMap::from([("summary".to_string(), FieldValueType::String)]),
+        source_url: None,
+        rust_source: Some(minimal_transform_source().to_string()),
+        wasm_bytes: vec![],
+    };
+
+    let (first, out1) = state
+        .register_transform(build("first"))
+        .await
+        .expect("first register should succeed");
+    let (second, out2) = state
+        .register_transform(build("second"))
+        .await
+        .expect("second register should succeed");
+
+    assert!(matches!(out1, TransformAddOutcome::Added));
+    assert!(
+        matches!(out2, TransformAddOutcome::AlreadyExists),
+        "same source should produce the same wasm hash and deduplicate"
+    );
+    assert_eq!(first.hash, second.hash);
+}
+
+#[tokio::test]
+async fn test_register_transform_rejects_invalid_rust_source() {
+    if !wasm_toolchain_available() {
+        eprintln!("Skipping: wasm32-unknown-unknown not installed");
+        return;
+    }
+
+    let state = make_test_state();
+    let request = RegisterTransformRequest {
+        name: "bad".to_string(),
+        version: "1.0.0".to_string(),
+        description: None,
+        input_queries: vec![],
+        output_fields: HashMap::from([("out".to_string(), FieldValueType::String)]),
+        source_url: None,
+        rust_source: Some(
+            "fn transform_impl(input: Value) -> Value { this is not valid rust }".to_string(),
+        ),
+        wasm_bytes: vec![],
+    };
+
+    let err = state
+        .register_transform(request)
+        .await
+        .expect_err("invalid rust must not compile");
+    let msg = format!("{}", err);
+    assert!(
+        msg.contains("compile") || msg.contains("error"),
+        "expected compile failure, got: {}",
+        msg,
+    );
+}
+
+#[tokio::test]
+async fn test_get_transform_source_returns_none_for_byte_upload() {
+    let state = make_test_state();
+    let schema_name = add_test_schema(
+        &state,
+        "Items",
+        &[("sku", FieldValueType::String)],
+        &[("sku", "word")],
+    )
+    .await;
+
+    let (record, _) = state
+        .register_transform(make_register_request(
+            "bytes_only",
+            &schema_name,
+            &["sku"],
+            &[("out", FieldValueType::String)],
+            b"pre_compiled_bytes",
+        ))
+        .await
+        .expect("register with pre-compiled bytes should succeed");
+
+    assert!(
+        record.source_hash.is_none(),
+        "no source_hash when only bytes uploaded"
+    );
+    let source = state
+        .get_transform_source(&record.hash)
+        .await
+        .expect("source lookup should not error");
+    assert!(source.is_none(), "no source stored for byte-only upload");
 }

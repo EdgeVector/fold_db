@@ -231,7 +231,7 @@ pub struct AvailableViewsResponse {
 // ============== Transform Types ==============
 
 /// A registered transform in the Global Transform Registry.
-/// Metadata record — does NOT include wasm_bytes (stored separately).
+/// Metadata record — does NOT include wasm_bytes or source (stored separately).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TransformRecord {
     /// sha256(wasm_bytes) — the canonical identity
@@ -250,6 +250,14 @@ pub struct TransformRecord {
     /// URL to source code (GitHub, etc.) — for verifiability
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_url: Option<String>,
+    /// sha256 of the Rust source string. Present when the transform was
+    /// submitted as source and compiled server-side; `None` when only
+    /// pre-compiled bytes were uploaded. Separate from `hash` because the
+    /// same source deterministically produces the same bytes under a pinned
+    /// toolchain, so `source_hash` identifies author intent while `hash`
+    /// identifies the compiled artifact.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_hash: Option<String>,
     /// When registered (Unix timestamp)
     pub registered_at: u64,
     /// Phase 1: max of all input field classifications
@@ -267,8 +275,16 @@ pub struct TransformRecord {
     pub assigned_classification: DataClassification,
 }
 
-/// Request to register a new transform
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Request to register a new transform.
+///
+/// Exactly one of `rust_source` or `wasm_bytes` must be provided:
+/// - `rust_source`: the service compiles the Rust to WASM server-side and
+///   stores both the source and the compiled bytes. Preferred for public
+///   auditability of what code a transform runs.
+/// - `wasm_bytes`: pre-compiled bytes, stored as-is. Retained for clients
+///   that cannot submit source, or for transforms produced by a different
+///   toolchain.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct RegisterTransformRequest {
     pub name: String,
     pub version: String,
@@ -280,7 +296,14 @@ pub struct RegisterTransformRequest {
     pub output_fields: HashMap<String, FieldValueType>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_url: Option<String>,
-    /// The compiled WASM bytes (base64-encoded in JSON)
+    /// Rust source for the `transform_impl` function. When set, the server
+    /// compiles this to WASM and stores both artifacts keyed by the compiled
+    /// hash. Mutually exclusive with `wasm_bytes` (at most one may be set).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rust_source: Option<String>,
+    /// Pre-compiled WASM bytes (base64-encoded in JSON). Mutually exclusive
+    /// with `rust_source` (at most one may be set).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub wasm_bytes: Vec<u8>,
 }
 

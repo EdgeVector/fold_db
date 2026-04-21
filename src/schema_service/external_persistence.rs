@@ -85,4 +85,24 @@ pub trait ExternalSchemaPersistence: Send + Sync {
     /// Fetch WASM bytes for a single transform by hash. Returns `None`
     /// if the hash is unknown.
     async fn load_transform_wasm(&self, hash: &str) -> FoldDbResult<Option<Vec<u8>>>;
+
+    /// Persist the Rust source text for a transform, keyed by the WASM
+    /// hash. Called only when the transform was submitted as source
+    /// (not pre-compiled bytes).
+    ///
+    /// Default implementation is a no-op so existing backends stay
+    /// compatible; source will simply not be retrievable from those
+    /// backends. Override to enable server-side source storage.
+    async fn save_transform_source(&self, _hash: &str, _source: &str) -> FoldDbResult<()> {
+        Ok(())
+    }
+
+    /// Fetch the Rust source text for a transform by hash. Returns `None`
+    /// if the transform has no stored source (pre-compiled upload) or the
+    /// hash is unknown.
+    ///
+    /// Default implementation returns `None`.
+    async fn load_transform_source(&self, _hash: &str) -> FoldDbResult<Option<String>> {
+        Ok(None)
+    }
 }
