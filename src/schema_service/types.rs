@@ -183,6 +183,13 @@ pub struct AddViewRequest {
     /// Data classifications for each output field (sensitivity + domain)
     #[serde(default)]
     pub field_data_classifications: HashMap<String, DataClassification>,
+    /// Optional value types for output fields. When the view is linked to a
+    /// registered transform, every declared type must match the transform's
+    /// output schema exactly — mismatches are rejected with the specific field
+    /// names. Fields omitted here are allowed and fall back to the transform's
+    /// types when linked, or to `Any`.
+    #[serde(default)]
+    pub output_field_types: HashMap<String, FieldValueType>,
     /// Optional WASM transform bytes
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub wasm_bytes: Option<Vec<u8>>,

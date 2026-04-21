@@ -1585,43 +1585,15 @@ impl SchemaServiceState {
             }
         }
 
-        // Build an output schema from the view's fields and run it through add_schema.
-        // Use descriptive_name as the initial schema name — add_schema replaces it with
-        // the identity hash, but having a meaningful name prevents infer_name_from_fields
-        // from falling back to the view name (which is not a collection name).
-        let mut output_schema = Schema::new(
-            request.descriptive_name.clone(),
-            crate::schema::types::schema::DeclarativeSchemaType::Single,
-            None,
-            Some(request.output_fields.clone()),
-            None,
-            None,
-        );
-        output_schema.descriptive_name = Some(request.descriptive_name.clone());
-        output_schema.field_descriptions = request.field_descriptions.clone();
-        output_schema.field_classifications = request.field_classifications.clone();
-        output_schema.field_data_classifications = request.field_data_classifications.clone();
-        output_schema.schema_type = request.schema_type.clone();
-
-        // Run through the full schema pipeline (similarity, canonicalization, dedup, expansion)
-        let schema_outcome = self.add_schema(output_schema, HashMap::new()).await?;
-
-        let (output_schema, _replaced_schema) = match &schema_outcome {
-            SchemaAddOutcome::Added(schema, _) => (schema.clone(), None),
-            SchemaAddOutcome::AlreadyExists(schema, _) => (schema.clone(), None),
-            SchemaAddOutcome::Expanded(old_name, schema, _) => {
-                (schema.clone(), Some(old_name.clone()))
-            }
-        };
-
-        // Resolve (wasm_bytes, transform_hash) per the AddViewRequest contract:
+        // Resolve (wasm_bytes, transform_hash) BEFORE building the output
+        // schema so the view's output shape can be cross-validated against
+        // the registered transform's output_schema. Failing here leaves no
+        // partially-persisted schema behind.
+        //
         //   (Some, None)  — derive hash from bytes (content-addressed link)
         //   (None, Some)  — look up registry, fetch bytes, reject if missing
         //   (Some, Some)  — verify sha256(bytes) == hash, reject on mismatch
         //   (None, None)  — identity view, no transform
-        // Supplied inline bytes are kept on the StoredView for
-        // `stored_view_to_transform_view`; registry-fetched bytes are cached
-        // the same way.
         let (resolved_wasm_bytes, resolved_transform_hash) = match (
             request.wasm_bytes,
             request.transform_hash,
@@ -1658,28 +1630,126 @@ impl SchemaServiceState {
             (None, None) => (None, None),
         };
 
-        // If the view links to a transform that's in the Global Transform
-        // Registry, the transform's Phase 1/2 classification was computed
-        // against its declared input_queries. Require the view's
-        // input_queries to name the same (schema_name, field) pairs so the
-        // stored classification stays coherent with what the transform sees
-        // at runtime. Self-attested (Some bytes, Some hash) bundles that
-        // aren't in the registry have no classification to protect and
-        // bypass this check.
-        if let Some(ref hash) = resolved_transform_hash {
-            if let Some(transform_record) = self.get_transform_by_hash(hash)? {
-                let transform_pairs = schema_field_pairs(&transform_record.input_queries);
-                let view_pairs = schema_field_pairs(&request.input_queries);
-                if transform_pairs != view_pairs {
-                    return Err(FoldDbError::Config(format!(
-                        "View input_queries do not match transform '{}': transform reads {{{}}} but view queries {{{}}}",
-                        hash,
-                        format_schema_field_pairs(&transform_pairs),
-                        format_schema_field_pairs(&view_pairs),
-                    )));
+        // Cross-validate the view against the transform it links to (if any).
+        // Self-attested (Some bytes, Some hash) bundles whose hash isn't in
+        // the registry have no classification or declared output to protect
+        // and bypass these checks.
+        let linked_transform = match &resolved_transform_hash {
+            Some(hash) => self.get_transform_by_hash(hash)?,
+            None => None,
+        };
+        if let Some(record) = &linked_transform {
+            // Input coherence: the transform's Phase 1/2 classification was
+            // computed against its declared input_queries. The view's
+            // input_queries must name the same (schema_name, field) pairs so
+            // the stored classification stays coherent with what the transform
+            // sees at runtime.
+            let transform_pairs = schema_field_pairs(&record.input_queries);
+            let view_pairs = schema_field_pairs(&request.input_queries);
+            if transform_pairs != view_pairs {
+                return Err(FoldDbError::Config(format!(
+                    "View input_queries do not match transform '{}': transform reads {{{}}} but view queries {{{}}}",
+                    record.hash,
+                    format_schema_field_pairs(&transform_pairs),
+                    format_schema_field_pairs(&view_pairs),
+                )));
+            }
+
+            // Output coherence: every declared output field must be emitted by
+            // the transform. Without this, the view's output schema looks up
+            // fields the WASM never produces — silent data loss at query time.
+            let mut missing: Vec<String> = request
+                .output_fields
+                .iter()
+                .filter(|f| !record.output_schema.contains_key(*f))
+                .cloned()
+                .collect();
+            if !missing.is_empty() {
+                missing.sort();
+                let emitted: Vec<String> = {
+                    let mut keys: Vec<String> = record.output_schema.keys().cloned().collect();
+                    keys.sort();
+                    keys
+                };
+                return Err(FoldDbError::Config(format!(
+                    "View output fields {:?} are not emitted by transform '{}' (hash {}); transform emits {:?}",
+                    missing, record.name, record.hash, emitted
+                )));
+            }
+
+            // Output type coherence: any declared field types must match the
+            // transform's declared output types.
+            let mut mismatches: Vec<String> = Vec::new();
+            for (field, declared) in &request.output_field_types {
+                let Some(expected) = record.output_schema.get(field) else {
+                    mismatches.push(format!(
+                        "'{}' (declared type {}, not emitted by transform)",
+                        field, declared
+                    ));
+                    continue;
+                };
+                if declared != expected {
+                    mismatches.push(format!(
+                        "'{}' (view declared {}, transform emits {})",
+                        field, declared, expected
+                    ));
+                }
+            }
+            if !mismatches.is_empty() {
+                mismatches.sort();
+                return Err(FoldDbError::Config(format!(
+                    "View output field types disagree with transform '{}' (hash {}): {}",
+                    record.name,
+                    record.hash,
+                    mismatches.join(", ")
+                )));
+            }
+        }
+
+        // Build an output schema from the view's fields and run it through add_schema.
+        // Use descriptive_name as the initial schema name — add_schema replaces it with
+        // the identity hash, but having a meaningful name prevents infer_name_from_fields
+        // from falling back to the view name (which is not a collection name).
+        let mut output_schema = Schema::new(
+            request.descriptive_name.clone(),
+            crate::schema::types::schema::DeclarativeSchemaType::Single,
+            None,
+            Some(request.output_fields.clone()),
+            None,
+            None,
+        );
+        output_schema.descriptive_name = Some(request.descriptive_name.clone());
+        output_schema.field_descriptions = request.field_descriptions.clone();
+        output_schema.field_classifications = request.field_classifications.clone();
+        output_schema.field_data_classifications = request.field_data_classifications.clone();
+        output_schema.schema_type = request.schema_type.clone();
+        // Seed field_types from the explicit request map, then fill gaps from
+        // the linked transform's output_schema so view-emitted fields carry
+        // concrete types downstream (validation, NMI, etc.) even when the
+        // caller didn't restate them.
+        for (field, ty) in &request.output_field_types {
+            output_schema.field_types.insert(field.clone(), ty.clone());
+        }
+        if let Some(record) = &linked_transform {
+            for field in &request.output_fields {
+                if !output_schema.field_types.contains_key(field) {
+                    if let Some(ty) = record.output_schema.get(field) {
+                        output_schema.field_types.insert(field.clone(), ty.clone());
+                    }
                 }
             }
         }
+
+        // Run through the full schema pipeline (similarity, canonicalization, dedup, expansion)
+        let schema_outcome = self.add_schema(output_schema, HashMap::new()).await?;
+
+        let (output_schema, _replaced_schema) = match &schema_outcome {
+            SchemaAddOutcome::Added(schema, _) => (schema.clone(), None),
+            SchemaAddOutcome::AlreadyExists(schema, _) => (schema.clone(), None),
+            SchemaAddOutcome::Expanded(old_name, schema, _) => {
+                (schema.clone(), Some(old_name.clone()))
+            }
+        };
 
         // Build the StoredView
         let view = StoredView {

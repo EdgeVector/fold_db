@@ -797,6 +797,7 @@ async fn add_view_rejects_empty_input_queries() {
         field_descriptions: HashMap::from([("summary".to_string(), "summary field".to_string())]),
         field_classifications: HashMap::new(),
         field_data_classifications: HashMap::new(),
+        output_field_types: HashMap::new(),
         wasm_bytes: None,
         transform_hash: None,
         schema_type: fold_db::schema::types::schema::DeclarativeSchemaType::Single,
@@ -840,6 +841,7 @@ fn make_add_view_request(
         field_descriptions,
         field_classifications,
         field_data_classifications,
+        output_field_types: HashMap::new(),
         wasm_bytes,
         transform_hash,
         schema_type: fold_db::schema::types::schema::DeclarativeSchemaType::Single,
@@ -1128,6 +1130,7 @@ async fn add_view_accepts_matching_input_queries() {
         field_descriptions,
         field_classifications,
         field_data_classifications,
+        output_field_types: HashMap::new(),
         wasm_bytes: None,
         transform_hash: Some(record.hash.clone()),
         schema_type: fold_db::schema::types::schema::DeclarativeSchemaType::Single,
@@ -1141,4 +1144,176 @@ async fn add_view_accepts_matching_input_queries() {
     );
     assert_eq!(view.transform_hash.as_deref(), Some(record.hash.as_str()));
     assert_eq!(view.input_queries.len(), 2);
+}
+
+// ============== add_view ↔ transform output shape coherence ==============
+
+/// Register a transform emitting `{summary}` and try to add a view whose
+/// output is `{body}` — the view names a field the transform never produces,
+/// so add_view must reject it with a message naming the offending field.
+#[tokio::test]
+async fn add_view_rejects_output_field_missing_from_transform() {
+    let state = make_test_state();
+    let schema_name = add_test_schema(
+        &state,
+        "source_schema_shape_missing",
+        &[("body", FieldValueType::String)],
+        &[("body", "word")],
+    )
+    .await;
+
+    let wasm = b"summary_only_transform".to_vec();
+    let (record, _) = state
+        .register_transform(make_register_request(
+            "summary_only",
+            &schema_name,
+            &["body"],
+            &[("summary", FieldValueType::String)],
+            &wasm,
+        ))
+        .await
+        .expect("register_transform failed");
+
+    // View declares `body` as an output — not emitted by the transform,
+    // and its input_queries already match the transform's {schema_name.body}.
+    let request = make_add_view_request(
+        "ViewBadOutput",
+        &schema_name,
+        "body",
+        "body",
+        None,
+        Some(record.hash.clone()),
+    );
+
+    let err = state
+        .add_view(request)
+        .await
+        .expect_err("add_view must reject output fields not emitted by transform");
+    let msg = format!("{}", err);
+    assert!(
+        msg.contains("body") && msg.contains("not emitted"),
+        "expected missing-output-field error naming 'body', got: {}",
+        msg
+    );
+    assert!(
+        msg.contains(&record.hash),
+        "expected error to mention transform hash {}, got: {}",
+        record.hash,
+        msg
+    );
+}
+
+/// Register a transform that emits `summary: String` and try to add a view
+/// whose `output_field_types` declares `summary: Integer`. The type
+/// disagrees with the transform — add_view must reject with a message
+/// naming the field and both types.
+#[tokio::test]
+async fn add_view_rejects_output_field_type_mismatch() {
+    let state = make_test_state();
+    let schema_name = add_test_schema(
+        &state,
+        "source_schema_shape_type",
+        &[("body", FieldValueType::String)],
+        &[("body", "word")],
+    )
+    .await;
+
+    let wasm = b"string_summary_transform".to_vec();
+    let (record, _) = state
+        .register_transform(make_register_request(
+            "string_summary",
+            &schema_name,
+            &["body"],
+            &[("summary", FieldValueType::String)],
+            &wasm,
+        ))
+        .await
+        .expect("register_transform failed");
+
+    let mut request = make_add_view_request(
+        "ViewTypeMismatch",
+        &schema_name,
+        "body",
+        "summary",
+        None,
+        Some(record.hash.clone()),
+    );
+    request
+        .output_field_types
+        .insert("summary".to_string(), FieldValueType::Integer);
+
+    let err = state
+        .add_view(request)
+        .await
+        .expect_err("add_view must reject output field type disagreeing with transform");
+    let msg = format!("{}", err);
+    assert!(
+        msg.contains("summary"),
+        "expected error to name field 'summary', got: {}",
+        msg
+    );
+    assert!(
+        msg.contains("Integer") && msg.contains("String"),
+        "expected error to include both Integer and String, got: {}",
+        msg
+    );
+}
+
+/// Happy path: view declares the same output field + type the transform
+/// emits. add_view succeeds, and the resulting output schema carries the
+/// declared type on `field_types` so downstream validation sees it.
+#[tokio::test]
+async fn add_view_accepts_aligned_output_shape() {
+    let state = make_test_state();
+    let schema_name = add_test_schema(
+        &state,
+        "source_schema_shape_ok",
+        &[("body", FieldValueType::String)],
+        &[("body", "word")],
+    )
+    .await;
+
+    let wasm = b"aligned_transform".to_vec();
+    let (record, _) = state
+        .register_transform(make_register_request(
+            "aligned",
+            &schema_name,
+            &["body"],
+            &[("summary", FieldValueType::String)],
+            &wasm,
+        ))
+        .await
+        .expect("register_transform failed");
+
+    let mut request = make_add_view_request(
+        "ViewAligned",
+        &schema_name,
+        "body",
+        "summary",
+        None,
+        Some(record.hash.clone()),
+    );
+    request
+        .output_field_types
+        .insert("summary".to_string(), FieldValueType::String);
+
+    let outcome = state
+        .add_view(request)
+        .await
+        .expect("add_view must accept an aligned output shape");
+    let view = extract_stored_view(outcome);
+    assert_eq!(view.transform_hash.as_deref(), Some(record.hash.as_str()));
+
+    // Output schema should carry the declared type on summary so downstream
+    // consumers (validation, NMI) see the concrete shape.
+    let stored_schema = state
+        .get_schema_by_name(&view.output_schema_name)
+        .expect("schema lookup failed")
+        .expect("output schema must be registered");
+    assert_eq!(
+        stored_schema.field_types.get("summary"),
+        Some(&FieldValueType::String),
+        "view output schema missing field_types entry for 'summary': {:?}",
+        stored_schema.field_types
+    );
 }
