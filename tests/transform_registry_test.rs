@@ -997,3 +997,148 @@ async fn add_view_accepts_matching_bytes_and_hash() {
     assert_eq!(view.transform_hash.as_deref(), Some(hash.as_str()));
     assert_eq!(view.wasm_bytes.as_deref(), Some(bytes.as_slice()));
 }
+
+// ============== add_view input_queries coherence with transform ==============
+
+/// A view that links to a registered transform must query the same
+/// (schema_name, field) pairs the transform was classified against. If the
+/// view reads a different set, the stored classification is stale against
+/// what the transform actually sees at runtime — reject with a diff message.
+#[tokio::test]
+async fn add_view_rejects_input_queries_different_from_transform() {
+    let state = make_test_state();
+    let schema_a = add_test_schema(
+        &state,
+        "coherence_schema_a",
+        &[("x", FieldValueType::String)],
+        &[("x", "word")],
+    )
+    .await;
+    let schema_b = add_test_schema(
+        &state,
+        "coherence_schema_b",
+        &[("y", FieldValueType::String)],
+        &[("y", "word")],
+    )
+    .await;
+
+    // Transform declares {A.x, B.y}
+    let (record, _) = state
+        .register_transform(RegisterTransformRequest {
+            name: "cross_schema_xform".to_string(),
+            version: "1.0.0".to_string(),
+            description: None,
+            input_queries: vec![
+                Query::new(schema_a.clone(), vec!["x".to_string()]),
+                Query::new(schema_b.clone(), vec!["y".to_string()]),
+            ],
+            output_fields: HashMap::from([("out".to_string(), FieldValueType::String)]),
+            source_url: None,
+            wasm_bytes: b"cross_schema_wasm".to_vec(),
+        })
+        .await
+        .expect("register_transform failed");
+
+    // View queries only {A.x} — missing B.y
+    let request = make_add_view_request(
+        "MismatchedInputs",
+        &schema_a,
+        "x",
+        "out",
+        None,
+        Some(record.hash.clone()),
+    );
+
+    let err = state
+        .add_view(request)
+        .await
+        .expect_err("add_view must reject view input_queries that differ from transform's");
+    let msg = format!("{}", err);
+    assert!(
+        msg.contains("do not match") && msg.contains(&record.hash),
+        "expected mismatch error referencing transform '{}', got: {}",
+        record.hash,
+        msg
+    );
+    assert!(
+        msg.contains(&format!("{}.x", schema_a)),
+        "expected transform-side pair {}.x in error, got: {}",
+        schema_a,
+        msg
+    );
+    assert!(
+        msg.contains(&format!("{}.y", schema_b)),
+        "expected transform-side pair {}.y in error, got: {}",
+        schema_b,
+        msg
+    );
+}
+
+/// Happy path: the view's (schema, field) set equals the transform's, so
+/// the stored classification is coherent with what the transform reads.
+#[tokio::test]
+async fn add_view_accepts_matching_input_queries() {
+    let state = make_test_state();
+    let schema_a = add_test_schema(
+        &state,
+        "match_schema_a",
+        &[("x", FieldValueType::String)],
+        &[("x", "word")],
+    )
+    .await;
+    let schema_b = add_test_schema(
+        &state,
+        "match_schema_b",
+        &[("y", FieldValueType::String)],
+        &[("y", "word")],
+    )
+    .await;
+
+    let (record, _) = state
+        .register_transform(RegisterTransformRequest {
+            name: "matching_xform".to_string(),
+            version: "1.0.0".to_string(),
+            description: None,
+            input_queries: vec![
+                Query::new(schema_a.clone(), vec!["x".to_string()]),
+                Query::new(schema_b.clone(), vec!["y".to_string()]),
+            ],
+            output_fields: HashMap::from([("out".to_string(), FieldValueType::String)]),
+            source_url: None,
+            wasm_bytes: b"matching_wasm".to_vec(),
+        })
+        .await
+        .expect("register_transform failed");
+
+    let mut field_descriptions = HashMap::new();
+    field_descriptions.insert("out".to_string(), "view output".to_string());
+    let mut field_classifications = HashMap::new();
+    field_classifications.insert("out".to_string(), vec!["low".to_string()]);
+    let mut field_data_classifications = HashMap::new();
+    field_data_classifications.insert("out".to_string(), DataClassification::low());
+
+    let request = AddViewRequest {
+        name: "MatchingView".to_string(),
+        descriptive_name: "Matching View".to_string(),
+        input_queries: vec![
+            Query::new(schema_a.clone(), vec!["x".to_string()]),
+            Query::new(schema_b.clone(), vec!["y".to_string()]),
+        ],
+        output_fields: vec!["out".to_string()],
+        field_descriptions,
+        field_classifications,
+        field_data_classifications,
+        wasm_bytes: None,
+        transform_hash: Some(record.hash.clone()),
+        schema_type: fold_db::schema::types::schema::DeclarativeSchemaType::Single,
+    };
+
+    let view = extract_stored_view(
+        state
+            .add_view(request)
+            .await
+            .expect("add_view must accept matching input_queries"),
+    );
+    assert_eq!(view.transform_hash.as_deref(), Some(record.hash.as_str()));
+    assert_eq!(view.input_queries.len(), 2);
+}

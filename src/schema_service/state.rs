@@ -5,6 +5,7 @@ use crate::db_operations::native_index::{cosine_similarity, Embedder, FastEmbedM
 use crate::error::{FoldDbError, FoldDbResult};
 use crate::log_feature;
 use crate::logging::features::LogFeature;
+use crate::schema::types::operations::Query;
 use crate::schema::types::Schema;
 
 use super::external_persistence::ExternalSchemaPersistence;
@@ -1657,6 +1658,29 @@ impl SchemaServiceState {
             (None, None) => (None, None),
         };
 
+        // If the view links to a transform that's in the Global Transform
+        // Registry, the transform's Phase 1/2 classification was computed
+        // against its declared input_queries. Require the view's
+        // input_queries to name the same (schema_name, field) pairs so the
+        // stored classification stays coherent with what the transform sees
+        // at runtime. Self-attested (Some bytes, Some hash) bundles that
+        // aren't in the registry have no classification to protect and
+        // bypass this check.
+        if let Some(ref hash) = resolved_transform_hash {
+            if let Some(transform_record) = self.get_transform_by_hash(hash)? {
+                let transform_pairs = schema_field_pairs(&transform_record.input_queries);
+                let view_pairs = schema_field_pairs(&request.input_queries);
+                if transform_pairs != view_pairs {
+                    return Err(FoldDbError::Config(format!(
+                        "View input_queries do not match transform '{}': transform reads {{{}}} but view queries {{{}}}",
+                        hash,
+                        format_schema_field_pairs(&transform_pairs),
+                        format_schema_field_pairs(&view_pairs),
+                    )));
+                }
+            }
+        }
+
         // Build the StoredView
         let view = StoredView {
             name: request.name.clone(),
@@ -1834,6 +1858,29 @@ impl SchemaServiceState {
         }
         Ok(())
     }
+}
+
+/// Flatten a list of queries into the set of (schema_name, field) pairs they
+/// read. Non-selection query fields (filter, as_of, sort_order) are ignored —
+/// this set is about which data the queries expose, not how they execute.
+fn schema_field_pairs(queries: &[Query]) -> HashSet<(String, String)> {
+    let mut pairs = HashSet::new();
+    for query in queries {
+        for field in &query.fields {
+            pairs.insert((query.schema_name.clone(), field.clone()));
+        }
+    }
+    pairs
+}
+
+/// Render a (schema, field) set as a stable, comma-separated `Schema.field` list.
+fn format_schema_field_pairs(pairs: &HashSet<(String, String)>) -> String {
+    let mut as_vec: Vec<String> = pairs
+        .iter()
+        .map(|(schema, field)| format!("{}.{}", schema, field))
+        .collect();
+    as_vec.sort();
+    as_vec.join(", ")
 }
 
 #[cfg(test)]

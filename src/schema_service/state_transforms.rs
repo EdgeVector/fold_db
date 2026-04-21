@@ -90,6 +90,7 @@ impl SchemaServiceState {
             name: request.name,
             version: request.version,
             description: request.description,
+            input_queries: request.input_queries,
             input_schema,
             output_schema: request.output_fields,
             source_url: request.source_url,
