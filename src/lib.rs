@@ -36,7 +36,6 @@ pub mod messaging;
 pub mod org;
 pub mod progress;
 pub mod schema;
-pub mod schema_service;
 pub mod security;
 pub mod sharing;
 pub mod storage;
@@ -60,6 +59,3 @@ pub use schema::SchemaState;
 // Re-export storage types
 pub use storage::DatabaseConfig;
 pub use storage::{AiConfig, CloudCredentials, NodeConfigStore, NodeIdentity};
-
-// Re-export TransformResolver for convenience
-pub use schema_service::transform_resolver::TransformResolver;
