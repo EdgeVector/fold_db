@@ -1530,6 +1530,14 @@ impl SchemaServiceState {
             ));
         }
 
+        // Validate input queries exist (a view must fetch source data for the transform)
+        if request.input_queries.is_empty() {
+            return Err(FoldDbError::Config(
+                "View must have at least one input query (fetches source data for the transform)"
+                    .to_string(),
+            ));
+        }
+
         // Validate input queries have explicit field lists
         for (i, query) in request.input_queries.iter().enumerate() {
             if query.fields.is_empty() {
