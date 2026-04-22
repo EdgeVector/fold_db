@@ -46,6 +46,7 @@ pub mod testing_utils;
 /// Always compiled (zero runtime cost when unused). Downstream crates
 /// can also access this via the `test-utils` feature.
 pub mod test_helpers;
+pub mod triggers;
 pub mod view;
 
 // Re-export main types for convenience
