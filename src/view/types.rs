@@ -96,11 +96,14 @@ impl TransformView {
     }
 
     /// Effective trigger list. Empty `triggers` defaults to
-    /// `[Trigger::OnWrite]` so every view fires on mutation unless the
-    /// caller explicitly opted into a different trigger policy.
+    /// `[Trigger::OnWrite { schemas: source_schemas }]` so every view fires
+    /// on mutation unless the caller explicitly opted into a different
+    /// trigger policy.
     pub fn effective_triggers(&self) -> Vec<Trigger> {
         if self.triggers.is_empty() {
-            vec![Trigger::OnWrite]
+            vec![Trigger::OnWrite {
+                schemas: self.source_schemas(),
+            }]
         } else {
             self.triggers.clone()
         }

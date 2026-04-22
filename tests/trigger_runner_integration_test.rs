@@ -110,7 +110,9 @@ async fn on_write_trigger_writes_trigger_firing_row() {
             "BP_Content",
             "BlogPost",
             "content",
-            vec![Trigger::OnWrite],
+            vec![Trigger::OnWrite {
+                schemas: vec!["BlogPost".to_string()],
+            }],
         ))
         .await
         .unwrap();
