@@ -49,7 +49,7 @@ use crate::schema::types::{KeyValue, Mutation};
 use crate::schema::{SchemaCore, SchemaError};
 use crate::storage::SledPool;
 use crate::triggers::clock::Clock;
-use crate::triggers::simulate::{next_fire_from_cron, should_coalesce_fire};
+use crate::triggers::simulate::{next_fire_from_cron, should_coalesce_fire, should_skip_catch_up};
 use crate::triggers::types::Trigger;
 use crate::triggers::{fields, status, TRIGGER_FIRING_SCHEMA_NAME};
 
@@ -923,6 +923,42 @@ impl<C: Clock> TriggerRunner<C> {
             return;
         }
 
+        // Staleness budget: if this scheduled catch-up has slipped
+        // further behind the ideal fire time than the trigger's
+        // `max_catch_up_age` allows, skip dispatching and advance the
+        // cursor to the next cron tick. Bounds fire storms after process
+        // downtime (laptop sleep, crash restart) when the scheduler
+        // would otherwise back-fill every missed tick. Only applies to
+        // Scheduled / ScheduledIfDirty (OnWriteCoalesced entries on the
+        // heap don't carry a budget).
+        let max_age = match &trigger {
+            Trigger::Scheduled {
+                max_catch_up_age, ..
+            }
+            | Trigger::ScheduledIfDirty {
+                max_catch_up_age, ..
+            } => max_catch_up_age.as_deref(),
+            _ => None,
+        };
+        let lag_ms = now_ms - fire.fire_at_ms;
+        if should_skip_catch_up(max_age, lag_ms) {
+            warn!(
+                "trigger '{}:{}': skipping catch-up tick — lag {}ms exceeds max_catch_up_age={:?}",
+                fire.view_name, fire.trigger_index, lag_ms, max_age
+            );
+            if let Some((cron, tz)) = reschedule_cron {
+                if let Some(next_at) = next_fire_from_cron(&cron, &tz, now_ms) {
+                    let mut heap = self.scheduler.lock().await;
+                    heap.push(Reverse(ScheduledFire {
+                        fire_at_ms: next_at,
+                        view_name: fire.view_name,
+                        trigger_index: fire.trigger_index,
+                    }));
+                }
+            }
+            return;
+        }
+
         self.dispatch_nonblocking(&fire.view_name, fire.trigger_index, &rt)
             .await;
 
@@ -1432,7 +1468,7 @@ mod tests {
             vec![Trigger::ScheduledIfDirty {
                 cron: "* * * * *".into(),
                 timezone: "UTC".into(),
-                window: None,
+                max_catch_up_age: None,
                 schemas: vec!["S1".into()],
             }],
         );
@@ -1478,7 +1514,7 @@ mod tests {
             vec![Trigger::Scheduled {
                 cron: "0 2 * * *".into(),
                 timezone: "UTC".into(),
-                window: None,
+                max_catch_up_age: None,
                 skip_if_idle: false,
                 schemas: vec!["S1".into()],
             }],
@@ -1524,7 +1560,7 @@ mod tests {
             vec![Trigger::Scheduled {
                 cron: "* * * * *".into(),
                 timezone: "UTC".into(),
-                window: None,
+                max_catch_up_age: None,
                 skip_if_idle: true,
                 schemas: vec!["S1".into()],
             }],
@@ -2156,7 +2192,7 @@ mod tests {
             vec![Trigger::Scheduled {
                 cron: "not-a-cron".into(),
                 timezone: "UTC".into(),
-                window: None,
+                max_catch_up_age: None,
                 skip_if_idle: false,
                 schemas: vec!["S1".into()],
             }],
@@ -2205,6 +2241,173 @@ mod tests {
             !runner.test_is_quarantined("V1").await,
             "malformed cron is a parse/warn-skip condition, NOT a fire \
              failure — must not burn the 3-strikes quarantine budget"
+        );
+    }
+
+    // --- max_catch_up_age (staleness budget) regression tests ---------------
+    //
+    // These tests exercise `process_scheduled_fire`'s catch-up skip gate
+    // through the public `tick_once` entry. The registered `Scheduled`
+    // trigger uses cron "0 * * * *" (hourly on the 0-minute boundary); the
+    // first tick from epoch 0 pushes a heap entry at 01:00 UTC
+    // (= 3_600_000 ms), which is then aged with `MockClock::advance` to
+    // simulate process downtime before the second tick.
+
+    #[tokio::test]
+    async fn scheduled_unbounded_catch_up_fires_after_long_downtime() {
+        // `max_catch_up_age: None` preserves legacy unbounded catch-up —
+        // a 3h lag past the nominal fire must still dispatch on resume.
+        let sm = make_schema_manager().await;
+        register_view(
+            &sm,
+            "V1",
+            "S1",
+            vec![Trigger::Scheduled {
+                cron: "0 * * * *".into(),
+                timezone: "UTC".into(),
+                max_catch_up_age: None,
+                skip_if_idle: false,
+                schemas: vec!["S1".into()],
+            }],
+        );
+        let clock = Arc::new(MockClock::new(0));
+        let fire = RecordingFireHandler::all_success();
+        let writer = CountingFiringWriter::new();
+        let runner = make_runner(
+            Arc::clone(&sm),
+            Arc::clone(&clock),
+            Arc::clone(&fire) as Arc<dyn FireHandler>,
+            Arc::clone(&writer) as Arc<dyn FiringWriter>,
+        );
+
+        // First tick populates the heap with the 01:00 UTC fire_at.
+        runner.tick_once().await;
+
+        // Advance to 04:00 UTC — now 3h past the nominal 01:00 fire.
+        clock.advance(4 * 3_600_000);
+        runner.tick_once().await;
+
+        for _ in 0..30 {
+            if fire.call_count.load(Ordering::SeqCst) >= 1 {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+        assert_eq!(
+            fire.call_count.load(Ordering::SeqCst),
+            1,
+            "unbounded catch-up (max_catch_up_age=None) must fire on resume \
+             after downtime regardless of lag"
+        );
+    }
+
+    #[tokio::test]
+    async fn scheduled_catch_up_budget_skips_stale_fire_but_later_tick_runs() {
+        // `max_catch_up_age: Some("1h")`: a 3h+ lag past the nominal fire
+        // exceeds budget → skip that catch-up dispatch, advance the cursor,
+        // and fire on the next in-budget tick.
+        let sm = make_schema_manager().await;
+        register_view(
+            &sm,
+            "V1",
+            "S1",
+            vec![Trigger::Scheduled {
+                cron: "0 * * * *".into(),
+                timezone: "UTC".into(),
+                max_catch_up_age: Some("1h".into()),
+                skip_if_idle: false,
+                schemas: vec!["S1".into()],
+            }],
+        );
+        let clock = Arc::new(MockClock::new(0));
+        let fire = RecordingFireHandler::all_success();
+        let writer = CountingFiringWriter::new();
+        let runner = make_runner(
+            Arc::clone(&sm),
+            Arc::clone(&clock),
+            Arc::clone(&fire) as Arc<dyn FireHandler>,
+            Arc::clone(&writer) as Arc<dyn FiringWriter>,
+        );
+
+        // Populate heap with first fire at 01:00 UTC (= 3_600_000 ms).
+        runner.tick_once().await;
+
+        // Simulate downtime: advance to 04:05 UTC. The 01:00 fire is now
+        // 3h05m behind, which exceeds the 1h budget → runner must skip.
+        clock.advance(4 * 3_600_000 + 5 * 60_000);
+        runner.tick_once().await;
+        for _ in 0..10 {
+            tokio::task::yield_now().await;
+        }
+        assert_eq!(
+            fire.call_count.load(Ordering::SeqCst),
+            0,
+            "fire slipped 3h past a 1h budget must be skipped, not dispatched"
+        );
+        assert!(
+            writer.rows.lock().await.is_empty(),
+            "skipped catch-up must not emit a TriggerFiring audit row"
+        );
+
+        // Skip path re-enqueued the NEXT cron occurrence: 05:00 UTC.
+        // Advance there; the in-budget fire must dispatch.
+        clock.advance(55 * 60_000);
+        runner.tick_once().await;
+        for _ in 0..30 {
+            if fire.call_count.load(Ordering::SeqCst) >= 1 {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+        assert_eq!(
+            fire.call_count.load(Ordering::SeqCst),
+            1,
+            "next in-budget cron tick after the skip must fire normally"
+        );
+    }
+
+    #[tokio::test]
+    async fn scheduled_catch_up_within_budget_fires_normally() {
+        // `max_catch_up_age: Some("24h")` with a 30m lag → well within
+        // budget; fire normally (regression guard against an overeager
+        // skip that treats any lag as stale).
+        let sm = make_schema_manager().await;
+        register_view(
+            &sm,
+            "V1",
+            "S1",
+            vec![Trigger::Scheduled {
+                cron: "0 * * * *".into(),
+                timezone: "UTC".into(),
+                max_catch_up_age: Some("24h".into()),
+                skip_if_idle: false,
+                schemas: vec!["S1".into()],
+            }],
+        );
+        let clock = Arc::new(MockClock::new(0));
+        let fire = RecordingFireHandler::all_success();
+        let writer = CountingFiringWriter::new();
+        let runner = make_runner(
+            Arc::clone(&sm),
+            Arc::clone(&clock),
+            Arc::clone(&fire) as Arc<dyn FireHandler>,
+            Arc::clone(&writer) as Arc<dyn FiringWriter>,
+        );
+
+        runner.tick_once().await; // populates with 01:00 UTC fire.
+                                  // Advance to 01:30 UTC — 30m lag, far below the 24h budget.
+        clock.advance(3_600_000 + 30 * 60_000);
+        runner.tick_once().await;
+        for _ in 0..30 {
+            if fire.call_count.load(Ordering::SeqCst) >= 1 {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+        assert_eq!(
+            fire.call_count.load(Ordering::SeqCst),
+            1,
+            "30m lag under a 24h budget must fire normally"
         );
     }
 

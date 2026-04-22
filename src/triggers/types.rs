@@ -12,12 +12,17 @@
 //!   the named source schemas.
 //! - `OnWriteCoalesced { schemas, min_batch, debounce_ms, max_wait_ms }`:
 //!   batch mutations; fire once thresholds are crossed.
-//! - `Scheduled { cron, timezone, window, skip_if_idle, schemas }`: fire on
-//!   a cron schedule in the given IANA timezone. When `window` is set, it
-//!   auto-injects a time filter into input queries at fire time (e.g.
-//!   `"24h"`, `"7d"`). `skip_if_idle` suppresses the tick when no source
-//!   mutations have landed since the last fire.
-//! - `ScheduledIfDirty { cron, timezone, window, schemas }`: like
+//! - `Scheduled { cron, timezone, max_catch_up_age, skip_if_idle, schemas }`:
+//!   fire on a cron schedule in the given IANA timezone.
+//!   `max_catch_up_age` is an optional staleness budget — if the current
+//!   fire is more than `max_catch_up_age` behind the ideal fire time, the
+//!   runner skips this catch-up tick and advances to the next cron
+//!   occurrence. Bounds fire storms after process downtime (laptop sleep,
+//!   crash restart). Format: `<int><unit>` with unit in m/h/d/w
+//!   (e.g. `"30m"`, `"24h"`, `"7d"`). `None` means unbounded catch-up.
+//!   `skip_if_idle` suppresses the tick when no source mutations have
+//!   landed since the last fire.
+//! - `ScheduledIfDirty { cron, timezone, max_catch_up_age, schemas }`: like
 //!   `Scheduled` but only fires when the per-view dirty bit is set.
 //! - `Manual`: only fires via explicit run (future endpoint).
 //!
@@ -43,7 +48,7 @@ pub enum Trigger {
         cron: String,
         timezone: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        window: Option<String>,
+        max_catch_up_age: Option<String>,
         skip_if_idle: bool,
         schemas: Vec<String>,
     },
@@ -51,7 +56,7 @@ pub enum Trigger {
         cron: String,
         timezone: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        window: Option<String>,
+        max_catch_up_age: Option<String>,
         schemas: Vec<String>,
     },
     Manual,
@@ -110,7 +115,7 @@ mod tests {
         let t = Trigger::ScheduledIfDirty {
             cron: "0 * * * *".into(),
             timezone: "UTC".into(),
-            window: None,
+            max_catch_up_age: None,
             schemas: vec!["S".into()],
         };
         assert!(t.is_write_triggered());
@@ -122,7 +127,7 @@ mod tests {
         let t = Trigger::Scheduled {
             cron: "0 * * * *".into(),
             timezone: "UTC".into(),
-            window: None,
+            max_catch_up_age: None,
             skip_if_idle: false,
             schemas: vec!["S".into()],
         };
@@ -165,32 +170,59 @@ mod tests {
     }
 
     #[test]
-    fn scheduled_roundtrips_with_optional_window() {
+    fn scheduled_roundtrips_with_optional_max_catch_up_age() {
         let t = Trigger::Scheduled {
             cron: "0 2 * * *".into(),
             timezone: "America/New_York".into(),
-            window: Some("24h".into()),
+            max_catch_up_age: Some("24h".into()),
             skip_if_idle: true,
             schemas: vec!["Source".into()],
         };
         let json = serde_json::to_string(&t).unwrap();
         assert!(json.contains(r#""kind":"Scheduled""#));
-        assert!(json.contains(r#""window":"24h""#));
+        assert!(json.contains(r#""max_catch_up_age":"24h""#));
         let round: Trigger = serde_json::from_str(&json).unwrap();
         assert_eq!(round, t);
 
-        // Window omitted on serialize when None.
-        let t_no_window = Trigger::Scheduled {
+        // max_catch_up_age omitted on serialize when None.
+        let t_no_budget = Trigger::Scheduled {
             cron: "0 2 * * *".into(),
             timezone: "UTC".into(),
-            window: None,
+            max_catch_up_age: None,
             skip_if_idle: false,
             schemas: vec!["S".into()],
         };
-        let json = serde_json::to_string(&t_no_window).unwrap();
+        let json = serde_json::to_string(&t_no_budget).unwrap();
         assert!(
-            !json.contains("window"),
-            "None window must be omitted: {json}"
+            !json.contains("max_catch_up_age"),
+            "None max_catch_up_age must be omitted: {json}"
+        );
+    }
+
+    #[test]
+    fn scheduled_if_dirty_roundtrips_with_optional_max_catch_up_age() {
+        let t = Trigger::ScheduledIfDirty {
+            cron: "*/5 * * * *".into(),
+            timezone: "UTC".into(),
+            max_catch_up_age: Some("1h".into()),
+            schemas: vec!["Source".into()],
+        };
+        let json = serde_json::to_string(&t).unwrap();
+        assert!(json.contains(r#""kind":"ScheduledIfDirty""#));
+        assert!(json.contains(r#""max_catch_up_age":"1h""#));
+        let round: Trigger = serde_json::from_str(&json).unwrap();
+        assert_eq!(round, t);
+
+        let t_no_budget = Trigger::ScheduledIfDirty {
+            cron: "*/5 * * * *".into(),
+            timezone: "UTC".into(),
+            max_catch_up_age: None,
+            schemas: vec!["S".into()],
+        };
+        let json = serde_json::to_string(&t_no_budget).unwrap();
+        assert!(
+            !json.contains("max_catch_up_age"),
+            "None max_catch_up_age must be omitted on ScheduledIfDirty: {json}"
         );
     }
 
