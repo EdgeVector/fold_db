@@ -1660,7 +1660,10 @@ mod tests {
             200,
         )
         .await;
-        assert!(saw_sync_attempt, "sync fire + write attempt should complete");
+        assert!(
+            saw_sync_attempt,
+            "sync fire + write attempt should complete"
+        );
 
         // Park until the retry task has registered its sleeper (~1000ms).
         let saw_parked = wait_for(|| clock.pending_sleeps() >= 1, 200).await;
@@ -1698,10 +1701,7 @@ mod tests {
             }
             tokio::time::sleep(std::time::Duration::from_millis(2)).await;
         }
-        assert!(
-            advanced,
-            "last_fire_ms must advance after successful retry"
-        );
+        assert!(advanced, "last_fire_ms must advance after successful retry");
 
         assert_eq!(
             writer.call_count.load(Ordering::SeqCst),
