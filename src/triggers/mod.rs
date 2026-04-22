@@ -9,9 +9,11 @@
 //! refreshes the in-memory cache without clobbering on-disk state.
 
 pub mod clock;
+pub mod simulate;
 pub mod types;
 
 pub use clock::{Clock, MockClock, SystemClock};
+pub use simulate::{next_fire_from_cron, should_coalesce_fire};
 pub use types::Trigger;
 
 use std::sync::Arc;

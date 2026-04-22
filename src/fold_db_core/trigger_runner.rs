@@ -49,6 +49,7 @@ use crate::schema::types::{KeyValue, Mutation};
 use crate::schema::{SchemaCore, SchemaError};
 use crate::storage::SledPool;
 use crate::triggers::clock::Clock;
+use crate::triggers::simulate::{next_fire_from_cron, should_coalesce_fire};
 use crate::triggers::types::Trigger;
 use crate::triggers::{fields, status, TRIGGER_FIRING_SCHEMA_NAME};
 
@@ -206,27 +207,6 @@ struct PersistedViewState {
     fail_streak: u32,
     last_fire_ms: i64,
     quarantined: bool,
-}
-
-/// Shared fire predicate for `OnWriteCoalesced` triggers. Fires when we
-/// have a full batch past the debounce window, OR when max_wait has
-/// elapsed since the first pending event. Returns `false` on an empty
-/// batch — both the mutation-notified and scheduler-tick paths rely on
-/// this gate to avoid dispatching with nothing pending.
-fn should_coalesce_fire(
-    state: &PersistedViewState,
-    now_ms: i64,
-    min_batch: u32,
-    debounce_ms: u64,
-    max_wait_ms: u64,
-) -> bool {
-    if state.pending_count == 0 {
-        return false;
-    }
-    let batch_ok = state.pending_count >= min_batch;
-    let debounce_ok = (now_ms - state.last_event_ms) >= debounce_ms as i64 && batch_ok;
-    let max_wait_ok = (now_ms - state.first_event_ms) >= max_wait_ms as i64;
-    (batch_ok && debounce_ok) || max_wait_ok
 }
 
 /// In-memory runtime for one view. An atomic `dispatch_in_flight` flag
@@ -435,7 +415,9 @@ impl<C: Clock> TriggerRunner<C> {
                             st.last_event_ms = now;
 
                             let fire = should_coalesce_fire(
-                                &st,
+                                st.pending_count,
+                                st.first_event_ms,
+                                st.last_event_ms,
                                 now,
                                 *min_batch,
                                 *debounce_ms,
@@ -903,7 +885,15 @@ impl<C: Clock> TriggerRunner<C> {
                 // Coalesce scheduler tick: fire if the debounce window has
                 // elapsed AND we have a batch, OR if max_wait is hit.
                 let st = rt.persisted.lock().await;
-                should_coalesce_fire(&st, now_ms, *min_batch, *debounce_ms, *max_wait_ms)
+                should_coalesce_fire(
+                    st.pending_count,
+                    st.first_event_ms,
+                    st.last_event_ms,
+                    now_ms,
+                    *min_batch,
+                    *debounce_ms,
+                    *max_wait_ms,
+                )
             }
             _ => false,
         };
@@ -1098,23 +1088,6 @@ impl FiringWriter for MutationManagerFiringWriter {
         mm.write_mutations_batch_async(vec![mutation]).await?;
         Ok(())
     }
-}
-
-/// Compute the next cron occurrence strictly after `now_ms` in the given
-/// IANA timezone. Returns the fire time as Unix epoch milliseconds (UTC),
-/// or `None` if the cron expression or timezone fail to parse.
-///
-/// DST handling follows croner: `find_next_occurrence(…, false)` advances
-/// to the first valid tick after a spring-forward gap, and fires once per
-/// local clock-time even during a fall-back overlap (croner walks UTC
-/// under the hood, so the ambiguous hour doesn't double-fire).
-fn next_fire_from_cron(cron_expr: &str, tz_str: &str, now_ms: i64) -> Option<i64> {
-    let cron = croner::Cron::new(cron_expr).parse().ok()?;
-    let tz: chrono_tz::Tz = tz_str.parse().ok()?;
-    let now_utc = chrono::DateTime::<chrono::Utc>::from_timestamp_millis(now_ms)?;
-    let now_in_tz = now_utc.with_timezone(&tz);
-    let next = cron.find_next_occurrence(&now_in_tz, false).ok()?;
-    Some(next.with_timezone(&chrono::Utc).timestamp_millis())
 }
 
 fn exp_backoff_ms(fail_streak: u32) -> u64 {
@@ -1902,75 +1875,6 @@ mod tests {
         assert_eq!(exp_backoff_ms(6), 32_000);
         assert_eq!(exp_backoff_ms(7), BACKOFF_MAX_MS);
         assert_eq!(exp_backoff_ms(100), BACKOFF_MAX_MS);
-    }
-
-    #[test]
-    fn should_coalesce_fire_predicate() {
-        let min_batch: u32 = 3;
-        let debounce_ms: u64 = 100;
-        let max_wait_ms: u64 = 10_000;
-
-        // Batch met, debounce window NOT elapsed, max_wait NOT elapsed — no fire.
-        let st = PersistedViewState {
-            pending_count: 3,
-            first_event_ms: 1_000,
-            last_event_ms: 1_050,
-            ..Default::default()
-        };
-        assert!(!should_coalesce_fire(
-            &st,
-            1_100,
-            min_batch,
-            debounce_ms,
-            max_wait_ms
-        ));
-
-        // Batch met AND debounce window elapsed — fire.
-        let st = PersistedViewState {
-            pending_count: 3,
-            first_event_ms: 1_000,
-            last_event_ms: 1_050,
-            ..Default::default()
-        };
-        assert!(should_coalesce_fire(
-            &st,
-            1_200,
-            min_batch,
-            debounce_ms,
-            max_wait_ms
-        ));
-
-        // Batch NOT met but max_wait elapsed — fire.
-        let st = PersistedViewState {
-            pending_count: 1,
-            first_event_ms: 1_000,
-            last_event_ms: 1_050,
-            ..Default::default()
-        };
-        assert!(should_coalesce_fire(
-            &st,
-            12_000,
-            min_batch,
-            debounce_ms,
-            max_wait_ms
-        ));
-
-        // Nothing pending — never fire, even if max_wait would otherwise trip.
-        // This is the guard that was only at the scheduler-tick callsite
-        // before the extraction; the helper now enforces it globally.
-        let st = PersistedViewState {
-            pending_count: 0,
-            first_event_ms: 1_000,
-            last_event_ms: 1_000,
-            ..Default::default()
-        };
-        assert!(!should_coalesce_fire(
-            &st,
-            12_000,
-            min_batch,
-            debounce_ms,
-            max_wait_ms
-        ));
     }
 
     // Helper: wait up to `max_ticks * 2ms` real wall time for `predicate`
