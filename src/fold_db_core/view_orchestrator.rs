@@ -103,78 +103,59 @@ impl ViewOrchestrator {
         Ok(result)
     }
 
-    /// Invalidate view caches that depend on mutated source fields, and spawn
-    /// background precomputation for deep views. Operates at the view level
-    /// (not per-field).
-    pub async fn invalidate_on_mutation(
-        &self,
-        schema_name: &str,
-        fields_affected: &[String],
-    ) -> Result<(), SchemaError> {
-        // Collect all view names that depend on any of the affected fields
-        let dependent_views: HashSet<String> = {
+    /// Invalidate a single named view (and its cascade), then spawn a
+    /// background precompute for the deep tier. Phase 1 trigger runner
+    /// entry: the runner decides which views fire, then calls this to
+    /// perform the actual cache lifecycle work.
+    pub async fn invalidate_view(&self, view_name: &str) -> Result<(), SchemaError> {
+        // Confirm the view exists before doing work.
+        {
             let registry = self
                 .schema_manager
                 .view_registry()
                 .lock()
                 .map_err(|_| SchemaError::InvalidData("view_registry lock".to_string()))?;
-
-            let mut views = HashSet::new();
-            for field_name in fields_affected {
-                let deps = registry
-                    .dependency_tracker
-                    .get_dependents(schema_name, field_name);
-                for view_name in deps {
-                    views.insert(view_name.clone());
-                }
+            if registry.get_view(view_name).is_none() {
+                return Err(SchemaError::NotFound(format!(
+                    "View '{}' not found",
+                    view_name
+                )));
             }
-            views
-        };
-
-        // Collect ALL views to invalidate (direct + transitive) in one pass
-        let mut all_invalidated: Vec<String> = Vec::new();
-        let mut visited = HashSet::new();
-        for view_name in &dependent_views {
-            all_invalidated.push(view_name.clone());
-            self.collect_cascade_views(view_name, &mut visited, &mut all_invalidated)?;
         }
 
-        // Invalidate all collected views (both Cached and Computing).
-        // Computing views must also be reset: a background precompute task
-        // started before this mutation holds stale source data. Resetting to
-        // Empty ensures the precompute task's check-before-store sees Empty
-        // and the view will be re-precomputed with fresh data.
-        for view_name in &all_invalidated {
-            let current_state = self.db_ops.get_view_cache_state(view_name).await?;
+        let mut all_invalidated: Vec<String> = vec![view_name.to_string()];
+        let mut visited = std::collections::HashSet::new();
+        self.collect_cascade_views(view_name, &mut visited, &mut all_invalidated)?;
 
+        for v in &all_invalidated {
+            let current_state = self.db_ops.get_view_cache_state(v).await?;
             if !current_state.is_empty() {
                 self.db_ops
-                    .set_view_cache_state(view_name, &ViewCacheState::Empty)
+                    .set_view_cache_state(v, &ViewCacheState::Empty)
                     .await?;
                 log::debug!(
-                    "Invalidated view cache '{}' ({:?} → Empty, source {}.{} mutated)",
-                    view_name,
-                    current_state,
-                    schema_name,
-                    fields_affected.first().unwrap_or(&String::new())
+                    "Invalidated view cache '{}' ({:?} → Empty, trigger-driven)",
+                    v,
+                    current_state
                 );
             }
         }
 
-        // Identify views deeper than level 1 (depend on other views) and
-        // spawn background precomputation. All invalidated views are passed
-        // in bottom-up order so leaf views compute first, but only deep views
-        // (level 2+) are marked Computing — level 1 views stay Empty and can
-        // also be lazily queried.
         let (all_ordered, deep_views) =
             self.partition_views_for_precomputation(&all_invalidated)?;
         if !deep_views.is_empty() {
             self.spawn_background_precomputation(all_ordered, deep_views)
                 .await?;
         }
-
         Ok(())
     }
+
+    // NOTE: `invalidate_on_mutation(schema, fields)` used to be the
+    // implicit fire path — every mutation would re-run every view
+    // dependent on the mutated fields. Phase 1 task 3 replaces that with
+    // explicit triggers on each view and routes dispatch through
+    // `TriggerRunner`, which calls `invalidate_view` per view it decides
+    // to fire. No call site remains for the old method, so it's removed.
 
     /// Collect all transitive cascade views in one pass (single lock acquisition).
     fn collect_cascade_views(
