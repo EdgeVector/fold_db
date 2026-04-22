@@ -391,6 +391,14 @@ impl FoldDB {
                 .map_err(|e| StorageError::IoError(std::io::Error::other(e.to_string())))?,
         );
 
+        // Register internal TriggerFiring schema so the TriggerRunner
+        // (Phase 1 task 3) has somewhere to log every view firing. The
+        // call is idempotent — subsequent boots refresh the cache and
+        // re-approve a no-op.
+        crate::triggers::register_trigger_firing_schema(&schema_manager)
+            .await
+            .map_err(|e| StorageError::IoError(std::io::Error::other(e.to_string())))?;
+
         // Create and start EventMonitor for system-wide observability
         let event_monitor = Arc::new(EventMonitor::new(Arc::clone(&message_bus)).await);
         info!("Started EventMonitor for system-wide event tracking");
