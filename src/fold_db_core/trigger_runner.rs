@@ -364,9 +364,7 @@ impl<C: Clock> TriggerRunner<C> {
             let triggers: Vec<Trigger> = view
                 .effective_triggers()
                 .into_iter()
-                .filter(|t| {
-                    t.is_write_triggered() && t.schemas().iter().any(|s| s == schema_name)
-                })
+                .filter(|t| t.is_write_triggered() && t.schemas().iter().any(|s| s == schema_name))
                 .collect();
             if !triggers.is_empty() {
                 out.push((view.name.clone(), triggers));
@@ -801,12 +799,10 @@ impl<C: Clock> TriggerRunner<C> {
                 continue;
             }
             let (cron_expr, tz_str) = match &trig {
-                Trigger::Scheduled {
-                    cron, timezone, ..
+                Trigger::Scheduled { cron, timezone, .. }
+                | Trigger::ScheduledIfDirty { cron, timezone, .. } => {
+                    (cron.as_str(), timezone.as_str())
                 }
-                | Trigger::ScheduledIfDirty {
-                    cron, timezone, ..
-                } => (cron.as_str(), timezone.as_str()),
                 _ => continue,
             };
             let Some(next_at) = next_fire_from_cron(cron_expr, tz_str, now_ms) else {
@@ -898,12 +894,10 @@ impl<C: Clock> TriggerRunner<C> {
         };
 
         let reschedule_cron = match &trigger {
-            Trigger::Scheduled {
-                cron, timezone, ..
+            Trigger::Scheduled { cron, timezone, .. }
+            | Trigger::ScheduledIfDirty { cron, timezone, .. } => {
+                Some((cron.clone(), timezone.clone()))
             }
-            | Trigger::ScheduledIfDirty {
-                cron, timezone, ..
-            } => Some((cron.clone(), timezone.clone())),
             _ => None,
         };
 

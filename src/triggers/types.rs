@@ -188,7 +188,10 @@ mod tests {
             schemas: vec!["S".into()],
         };
         let json = serde_json::to_string(&t_no_window).unwrap();
-        assert!(!json.contains("window"), "None window must be omitted: {json}");
+        assert!(
+            !json.contains("window"),
+            "None window must be omitted: {json}"
+        );
     }
 
     #[test]
