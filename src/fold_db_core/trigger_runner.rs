@@ -940,6 +940,20 @@ impl<C: Clock> TriggerRunner<C> {
         let st = rt.persisted.lock().await;
         st.quarantined
     }
+
+    #[cfg(test)]
+    pub(crate) async fn test_last_fire_ms(&self, view_name: &str) -> i64 {
+        let rt = self.runtime_for(view_name).await;
+        let st = rt.persisted.lock().await;
+        st.last_fire_ms
+    }
+
+    #[cfg(test)]
+    pub(crate) async fn test_fail_streak(&self, view_name: &str) -> u32 {
+        let rt = self.runtime_for(view_name).await;
+        let st = rt.persisted.lock().await;
+        st.fail_streak
+    }
 }
 
 #[async_trait]
@@ -1114,9 +1128,20 @@ mod tests {
         }
     }
 
+    /// Test double for `FiringWriter`. Supports two independent failure
+    /// modes used by the at-least-once retry tests:
+    ///
+    /// * `fail_next` — one-shot: the next call fails, subsequent succeed.
+    /// * `fail_count` — N-shot: the next `fail_count` calls fail, then
+    ///   successes resume. Decremented per failing call.
+    ///
+    /// Both failure modes count toward `call_count` and `attempted_rows`
+    /// so tests can assert total attempts regardless of outcome.
     struct CountingFiringWriter {
         rows: TokioMutex<Vec<FiringRecord>>,
         fail_next: std::sync::atomic::AtomicBool,
+        fail_count: AtomicU32,
+        call_count: AtomicU32,
     }
 
     impl CountingFiringWriter {
@@ -1124,15 +1149,37 @@ mod tests {
             Arc::new(Self {
                 rows: TokioMutex::new(Vec::new()),
                 fail_next: std::sync::atomic::AtomicBool::new(false),
+                fail_count: AtomicU32::new(0),
+                call_count: AtomicU32::new(0),
             })
+        }
+
+        fn set_fail_count(&self, n: u32) {
+            self.fail_count.store(n, Ordering::SeqCst);
         }
     }
 
     #[async_trait]
     impl FiringWriter for CountingFiringWriter {
         async fn write_firing(&self, row: FiringRecord) -> Result<(), SchemaError> {
+            self.call_count.fetch_add(1, Ordering::SeqCst);
             if self.fail_next.swap(false, Ordering::SeqCst) {
                 return Err(SchemaError::InvalidData("mock write fail".into()));
+            }
+            // fail_count: decrement-and-check. The CAS loop ensures we
+            // don't underflow if two calls race while fail_count == 1.
+            loop {
+                let cur = self.fail_count.load(Ordering::SeqCst);
+                if cur == 0 {
+                    break;
+                }
+                if self
+                    .fail_count
+                    .compare_exchange(cur, cur - 1, Ordering::SeqCst, Ordering::SeqCst)
+                    .is_ok()
+                {
+                    return Err(SchemaError::InvalidData("mock write fail".into()));
+                }
             }
             self.rows.lock().await.push(row);
             Ok(())
@@ -1557,13 +1604,245 @@ mod tests {
         assert_eq!(exp_backoff_ms(100), BACKOFF_MAX_MS);
     }
 
-    #[test]
-    fn at_least_once_last_fire_not_advanced_on_write_fail() {
-        // Documented by CountingFiringWriter::fail_next — the inversion
-        // of `.is_ok()` in run_fire_with_refire_loop keeps last_fire_ms
-        // unchanged when the audit write errors. Unit asserted by
-        // `fail_streak_triggers_quarantine_after_three_errors` (which
-        // relies on the fire_handler itself failing); this comment
-        // documents the symmetric path for audit-write failures.
+    // Helper: wait up to `max_ticks * 2ms` real wall time for `predicate`
+    // to become true. Uses `tokio::time::sleep` (not yield_now) because
+    // the retry path spawns a task onto another worker thread, and bare
+    // yields don't give the other worker a chance to make progress.
+    // Keeps the retry tests tight (<<2s) while still deterministic via
+    // MockClock for the trigger-internal logic.
+    async fn wait_for(mut predicate: impl FnMut() -> bool, max_ticks: usize) -> bool {
+        for _ in 0..max_ticks {
+            if predicate() {
+                return true;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(2)).await;
+        }
+        predicate()
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn at_least_once_single_write_failure_retries_and_advances() {
+        // INVARIANT UNDER TEST (see module docstring, trigger_runner.rs:25):
+        // if the TriggerFiring audit-row write fails, the runner MUST NOT
+        // advance `last_fire_ms`. A retry happens via the spawned retry
+        // task that `dispatch_inline_once` schedules (1s backoff at
+        // fail_streak=0), and on a successful retry `last_fire_ms` moves.
+        //
+        // Why this matters: `last_fire_ms` is the cursor used by scheduled
+        // triggers to compute the next fire. Advancing it on a failed
+        // audit write would lose one firing from the TriggerFiring log.
+        let sm = make_schema_manager().await;
+        register_view(&sm, "V1", "S1", vec![Trigger::OnWrite]);
+        let clock = Arc::new(MockClock::new(1_000));
+        let fire = RecordingFireHandler::all_success();
+        let writer = CountingFiringWriter::new();
+        // One write failure on the first attempt; the spawned retry
+        // (after exp_backoff_ms(0) = 1000ms) will see the writer healthy.
+        writer.set_fail_count(1);
+
+        let runner = make_runner(
+            Arc::clone(&sm),
+            Arc::clone(&clock),
+            Arc::clone(&fire) as Arc<dyn FireHandler>,
+            Arc::clone(&writer) as Arc<dyn FiringWriter>,
+        );
+
+        runner.on_mutation_notified("S1").await.unwrap();
+
+        // Sync attempt: fire handler is called once, writer is called
+        // once and fails. `dispatch_inline_once` then spawns a retry task
+        // that parks on clock.sleep(1000).
+        let saw_sync_attempt = wait_for(
+            || {
+                writer.call_count.load(Ordering::SeqCst) >= 1
+                    && fire.call_count.load(Ordering::SeqCst) >= 1
+            },
+            200,
+        )
+        .await;
+        assert!(
+            saw_sync_attempt,
+            "sync fire + write attempt should complete"
+        );
+
+        // Park until the retry task has registered its sleeper (~1000ms).
+        let saw_parked = wait_for(|| clock.pending_sleeps() >= 1, 200).await;
+        assert!(saw_parked, "retry task should park on clock.sleep(1000)");
+
+        // The sync-attempt write failed → last_fire_ms must still be 0.
+        assert_eq!(
+            runner.test_last_fire_ms("V1").await,
+            0,
+            "last_fire_ms must NOT advance on audit-write failure"
+        );
+        // Write failure is NOT a fire failure: fail_streak stays at 0, so
+        // quarantine is not triggered by audit-write errors.
+        assert_eq!(runner.test_fail_streak("V1").await, 0);
+        assert!(!runner.test_is_quarantined("V1").await);
+        assert!(
+            writer.rows.lock().await.is_empty(),
+            "no audit rows should have landed yet"
+        );
+
+        // Advance the mock clock past the backoff so the retry task runs.
+        clock.advance(1_000);
+
+        // Retry: fire succeeds, writer now succeeds, last_fire_ms advances.
+        let saw_retry = wait_for(|| writer.call_count.load(Ordering::SeqCst) >= 2, 500).await;
+        assert!(saw_retry, "retry attempt should run after 1s backoff");
+
+        // last_fire_ms is updated under the view's persisted Mutex — wait
+        // until we observe the advance. Uses real-time sleep in wait_for.
+        let mut advanced = false;
+        for _ in 0..200 {
+            if runner.test_last_fire_ms("V1").await > 0 {
+                advanced = true;
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(2)).await;
+        }
+        assert!(advanced, "last_fire_ms must advance after successful retry");
+
+        assert_eq!(
+            writer.call_count.load(Ordering::SeqCst),
+            2,
+            "expected 1 failed + 1 successful write attempt"
+        );
+        let rows = writer.rows.lock().await.clone();
+        assert_eq!(rows.len(), 1, "exactly one audit row should land");
+        assert_eq!(rows[0].view_name, "V1");
+        assert_eq!(rows[0].status, FiringStatus::Success);
+        assert!(!runner.test_is_quarantined("V1").await);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn at_least_once_multi_write_failure_does_not_quarantine() {
+        // EXPECTED BEHAVIOR (and documents the quarantine boundary):
+        //
+        // TriggerFiring audit-write failures are SIDE EFFECTS of
+        // successful fires — they must NOT count toward the 3-strikes
+        // quarantine budget. Only `FireHandler` failures (the fire
+        // itself going wrong) increment `fail_streak`. Otherwise a
+        // transient schema_service outage could quarantine every view
+        // in the registry, which would be a disaster.
+        //
+        // Runner code path that proves this (trigger_runner.rs:582-604,
+        // 656-683): `fail_streak` is incremented only inside the
+        // `!outcome.success` branch. The write_result is handled *after*
+        // that decision and only gates `last_fire_ms` / the warn-log.
+        //
+        // This test exercises that contract under 4 consecutive write
+        // failures (note 3 is the quarantine threshold for FIRE failures
+        // per QUARANTINE_FAIL_STREAK): fire succeeds every time, writes
+        // fail 4 times, recover on the 5th attempt. Neither quarantine
+        // nor fail_streak advancement should occur.
+        //
+        // Driving the retries: each external mutation drives a
+        // sync-attempt + 1 spawned retry (the inline dispatch path
+        // doesn't loop on write failure — only on fire failure). So to
+        // get 5 total attempts with writes 1..=4 failing we issue 3
+        // mutations and advance the clock past each 1s backoff. The
+        // 3rd mutation's spawned retry sees a healthy writer.
+        let sm = make_schema_manager().await;
+        register_view(&sm, "V1", "S1", vec![Trigger::OnWrite]);
+        let clock = Arc::new(MockClock::new(1_000));
+        let fire = RecordingFireHandler::all_success();
+        let writer = CountingFiringWriter::new();
+        writer.set_fail_count(4);
+
+        let runner = make_runner(
+            Arc::clone(&sm),
+            Arc::clone(&clock),
+            Arc::clone(&fire) as Arc<dyn FireHandler>,
+            Arc::clone(&writer) as Arc<dyn FiringWriter>,
+        );
+
+        // Mutation 1: attempts 1 (sync, fail) + 2 (spawned, fail).
+        runner.on_mutation_notified("S1").await.unwrap();
+        // Wait for sync attempt.
+        assert!(
+            wait_for(|| writer.call_count.load(Ordering::SeqCst) >= 1, 200).await,
+            "mutation 1 sync attempt should run"
+        );
+        // Wait for spawned retry to park.
+        assert!(
+            wait_for(|| clock.pending_sleeps() >= 1, 200).await,
+            "mutation 1 retry task should park on backoff"
+        );
+        clock.advance(1_000);
+        assert!(
+            wait_for(|| writer.call_count.load(Ordering::SeqCst) >= 2, 500).await,
+            "mutation 1 spawned retry should run"
+        );
+        // Both attempts failed writes; no quarantine, no advancement.
+        assert_eq!(runner.test_last_fire_ms("V1").await, 0);
+        assert_eq!(
+            runner.test_fail_streak("V1").await,
+            0,
+            "write failures must not increment fail_streak"
+        );
+        assert!(!runner.test_is_quarantined("V1").await);
+
+        // Wait for the spawned retry task to release dispatch_in_flight.
+        // (The release happens at the end of the tokio::spawn closure,
+        // after run_fire_with_refire_loop returns.) Short real-time sleep
+        // is needed because the release runs on a different worker.
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+
+        // Mutation 2: attempts 3 (sync, fail) + 4 (spawned, fail).
+        runner.on_mutation_notified("S1").await.unwrap();
+        assert!(
+            wait_for(|| writer.call_count.load(Ordering::SeqCst) >= 3, 500).await,
+            "mutation 2 sync attempt should run"
+        );
+        assert!(
+            wait_for(|| clock.pending_sleeps() >= 1, 200).await,
+            "mutation 2 retry task should park on backoff"
+        );
+        clock.advance(1_000);
+        assert!(
+            wait_for(|| writer.call_count.load(Ordering::SeqCst) >= 4, 500).await,
+            "mutation 2 spawned retry should run"
+        );
+        // 4 total write failures now — past QUARANTINE_FAIL_STREAK (3).
+        // The view MUST still not be quarantined.
+        assert_eq!(runner.test_last_fire_ms("V1").await, 0);
+        assert_eq!(runner.test_fail_streak("V1").await, 0);
+        assert!(
+            !runner.test_is_quarantined("V1").await,
+            "4 consecutive audit-write failures must not quarantine — \
+             quarantine budget is for FIRE failures only"
+        );
+
+        tokio::task::yield_now().await;
+        tokio::task::yield_now().await;
+
+        // Mutation 3: attempt 5 (sync). fail_count is now 0 → write
+        // succeeds on the first (sync) try, last_fire_ms advances, no
+        // spawned retry is queued.
+        runner.on_mutation_notified("S1").await.unwrap();
+        assert!(
+            wait_for(
+                || {
+                    writer.call_count.load(Ordering::SeqCst) >= 5
+                        && !writer.rows.try_lock().map(|r| r.is_empty()).unwrap_or(true)
+                },
+                500
+            )
+            .await,
+            "mutation 3 sync write should succeed"
+        );
+
+        assert_eq!(
+            writer.call_count.load(Ordering::SeqCst),
+            5,
+            "expected 4 failed + 1 successful write attempts"
+        );
+        let rows = writer.rows.lock().await.clone();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].status, FiringStatus::Success);
+        assert!(runner.test_last_fire_ms("V1").await > 0);
+        assert_eq!(runner.test_fail_streak("V1").await, 0);
+        assert!(!runner.test_is_quarantined("V1").await);
     }
 }
