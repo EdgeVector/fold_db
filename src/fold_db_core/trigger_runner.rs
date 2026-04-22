@@ -2228,4 +2228,218 @@ mod tests {
         assert_eq!(runner.test_fail_streak("V1").await, 0);
         assert!(!runner.test_is_quarantined("V1").await);
     }
+
+    // --- Failure-path coverage (audit round 1, fold_db §3 and §5) ------------
+
+    #[tokio::test]
+    async fn scheduled_with_malformed_cron_warns_and_skips_no_fires() {
+        // INVARIANT UNDER TEST (trigger_runner.rs:831-836):
+        // `populate_scheduled_from_registry` warns and skips when
+        // `next_fire_from_cron` returns None — the trigger must NOT be
+        // added to the scheduler heap, must NOT fire, and must NOT
+        // advance into a tight loop.
+        //
+        // Why this matters: a stored view with a broken cron (e.g. a
+        // migration from a buggy schema, or user input that slipped past
+        // validation) should be a noisy-but-inert no-op, not a busy
+        // loop over every scheduler wake-up. This test pins both
+        // properties: zero fires + empty heap across many ticks.
+        let sm = make_schema_manager().await;
+        register_view(
+            &sm,
+            "V1",
+            "S1",
+            vec![Trigger::Scheduled {
+                cron: "not-a-cron".into(),
+                timezone: "UTC".into(),
+                window: None,
+                skip_if_idle: false,
+                schemas: vec!["S1".into()],
+            }],
+        );
+        let clock = Arc::new(MockClock::new(0));
+        let fire = RecordingFireHandler::all_success();
+        let writer = CountingFiringWriter::new();
+        let runner = make_runner(
+            Arc::clone(&sm),
+            Arc::clone(&clock),
+            Arc::clone(&fire) as Arc<dyn FireHandler>,
+            Arc::clone(&writer) as Arc<dyn FiringWriter>,
+        );
+
+        // Tick many times, each time advancing the clock by a full cron
+        // interval (1 minute). A well-formed cron would enqueue a heap
+        // entry and eventually return Some(next_fire_ms); the malformed
+        // cron must never enqueue, so tick_once() always returns None.
+        for _ in 0..50 {
+            let next = runner.tick_once().await;
+            assert!(
+                next.is_none(),
+                "malformed cron must not produce a scheduled heap entry; \
+                 got next_at={:?}",
+                next
+            );
+            clock.advance(60_000);
+            tokio::task::yield_now().await;
+        }
+
+        assert_eq!(
+            fire.call_count.load(Ordering::SeqCst),
+            0,
+            "malformed cron must never dispatch a fire"
+        );
+        assert_eq!(
+            writer.call_count.load(Ordering::SeqCst),
+            0,
+            "malformed cron must never attempt an audit-row write"
+        );
+        assert!(
+            writer.rows.lock().await.is_empty(),
+            "malformed cron must never produce an audit row"
+        );
+        assert!(
+            !runner.test_is_quarantined("V1").await,
+            "malformed cron is a parse/warn-skip condition, NOT a fire \
+             failure — must not burn the 3-strikes quarantine budget"
+        );
+    }
+
+    #[tokio::test]
+    async fn quarantine_persists_across_runner_restart() {
+        // INVARIANT UNDER TEST (trigger_runner.rs:200-209, 614-617, 649):
+        // when a view hits `QUARANTINE_FAIL_STREAK` (3) consecutive fire
+        // failures, the runner sets `PersistedViewState.quarantined =
+        // true` and `persist()` writes that state to the `trigger_state`
+        // sled tree. After the runner + sled pool are dropped and a
+        // fresh pool + runner are opened at the same path, the new
+        // runner must observe `quarantined = true` on first load via
+        // `load_persisted` — AND refuse to dispatch further fires.
+        //
+        // Why this matters: quarantine is the release valve that stops a
+        // broken view from generating endless failed audit rows. If the
+        // flag only lived in memory, a node restart would un-break the
+        // quarantine and re-dispatch a failing view after every reboot.
+        use crate::storage::SledPool;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let pool_path = tmp.path().join("trigger_state_sled");
+
+        // ---- Phase 1: drive 3 fire failures to quarantine. -----------
+        {
+            let sm = make_schema_manager().await;
+            register_view(
+                &sm,
+                "V1",
+                "S1",
+                vec![Trigger::OnWrite {
+                    schemas: vec!["S1".into()],
+                }],
+            );
+            let clock = Arc::new(MockClock::new(0));
+            let fire = RecordingFireHandler::all_error();
+            let writer = CountingFiringWriter::new();
+            let pool = Arc::new(SledPool::new(pool_path.clone()));
+
+            let runner = Arc::new(TriggerRunner::new(
+                Arc::clone(&sm),
+                Some(Arc::clone(&pool)),
+                Arc::clone(&clock),
+                Arc::clone(&fire) as Arc<dyn FireHandler>,
+                Arc::clone(&writer) as Arc<dyn FiringWriter>,
+            ));
+
+            // Driver task: advance the mock clock past each exp_backoff
+            // so the spawned retry loop's `clock.sleep(...)` wakes up.
+            let clock_drive = Arc::clone(&clock);
+            let driver = tokio::spawn(async move {
+                for _ in 0..50 {
+                    clock_drive.advance(1_000);
+                    tokio::task::yield_now().await;
+                }
+            });
+
+            runner.on_mutation_notified("S1").await.unwrap();
+
+            for _ in 0..500 {
+                if runner.test_is_quarantined("V1").await {
+                    break;
+                }
+                clock.advance(2_000);
+                tokio::task::yield_now().await;
+            }
+            assert!(
+                runner.test_is_quarantined("V1").await,
+                "view should be quarantined after {} consecutive fire failures",
+                QUARANTINE_FAIL_STREAK
+            );
+            driver.abort();
+            let _ = driver.await;
+
+            // Force a flush so phase 2 is guaranteed to see the
+            // quarantined state on disk. `persist()` inside fire_once
+            // writes via `tree.insert`, which is durable under sled's
+            // default config but not guaranteed-synced without flush.
+            {
+                let guard = pool.acquire_arc().unwrap();
+                let tree = guard.db().open_tree(TRIGGER_STATE_TREE).unwrap();
+                tree.flush().unwrap();
+            }
+
+            // Drop runner first so any outstanding retry tasks holding
+            // Arc<Self> can wind down; then drop the pool so sled
+            // releases the file lock before phase 2 reopens it.
+            drop(runner);
+            pool.release();
+            drop(pool);
+        }
+
+        // ---- Phase 2: open a fresh pool + runner at the same path. ----
+        let sm2 = make_schema_manager().await;
+        register_view(
+            &sm2,
+            "V1",
+            "S1",
+            vec![Trigger::OnWrite {
+                schemas: vec!["S1".into()],
+            }],
+        );
+        let clock2 = Arc::new(MockClock::new(0));
+        let fire2 = RecordingFireHandler::all_success();
+        let writer2 = CountingFiringWriter::new();
+        let pool2 = Arc::new(SledPool::new(pool_path));
+
+        let runner2 = Arc::new(TriggerRunner::new(
+            sm2,
+            Some(Arc::clone(&pool2)),
+            clock2,
+            Arc::clone(&fire2) as Arc<dyn FireHandler>,
+            Arc::clone(&writer2) as Arc<dyn FiringWriter>,
+        ));
+
+        // First `runtime_for("V1")` call triggers `load_persisted` which
+        // reads the sled row back into the fresh ViewRuntime.
+        assert!(
+            runner2.test_is_quarantined("V1").await,
+            "quarantine flag must persist across runner + sled-pool restart"
+        );
+
+        // And: further mutations must observe that persisted quarantine.
+        // `fire_once` short-circuits at the top when quarantined, so the
+        // FireHandler is never invoked and the CountingFiringWriter
+        // never receives a row.
+        runner2.on_mutation_notified("S1").await.unwrap();
+        for _ in 0..20 {
+            tokio::task::yield_now().await;
+        }
+        assert_eq!(
+            fire2.call_count.load(Ordering::SeqCst),
+            0,
+            "restarted runner must respect persisted quarantine flag — \
+             no new fire after mutation on a quarantined view"
+        );
+        assert!(
+            writer2.rows.lock().await.is_empty(),
+            "quarantined view must not produce audit rows on restart"
+        );
+    }
 }
