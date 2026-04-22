@@ -208,6 +208,27 @@ struct PersistedViewState {
     quarantined: bool,
 }
 
+/// Shared fire predicate for `OnWriteCoalesced` triggers. Fires when we
+/// have a full batch past the debounce window, OR when max_wait has
+/// elapsed since the first pending event. Returns `false` on an empty
+/// batch — both the mutation-notified and scheduler-tick paths rely on
+/// this gate to avoid dispatching with nothing pending.
+fn should_coalesce_fire(
+    state: &PersistedViewState,
+    now_ms: i64,
+    min_batch: u32,
+    debounce_ms: u64,
+    max_wait_ms: u64,
+) -> bool {
+    if state.pending_count == 0 {
+        return false;
+    }
+    let batch_ok = state.pending_count >= min_batch;
+    let debounce_ok = (now_ms - state.last_event_ms) >= debounce_ms as i64 && batch_ok;
+    let max_wait_ok = (now_ms - state.first_event_ms) >= max_wait_ms as i64;
+    (batch_ok && debounce_ok) || max_wait_ok
+}
+
 /// In-memory runtime for one view. An atomic `dispatch_in_flight` flag
 /// serialises fires without the races a plain `Mutex::try_lock` would
 /// allow (between the dispatch-time probe and the spawned task's lock
@@ -413,11 +434,13 @@ impl<C: Clock> TriggerRunner<C> {
                             st.pending_count = st.pending_count.saturating_add(1);
                             st.last_event_ms = now;
 
-                            let batch_ok = st.pending_count >= *min_batch;
-                            let debounce_ok =
-                                (now - st.last_event_ms) >= *debounce_ms as i64 && batch_ok;
-                            let max_wait_ok = (now - st.first_event_ms) >= *max_wait_ms as i64;
-                            let fire = (batch_ok && debounce_ok) || max_wait_ok;
+                            let fire = should_coalesce_fire(
+                                &st,
+                                now,
+                                *min_batch,
+                                *debounce_ms,
+                                *max_wait_ms,
+                            );
 
                             // Persist to survive a restart before the fire.
                             let snapshot = st.clone();
@@ -880,15 +903,7 @@ impl<C: Clock> TriggerRunner<C> {
                 // Coalesce scheduler tick: fire if the debounce window has
                 // elapsed AND we have a batch, OR if max_wait is hit.
                 let st = rt.persisted.lock().await;
-                if st.pending_count == 0 {
-                    false
-                } else {
-                    let batch_ok = st.pending_count >= *min_batch;
-                    let debounce_ok =
-                        (now_ms - st.last_event_ms) >= *debounce_ms as i64 && batch_ok;
-                    let max_wait_ok = (now_ms - st.first_event_ms) >= *max_wait_ms as i64;
-                    (batch_ok && debounce_ok) || max_wait_ok
-                }
+                should_coalesce_fire(&st, now_ms, *min_batch, *debounce_ms, *max_wait_ms)
             }
             _ => false,
         };
@@ -1730,6 +1745,75 @@ mod tests {
         assert_eq!(exp_backoff_ms(6), 32_000);
         assert_eq!(exp_backoff_ms(7), BACKOFF_MAX_MS);
         assert_eq!(exp_backoff_ms(100), BACKOFF_MAX_MS);
+    }
+
+    #[test]
+    fn should_coalesce_fire_predicate() {
+        let min_batch: u32 = 3;
+        let debounce_ms: u64 = 100;
+        let max_wait_ms: u64 = 10_000;
+
+        // Batch met, debounce window NOT elapsed, max_wait NOT elapsed — no fire.
+        let st = PersistedViewState {
+            pending_count: 3,
+            first_event_ms: 1_000,
+            last_event_ms: 1_050,
+            ..Default::default()
+        };
+        assert!(!should_coalesce_fire(
+            &st,
+            1_100,
+            min_batch,
+            debounce_ms,
+            max_wait_ms
+        ));
+
+        // Batch met AND debounce window elapsed — fire.
+        let st = PersistedViewState {
+            pending_count: 3,
+            first_event_ms: 1_000,
+            last_event_ms: 1_050,
+            ..Default::default()
+        };
+        assert!(should_coalesce_fire(
+            &st,
+            1_200,
+            min_batch,
+            debounce_ms,
+            max_wait_ms
+        ));
+
+        // Batch NOT met but max_wait elapsed — fire.
+        let st = PersistedViewState {
+            pending_count: 1,
+            first_event_ms: 1_000,
+            last_event_ms: 1_050,
+            ..Default::default()
+        };
+        assert!(should_coalesce_fire(
+            &st,
+            12_000,
+            min_batch,
+            debounce_ms,
+            max_wait_ms
+        ));
+
+        // Nothing pending — never fire, even if max_wait would otherwise trip.
+        // This is the guard that was only at the scheduler-tick callsite
+        // before the extraction; the helper now enforces it globally.
+        let st = PersistedViewState {
+            pending_count: 0,
+            first_event_ms: 1_000,
+            last_event_ms: 1_000,
+            ..Default::default()
+        };
+        assert!(!should_coalesce_fire(
+            &st,
+            12_000,
+            min_batch,
+            debounce_ms,
+            max_wait_ms
+        ));
     }
 
     // Helper: wait up to `max_ticks * 2ms` real wall time for `predicate`
