@@ -53,8 +53,8 @@ use crate::schema::types::{KeyValue, Mutation};
 use crate::schema::{SchemaCore, SchemaError};
 use crate::storage::SledPool;
 use crate::triggers::clock::Clock;
-use crate::triggers::{fields, is_scheduled, status, trigger_schemas, Trigger};
 use crate::triggers::TRIGGER_FIRING_SCHEMA_NAME;
+use crate::triggers::{fields, is_scheduled, status, trigger_schemas, Trigger};
 
 const TRIGGER_STATE_TREE: &str = "trigger_state";
 const BACKOFF_MIN_MS: u64 = 1_000;
@@ -450,13 +450,8 @@ impl<C: Clock> TriggerRunner<C> {
                         if should_fire {
                             // Coalesced fires stay async — the caller isn't
                             // expecting synchronous invalidation for these.
-                            self.dispatch_nonblocking(
-                                &view_name,
-                                idx,
-                                &rt,
-                                FireContext::default(),
-                            )
-                            .await;
+                            self.dispatch_nonblocking(&view_name, idx, &rt, FireContext::default())
+                                .await;
                         } else {
                             self.schedule_coalesce_check(
                                 &view_name,
@@ -1023,12 +1018,8 @@ fn is_write_triggered_on_mutation(trigger: &Trigger) -> bool {
 /// the trigger is not cron-based or the cron/timezone fails to parse.
 fn next_fire_ms_from(trigger: &Trigger, anchor_ms: i64) -> Option<i64> {
     let (cron_str, tz_str) = match trigger {
-        Trigger::Scheduled {
-            cron, timezone, ..
-        }
-        | Trigger::ScheduledIfDirty {
-            cron, timezone, ..
-        } => (cron.as_str(), timezone.as_str()),
+        Trigger::Scheduled { cron, timezone, .. }
+        | Trigger::ScheduledIfDirty { cron, timezone, .. } => (cron.as_str(), timezone.as_str()),
         _ => return None,
     };
     next_fire_ms(cron_str, tz_str, anchor_ms)

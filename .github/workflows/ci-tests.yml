@@ -26,6 +26,13 @@ jobs:
         with:
           components: clippy, rustfmt
 
+      # schema_service_core is pulled as a private git dep (same pattern
+      # fold_db_node uses). Rewrite github.com HTTPS URLs to use the
+      # PRIVATE_DEPS_TOKEN PAT so cargo can clone the repo without
+      # interactive auth.
+      - name: Configure git for private dependencies
+        run: git config --global url."https://x-access-token:${{ secrets.PRIVATE_DEPS_TOKEN }}@github.com/".insteadOf "https://github.com/"
+
       - name: Cache Rust artifacts
         uses: Swatinem/rust-cache@v2
 
