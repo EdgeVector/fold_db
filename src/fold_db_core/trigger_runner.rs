@@ -1575,6 +1575,163 @@ mod tests {
         assert!(next_fire_from_cron("0 2 * * *", "Not/AZone", 0).is_none());
     }
 
+    // --- DST / leap-year regression tests -----------------------------------
+    //
+    // These tests pin croner + chrono_tz behavior at the seams where cron
+    // semantics get interesting: spring-forward gap, fall-back overlap,
+    // Feb 29 across a non-leap year, and IANA timezone alias equivalence.
+    // They assert absolute epoch-millis values computed from chrono so the
+    // contract is explicit: if croner ever changes behavior in a future
+    // release, these tests fail loudly rather than silently shifting fire
+    // semantics.
+
+    #[test]
+    fn next_fire_from_cron_spring_forward_la_fires_at_first_valid_tick() {
+        // 2026-03-08 is US spring-forward: LA local clock jumps
+        // 01:59:59 PST → 03:00:00 PDT; the 02:00–02:59 hour does not exist.
+        // Cron "0 2 * * *" nominally fires at 02:00 local, which is skipped
+        // on that day. croner's find_next_occurrence(_, /*inclusive=*/false)
+        // advances to the first valid tick after the gap, so the fire lands
+        // at 03:00 PDT (= 10:00 UTC) on the transition day.
+        use chrono::TimeZone;
+        let tz: chrono_tz::Tz = "America/Los_Angeles".parse().unwrap();
+        // now = 2026-03-08 00:00 PST (pre-transition, same local day).
+        let now_ms = tz
+            .with_ymd_and_hms(2026, 3, 8, 0, 0, 0)
+            .single()
+            .expect("unambiguous local time")
+            .timestamp_millis();
+        let next_ms = next_fire_from_cron("0 2 * * *", "America/Los_Angeles", now_ms)
+            .expect("cron should parse and step forward");
+
+        // Expected: 2026-03-08 03:00 PDT = 2026-03-08 10:00 UTC.
+        let expected = chrono::Utc
+            .with_ymd_and_hms(2026, 3, 8, 10, 0, 0)
+            .single()
+            .unwrap()
+            .timestamp_millis();
+        assert_eq!(
+            next_ms, expected,
+            "spring-forward: cron '0 2 * * *' should fire at the first valid \
+             local tick after the DST gap (03:00 PDT), not skip the day"
+        );
+    }
+
+    #[test]
+    fn next_fire_from_cron_fall_back_la_fires_exactly_once() {
+        // 2026-11-01 is US fall-back: LA local clock repeats
+        // 01:00–01:59 (first as PDT, then as PST). A cron "0 1 * * *" must
+        // fire exactly once on that date; if croner double-fires the
+        // ambiguous hour, the next-fire computed from the first fire would
+        // land on the same local date instead of the following day.
+        use chrono::TimeZone;
+
+        // now = 2026-11-01 00:30 PDT (pre-transition). Unambiguous.
+        let tz: chrono_tz::Tz = "America/Los_Angeles".parse().unwrap();
+        let now_ms = tz
+            .with_ymd_and_hms(2026, 11, 1, 0, 30, 0)
+            .single()
+            .expect("unambiguous local time")
+            .timestamp_millis();
+
+        let first = next_fire_from_cron("0 1 * * *", "America/Los_Angeles", now_ms)
+            .expect("cron should parse and step forward");
+        // First fire: 2026-11-01 01:00 PDT = 2026-11-01 08:00 UTC.
+        let expected_first = chrono::Utc
+            .with_ymd_and_hms(2026, 11, 1, 8, 0, 0)
+            .single()
+            .unwrap()
+            .timestamp_millis();
+        assert_eq!(
+            first, expected_first,
+            "fall-back: first fire should be 01:00 PDT (the first 01:00 \
+             of the ambiguous hour), not 00:00 or 02:00"
+        );
+
+        // Step again from the first fire. If croner double-fires, we'd get
+        // 2026-11-01 01:00 PST = 2026-11-01 09:00 UTC (one hour later).
+        // Correct behavior: 2026-11-02 01:00 PST = 2026-11-02 09:00 UTC
+        // (25 hours later in UTC because the day has 25 hours).
+        let second = next_fire_from_cron("0 1 * * *", "America/Los_Angeles", first)
+            .expect("cron should parse and step forward");
+        let expected_second = chrono::Utc
+            .with_ymd_and_hms(2026, 11, 2, 9, 0, 0)
+            .single()
+            .unwrap()
+            .timestamp_millis();
+        assert_eq!(
+            second, expected_second,
+            "fall-back: cron '0 1 * * *' must not double-fire the ambiguous \
+             hour — next fire after 01:00 PDT should be 01:00 PST on the \
+             FOLLOWING day (25h later in UTC), not 01:00 PST the same day"
+        );
+    }
+
+    #[test]
+    fn next_fire_from_cron_feb_29_skips_to_next_leap_year() {
+        // Cron "0 0 29 2 *" (midnight on Feb 29). now = 2027-02-28 00:00 UTC
+        // — a non-leap year with no Feb 29 ahead in 2027. croner should
+        // advance to the next leap year's Feb 29: 2028-02-29 00:00 UTC.
+        use chrono::TimeZone;
+        let now_ms = chrono::Utc
+            .with_ymd_and_hms(2027, 2, 28, 0, 0, 0)
+            .single()
+            .unwrap()
+            .timestamp_millis();
+        let next_ms = next_fire_from_cron("0 0 29 2 *", "UTC", now_ms)
+            .expect("leap-year cron should return Some — croner advances to next matching Feb 29");
+
+        let expected = chrono::Utc
+            .with_ymd_and_hms(2028, 2, 29, 0, 0, 0)
+            .single()
+            .unwrap()
+            .timestamp_millis();
+        assert_eq!(
+            next_ms, expected,
+            "Feb 29 cron on a non-leap year should advance to the next \
+             leap year's Feb 29 (2028-02-29 00:00 UTC), not return None \
+             and not fire on Feb 28 or Mar 1"
+        );
+    }
+
+    #[test]
+    fn next_fire_from_cron_tz_alias_pst8pdt_matches_la() {
+        // chrono_tz accepts both the IANA primary name "America/Los_Angeles"
+        // and the POSIX-style alias "PST8PDT" (defined as a Zone in the
+        // northamerica tz source with US DST rules). Same cron + same
+        // now_ms must produce the same next-fire in both, including across
+        // DST transitions.
+        use chrono::TimeZone;
+
+        let la: chrono_tz::Tz = "America/Los_Angeles".parse().unwrap();
+        let midwinter = la
+            .with_ymd_and_hms(2026, 1, 15, 6, 30, 0)
+            .single()
+            .unwrap()
+            .timestamp_millis();
+        let spring_forward_day = la
+            .with_ymd_and_hms(2026, 3, 8, 0, 0, 0)
+            .single()
+            .unwrap()
+            .timestamp_millis();
+
+        for (label, now_ms) in &[
+            ("midwinter", midwinter),
+            ("spring-forward-day", spring_forward_day),
+        ] {
+            let via_iana = next_fire_from_cron("0 2 * * *", "America/Los_Angeles", *now_ms)
+                .expect("IANA name should parse");
+            let via_alias = next_fire_from_cron("0 2 * * *", "PST8PDT", *now_ms)
+                .expect("PST8PDT alias should parse");
+            assert_eq!(
+                via_iana, via_alias,
+                "tz alias equivalence failed at {}: 'America/Los_Angeles' and \
+                 'PST8PDT' should produce identical next-fire times",
+                label
+            );
+        }
+    }
+
     #[tokio::test]
     async fn fail_streak_triggers_quarantine_after_three_errors() {
         let sm = make_schema_manager().await;
