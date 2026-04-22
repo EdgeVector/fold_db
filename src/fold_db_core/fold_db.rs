@@ -22,9 +22,13 @@ use super::mutation_manager::MutationManager;
 use super::orchestration::index_status::IndexStatusTracker;
 use super::query::QueryExecutor;
 use super::sync_coordinator::SyncCoordinator;
+use super::trigger_runner::{
+    ArcTriggerDispatcher, MutationManagerFiringWriter, TriggerDispatcher, TriggerRunner,
+};
 use crate::messaging::AsyncMessageBus;
 use crate::progress::ProgressStore as JobStore;
 use crate::progress::ProgressTracker;
+use crate::triggers::clock::SystemClock;
 
 /// The main database coordinator that manages schemas, permissions, and data storage.
 pub struct FoldDB {
@@ -40,8 +44,17 @@ pub struct FoldDB {
     pub(crate) message_bus: Arc<AsyncMessageBus>,
     /// Event monitor for system-wide observability
     pub(crate) event_monitor: Arc<EventMonitor>,
-    /// Mutation manager for handling all mutation operations
-    pub(crate) mutation_manager: MutationManager,
+    /// Mutation manager for handling all mutation operations.
+    /// Held in an Arc so the trigger runner can hold a `Weak` reference
+    /// back (cycle-breaking: runner writes TriggerFiring rows through
+    /// this manager, which in turn notifies the runner on commit).
+    pub(crate) mutation_manager: Arc<MutationManager>,
+    /// Trigger runner — the single source of truth for firing views.
+    /// Held as `dyn TriggerShutdown` so callers can `clear_dispatcher`
+    /// during shutdown to break the Arc cycle with MutationManager.
+    trigger_runner: Arc<TriggerRunner<SystemClock>>,
+    /// Shutdown notifier for the trigger runner's scheduler loop.
+    trigger_shutdown: Arc<tokio::sync::Notify>,
     /// Tracker for pending background tasks
     pub(crate) pending_tasks: Arc<super::pending_task_tracker::PendingTaskTracker>,
     /// Unified progress tracker for all job types (ingestion, indexing, etc.)
@@ -433,7 +446,7 @@ impl FoldDB {
                 .expect("Ed25519 key generation must not fail"),
         );
 
-        let mutation_manager = MutationManager::new(
+        let mutation_manager = Arc::new(MutationManager::new(
             Arc::clone(&db_ops),
             Arc::clone(&schema_manager),
             Arc::clone(&message_bus),
@@ -441,9 +454,39 @@ impl FoldDB {
             Some(index_status_tracker.clone()),
             sled_pool.clone(),
             Arc::clone(&signer),
-        );
+        ));
 
         info!("Created MutationManager for mutation operations");
+
+        // Build the TriggerRunner. The runner holds a Weak ref to the
+        // mutation manager (for writing TriggerFiring audit rows) and
+        // the mutation manager holds an Arc ref to the runner (for the
+        // dispatcher trait). The Weak back-edge breaks the cycle so
+        // dropping FoldDB releases both.
+        let firing_writer = Arc::new(MutationManagerFiringWriter::new(
+            Arc::downgrade(&mutation_manager),
+            signer.public_key_base64(),
+        ));
+        let trigger_runner = Arc::new(TriggerRunner::new_with_orchestrator(
+            Arc::clone(&schema_manager),
+            Arc::clone(&view_orchestrator),
+            sled_pool.clone(),
+            Arc::new(SystemClock::new()),
+            firing_writer,
+        ));
+        mutation_manager.set_trigger_dispatcher(Arc::new(ArcTriggerDispatcher::new(Arc::clone(
+            &trigger_runner,
+        ))) as Arc<dyn TriggerDispatcher>);
+
+        let trigger_shutdown = Arc::new(tokio::sync::Notify::new());
+        {
+            let runner = Arc::clone(&trigger_runner);
+            let shutdown = Arc::clone(&trigger_shutdown);
+            tokio::spawn(async move {
+                runner.run_scheduler_loop(shutdown).await;
+            });
+        }
+        info!("Started TriggerRunner scheduler loop");
 
         // Start the MutationManager event listener
         if let Err(e) = mutation_manager.start_event_listener(user_id.clone()).await {
@@ -477,6 +520,8 @@ impl FoldDB {
             message_bus,
             event_monitor,
             mutation_manager,
+            trigger_runner,
+            trigger_shutdown,
             pending_tasks,
             progress_tracker,
             sync_coordinator: SyncCoordinator::new(),
@@ -595,6 +640,12 @@ impl FoldDB {
         &self.mutation_manager
     }
 
+    /// Get the trigger runner — primarily used by integration tests and
+    /// admin endpoints that want to inspect pending/quarantined state.
+    pub fn trigger_runner(&self) -> &Arc<TriggerRunner<SystemClock>> {
+        &self.trigger_runner
+    }
+
     /// Get the message bus for publishing events
     pub fn message_bus(&self) -> Arc<AsyncMessageBus> {
         Arc::clone(&self.message_bus)
@@ -606,5 +657,10 @@ impl Drop for FoldDB {
         // Abort the background sync task to prevent tokio panic:
         // "Cannot drop a runtime in a context where blocking is not allowed"
         self.sync_coordinator.abort_task();
+        // Signal the trigger scheduler loop to exit.
+        self.trigger_shutdown.notify_waiters();
+        // Break the Arc cycle between the trigger runner and the
+        // mutation manager so both actually drop.
+        self.mutation_manager.clear_trigger_dispatcher();
     }
 }

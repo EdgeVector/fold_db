@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use super::orchestration::index_status::IndexStatusTracker;
+use super::trigger_runner::TriggerDispatcher;
 use super::view_orchestrator::ViewOrchestrator;
 use crate::atom::{Atom, FieldKey, MutationEvent};
 use crate::db_operations::{DbOperations, MoleculeData};
@@ -31,8 +32,17 @@ pub struct MutationManager {
     schema_manager: Arc<SchemaCore>,
     /// Message bus for event publishing and listening
     message_bus: Arc<AsyncMessageBus>,
-    /// View lifecycle service (redirect/invalidate/precompute)
+    /// View lifecycle service. Retained for mutation redirection (identity
+    /// view writes → source schemas). The old "invalidate every view
+    /// dependent on the mutated fields" cascade now goes through the
+    /// trigger runner; see `trigger_dispatcher` below.
     view_orchestrator: Arc<ViewOrchestrator>,
+    /// Trigger runner notification channel. Installed after construction
+    /// via `set_trigger_dispatcher` because the runner needs a reference
+    /// back to the mutation manager to write TriggerFiring audit rows.
+    /// `None` is legal only in tests or boot paths that predate trigger
+    /// wiring — in those cases mutations commit without any fire.
+    trigger_dispatcher: std::sync::RwLock<Option<Arc<dyn TriggerDispatcher>>>,
     /// Index status tracker for reporting indexing progress
     index_status_tracker: Option<IndexStatusTracker>,
     /// Sled pool for on-demand access to the org memberships tree.
@@ -62,11 +72,39 @@ impl MutationManager {
             schema_manager,
             message_bus,
             view_orchestrator,
+            trigger_dispatcher: std::sync::RwLock::new(None),
             index_status_tracker,
             sled_pool,
             is_listening: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             signer,
         }
+    }
+
+    /// Install the trigger dispatcher after construction. Needed because
+    /// the dispatcher holds a back-reference to this manager (to write
+    /// TriggerFiring rows), so the two must be constructed in order:
+    /// MutationManager first, TriggerRunner second, then wire here.
+    pub fn set_trigger_dispatcher(&self, dispatcher: Arc<dyn TriggerDispatcher>) {
+        *self
+            .trigger_dispatcher
+            .write()
+            .expect("trigger_dispatcher poisoned") = Some(dispatcher);
+    }
+
+    /// Drop the dispatcher reference. Call from shutdown to break the
+    /// Arc cycle between this manager and the TriggerRunner.
+    pub fn clear_trigger_dispatcher(&self) {
+        *self
+            .trigger_dispatcher
+            .write()
+            .expect("trigger_dispatcher poisoned") = None;
+    }
+
+    fn snapshot_trigger_dispatcher(&self) -> Option<Arc<dyn TriggerDispatcher>> {
+        self.trigger_dispatcher
+            .read()
+            .expect("trigger_dispatcher poisoned")
+            .clone()
     }
 
     /// Validate that the node is a member of the given org before allowing
@@ -341,16 +379,26 @@ impl MutationManager {
             batch_events.extend(events);
             mutation_ids.extend(ids);
 
-            // Phase 7.5: Invalidate dependent view caches
-            let fields_affected: Vec<String> = schema_mutations
-                .iter()
-                .flat_map(|m| m.fields_and_values.keys().cloned())
-                .collect::<HashSet<_>>()
-                .into_iter()
-                .collect();
-            self.view_orchestrator
-                .invalidate_on_mutation(&schema_name, &fields_affected)
-                .await?;
+            // Phase 7.5: Notify the trigger runner. The runner decides
+            // which views fire based on their declared triggers and
+            // dispatches via ViewOrchestrator::invalidate_view. The old
+            // implicit "every mutation invalidates every dependent view"
+            // cascade is gone — this is the ONLY fire path now.
+            if let Some(dispatcher) = self.snapshot_trigger_dispatcher() {
+                let fields_affected: Vec<String> = schema_mutations
+                    .iter()
+                    .flat_map(|m| m.fields_and_values.keys().cloned())
+                    .collect::<HashSet<_>>()
+                    .into_iter()
+                    .collect();
+                if let Err(e) = dispatcher.on_mutation(&schema_name, &fields_affected).await {
+                    warn!(
+                        "TriggerDispatcher::on_mutation failed for '{}': {}. \
+                         Mutation already committed; view fires skipped.",
+                        schema_name, e
+                    );
+                }
+            }
         }
 
         // Phase 8: Finalize — flush, store idempotency records, publish events

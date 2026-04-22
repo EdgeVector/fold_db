@@ -21,6 +21,7 @@ pub mod query;
 
 pub mod mutation_manager;
 pub mod sync_coordinator;
+pub mod trigger_runner;
 pub mod view_orchestrator;
 
 // Re-export key components

@@ -8,6 +8,12 @@
 //! Idempotent: if the schema already exists in the store, load_schema
 //! refreshes the in-memory cache without clobbering on-disk state.
 
+pub mod clock;
+pub mod types;
+
+pub use clock::{Clock, MockClock, SystemClock};
+pub use types::Trigger;
+
 use std::sync::Arc;
 
 use crate::schema::types::data_classification::{DataClassification, INTERNAL};

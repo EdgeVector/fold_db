@@ -4,6 +4,7 @@ use crate::schema::types::key_config::KeyConfig;
 use crate::schema::types::key_value::KeyValue;
 use crate::schema::types::operations::Query;
 use crate::schema::types::schema::DeclarativeSchemaType as SchemaType;
+use crate::triggers::types::Trigger;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -66,6 +67,12 @@ pub struct TransformView {
     pub wasm_transform: Option<Vec<u8>>,
     /// Typed output schema: field_name → type.
     pub output_fields: HashMap<String, FieldValueType>,
+    /// Trigger configuration that controls when the view is fired.
+    /// Empty / missing defaults to a single `OnWrite` trigger so views
+    /// persisted before the trigger feature continue to invalidate on
+    /// every source mutation.
+    #[serde(default)]
+    pub triggers: Vec<Trigger>,
 }
 
 impl TransformView {
@@ -84,6 +91,18 @@ impl TransformView {
             input_queries,
             wasm_transform,
             output_fields,
+            triggers: Vec::new(),
+        }
+    }
+
+    /// Effective trigger list. Empty `triggers` defaults to
+    /// `[Trigger::OnWrite]` so every view fires on mutation unless the
+    /// caller explicitly opted into a different trigger policy.
+    pub fn effective_triggers(&self) -> Vec<Trigger> {
+        if self.triggers.is_empty() {
+            vec![Trigger::OnWrite]
+        } else {
+            self.triggers.clone()
         }
     }
 
