@@ -4,7 +4,7 @@ use crate::schema::types::key_config::KeyConfig;
 use crate::schema::types::key_value::KeyValue;
 use crate::schema::types::operations::Query;
 use crate::schema::types::schema::DeclarativeSchemaType as SchemaType;
-use crate::triggers::types::Trigger;
+use crate::triggers::Trigger;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -95,12 +95,17 @@ impl TransformView {
         }
     }
 
-    /// Effective trigger list. Empty `triggers` defaults to
-    /// `[Trigger::OnWrite]` so every view fires on mutation unless the
-    /// caller explicitly opted into a different trigger policy.
+    /// Effective trigger list. Empty `triggers` defaults to a single
+    /// `Trigger::OnWrite` over every source schema so views persisted
+    /// before the trigger feature continue to fire on any source
+    /// mutation. New callers must register an explicit trigger set —
+    /// schema_service rejects empty `triggers` at `add_view` time, so
+    /// this fallback only covers pre-trigger rows read back off disk.
     pub fn effective_triggers(&self) -> Vec<Trigger> {
         if self.triggers.is_empty() {
-            vec![Trigger::OnWrite]
+            vec![Trigger::OnWrite {
+                schemas: self.source_schemas(),
+            }]
         } else {
             self.triggers.clone()
         }

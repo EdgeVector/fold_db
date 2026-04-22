@@ -3,7 +3,8 @@
 //! Phase 1 task 3 rip-out: before this runner, every successful mutation
 //! on schema S reran every view transitively dependent on S. That implicit
 //! cascade is gone (see `mutation_manager::write_mutations_batch_async`).
-//! Views now declare `Trigger`s explicitly, and this runner decides which
+//! Views now declare `Trigger`s explicitly — the canonical
+//! `schema_service_core::types::Trigger` — and this runner decides which
 //! fires to dispatch for each mutation.
 //!
 //! ### Dispatch flow
@@ -13,13 +14,15 @@
 //!    ▼
 //! TriggerRunner::on_mutation(S, fields_affected)
 //!    │
-//!    │ walk view registry; for each view V sourced from S:
-//!    │   OnWrite              → dispatch via per-view mutex (refire flag)
-//!    │   OnWriteCoalesced     → bump counters, fire if thresholds crossed
-//!    │   ScheduledIfDirty     → set dirty flag, scheduler tick will fire
-//!    │   Scheduled / Manual   → mutation is a no-op
+//!    │ for each view V whose trigger names S in its `schemas` list:
+//!    │   OnWrite                    → dispatch inline via per-view mutex
+//!    │   OnWriteCoalesced           → bump counters, fire if thresholds met
+//!    │   Scheduled{skip_if_idle}    → set dirty flag (mutation path only)
+//!    │   ScheduledIfDirty           → set dirty flag
+//!    │   Scheduled{!skip_if_idle}   → no-op on mutation (cron-driven only)
+//!    │   Manual                     → no-op
 //!    ▼
-//! FireHandler::fire(view_name)
+//! FireHandler::fire(view_name, window)
 //!    │
 //!    ▼
 //! TriggerFiring row written (at-least-once: last_fire_ms does NOT advance
@@ -28,7 +31,7 @@
 //!
 //! State lives in two places:
 //! - In-memory `HashMap<ViewId, Arc<ViewRuntime>>`: per-view mutex and
-//!   refire flag. One-fire-at-a-time is enforced via `Mutex::try_lock` —
+//!   refire flag. One-fire-at-a-time is enforced via an atomic slot —
 //!   if locked, the caller flips `refire_requested` and returns; the
 //!   in-flight fire checks that flag on completion and re-dispatches.
 //! - Sled tree `"trigger_state"`: persistent fields (pending_count,
@@ -37,6 +40,7 @@
 //!   middle of a coalesce window doesn't drop events.
 
 use async_trait::async_trait;
+use chrono::TimeZone;
 use log::{debug, warn};
 use serde::{Deserialize, Serialize};
 use std::cmp::Reverse;
@@ -49,13 +53,19 @@ use crate::schema::types::{KeyValue, Mutation};
 use crate::schema::{SchemaCore, SchemaError};
 use crate::storage::SledPool;
 use crate::triggers::clock::Clock;
-use crate::triggers::types::Trigger;
-use crate::triggers::{fields, status, TRIGGER_FIRING_SCHEMA_NAME};
+use crate::triggers::{fields, is_scheduled, status, trigger_schemas, Trigger};
+use crate::triggers::TRIGGER_FIRING_SCHEMA_NAME;
 
 const TRIGGER_STATE_TREE: &str = "trigger_state";
 const BACKOFF_MIN_MS: u64 = 1_000;
 const BACKOFF_MAX_MS: u64 = 60_000;
 const QUARANTINE_FAIL_STREAK: u32 = 3;
+
+/// A view + the subset of its triggers that reacted to one schema.
+/// The inner vec pairs each trigger's stable `trigger_index` with its
+/// config so the dispatcher doesn't have to re-scan the view's full
+/// trigger list to write the right `trigger_id`.
+type ViewTriggerMatches = (String, Vec<(usize, Trigger)>);
 
 /// Receives notifications for every successful mutation and schedules
 /// fires for views whose triggers match. Wired in from `MutationManager`
@@ -69,13 +79,23 @@ pub trait TriggerDispatcher: Send + Sync {
     ) -> Result<(), SchemaError>;
 }
 
+/// Context passed to every fire attempt. Today it carries the `window`
+/// string from a `Scheduled` / `ScheduledIfDirty` trigger — downstream
+/// fire handlers use it to construct source-windowed queries (e.g. "24h"
+/// filters the input query to the last 24 hours of mutation timestamps).
+/// `None` for write-driven triggers, which fire on the unfiltered stream.
+#[derive(Debug, Clone, Default)]
+pub struct FireContext {
+    pub window: Option<String>,
+}
+
 /// Executes the actual work of firing one view. Production wires this to
 /// `ViewOrchestrator` (cache invalidation + precompute). Tests inject a
 /// mock that returns a scripted outcome so backoff and quarantine can be
 /// exercised deterministically.
 #[async_trait]
 pub trait FireHandler: Send + Sync {
-    async fn fire(&self, view_name: &str) -> FireOutcome;
+    async fn fire(&self, view_name: &str, ctx: &FireContext) -> FireOutcome;
 }
 
 pub struct FireOutcome {
@@ -341,15 +361,16 @@ impl<C: Clock> TriggerRunner<C> {
         rt
     }
 
-    /// Snapshot views in the registry that have a trigger reacting to
-    /// mutations on `schema_name`. Phase 1 rebuilds this per mutation
-    /// from the live registry — no separate mutation_schema_index cache
-    /// because the registry lock is already cheap and AddView races are
-    /// impossible with a rebuild-per-call.
+    /// Snapshot views in the registry whose triggers name `schema_name`
+    /// in their `schemas` list. Each entry pairs the view name with the
+    /// subset of its triggers that react to writes on this schema —
+    /// purely cron-driven triggers (Scheduled with `skip_if_idle=false`,
+    /// Manual) are filtered out here since mutations are a no-op for
+    /// them.
     fn views_triggered_by(
         &self,
         schema_name: &str,
-    ) -> Result<Vec<(String, Vec<Trigger>)>, SchemaError> {
+    ) -> Result<Vec<ViewTriggerMatches>, SchemaError> {
         let registry = self
             .schema_manager
             .view_registry()
@@ -358,13 +379,12 @@ impl<C: Clock> TriggerRunner<C> {
 
         let mut out = Vec::new();
         for view in registry.list_views() {
-            if !view.source_schemas().iter().any(|s| s == schema_name) {
-                continue;
-            }
-            let triggers: Vec<Trigger> = view
+            let triggers: Vec<(usize, Trigger)> = view
                 .effective_triggers()
                 .into_iter()
-                .filter(Trigger::is_write_triggered)
+                .enumerate()
+                .filter(|(_idx, t)| trigger_schemas(t).iter().any(|s| s == schema_name))
+                .filter(|(_idx, t)| is_write_triggered_on_mutation(t))
                 .collect();
             if !triggers.is_empty() {
                 out.push((view.name.clone(), triggers));
@@ -394,15 +414,17 @@ impl<C: Clock> TriggerRunner<C> {
         for (view_name, triggers) in triggered {
             let rt = self.runtime_for(&view_name).await;
 
-            for (idx, trig) in triggers.iter().enumerate() {
+            for (idx, trig) in triggers.into_iter() {
                 match trig {
-                    Trigger::OnWrite => {
-                        self.dispatch_inline_once(&view_name, idx, &rt).await;
+                    Trigger::OnWrite { .. } => {
+                        self.dispatch_inline_once(&view_name, idx, &rt, FireContext::default())
+                            .await;
                     }
                     Trigger::OnWriteCoalesced {
                         min_batch,
                         debounce_ms,
                         max_wait_ms,
+                        ..
                     } => {
                         let should_fire = {
                             let mut st = rt.persisted.lock().await;
@@ -412,10 +434,10 @@ impl<C: Clock> TriggerRunner<C> {
                             st.pending_count = st.pending_count.saturating_add(1);
                             st.last_event_ms = now;
 
-                            let batch_ok = st.pending_count >= *min_batch;
+                            let batch_ok = st.pending_count >= min_batch;
                             let debounce_ok =
-                                (now - st.last_event_ms) >= *debounce_ms as i64 && batch_ok;
-                            let max_wait_ok = (now - st.first_event_ms) >= *max_wait_ms as i64;
+                                (now - st.last_event_ms) >= debounce_ms as i64 && batch_ok;
+                            let max_wait_ok = (now - st.first_event_ms) >= max_wait_ms as i64;
                             let fire = (batch_ok && debounce_ok) || max_wait_ok;
 
                             // Persist to survive a restart before the fire.
@@ -428,26 +450,39 @@ impl<C: Clock> TriggerRunner<C> {
                         if should_fire {
                             // Coalesced fires stay async — the caller isn't
                             // expecting synchronous invalidation for these.
-                            self.dispatch_nonblocking(&view_name, idx, &rt).await;
+                            self.dispatch_nonblocking(
+                                &view_name,
+                                idx,
+                                &rt,
+                                FireContext::default(),
+                            )
+                            .await;
                         } else {
                             self.schedule_coalesce_check(
                                 &view_name,
                                 idx,
                                 now,
-                                *debounce_ms,
-                                *max_wait_ms,
+                                debounce_ms,
+                                max_wait_ms,
                             )
                             .await;
                         }
                     }
-                    Trigger::ScheduledIfDirty { .. } => {
+                    // Both scheduled variants record write activity via the
+                    // dirty flag. ScheduledIfDirty uses it to gate firing;
+                    // Scheduled with skip_if_idle uses it the same way.
+                    // Scheduled with skip_if_idle=false reaches this branch
+                    // only because is_write_triggered_on_mutation returned
+                    // true (i.e. skip_if_idle is set) — the `false` case is
+                    // filtered out upstream.
+                    Trigger::ScheduledIfDirty { .. } | Trigger::Scheduled { .. } => {
                         let mut st = rt.persisted.lock().await;
                         st.dirty = true;
                         let snapshot = st.clone();
                         drop(st);
                         self.persist(&view_name, &snapshot).await;
                     }
-                    _ => {}
+                    Trigger::Manual => {}
                 }
             }
         }
@@ -483,6 +518,7 @@ impl<C: Clock> TriggerRunner<C> {
         view_name: &str,
         trigger_index: usize,
         rt: &Arc<ViewRuntime>,
+        ctx: FireContext,
     ) {
         use std::sync::atomic::Ordering;
         if rt.dispatch_in_flight.swap(true, Ordering::SeqCst) {
@@ -495,7 +531,7 @@ impl<C: Clock> TriggerRunner<C> {
         let view_name = view_name.to_string();
         tokio::spawn(async move {
             runner
-                .run_fire_with_refire_loop(&view_name, trigger_index, &rt)
+                .run_fire_with_refire_loop(&view_name, trigger_index, &rt, ctx)
                 .await;
             rt.dispatch_in_flight.store(false, Ordering::SeqCst);
         });
@@ -515,6 +551,7 @@ impl<C: Clock> TriggerRunner<C> {
         view_name: &str,
         trigger_index: usize,
         rt: &Arc<ViewRuntime>,
+        ctx: FireContext,
     ) {
         use std::sync::atomic::Ordering;
         if rt.dispatch_in_flight.swap(true, Ordering::SeqCst) {
@@ -523,7 +560,7 @@ impl<C: Clock> TriggerRunner<C> {
         }
 
         // Single synchronous attempt.
-        let success = self.fire_once(view_name, trigger_index, rt).await;
+        let success = self.fire_once(view_name, trigger_index, rt, &ctx).await;
 
         if success {
             // Drain any refire that piled up during the fire. If the
@@ -533,7 +570,7 @@ impl<C: Clock> TriggerRunner<C> {
                 if !rt.refire_requested.swap(false, Ordering::SeqCst) {
                     break;
                 }
-                let ok = self.fire_once(view_name, trigger_index, rt).await;
+                let ok = self.fire_once(view_name, trigger_index, rt, &ctx).await;
                 if !ok {
                     break;
                 }
@@ -552,7 +589,7 @@ impl<C: Clock> TriggerRunner<C> {
             let streak = rt_clone.persisted.lock().await.fail_streak;
             runner.clock.sleep(exp_backoff_ms(streak)).await;
             runner
-                .run_fire_with_refire_loop(&view_name, trigger_index, &rt_clone)
+                .run_fire_with_refire_loop(&view_name, trigger_index, &rt_clone, ctx)
                 .await;
             rt_clone.dispatch_in_flight.store(false, Ordering::SeqCst);
         });
@@ -565,6 +602,7 @@ impl<C: Clock> TriggerRunner<C> {
         view_name: &str,
         trigger_index: usize,
         rt: &Arc<ViewRuntime>,
+        ctx: &FireContext,
     ) -> bool {
         {
             let st = rt.persisted.lock().await;
@@ -574,7 +612,7 @@ impl<C: Clock> TriggerRunner<C> {
         }
 
         let fire_start = self.clock.now_ms();
-        let outcome = self.fire_handler.fire(view_name).await;
+        let outcome = self.fire_handler.fire(view_name, ctx).await;
         let fire_end = self.clock.now_ms();
 
         let (status_enum, _streak, quarantined) = {
@@ -638,6 +676,7 @@ impl<C: Clock> TriggerRunner<C> {
         view_name: &str,
         trigger_index: usize,
         rt: &Arc<ViewRuntime>,
+        ctx: FireContext,
     ) {
         loop {
             // Check quarantined before each attempt.
@@ -650,7 +689,7 @@ impl<C: Clock> TriggerRunner<C> {
             }
 
             let fire_start = self.clock.now_ms();
-            let outcome = self.fire_handler.fire(view_name).await;
+            let outcome = self.fire_handler.fire(view_name, &ctx).await;
             let fire_end = self.clock.now_ms();
 
             let (status_enum, new_fail_streak, should_quarantine) = {
@@ -743,8 +782,9 @@ impl<C: Clock> TriggerRunner<C> {
         let now = self.clock.now_ms();
 
         // First: enqueue new Scheduled/ScheduledIfDirty fires that are due
-        // based on each view's interval. We rebuild from the registry
-        // rather than maintain a cache; views rarely change shape.
+        // based on each view's cron expression. We rebuild from the
+        // registry rather than maintain a cache; views rarely change
+        // shape.
         self.populate_scheduled_from_registry(now).await;
 
         // Pop all due fires. Dedupe by (view, trigger_index) — a coalesce
@@ -798,17 +838,18 @@ impl<C: Clock> TriggerRunner<C> {
                 continue;
             }
             let rt = self.runtime_for(&view_name).await;
-            let interval_ms = match trig {
-                Trigger::Scheduled { interval_ms } | Trigger::ScheduledIfDirty { interval_ms } => {
-                    interval_ms
-                }
-                _ => continue,
-            };
             let last = rt.persisted.lock().await.last_fire_ms;
-            let next_at = if last == 0 {
-                now_ms + interval_ms as i64
-            } else {
-                last + interval_ms as i64
+            // Use last_fire_ms as the anchor so a view that fired recently
+            // waits its full cron period before re-firing; fall back to
+            // `now_ms` for a never-fired view so it lines up with the next
+            // cron tick from boot rather than backfilling history.
+            let anchor = if last > 0 { last } else { now_ms };
+            let Some(next_at) = next_fire_ms_from(&trig, anchor) else {
+                warn!(
+                    "view '{}' trigger[{}] has invalid cron/timezone; skipping schedule",
+                    view_name, idx
+                );
+                continue;
             };
             let mut heap = self.scheduler.lock().await;
             heap.push(Reverse(ScheduledFire {
@@ -828,7 +869,7 @@ impl<C: Clock> TriggerRunner<C> {
         let mut out = Vec::new();
         for view in registry.list_views() {
             for (idx, trig) in view.effective_triggers().iter().enumerate() {
-                if trig.is_scheduled() {
+                if is_scheduled(trig) {
                     out.push((view.name.clone(), idx, trig.clone()));
                 }
             }
@@ -857,15 +898,19 @@ impl<C: Clock> TriggerRunner<C> {
         let rt = self.runtime_for(&fire.view_name).await;
 
         let should_fire = match &trigger {
-            Trigger::Scheduled { .. } => true,
-            Trigger::ScheduledIfDirty { .. } => {
-                let st = rt.persisted.lock().await;
-                st.dirty
+            Trigger::Scheduled { skip_if_idle, .. } => {
+                if *skip_if_idle {
+                    rt.persisted.lock().await.dirty
+                } else {
+                    true
+                }
             }
+            Trigger::ScheduledIfDirty { .. } => rt.persisted.lock().await.dirty,
             Trigger::OnWriteCoalesced {
                 min_batch,
                 debounce_ms,
                 max_wait_ms,
+                ..
             } => {
                 // Coalesce scheduler tick: fire if the debounce window has
                 // elapsed AND we have a batch, OR if max_wait is hit.
@@ -883,34 +928,46 @@ impl<C: Clock> TriggerRunner<C> {
             _ => false,
         };
 
+        // Build the fire context — cron-driven triggers forward `window`
+        // to the handler so it can construct source-windowed queries.
+        let ctx = match &trigger {
+            Trigger::Scheduled { window, .. } | Trigger::ScheduledIfDirty { window, .. } => {
+                FireContext {
+                    window: window.clone(),
+                }
+            }
+            _ => FireContext::default(),
+        };
+
         if !should_fire {
-            // Re-enqueue for the next interval if it was a scheduled one.
-            if let Trigger::Scheduled { interval_ms } | Trigger::ScheduledIfDirty { interval_ms } =
-                trigger
-            {
-                let mut heap = self.scheduler.lock().await;
-                heap.push(Reverse(ScheduledFire {
-                    fire_at_ms: now_ms + interval_ms as i64,
-                    view_name: fire.view_name,
-                    trigger_index: fire.trigger_index,
-                }));
+            // Re-enqueue for the next cron tick if this was a cron-based
+            // trigger. Coalesce re-enqueueing happens below.
+            if is_scheduled(&trigger) {
+                if let Some(next_at) = next_fire_ms_from(&trigger, now_ms) {
+                    let mut heap = self.scheduler.lock().await;
+                    heap.push(Reverse(ScheduledFire {
+                        fire_at_ms: next_at,
+                        view_name: fire.view_name,
+                        trigger_index: fire.trigger_index,
+                    }));
+                }
             }
             return;
         }
 
-        self.dispatch_nonblocking(&fire.view_name, fire.trigger_index, &rt)
+        self.dispatch_nonblocking(&fire.view_name, fire.trigger_index, &rt, ctx)
             .await;
 
-        // For interval-based triggers, re-arm for the next cycle.
-        if let Trigger::Scheduled { interval_ms } | Trigger::ScheduledIfDirty { interval_ms } =
-            trigger
-        {
-            let mut heap = self.scheduler.lock().await;
-            heap.push(Reverse(ScheduledFire {
-                fire_at_ms: now_ms + interval_ms as i64,
-                view_name: fire.view_name,
-                trigger_index: fire.trigger_index,
-            }));
+        // For cron-based triggers, re-arm for the next cycle.
+        if is_scheduled(&trigger) {
+            if let Some(next_at) = next_fire_ms_from(&trigger, now_ms) {
+                let mut heap = self.scheduler.lock().await;
+                heap.push(Reverse(ScheduledFire {
+                    fire_at_ms: next_at,
+                    view_name: fire.view_name,
+                    trigger_index: fire.trigger_index,
+                }));
+            }
         }
     }
 
@@ -940,6 +997,56 @@ impl<C: Clock> TriggerRunner<C> {
         let st = rt.persisted.lock().await;
         st.quarantined
     }
+
+    #[cfg(test)]
+    pub(crate) async fn test_tick_once(self: &Arc<Self>) -> Option<i64> {
+        self.tick_once().await
+    }
+}
+
+/// Which triggers should be treated as "reacts to this mutation"?
+/// OnWrite + OnWriteCoalesced always do. ScheduledIfDirty does (for the
+/// dirty bit). Scheduled does only when `skip_if_idle=true` — in that
+/// mode mutations are what flip the dirty bit that the cron tick reads.
+fn is_write_triggered_on_mutation(trigger: &Trigger) -> bool {
+    match trigger {
+        Trigger::OnWrite { .. }
+        | Trigger::OnWriteCoalesced { .. }
+        | Trigger::ScheduledIfDirty { .. } => true,
+        Trigger::Scheduled { skip_if_idle, .. } => *skip_if_idle,
+        Trigger::Manual => false,
+    }
+}
+
+/// Compute the next cron fire time (ms since epoch) for a scheduled
+/// trigger, searched from `anchor_ms` (exclusive). Returns `None` if
+/// the trigger is not cron-based or the cron/timezone fails to parse.
+fn next_fire_ms_from(trigger: &Trigger, anchor_ms: i64) -> Option<i64> {
+    let (cron_str, tz_str) = match trigger {
+        Trigger::Scheduled {
+            cron, timezone, ..
+        }
+        | Trigger::ScheduledIfDirty {
+            cron, timezone, ..
+        } => (cron.as_str(), timezone.as_str()),
+        _ => return None,
+    };
+    next_fire_ms(cron_str, tz_str, anchor_ms)
+}
+
+/// Parse `cron_str` with `croner` and `tz_str` with `chrono-tz`, then
+/// find the first scheduled occurrence strictly after `anchor_ms`.
+/// Matches schema_service_core's validator — same parsers, same flags —
+/// so a cron that passes `add_view` validation also parses here.
+pub(crate) fn next_fire_ms(cron_str: &str, tz_str: &str, anchor_ms: i64) -> Option<i64> {
+    let tz: chrono_tz::Tz = tz_str.parse().ok()?;
+    let cron = croner::Cron::new(cron_str).parse().ok()?;
+    let anchor = chrono::Utc
+        .timestamp_millis_opt(anchor_ms)
+        .single()?
+        .with_timezone(&tz);
+    let next = cron.find_next_occurrence(&anchor, false).ok()?;
+    Some(next.timestamp_millis())
 }
 
 #[async_trait]
@@ -1007,7 +1114,12 @@ pub struct ViewOrchestratorFireHandler {
 
 #[async_trait]
 impl FireHandler for ViewOrchestratorFireHandler {
-    async fn fire(&self, view_name: &str) -> FireOutcome {
+    async fn fire(&self, view_name: &str, _ctx: &FireContext) -> FireOutcome {
+        // TODO(trigger-window-dispatch): plumb `_ctx.window` through
+        // ViewOrchestrator so cron-driven fires actually filter the
+        // source query to the requested window. The invalidate-and-recompute
+        // path currently ignores it — a follow-up swaps this for an
+        // explicit windowed invalidate once the query path supports it.
         match self.view_orchestrator.invalidate_view(view_name).await {
             Ok(()) => FireOutcome::success(0, 0),
             Err(e) => FireOutcome::error(e.to_string()),
@@ -1073,6 +1185,7 @@ mod tests {
         outcomes: TokioMutex<Vec<FireOutcome>>,
         call_count: AtomicU32,
         fired_views: TokioMutex<Vec<String>>,
+        fired_windows: TokioMutex<Vec<Option<String>>>,
     }
 
     impl RecordingFireHandler {
@@ -1081,6 +1194,7 @@ mod tests {
                 outcomes: TokioMutex::new(outcomes.into_iter().rev().collect()),
                 call_count: AtomicU32::new(0),
                 fired_views: TokioMutex::new(Vec::new()),
+                fired_windows: TokioMutex::new(Vec::new()),
             })
         }
 
@@ -1103,9 +1217,10 @@ mod tests {
 
     #[async_trait]
     impl FireHandler for RecordingFireHandler {
-        async fn fire(&self, view_name: &str) -> FireOutcome {
+        async fn fire(&self, view_name: &str, ctx: &FireContext) -> FireOutcome {
             self.call_count.fetch_add(1, Ordering::SeqCst);
             self.fired_views.lock().await.push(view_name.to_string());
+            self.fired_windows.lock().await.push(ctx.window.clone());
             self.outcomes
                 .lock()
                 .await
@@ -1190,7 +1305,14 @@ mod tests {
     #[tokio::test]
     async fn on_write_single_mutation_fires_once() {
         let sm = make_schema_manager().await;
-        register_view(&sm, "V1", "S1", vec![Trigger::OnWrite]);
+        register_view(
+            &sm,
+            "V1",
+            "S1",
+            vec![Trigger::OnWrite {
+                schemas: vec!["S1".to_string()],
+            }],
+        );
         let clock = Arc::new(MockClock::new(1_000));
         let fire = RecordingFireHandler::all_success();
         let writer = CountingFiringWriter::new();
@@ -1204,8 +1326,6 @@ mod tests {
 
         runner.on_mutation_notified("S1").await.unwrap();
 
-        // Let the spawned fire task run. on_mutation_notified spawns;
-        // we need to yield until the mutex is released.
         for _ in 0..20 {
             if fire.call_count.load(Ordering::SeqCst) > 0 {
                 break;
@@ -1222,6 +1342,40 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn on_write_ignores_unlisted_schema() {
+        // Routing now goes through the canonical Trigger's `schemas`
+        // vec — a mutation on a schema that the trigger doesn't name
+        // must NOT produce a fire, even if the view has other input
+        // queries referencing that schema.
+        let sm = make_schema_manager().await;
+        register_view(
+            &sm,
+            "V1",
+            "S1",
+            vec![Trigger::OnWrite {
+                schemas: vec!["S2".to_string()],
+            }],
+        );
+        let clock = Arc::new(MockClock::new(1_000));
+        let fire = RecordingFireHandler::all_success();
+        let writer = CountingFiringWriter::new();
+
+        let runner = make_runner(
+            Arc::clone(&sm),
+            clock,
+            Arc::clone(&fire) as Arc<dyn FireHandler>,
+            Arc::clone(&writer) as Arc<dyn FiringWriter>,
+        );
+
+        runner.on_mutation_notified("S1").await.unwrap();
+        // yield a bit to let any spawned work land
+        for _ in 0..10 {
+            tokio::task::yield_now().await;
+        }
+        assert_eq!(fire.call_count.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
     async fn coalesced_fires_at_min_batch() {
         let sm = make_schema_manager().await;
         register_view(
@@ -1229,6 +1383,7 @@ mod tests {
             "V1",
             "S1",
             vec![Trigger::OnWriteCoalesced {
+                schemas: vec!["S1".to_string()],
                 min_batch: 3,
                 debounce_ms: 0,
                 max_wait_ms: 10_000,
@@ -1266,6 +1421,7 @@ mod tests {
             "V1",
             "S1",
             vec![Trigger::OnWriteCoalesced {
+                schemas: vec!["S1".to_string()],
                 min_batch: 100,
                 debounce_ms: 10_000,
                 max_wait_ms: 500,
@@ -1303,6 +1459,7 @@ mod tests {
             "V1",
             "S1",
             vec![Trigger::OnWriteCoalesced {
+                schemas: vec!["S1".to_string()],
                 min_batch: 2,
                 debounce_ms: 100,
                 max_wait_ms: 100_000,
@@ -1326,7 +1483,7 @@ mod tests {
         // Advance past debounce and tick the scheduler so it picks up
         // the pending coalesce.
         clock.advance(200);
-        runner.tick_once().await;
+        runner.test_tick_once().await;
 
         for _ in 0..30 {
             if fire.call_count.load(Ordering::SeqCst) > 0 {
@@ -1339,14 +1496,22 @@ mod tests {
 
     #[tokio::test]
     async fn scheduled_if_dirty_only_fires_when_dirty() {
+        // 2026-01-01 00:00:00 UTC — a clean wall-clock anchor so the
+        // "every minute" cron lines up without arithmetic surprises.
+        let start = 1_767_225_600_000_i64;
         let sm = make_schema_manager().await;
         register_view(
             &sm,
             "V1",
             "S1",
-            vec![Trigger::ScheduledIfDirty { interval_ms: 1_000 }],
+            vec![Trigger::ScheduledIfDirty {
+                cron: "* * * * *".to_string(),
+                timezone: "UTC".to_string(),
+                window: None,
+                schemas: vec!["S1".to_string()],
+            }],
         );
-        let clock = Arc::new(MockClock::new(0));
+        let clock = Arc::new(MockClock::new(start));
         let fire = RecordingFireHandler::all_success();
         let writer = CountingFiringWriter::new();
         let runner = make_runner(
@@ -1357,16 +1522,16 @@ mod tests {
         );
 
         // First tick populates scheduler; not dirty yet.
-        runner.tick_once().await;
-        clock.advance(1_000);
-        runner.tick_once().await;
+        runner.test_tick_once().await;
+        clock.advance(60_000);
+        runner.test_tick_once().await;
         tokio::task::yield_now().await;
         assert_eq!(fire.call_count.load(Ordering::SeqCst), 0);
 
-        // Mark dirty via mutation; next interval should fire.
+        // Mark dirty via mutation; next minute should fire.
         runner.on_mutation_notified("S1").await.unwrap();
-        clock.advance(1_000);
-        runner.tick_once().await;
+        clock.advance(60_000);
+        runner.test_tick_once().await;
         for _ in 0..30 {
             if fire.call_count.load(Ordering::SeqCst) > 0 {
                 break;
@@ -1377,15 +1542,23 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn scheduled_fires_at_interval() {
+    async fn scheduled_fires_at_cron_interval() {
+        // 2026-01-01 00:00:00 UTC; every-5-minutes cron.
+        let start = 1_767_225_600_000_i64;
         let sm = make_schema_manager().await;
         register_view(
             &sm,
             "V1",
             "S1",
-            vec![Trigger::Scheduled { interval_ms: 500 }],
+            vec![Trigger::Scheduled {
+                cron: "*/5 * * * *".to_string(),
+                timezone: "UTC".to_string(),
+                window: Some("24h".to_string()),
+                skip_if_idle: false,
+                schemas: vec!["S1".to_string()],
+            }],
         );
-        let clock = Arc::new(MockClock::new(0));
+        let clock = Arc::new(MockClock::new(start));
         let fire = RecordingFireHandler::all_success();
         let writer = CountingFiringWriter::new();
         let runner = make_runner(
@@ -1395,18 +1568,69 @@ mod tests {
             Arc::clone(&writer) as Arc<dyn FiringWriter>,
         );
 
-        runner.tick_once().await;
-        // Before interval elapses, no fire.
-        clock.advance(100);
-        runner.tick_once().await;
+        runner.test_tick_once().await;
+        // Before the 5-minute mark, no fire.
+        clock.advance(60_000); // 1 minute
+        runner.test_tick_once().await;
         tokio::task::yield_now().await;
         assert_eq!(fire.call_count.load(Ordering::SeqCst), 0);
 
-        // After interval, one fire.
-        clock.advance(500);
-        runner.tick_once().await;
+        // After 5 minutes elapsed, one fire.
+        clock.advance(5 * 60_000);
+        runner.test_tick_once().await;
         for _ in 0..30 {
             if fire.call_count.load(Ordering::SeqCst) >= 1 {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+        assert_eq!(fire.call_count.load(Ordering::SeqCst), 1);
+        // Window from the canonical Trigger makes it through to the handler.
+        let windows = fire.fired_windows.lock().await.clone();
+        assert_eq!(windows, vec![Some("24h".to_string())]);
+    }
+
+    #[tokio::test]
+    async fn scheduled_with_skip_if_idle_waits_for_mutation() {
+        let start = 1_767_225_600_000_i64;
+        let sm = make_schema_manager().await;
+        register_view(
+            &sm,
+            "V1",
+            "S1",
+            vec![Trigger::Scheduled {
+                cron: "* * * * *".to_string(),
+                timezone: "UTC".to_string(),
+                window: None,
+                skip_if_idle: true,
+                schemas: vec!["S1".to_string()],
+            }],
+        );
+        let clock = Arc::new(MockClock::new(start));
+        let fire = RecordingFireHandler::all_success();
+        let writer = CountingFiringWriter::new();
+        let runner = make_runner(
+            Arc::clone(&sm),
+            Arc::clone(&clock),
+            Arc::clone(&fire) as Arc<dyn FireHandler>,
+            Arc::clone(&writer) as Arc<dyn FiringWriter>,
+        );
+
+        // Tick over a few cron minutes; no mutation, so no fire.
+        runner.test_tick_once().await;
+        clock.advance(60_000);
+        runner.test_tick_once().await;
+        clock.advance(60_000);
+        runner.test_tick_once().await;
+        tokio::task::yield_now().await;
+        assert_eq!(fire.call_count.load(Ordering::SeqCst), 0);
+
+        // Mutation flips dirty; next cron tick fires once.
+        runner.on_mutation_notified("S1").await.unwrap();
+        clock.advance(60_000);
+        runner.test_tick_once().await;
+        for _ in 0..30 {
+            if fire.call_count.load(Ordering::SeqCst) > 0 {
                 break;
             }
             tokio::task::yield_now().await;
@@ -1417,7 +1641,14 @@ mod tests {
     #[tokio::test]
     async fn fail_streak_triggers_quarantine_after_three_errors() {
         let sm = make_schema_manager().await;
-        register_view(&sm, "V1", "S1", vec![Trigger::OnWrite]);
+        register_view(
+            &sm,
+            "V1",
+            "S1",
+            vec![Trigger::OnWrite {
+                schemas: vec!["S1".to_string()],
+            }],
+        );
         let clock = Arc::new(MockClock::new(0));
         let fire = RecordingFireHandler::all_error();
         let writer = CountingFiringWriter::new();
@@ -1482,7 +1713,7 @@ mod tests {
 
         #[async_trait]
         impl FireHandler for GatedHandler {
-            async fn fire(&self, _view_name: &str) -> FireOutcome {
+            async fn fire(&self, _view_name: &str, _ctx: &FireContext) -> FireOutcome {
                 // On the first call, hold until release is set, so the
                 // caller can issue a second mutation while we're mid-fire.
                 let was_first = self.count.fetch_add(1, Ordering::SeqCst) == 0;
@@ -1496,7 +1727,14 @@ mod tests {
         }
 
         let sm = make_schema_manager().await;
-        register_view(&sm, "V1", "S1", vec![Trigger::OnWrite]);
+        register_view(
+            &sm,
+            "V1",
+            "S1",
+            vec![Trigger::OnWrite {
+                schemas: vec!["S1".to_string()],
+            }],
+        );
         let clock = Arc::new(MockClock::new(0));
         let handler = Arc::new(GatedHandler {
             release: Arc::new(AtomicBool::new(false)),
@@ -1555,6 +1793,34 @@ mod tests {
         assert_eq!(exp_backoff_ms(6), 32_000);
         assert_eq!(exp_backoff_ms(7), BACKOFF_MAX_MS);
         assert_eq!(exp_backoff_ms(100), BACKOFF_MAX_MS);
+    }
+
+    #[test]
+    fn next_fire_ms_hits_canonical_5min_cron() {
+        // 2026-01-01 00:00:00 UTC
+        let start = 1_767_225_600_000_i64;
+        let next = next_fire_ms("*/5 * * * *", "UTC", start).unwrap();
+        assert_eq!(next - start, 5 * 60_000);
+    }
+
+    #[test]
+    fn next_fire_ms_respects_named_timezone() {
+        // 2026-01-01 00:00:00 UTC == 2025-12-31 19:00 America/New_York
+        // (UTC-5 EST). Next "0 12 * * *" in NY is 2026-01-01 12:00 NY =
+        // 2026-01-01 17:00 UTC → 17 hours after the anchor.
+        let start = 1_767_225_600_000_i64;
+        let next = next_fire_ms("0 12 * * *", "America/New_York", start).unwrap();
+        assert_eq!(next - start, 17 * 60 * 60_000);
+    }
+
+    #[test]
+    fn next_fire_ms_rejects_bad_cron() {
+        assert!(next_fire_ms("not a cron", "UTC", 0).is_none());
+    }
+
+    #[test]
+    fn next_fire_ms_rejects_bad_timezone() {
+        assert!(next_fire_ms("* * * * *", "Mars/Olympus_Mons", 0).is_none());
     }
 
     #[test]

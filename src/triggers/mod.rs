@@ -9,10 +9,55 @@
 //! refreshes the in-memory cache without clobbering on-disk state.
 
 pub mod clock;
-pub mod types;
 
 pub use clock::{Clock, MockClock, SystemClock};
-pub use types::Trigger;
+
+/// Canonical trigger declaration, owned by `schema_service_core`.
+///
+/// fold_db consumed a forked, `interval_ms`-based enum through Phase 1
+/// T3 (#584). Phase 1 G3 unifies on the service-side canonical enum:
+/// per-variant `schemas` for routing, cron-based scheduling
+/// (`croner` + `chrono-tz`), `window` for scheduled time-filtering,
+/// and `skip_if_idle` for the quiet-tick suppression the scheduler
+/// path needs. Any StoredView persisted by schema_service now round-
+/// trips into fold_db's TriggerRunner without translation.
+pub use schema_service_core::types::Trigger;
+
+/// Does a mutation against one of this trigger's source schemas need
+/// to be dispatched through the runtime write path? True for triggers
+/// that batch / fire on writes; false for pure cron triggers that the
+/// scheduler drives.
+pub fn is_write_triggered(trigger: &Trigger) -> bool {
+    matches!(
+        trigger,
+        Trigger::OnWrite { .. }
+            | Trigger::OnWriteCoalesced { .. }
+            | Trigger::ScheduledIfDirty { .. }
+    )
+}
+
+/// Does the scheduler tick own this trigger? True for cron-based
+/// triggers; false for pure write-driven ones.
+pub fn is_scheduled(trigger: &Trigger) -> bool {
+    matches!(
+        trigger,
+        Trigger::Scheduled { .. } | Trigger::ScheduledIfDirty { .. }
+    )
+}
+
+/// Source-schema names a mutation is matched against when deciding
+/// whether a trigger reacts. Manual triggers have no schemas (and no
+/// runtime path); everyone else ships an explicit `schemas: Vec<String>`
+/// the canonical enum enforces at registration time.
+pub fn trigger_schemas(trigger: &Trigger) -> &[String] {
+    match trigger {
+        Trigger::OnWrite { schemas }
+        | Trigger::OnWriteCoalesced { schemas, .. }
+        | Trigger::Scheduled { schemas, .. }
+        | Trigger::ScheduledIfDirty { schemas, .. } => schemas.as_slice(),
+        Trigger::Manual => &[],
+    }
+}
 
 use std::sync::Arc;
 

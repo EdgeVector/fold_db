@@ -16,8 +16,7 @@ use fold_db::schema::types::schema::DeclarativeSchemaType as SchemaType;
 use fold_db::schema::types::{KeyValue, Mutation};
 use fold_db::schema::SchemaState;
 use fold_db::test_helpers::TestSchemaBuilder;
-use fold_db::triggers::types::Trigger;
-use fold_db::triggers::{fields, status, TRIGGER_FIRING_SCHEMA_NAME};
+use fold_db::triggers::{fields, status, Trigger, TRIGGER_FIRING_SCHEMA_NAME};
 use fold_db::view::types::TransformView;
 use serde_json::json;
 
@@ -110,7 +109,9 @@ async fn on_write_trigger_writes_trigger_firing_row() {
             "BP_Content",
             "BlogPost",
             "content",
-            vec![Trigger::OnWrite],
+            vec![Trigger::OnWrite {
+                schemas: vec!["BlogPost".to_string()],
+            }],
         ))
         .await
         .unwrap();

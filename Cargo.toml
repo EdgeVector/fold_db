@@ -42,6 +42,19 @@ once_cell = "1"
 colored = "3.1.1"
 log = { version = "0.4", features = ["std"] }
 
+# Trigger declarations: canonical `Trigger` enum lives in
+# schema_service_core and is validated/persisted service-side.
+# fold_db's TriggerRunner consumes the same type verbatim — same
+# git-dep pattern fold_db_node uses (with a sibling-path override
+# through `.cargo/config.toml` for parallel hacking).
+schema_service_core = { git = "https://github.com/EdgeVector/schema_service.git", branch = "main" }
+
+# Cron + IANA-timezone parsing for canonical `Trigger::Scheduled`
+# / `ScheduledIfDirty`. Versions pinned to match schema_service_core
+# so the validator and runtime parsers agree on edge-case semantics.
+croner = "2"
+chrono-tz = "0.9"
+
 # Async runtime
 tokio = { version = "1.0", features = ["macros", "rt-multi-thread", "sync", "time", "fs", "signal", "io-util"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
