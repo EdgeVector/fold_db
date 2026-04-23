@@ -51,7 +51,7 @@ use crate::storage::SledPool;
 use crate::triggers::clock::Clock;
 use crate::triggers::simulate::{next_fire_from_cron, should_coalesce_fire, should_skip_catch_up};
 use crate::triggers::types::Trigger;
-use crate::triggers::{fields, status, TRIGGER_FIRING_SCHEMA_NAME};
+use crate::triggers::{fields, skip_reason, status, TRIGGER_FIRING_SCHEMA_NAME};
 
 const TRIGGER_STATE_TREE: &str = "trigger_state";
 const BACKOFF_MIN_MS: u64 = 1_000;
@@ -131,6 +131,31 @@ pub enum FiringStatus {
     Success,
     Error,
     Quarantined,
+    /// Scheduler chose not to dispatch this tick. Carries the cause so the
+    /// audit row's `skip_reason` field can be populated from one source.
+    Skipped(SkipReason),
+}
+
+/// Why a scheduled fire was skipped. Closed-set; each variant maps 1:1 to a
+/// `triggers::skip_reason::*` constant that lands on the audit row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SkipReason {
+    /// `Scheduled { skip_if_idle: true }` + dirty bit clean.
+    SkipIfIdle,
+    /// `ScheduledIfDirty` + dirty bit clean.
+    DirtyClean,
+    /// Catch-up tick exceeded the trigger's `max_catch_up_age` budget.
+    CatchUpBudget,
+}
+
+impl SkipReason {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            SkipReason::SkipIfIdle => skip_reason::SKIP_IF_IDLE,
+            SkipReason::DirtyClean => skip_reason::DIRTY_CLEAN,
+            SkipReason::CatchUpBudget => skip_reason::CATCH_UP_BUDGET,
+        }
+    }
 }
 
 impl FiringStatus {
@@ -139,6 +164,16 @@ impl FiringStatus {
             FiringStatus::Success => status::SUCCESS,
             FiringStatus::Error => status::ERROR,
             FiringStatus::Quarantined => status::QUARANTINED,
+            FiringStatus::Skipped(_) => status::SKIPPED,
+        }
+    }
+
+    /// Stable reason string when `self` is `Skipped`; `None` otherwise. The
+    /// `skip_reason` schema field is nullable — non-skip rows serialize Null.
+    pub fn skip_reason_str(&self) -> Option<&'static str> {
+        match self {
+            FiringStatus::Skipped(r) => Some(r.as_str()),
+            _ => None,
         }
     }
 }
@@ -181,6 +216,13 @@ impl FiringRecord {
             fields::ERROR_MESSAGE.to_string(),
             match self.error_message {
                 Some(m) => serde_json::Value::String(m),
+                None => serde_json::Value::Null,
+            },
+        );
+        fields_map.insert(
+            fields::SKIP_REASON.to_string(),
+            match self.status.skip_reason_str() {
+                Some(r) => serde_json::Value::String(r.to_string()),
                 None => serde_json::Value::Null,
             },
         );
@@ -907,17 +949,23 @@ impl<C: Clock> TriggerRunner<C> {
         };
 
         if !should_fire {
-            // Re-enqueue the next cron occurrence for scheduled triggers —
-            // skip_if_idle / dirty-check skipped this tick but the next
-            // cron tick should still be tracked.
-            if let Some((cron, tz)) = reschedule_cron {
-                if let Some(next_at) = next_fire_from_cron(&cron, &tz, now_ms) {
-                    let mut heap = self.scheduler.lock().await;
-                    heap.push(Reverse(ScheduledFire {
-                        fire_at_ms: next_at,
-                        view_name: fire.view_name,
-                        trigger_index: fire.trigger_index,
-                    }));
+            // Skip rows land for Scheduled / ScheduledIfDirty so operators
+            // can grep `folddb trigger log` to see "why did this view not
+            // fire?". OnWriteCoalesced ticks with no ready batch are
+            // background polling noise — no audit row, just re-enqueue.
+            let reason = match &trigger {
+                Trigger::Scheduled { .. } => Some(SkipReason::SkipIfIdle),
+                Trigger::ScheduledIfDirty { .. } => Some(SkipReason::DirtyClean),
+                _ => None,
+            };
+            match reason {
+                Some(r) => {
+                    self.write_skip_firing(&fire, r, now_ms, reschedule_cron)
+                        .await;
+                }
+                None => {
+                    // Coalesce has no cron to reschedule (reschedule_cron
+                    // is None here) — nothing to push, no row to write.
                 }
             }
             return;
@@ -962,16 +1010,8 @@ impl<C: Clock> TriggerRunner<C> {
                 lag_ms,
                 max_age,
             );
-            if let Some((cron, tz)) = reschedule_cron {
-                if let Some(next_at) = next_fire_from_cron(&cron, &tz, now_ms) {
-                    let mut heap = self.scheduler.lock().await;
-                    heap.push(Reverse(ScheduledFire {
-                        fire_at_ms: next_at,
-                        view_name: fire.view_name,
-                        trigger_index: fire.trigger_index,
-                    }));
-                }
-            }
+            self.write_skip_firing(&fire, SkipReason::CatchUpBudget, now_ms, reschedule_cron)
+                .await;
             return;
         }
 
@@ -988,6 +1028,60 @@ impl<C: Clock> TriggerRunner<C> {
                     trigger_index: fire.trigger_index,
                 }));
             }
+        }
+    }
+
+    /// Write a `skipped` TriggerFiring row for a skipped scheduled tick.
+    ///
+    /// At-least-once semantics mirror the fire path: a failed audit-row
+    /// write re-pushes the original `fire` onto the heap so the next
+    /// scheduler tick retries. A transient sled error must not silently
+    /// drop the breadcrumb operators rely on. On success, re-enqueue the
+    /// next cron occurrence so the scheduler keeps tracking this view.
+    async fn write_skip_firing(
+        self: &Arc<Self>,
+        fire: &ScheduledFire,
+        reason: SkipReason,
+        now_ms: i64,
+        reschedule_cron: Option<(String, String)>,
+    ) {
+        let trigger_id = format!("{}:{}", fire.view_name, fire.trigger_index);
+        let record = FiringRecord {
+            trigger_id,
+            view_name: fire.view_name.clone(),
+            fired_at_ms: fire.fire_at_ms,
+            duration_ms: 0,
+            status: FiringStatus::Skipped(reason),
+            input_row_count: 0,
+            output_row_count: 0,
+            error_message: None,
+        };
+
+        let write_result = self.firing_writer.write_firing(record).await;
+
+        if write_result.is_ok() {
+            if let Some((cron, tz)) = reschedule_cron {
+                if let Some(next_at) = next_fire_from_cron(&cron, &tz, now_ms) {
+                    let mut heap = self.scheduler.lock().await;
+                    heap.push(Reverse(ScheduledFire {
+                        fire_at_ms: next_at,
+                        view_name: fire.view_name.clone(),
+                        trigger_index: fire.trigger_index,
+                    }));
+                }
+            }
+        } else {
+            warn!(
+                "TriggerFiring skip-row write failed for view '{}' (reason {:?}) — \
+                 will retry on next tick",
+                fire.view_name, reason
+            );
+            let mut heap = self.scheduler.lock().await;
+            heap.push(Reverse(ScheduledFire {
+                fire_at_ms: fire.fire_at_ms,
+                view_name: fire.view_name.clone(),
+                trigger_index: fire.trigger_index,
+            }));
         }
     }
 
@@ -1504,6 +1598,21 @@ mod tests {
         runner.tick_once().await;
         tokio::task::yield_now().await;
         assert_eq!(fire.call_count.load(Ordering::SeqCst), 0);
+        // Dirty-bit clean on a ScheduledIfDirty tick emits exactly one
+        // "skipped" audit row so `folddb trigger log` shows the operator
+        // the tick ran but the view was intentionally idle.
+        {
+            let rows = writer.rows.lock().await;
+            assert_eq!(
+                rows.len(),
+                1,
+                "clean ScheduledIfDirty tick must write one skipped audit row"
+            );
+            assert_eq!(
+                rows[0].status,
+                FiringStatus::Skipped(SkipReason::DirtyClean)
+            );
+        }
 
         // Mark dirty via mutation; next cron tick should fire.
         runner.on_mutation_notified("S1").await.unwrap();
@@ -1516,6 +1625,12 @@ mod tests {
             tokio::task::yield_now().await;
         }
         assert_eq!(fire.call_count.load(Ordering::SeqCst), 1);
+        // Skip row + success row now in the log.
+        {
+            let rows = writer.rows.lock().await;
+            assert_eq!(rows.len(), 2);
+            assert_eq!(rows[1].status, FiringStatus::Success);
+        }
     }
 
     #[tokio::test]
@@ -1600,6 +1715,15 @@ mod tests {
             fire.call_count.load(Ordering::SeqCst),
             0,
             "skip_if_idle must suppress fire when dirty bit is clean"
+        );
+        // The suppressed tick writes a "skipped" audit row with the
+        // skip_if_idle reason so operators can tell a no-op tick from a
+        // missing tick in `folddb trigger log`.
+        let rows = writer.rows.lock().await;
+        assert_eq!(rows.len(), 1);
+        assert_eq!(
+            rows[0].status,
+            FiringStatus::Skipped(SkipReason::SkipIfIdle)
         );
     }
 
@@ -2360,10 +2484,21 @@ mod tests {
             0,
             "fire slipped 3h past a 1h budget must be skipped, not dispatched"
         );
-        assert!(
-            writer.rows.lock().await.is_empty(),
-            "skipped catch-up must not emit a TriggerFiring audit row"
-        );
+        // Skipped catch-up emits exactly one "skipped" audit row with
+        // reason catch_up_budget so `folddb trigger log` surfaces the
+        // slip (was missing until kanban ecb08).
+        {
+            let rows = writer.rows.lock().await;
+            assert_eq!(
+                rows.len(),
+                1,
+                "skipped catch-up must emit one TriggerFiring audit row"
+            );
+            assert_eq!(
+                rows[0].status,
+                FiringStatus::Skipped(SkipReason::CatchUpBudget)
+            );
+        }
 
         // Skip path re-enqueued the NEXT cron occurrence: 05:00 UTC.
         // Advance there; the in-budget fire must dispatch.
@@ -2644,11 +2779,17 @@ mod tests {
             "ScheduledIfDirty + dirty=true + over-budget lag must be skipped, \
              not dispatched (catch-up-skip wins over dirty-gate)"
         );
-        assert!(
-            writer.rows.lock().await.is_empty(),
-            "skipped catch-up must not emit a TriggerFiring audit row even \
-             when the dirty bit was set"
-        );
+        // ScheduledIfDirty + over-budget emits a "skipped" row with reason
+        // catch_up_budget — same path as plain Scheduled, verified via
+        // the dedicated SchedulerIfDirty branch for the dirty=true case.
+        {
+            let rows = writer.rows.lock().await;
+            assert_eq!(rows.len(), 1);
+            assert_eq!(
+                rows[0].status,
+                FiringStatus::Skipped(SkipReason::CatchUpBudget)
+            );
+        }
 
         // Skip path re-enqueued the NEXT cron occurrence after now_ms = 72:00,
         // which is 73:00 UTC. Advance +1h and tick: lag = 0, dirty still set,
@@ -2712,6 +2853,125 @@ mod tests {
             1,
             "ScheduledIfDirty + dirty=true + max_catch_up_age=None must fire \
              the stale catch-up on resume (unbounded legacy behavior)"
+        );
+    }
+
+    #[tokio::test]
+    async fn scheduled_skip_row_write_failure_retries_on_next_tick() {
+        // At-least-once for skip rows: if `write_firing` fails transiently,
+        // the runner re-pushes the ORIGINAL fire onto the heap so the next
+        // scheduler tick retries the write. Without this, a sled hiccup
+        // silently drops the breadcrumb that `folddb trigger log` surfaces.
+        let sm = make_schema_manager().await;
+        register_view(
+            &sm,
+            "V1",
+            "S1",
+            vec![Trigger::Scheduled {
+                cron: "0 * * * *".into(),
+                timezone: "UTC".into(),
+                max_catch_up_age: Some("1h".into()),
+                skip_if_idle: false,
+                schemas: vec!["S1".into()],
+            }],
+        );
+        let clock = Arc::new(MockClock::new(0));
+        let fire = RecordingFireHandler::all_success();
+        let writer = CountingFiringWriter::new();
+        writer.set_fail_count(1);
+        let runner = make_runner(
+            Arc::clone(&sm),
+            Arc::clone(&clock),
+            Arc::clone(&fire) as Arc<dyn FireHandler>,
+            Arc::clone(&writer) as Arc<dyn FiringWriter>,
+        );
+
+        // First tick populates heap at 01:00 UTC = 3_600_000 ms.
+        runner.tick_once().await;
+        // Advance 3h05m past the 01:00 fire → lag 3h05m > 1h budget → skip
+        // path runs and attempts an audit write. First write fails.
+        clock.advance(4 * 3_600_000 + 5 * 60_000);
+        runner.tick_once().await;
+        for _ in 0..10 {
+            tokio::task::yield_now().await;
+        }
+        assert_eq!(
+            writer.call_count.load(Ordering::SeqCst),
+            1,
+            "first attempt to write the skip row"
+        );
+        assert!(
+            writer.rows.lock().await.is_empty(),
+            "failed write must not persist a row"
+        );
+
+        // Retry: next tick pops the re-pushed original fire at 01:00,
+        // re-enters the skip branch (lag still over budget), and the
+        // second write succeeds.
+        runner.tick_once().await;
+        for _ in 0..30 {
+            if !writer.rows.lock().await.is_empty() {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+        let rows = writer.rows.lock().await.clone();
+        assert_eq!(rows.len(), 1, "retry must land exactly one skip row");
+        assert_eq!(
+            rows[0].status,
+            FiringStatus::Skipped(SkipReason::CatchUpBudget)
+        );
+        assert_eq!(
+            fire.call_count.load(Ordering::SeqCst),
+            0,
+            "skip path must never invoke FireHandler"
+        );
+    }
+
+    #[test]
+    fn skip_firing_record_encodes_skip_reason_on_mutation() {
+        // INVARIANT: `FiringRecord::into_mutation` writes the skip reason
+        // onto the `skip_reason` field so downstream consumers (schema
+        // service indexers, CLI renderer) can filter by cause without
+        // parsing the `status` column. Null for non-skip statuses.
+        use crate::triggers::fields as trig_fields;
+
+        let mk = |status: FiringStatus| {
+            FiringRecord {
+                trigger_id: "V:0".into(),
+                view_name: "V".into(),
+                fired_at_ms: 1,
+                duration_ms: 0,
+                status,
+                input_row_count: 0,
+                output_row_count: 0,
+                error_message: None,
+            }
+            .into_mutation("pk")
+        };
+
+        let m = mk(FiringStatus::Skipped(SkipReason::CatchUpBudget));
+        assert_eq!(
+            m.fields_and_values.get(trig_fields::SKIP_REASON),
+            Some(&serde_json::Value::String("catch_up_budget".into()))
+        );
+
+        let m = mk(FiringStatus::Skipped(SkipReason::SkipIfIdle));
+        assert_eq!(
+            m.fields_and_values.get(trig_fields::SKIP_REASON),
+            Some(&serde_json::Value::String("skip_if_idle".into()))
+        );
+
+        let m = mk(FiringStatus::Skipped(SkipReason::DirtyClean));
+        assert_eq!(
+            m.fields_and_values.get(trig_fields::SKIP_REASON),
+            Some(&serde_json::Value::String("dirty_clean".into()))
+        );
+
+        let m = mk(FiringStatus::Success);
+        assert_eq!(
+            m.fields_and_values.get(trig_fields::SKIP_REASON),
+            Some(&serde_json::Value::Null)
         );
     }
 

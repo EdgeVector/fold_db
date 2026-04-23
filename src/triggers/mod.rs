@@ -38,6 +38,7 @@ pub mod fields {
     pub const INPUT_ROW_COUNT: &str = "input_row_count";
     pub const OUTPUT_ROW_COUNT: &str = "output_row_count";
     pub const ERROR_MESSAGE: &str = "error_message";
+    pub const SKIP_REASON: &str = "skip_reason";
 }
 
 /// Status values written to the `status` field.
@@ -45,6 +46,29 @@ pub mod status {
     pub const SUCCESS: &str = "success";
     pub const ERROR: &str = "error";
     pub const QUARANTINED: &str = "quarantined";
+    /// Scheduler decided not to dispatch this tick. Paired with a
+    /// `skip_reason` field so operators can filter by cause without
+    /// string-parsing the status column.
+    pub const SKIPPED: &str = "skipped";
+}
+
+/// Reason values written to the `skip_reason` field when `status = "skipped"`.
+///
+/// Stable identifiers so operator queries can filter by cause. Values are
+/// closed-set: a new skip site requires a new constant here and a matching
+/// `SkipReason` variant in the runner.
+pub mod skip_reason {
+    /// `Scheduled { skip_if_idle: true, .. }` tick with a clean dirty
+    /// bit — no mutation since last fire, tick is a no-op.
+    pub const SKIP_IF_IDLE: &str = "skip_if_idle";
+    /// `ScheduledIfDirty` tick with a clean dirty bit. Same semantic as
+    /// `skip_if_idle` but via the explicit ScheduledIfDirty variant, so
+    /// operators can distinguish the two trigger shapes in the audit log.
+    pub const DIRTY_CLEAN: &str = "dirty_clean";
+    /// Scheduled fire slipped further past its nominal time than the
+    /// trigger's `max_catch_up_age` allows — dispatch was skipped to
+    /// bound fire storms after process downtime.
+    pub const CATCH_UP_BUDGET: &str = "catch_up_budget";
 }
 
 /// Build the TriggerFiring schema definition.
@@ -76,7 +100,7 @@ pub fn trigger_firing_schema() -> Schema {
         (
             fields::STATUS,
             FieldValueType::String,
-            "Outcome: \"success\" | \"error\" | \"quarantined\"",
+            "Outcome: \"success\" | \"error\" | \"quarantined\" | \"skipped\"",
         ),
         (
             fields::INPUT_ROW_COUNT,
@@ -92,6 +116,11 @@ pub fn trigger_firing_schema() -> Schema {
             fields::ERROR_MESSAGE,
             FieldValueType::OneOf(vec![FieldValueType::String, FieldValueType::Null]),
             "Error detail when status != \"success\"",
+        ),
+        (
+            fields::SKIP_REASON,
+            FieldValueType::OneOf(vec![FieldValueType::String, FieldValueType::Null]),
+            "Reason when status == \"skipped\": \"skip_if_idle\" | \"dirty_clean\" | \"catch_up_budget\"; Null otherwise",
         ),
     ];
 
@@ -182,6 +211,7 @@ mod tests {
             fields::INPUT_ROW_COUNT,
             fields::OUTPUT_ROW_COUNT,
             fields::ERROR_MESSAGE,
+            fields::SKIP_REASON,
         ];
         expected.sort();
         assert_eq!(declared, expected);
@@ -191,6 +221,19 @@ mod tests {
     fn error_message_is_nullable_string() {
         let schema = trigger_firing_schema();
         let ty = schema.field_types.get(fields::ERROR_MESSAGE).unwrap();
+        match ty {
+            FieldValueType::OneOf(variants) => {
+                assert!(variants.contains(&FieldValueType::String));
+                assert!(variants.contains(&FieldValueType::Null));
+            }
+            other => panic!("expected OneOf(String, Null), got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn skip_reason_is_nullable_string() {
+        let schema = trigger_firing_schema();
+        let ty = schema.field_types.get(fields::SKIP_REASON).unwrap();
         match ty {
             FieldValueType::OneOf(variants) => {
                 assert!(variants.contains(&FieldValueType::String));
