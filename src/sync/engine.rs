@@ -237,6 +237,13 @@ pub struct SyncEngine {
     /// When set, the sync engine will call this on `SyncError::Auth`, update
     /// the `AuthClient`, and retry the sync cycle once before giving up.
     auth_refresh: Option<AuthRefreshCallback>,
+    /// Wake handle notified by `record_op` whenever a new local write appends
+    /// to the pending queue. The background sync coordinator races its next
+    /// sleep against this notification so a write can trigger a near-immediate
+    /// flush instead of waiting the full `sync_interval_ms`. A `Notify` holds
+    /// at most one pending notification across multiple writes — concurrent
+    /// writes coalesce into the next sync cycle naturally.
+    wake: Arc<tokio::sync::Notify>,
 }
 
 impl SyncEngine {
@@ -271,7 +278,16 @@ impl SyncEngine {
             schema_reloader: Arc::new(Mutex::new(None)),
             embedding_reloader: Arc::new(Mutex::new(None)),
             auth_refresh: None,
+            wake: Arc::new(tokio::sync::Notify::new()),
         }
+    }
+
+    /// Handle to the wake notification. The background sync coordinator holds
+    /// a clone and races its next sleep against `wake.notified()`, so local
+    /// writes can trigger an immediate sync cycle instead of waiting out the
+    /// full `sync_interval_ms`.
+    pub fn wake_handle(&self) -> Arc<tokio::sync::Notify> {
+        self.wake.clone()
     }
 
     /// Load persisted download cursors from storage.
@@ -416,6 +432,12 @@ impl SyncEngine {
         }
         drop(pending);
         self.set_state(SyncState::Dirty, None).await;
+        // Wake the background sync coordinator so a flush fires near-immediately
+        // instead of waiting out the full `sync_interval_ms`. Safe under burst
+        // writes: `Notify` holds at most one pending notification, so a rapid
+        // sequence of writes coalesces into a single early wake-up, and the
+        // subsequent sync cycle drains every pending entry in one batch.
+        self.wake.notify_one();
     }
 
     /// Record a put operation for sync.
@@ -2448,5 +2470,37 @@ mod tests {
             ),
             other => panic!("expected SyncError::Auth, got {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn record_put_notifies_wake_handle() {
+        // record_put must fire the wake notification so the background sync
+        // coordinator can flush immediately on local writes instead of waiting
+        // out the full sync interval. Without this, two devices writing to the
+        // same account see up to 2× sync_interval_ms of latency before the
+        // second device sees the first device's change.
+        let engine = make_auth_refresh_engine();
+        let wake = engine.wake_handle();
+
+        // Arm the notification listener BEFORE the write so we don't miss a
+        // notify_one that already fired (Notify only holds one pending).
+        let notified = wake.notified();
+        tokio::pin!(notified);
+
+        // Nothing should have fired yet.
+        assert!(
+            futures::future::poll_immediate(&mut notified)
+                .await
+                .is_none(),
+            "wake must be idle before any write"
+        );
+
+        // A single record_put fires notify_one.
+        engine.record_put("main", b"k", b"v").await;
+
+        // The pinned notified future must now be ready.
+        tokio::time::timeout(tokio::time::Duration::from_millis(50), notified)
+            .await
+            .expect("record_put must wake the coordinator within 50ms");
     }
 }

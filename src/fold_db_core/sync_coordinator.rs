@@ -83,12 +83,21 @@ impl SyncCoordinator {
             None => return,
         };
 
+        let wake = engine.wake_handle();
+
         let handle = tokio::spawn(async move {
             let base_interval = tokio::time::Duration::from_millis(interval_ms);
             let max_delay = MAX_OFFLINE_BACKOFF;
             let mut current_delay = base_interval;
             loop {
-                tokio::time::sleep(current_delay).await;
+                // Sleep up to `current_delay`, or wake early if a local write
+                // arrived. A write fires `engine.wake.notify_one()`, which
+                // resolves the `notified()` future and aborts the timeout so
+                // the flush happens near-immediately instead of waiting the
+                // full polling interval. `timeout` returns `Err` on the timer
+                // path and `Ok(())` on the wake path — either way, the same
+                // check-and-sync logic below fires.
+                let _ = tokio::time::timeout(current_delay, wake.notified()).await;
                 // Always run sync — even without pending writes, we need to
                 // download org data from other members.
                 let has_pending = engine.state().await == SyncState::Dirty;
