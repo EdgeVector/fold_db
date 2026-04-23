@@ -6,7 +6,7 @@ use std::collections::HashMap;
 #[cfg(feature = "transform-wasm")]
 use std::sync::Mutex;
 #[cfg(feature = "transform-wasm")]
-use wasmtime::{Engine, Linker, Module, Store};
+use wasmtime::{Config, Engine, Linker, Module, Store};
 
 /// Sandboxed WASM execution engine with compiled module caching.
 pub struct WasmTransformEngine {
@@ -23,7 +23,18 @@ impl WasmTransformEngine {
     pub fn new() -> Result<Self, SchemaError> {
         #[cfg(feature = "transform-wasm")]
         {
-            let engine = Engine::default();
+            // Enable Cranelift's NaN canonicalization pass so every
+            // architecture produces the same IEEE 754 bit pattern for a
+            // quiet NaN. Without this, aarch64 and x86_64 Cranelift
+            // back-ends choose different sign bits for `0.0 / 0.0` and
+            // `sqrt(-1)` (x86 returns FFF8…, ARM returns 7FF8…), which is
+            // the exact cross-device divergence called out as Invariant #1
+            // in docs/design/multi_device_transforms.md (exemem-workspace
+            // PR #137). The `wasm-determinism` CI job enforces this.
+            let mut config = Config::new();
+            config.cranelift_nan_canonicalization(true);
+            let engine = Engine::new(&config)
+                .map_err(|e| SchemaError::InvalidTransform(format!("wasmtime engine init: {e}")))?;
             Ok(Self {
                 engine,
                 module_cache: Mutex::new(HashMap::new()),
