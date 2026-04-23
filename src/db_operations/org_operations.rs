@@ -31,7 +31,7 @@ impl DbOperations {
             self.schemas().raw_superseded_by(),
             self.views().raw_views(),
             self.views().raw_view_states(),
-            self.views().raw_transform_field_states(),
+            self.views().raw_transform_cache(),
             self.atoms().raw(),
         ];
 

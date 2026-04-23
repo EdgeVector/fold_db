@@ -1,8 +1,14 @@
 //! Transform-view domain store.
 //!
 //! Owns the namespaces for transform view definitions, view states,
-//! and transform field cache state. External callers reach these via
+//! and the local-only transform cache. External callers reach these via
 //! `DbOperations::views()`.
+//!
+//! The `transform_cache` namespace is declared local-only in
+//! `SyncingNamespacedStore::LOCAL_ONLY_NAMESPACES` — writes to it never
+//! append to the sync log. Cached transform output is derived per-device
+//! and must not cross the wire (see `docs/design/multi_device_transforms.md`,
+//! "What Syncs vs. What Doesn't").
 
 use crate::schema::SchemaError;
 use crate::storage::traits::{KvStore, TypedStore};
@@ -17,19 +23,22 @@ use std::sync::Arc;
 pub struct ViewStore {
     views_store: Arc<TypedKvStore<dyn KvStore>>,
     view_states_store: Arc<TypedKvStore<dyn KvStore>>,
-    transform_field_states_store: Arc<TypedKvStore<dyn KvStore>>,
+    /// Local-only cache of computed `ViewCacheState` per view. Routed
+    /// through the `transform_cache` namespace, which `SyncingNamespacedStore`
+    /// excludes from the sync log.
+    transform_cache_store: Arc<TypedKvStore<dyn KvStore>>,
 }
 
 impl ViewStore {
     pub(crate) fn new(
         views_store: Arc<TypedKvStore<dyn KvStore>>,
         view_states_store: Arc<TypedKvStore<dyn KvStore>>,
-        transform_field_states_store: Arc<TypedKvStore<dyn KvStore>>,
+        transform_cache_store: Arc<TypedKvStore<dyn KvStore>>,
     ) -> Self {
         Self {
             views_store,
             view_states_store,
-            transform_field_states_store,
+            transform_cache_store,
         }
     }
 
@@ -42,8 +51,8 @@ impl ViewStore {
         &self.view_states_store
     }
 
-    pub(crate) fn raw_transform_field_states(&self) -> &Arc<TypedKvStore<dyn KvStore>> {
-        &self.transform_field_states_store
+    pub(crate) fn raw_transform_cache(&self) -> &Arc<TypedKvStore<dyn KvStore>> {
+        &self.transform_cache_store
     }
 
     /// Store a transform view definition.
@@ -107,7 +116,7 @@ impl ViewStore {
         view_name: &str,
     ) -> Result<ViewCacheState, SchemaError> {
         Ok(self
-            .transform_field_states_store
+            .transform_cache_store
             .get_item::<ViewCacheState>(view_name)
             .await?
             .unwrap_or(ViewCacheState::Empty))
@@ -119,19 +128,17 @@ impl ViewStore {
         view_name: &str,
         state: &ViewCacheState,
     ) -> Result<(), SchemaError> {
-        self.transform_field_states_store
+        self.transform_cache_store
             .put_item(view_name, state)
             .await?;
-        self.transform_field_states_store.inner().flush().await?;
+        self.transform_cache_store.inner().flush().await?;
         Ok(())
     }
 
     /// Clear cache state for a view (used when removing a view).
     pub async fn clear_view_cache_state(&self, view_name: &str) -> Result<(), SchemaError> {
-        self.transform_field_states_store
-            .delete_item(view_name)
-            .await?;
-        self.transform_field_states_store.inner().flush().await?;
+        self.transform_cache_store.delete_item(view_name).await?;
+        self.transform_cache_store.inner().flush().await?;
         Ok(())
     }
 }
