@@ -140,6 +140,8 @@ impl<'de> serde::Deserialize<'de> for DeclarativeSchemaDefinition {
             trust_domain: Option<String>,
             #[serde(default)]
             field_access_policies: HashMap<String, crate::access::types::FieldAccessPolicy>,
+            #[serde(default)]
+            source: SchemaSource,
         }
 
         // Deserialize into the helper struct
@@ -225,9 +227,44 @@ impl<'de> serde::Deserialize<'de> for DeclarativeSchemaDefinition {
         schema.org_hash = helper.org_hash;
         schema.trust_domain = helper.trust_domain;
         schema.field_access_policies = helper.field_access_policies;
+        schema.source = helper.source;
 
         Ok(schema)
     }
+}
+
+/// Origin of a schema in the service.
+///
+/// Everything the schema service pre-loads at startup is a **seed**. Seeds differ
+/// by ownership: `SystemSeed` schemas are service primitives that the code
+/// references by name (fingerprint subsystem, etc.) and must not be deleted;
+/// `StarterSeed` schemas are pre-classified starter buckets (e.g. Schema.org
+/// types) that users can adopt, fork, or ignore. `User` schemas are created by
+/// node operators via `/v1/schemas/propose` and are not seeds.
+///
+/// This field is `#[serde(default)]` so existing stored schemas without a
+/// `source` marker deserialize as `User`, which is the safe default (no
+/// service-side dependency implied).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, utoipa::ToSchema)]
+#[cfg_attr(feature = "ts-bindings", derive(TS))]
+#[cfg_attr(
+    feature = "ts-bindings",
+    ts(
+        export,
+        export_to = "bindings/src/fold_node/static-react/src/types/generated.ts"
+    )
+)]
+#[serde(rename_all = "snake_case")]
+pub enum SchemaSource {
+    /// Service-owned primitive (fingerprint subsystem, canonical junction schemas, etc.).
+    /// Service code depends on these by name; must not be deleted.
+    SystemSeed,
+    /// Pre-classified starter bucket loaded at service startup (e.g. Schema.org types).
+    /// Safe to ignore, fork, or supersede with a user schema.
+    StarterSeed,
+    /// Node-created schema via `/v1/schemas/propose`. Default.
+    #[default]
+    User,
 }
 
 /// Declarative schema definition - the primary schema representation.
@@ -316,6 +353,11 @@ pub struct DeclarativeSchemaDefinition {
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub field_access_policies: HashMap<String, crate::access::types::FieldAccessPolicy>,
 
+    /// Origin of this schema in the service. See [`SchemaSource`] for variants.
+    /// Existing stored schemas without this field deserialize as `User`.
+    #[serde(default)]
+    pub source: SchemaSource,
+
     // Runtime state fields (not serialized)
     /// Runtime field storage with molecules (for database operations)
     #[serde(skip)]
@@ -366,6 +408,7 @@ impl PartialEq for DeclarativeSchemaDefinition {
             && self.org_hash == other.org_hash
             && self.trust_domain == other.trust_domain
             && self.field_access_policies == other.field_access_policies
+            && self.source == other.source
         // Exclude runtime_fields, inputs_schema_fields, source_schemas, and hash mappings
         // These are derived/runtime state and don't affect schema identity
     }
@@ -533,6 +576,7 @@ impl DeclarativeSchemaDefinition {
             org_hash: None,
             trust_domain: None,
             field_access_policies: HashMap::new(),
+            source: SchemaSource::User,
             runtime_fields: HashMap::new(),
             inputs_schema_fields: Vec::new(),
             source_schemas: Vec::new(),
@@ -995,5 +1039,93 @@ mod tests {
             s1, s2,
             "schemas with different trust_domain should not be equal"
         );
+    }
+
+    #[test]
+    fn schema_source_default_is_user() {
+        assert_eq!(SchemaSource::default(), SchemaSource::User);
+    }
+
+    #[test]
+    fn schema_source_round_trips_through_serde() {
+        for variant in [
+            SchemaSource::SystemSeed,
+            SchemaSource::StarterSeed,
+            SchemaSource::User,
+        ] {
+            let json = serde_json::to_string(&variant).expect("serialize");
+            let back: SchemaSource = serde_json::from_str(&json).expect("deserialize");
+            assert_eq!(
+                variant, back,
+                "round-trip failed for {:?} (json: {})",
+                variant, json
+            );
+        }
+    }
+
+    #[test]
+    fn schema_source_serializes_as_snake_case() {
+        assert_eq!(
+            serde_json::to_string(&SchemaSource::SystemSeed).unwrap(),
+            "\"system_seed\""
+        );
+        assert_eq!(
+            serde_json::to_string(&SchemaSource::StarterSeed).unwrap(),
+            "\"starter_seed\""
+        );
+        assert_eq!(
+            serde_json::to_string(&SchemaSource::User).unwrap(),
+            "\"user\""
+        );
+    }
+
+    #[test]
+    fn schema_missing_source_field_deserializes_as_user() {
+        // Existing stored schemas lack the source field; they must deserialize as User
+        // so we don't accidentally promote untagged schemas to SystemSeed / StarterSeed.
+        let json = r#"{
+            "name": "legacy",
+            "schema_type": "Single",
+            "fields": []
+        }"#;
+        let schema: DeclarativeSchemaDefinition = serde_json::from_str(json).expect("deserialize");
+        assert_eq!(schema.source, SchemaSource::User);
+    }
+
+    #[test]
+    fn schema_preserves_source_through_round_trip() {
+        let mut schema = DeclarativeSchemaDefinition::new(
+            "test".to_string(),
+            SchemaType::Single,
+            None,
+            Some(vec![]),
+            None,
+            None,
+        );
+        schema.source = SchemaSource::StarterSeed;
+
+        let json = serde_json::to_string(&schema).expect("serialize");
+        let back: DeclarativeSchemaDefinition = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back.source, SchemaSource::StarterSeed);
+    }
+
+    #[test]
+    fn schema_partial_eq_considers_source() {
+        let mut s1 = DeclarativeSchemaDefinition::new(
+            "test".to_string(),
+            SchemaType::Single,
+            None,
+            Some(vec![]),
+            None,
+            None,
+        );
+        let mut s2 = s1.clone();
+        assert_eq!(s1, s2);
+
+        s1.source = SchemaSource::SystemSeed;
+        assert_ne!(s1, s2, "schemas with different source should not be equal");
+
+        s2.source = SchemaSource::SystemSeed;
+        assert_eq!(s1, s2, "schemas with same source should be equal again");
     }
 }

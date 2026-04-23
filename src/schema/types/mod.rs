@@ -10,7 +10,9 @@ pub mod operations;
 pub mod schema;
 pub mod transform;
 pub use data_classification::DataClassification;
-pub use declarative_schemas::{DeclarativeSchemaDefinition, FieldDefinition, FieldMapper};
+pub use declarative_schemas::{
+    DeclarativeSchemaDefinition, FieldDefinition, FieldMapper, SchemaSource,
+};
 pub use errors::SchemaError;
 pub use field::{Field, FieldType, FieldVariant, RangeField, SingleField};
 pub use field_value_type::FieldValueType;
