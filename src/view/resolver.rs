@@ -2,11 +2,40 @@ use crate::schema::types::errors::SchemaError;
 use crate::schema::types::field::FieldValue;
 use crate::schema::types::key_value::KeyValue;
 use crate::schema::types::operations::Query;
-use crate::view::types::{TransformView, ViewCacheState};
+use crate::view::types::{TransformView, UnavailableReason, ViewCacheState};
 use crate::view::wasm_engine::WasmTransformEngine;
 use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::Arc;
+
+/// Classify a `SchemaError` produced during WASM transform execution into
+/// the corresponding [`UnavailableReason`]. Compile-time errors surface as
+/// `CompileError`; everything else from the WASM path is `ExecutionError`
+/// (including output parse failures and type-validation mismatches, which
+/// are downstream of the transform's runtime behavior).
+///
+/// Gas classification (`GasExceeded`) and registry-fetch classification
+/// (`TransformBytesUnavailable`) are wired in by MDT-E and the transform
+/// resolver work respectively; they aren't reachable from today's code
+/// path but the variants exist so the state machine is complete.
+fn classify_wasm_failure(err: &SchemaError) -> UnavailableReason {
+    match err {
+        SchemaError::InvalidTransform(msg) => {
+            if msg.starts_with("Failed to compile WASM module") {
+                UnavailableReason::CompileError {
+                    message: msg.clone(),
+                }
+            } else {
+                UnavailableReason::ExecutionError {
+                    message: msg.clone(),
+                }
+            }
+        }
+        other => UnavailableReason::ExecutionError {
+            message: other.to_string(),
+        },
+    }
+}
 
 /// Trait for querying source schemas — breaks circular dependency
 /// between QueryExecutor and ViewResolver.
@@ -79,6 +108,19 @@ impl ViewResolver {
             return Ok((result, cache_state.clone()));
         }
 
+        // Sticky-per-input: if the prior compute on this input already
+        // failed, don't retry. Return the same Unavailable state so the
+        // caller can surface the reason without re-running the transform.
+        // Invalidation (source mutation) clears this back to Empty.
+        if let ViewCacheState::Unavailable { reason } = cache_state {
+            return Ok((
+                HashMap::new(),
+                ViewCacheState::Unavailable {
+                    reason: reason.clone(),
+                },
+            ));
+        }
+
         // Execute all input queries, merging results when multiple queries target the same schema
         let mut all_query_results: HashMap<String, HashMap<String, HashMap<KeyValue, FieldValue>>> =
             HashMap::new();
@@ -90,22 +132,36 @@ impl ViewResolver {
                 .extend(query_results);
         }
 
-        // Compute output
+        // Compute output. WASM failures become an `Unavailable` state
+        // rather than a hard error: they are per-input compute failures,
+        // so the caller should persist the state (no retry) but callers
+        // above the resolver are free to surface it to the user.
         let output = if let Some(wasm_bytes) = &view.wasm_transform {
-            self.execute_wasm_transform(wasm_bytes, &all_query_results)?
+            match self.execute_wasm_transform(wasm_bytes, &all_query_results) {
+                Ok(output) => output,
+                Err(e) => {
+                    let reason = classify_wasm_failure(&e);
+                    return Ok((HashMap::new(), ViewCacheState::Unavailable { reason }));
+                }
+            }
         } else {
             self.identity_pass_through(&all_query_results, view)?
         };
 
-        // Validate output against declared types
+        // Validate output against declared types. A mismatch is a per-input
+        // failure of the transform (the WASM produced a wrongly-shaped value
+        // for this input) — same Unavailable semantics as an execution trap.
         for (field_name, field_type) in &view.output_fields {
             if let Some(field_entries) = output.get(field_name) {
                 for fv in field_entries.values() {
                     if let Err(e) = field_type.validate(&fv.value) {
-                        return Err(SchemaError::InvalidData(format!(
-                            "View '{}' output field '{}' type validation failed: {}",
-                            view.name, field_name, e
-                        )));
+                        let reason = UnavailableReason::ExecutionError {
+                            message: format!(
+                                "View '{}' output field '{}' type validation failed: {}",
+                                view.name, field_name, e
+                            ),
+                        };
+                        return Ok((HashMap::new(), ViewCacheState::Unavailable { reason }));
                     }
                 }
             }
@@ -559,7 +615,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_type_validation_failure() {
+    async fn test_type_validation_failure_becomes_unavailable() {
+        // Type-validation failure is a per-input compute failure — the
+        // transform (or identity pass-through) produced a wrongly-shaped
+        // value for this input. Resolver surfaces that as Unavailable
+        // (sticky per input) rather than a hard error.
         let resolver = make_resolver();
         let view = TransformView::new(
             "TypedView",
@@ -590,13 +650,42 @@ mod tests {
             results: results_map,
         };
 
-        let result = resolver
+        let (results, new_cache) = resolver
             .resolve(&view, &["count".to_string()], &cache, &mock)
-            .await;
-        assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("type validation failed"));
+            .await
+            .expect("resolve should return Ok with Unavailable on compute failure");
+        assert!(results.is_empty());
+        let reason = new_cache
+            .unavailable_reason()
+            .expect("cache should be Unavailable");
+        assert!(matches!(reason, UnavailableReason::ExecutionError { .. }));
+        assert!(reason.to_string().contains("type validation failed"));
+    }
+
+    #[tokio::test]
+    async fn test_unavailable_input_does_not_retry() {
+        // When the cache is already Unavailable, resolve must not re-execute
+        // the source queries or the WASM — it returns the same state so the
+        // caller can surface the reason without burning cycles.
+        let resolver = make_resolver();
+        let view = make_identity_view();
+
+        let reason = UnavailableReason::GasExceeded { input_size: 500 };
+        let cache = ViewCacheState::Unavailable {
+            reason: reason.clone(),
+        };
+
+        // Mock returns NotFound for any schema; if resolve mistakenly
+        // touches the source_query, we'd get an Err instead of Ok.
+        let mock = MockSourceQuery {
+            results: HashMap::new(),
+        };
+
+        let (results, new_cache) = resolver
+            .resolve(&view, &["content".to_string()], &cache, &mock)
+            .await
+            .expect("Unavailable should short-circuit to Ok");
+        assert!(results.is_empty());
+        assert_eq!(new_cache.unavailable_reason(), Some(&reason));
     }
 }

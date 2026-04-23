@@ -328,11 +328,18 @@ impl ViewOrchestrator {
             // - Computing: deep view, precompute and store
             // - Empty: level-1 view, precompute and store (needed by deeper views)
             // - Cached: already computed (perhaps by a lazy query), skip
+            // - Unavailable: compute already attempted and failed on this
+            //   input (sticky per input); skip — a source mutation will
+            //   invalidate it back to Empty before the next retry.
             let state = db_ops.get_view_cache_state(view_name).await?;
-            if matches!(state, ViewCacheState::Cached { .. }) {
+            if matches!(
+                state,
+                ViewCacheState::Cached { .. } | ViewCacheState::Unavailable { .. }
+            ) {
                 log::debug!(
-                    "View '{}' already Cached, skipping precomputation",
-                    view_name
+                    "View '{}' already in terminal state ({:?}), skipping precomputation",
+                    view_name,
+                    state
                 );
                 continue;
             }
@@ -351,15 +358,32 @@ impl ViewOrchestrator {
             {
                 Ok((_, new_cache)) => {
                     // Only store if not re-invalidated since we started
+                    // (e.g., a source mutation landed mid-compute and moved
+                    // the view back to Empty). Persist both successful
+                    // Cached and terminal Unavailable states — the latter
+                    // is what prevents retry storms.
                     let current = db_ops.get_view_cache_state(view_name).await?;
                     if !matches!(current, ViewCacheState::Cached { .. }) {
                         db_ops.set_view_cache_state(view_name, &new_cache).await?;
-                        log::info!("View '{}' precomputed successfully", view_name);
+                        match &new_cache {
+                            ViewCacheState::Unavailable { reason } => {
+                                log::warn!(
+                                    "View '{}' precomputation → Unavailable: {}",
+                                    view_name,
+                                    reason
+                                );
+                            }
+                            _ => log::info!("View '{}' precomputed successfully", view_name),
+                        }
                     }
                 }
                 Err(e) => {
                     log::error!("Failed to precompute view '{}': {}", view_name, e);
-                    // Reset Computing to Empty so it can be lazily computed on next query
+                    // Reset Computing to Empty so it can be lazily computed on next query.
+                    // Note: per-input WASM failures never reach this branch — the
+                    // resolver converts them to `Ok(Unavailable)`. This path only
+                    // fires for infrastructure errors (lock poisoning, source query
+                    // failure) that are worth retrying.
                     let current = db_ops.get_view_cache_state(view_name).await?;
                     if current.is_computing() {
                         db_ops

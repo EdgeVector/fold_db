@@ -216,6 +216,16 @@ impl QueryExecutor {
             )));
         }
 
+        // Sticky Unavailable: surface the reason immediately without
+        // retrying. A source mutation invalidates this state to Empty so
+        // the next read recomputes on the new input.
+        if let Some(reason) = cache_state.unavailable_reason() {
+            return Err(SchemaError::InvalidTransform(format!(
+                "View '{}' unavailable: {}",
+                view.name, reason
+            )));
+        }
+
         // Create source query implementation for recursive resolution
         let source_query = StandardSourceQuery::new_recursive(
             Arc::clone(&self.schema_manager),
@@ -228,11 +238,26 @@ impl QueryExecutor {
             .resolve(&view, &query.fields, &cache_state, &source_query)
             .await?;
 
-        // Persist cache if it changed from Empty to Cached
-        if cache_state.is_empty() && matches!(new_cache, ViewCacheState::Cached { .. }) {
-            self.db_ops
-                .set_view_cache_state(&view.name, &new_cache)
-                .await?;
+        // Persist terminal state transitions so a follow-up query doesn't
+        // redo work: Empty → Cached (hit the next time) and Empty →
+        // Unavailable (fail-fast the next time). `Computing` is not
+        // written here — background precomputation owns that transition.
+        match &new_cache {
+            ViewCacheState::Cached { .. } if cache_state.is_empty() => {
+                self.db_ops
+                    .set_view_cache_state(&view.name, &new_cache)
+                    .await?;
+            }
+            ViewCacheState::Unavailable { reason } => {
+                self.db_ops
+                    .set_view_cache_state(&view.name, &new_cache)
+                    .await?;
+                return Err(SchemaError::InvalidTransform(format!(
+                    "View '{}' unavailable: {}",
+                    view.name, reason
+                )));
+            }
+            _ => {}
         }
 
         Ok(results)
