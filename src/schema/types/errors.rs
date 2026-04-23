@@ -9,6 +9,15 @@ pub enum SchemaError {
     InvalidTransform(String),
     InvalidData(String),
     PermissionDenied(String),
+    /// Transform exceeded its fuel budget (MDT-E). Carried separately from
+    /// `InvalidTransform` so the view resolver can classify it as
+    /// `UnavailableReason::GasExceeded` without stringly-typed sniffing —
+    /// `max_gas` must fail identically on every device, so mis-classifying
+    /// a fuel trap as a generic execution error would let the state
+    /// machine loop retrying on the same input.
+    TransformGasExceeded {
+        input_size: u64,
+    },
 }
 
 impl fmt::Display for SchemaError {
@@ -20,6 +29,9 @@ impl fmt::Display for SchemaError {
             Self::InvalidTransform(msg) => write!(f, "Invalid transform: {msg}"),
             Self::InvalidData(msg) => write!(f, "Invalid data: {msg}"),
             Self::PermissionDenied(msg) => write!(f, "Permission denied: {msg}"),
+            Self::TransformGasExceeded { input_size } => {
+                write!(f, "Transform gas exceeded (input_size={input_size})")
+            }
         }
     }
 }

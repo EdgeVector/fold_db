@@ -108,6 +108,25 @@ impl ViewCacheState {
     }
 }
 
+/// A WASM transform attached to a view: compiled bytes + the per-invocation
+/// fuel ceiling enforced on every device that executes it.
+///
+/// `max_gas` is required — the whole point of MDT-E is that a given
+/// `(transform, input)` pair must either succeed on every device or fail
+/// with [`UnavailableReason::GasExceeded`] on every device. Allowing a
+/// missing budget would let one device silently skip fuel metering and
+/// produce state that other devices can't reproduce. The schema service
+/// enforces `0 < max_gas <= 10^18` at registration (see
+/// `schema_service_core::state_transforms::MAX_GAS_CEILING`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WasmTransformSpec {
+    /// Compiled WASM module bytes.
+    pub bytes: Vec<u8>,
+    /// Per-invocation fuel ceiling. Wasmtime fuel is set to exactly this
+    /// value on every `Store` before `transform` is called.
+    pub max_gas: u64,
+}
+
 /// The view definition — a multi-query typed view.
 /// Declares input queries (potentially across multiple schemas),
 /// an optional WASM transform, and a typed output schema.
@@ -121,9 +140,12 @@ pub struct TransformView {
     pub key_config: Option<KeyConfig>,
     /// Queries to execute against source schemas.
     pub input_queries: Vec<Query>,
-    /// WASM module bytes. None = identity pass-through.
+    /// WASM transform (compiled bytes + system-wide `max_gas`). `None`
+    /// means identity pass-through — the view materializes source
+    /// fields directly without running any code, so no fuel ceiling is
+    /// required. When `Some`, fuel metering is mandatory (MDT-E).
     #[serde(default)]
-    pub wasm_transform: Option<Vec<u8>>,
+    pub wasm_transform: Option<WasmTransformSpec>,
     /// Typed output schema: field_name → type.
     pub output_fields: HashMap<String, FieldValueType>,
     /// Trigger configuration that controls when the view is fired.
@@ -140,7 +162,7 @@ impl TransformView {
         schema_type: SchemaType,
         key_config: Option<KeyConfig>,
         input_queries: Vec<Query>,
-        wasm_transform: Option<Vec<u8>>,
+        wasm_transform: Option<WasmTransformSpec>,
         output_fields: HashMap<String, FieldValueType>,
     ) -> Self {
         Self {
@@ -367,7 +389,10 @@ mod tests {
             SchemaType::Single,
             None,
             vec![],
-            Some(vec![0, 1, 2]),
+            Some(WasmTransformSpec {
+                bytes: vec![0, 1, 2],
+                max_gas: 1_000_000,
+            }),
             HashMap::new(),
         );
         assert!(!wasm_view.is_identity());

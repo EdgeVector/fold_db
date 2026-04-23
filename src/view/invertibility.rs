@@ -11,12 +11,13 @@ pub fn verify_roundtrip(
     engine: &WasmTransformEngine,
     forward: &[u8],
     inverse: &[u8],
+    max_gas: u64,
 ) -> Result<bool, SchemaError> {
     let test_inputs = generate_test_inputs();
 
     for input in &test_inputs {
-        let forward_result = engine.execute(forward, input)?;
-        let inverse_result = engine.execute(inverse, &forward_result)?;
+        let forward_result = engine.execute(forward, input, max_gas)?;
+        let inverse_result = engine.execute(inverse, &forward_result, max_gas)?;
 
         if !values_equal(input, &inverse_result) {
             return Ok(false);
