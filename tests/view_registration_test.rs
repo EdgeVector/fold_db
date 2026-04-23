@@ -187,6 +187,7 @@ async fn multi_source_view() {
         Some(WasmTransformSpec {
             bytes: vec![0, 1, 2],
             max_gas: 1_000_000,
+            gas_model: None,
         }), // Placeholder WASM (won't be executed in registration)
         HashMap::from([
             ("summary".to_string(), FieldValueType::String),
@@ -261,6 +262,7 @@ async fn register_view_with_typed_output_fields() {
         Some(WasmTransformSpec {
             bytes: vec![0, 1, 2],
             max_gas: 1_000_000,
+            gas_model: None,
         }), // WASM placeholder
         HashMap::from([
             ("word_count".to_string(), FieldValueType::Integer),

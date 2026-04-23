@@ -127,6 +127,7 @@ async fn wasm_view_write_persists_override() {
         Some(WasmTransformSpec {
             bytes: vec![0, 1, 2],
             max_gas: 1_000_000,
+            gas_model: None,
         }), // Placeholder WASM — never executed on the write path.
         HashMap::from([("out".to_string(), FieldValueType::String)]),
     );
@@ -306,6 +307,7 @@ async fn concurrent_overrides_converge_via_lww() {
         Some(WasmTransformSpec {
             bytes: vec![0, 1, 2],
             max_gas: 1_000_000,
+            gas_model: None,
         }),
         HashMap::from([("out".to_string(), FieldValueType::String)]),
     );

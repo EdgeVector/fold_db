@@ -3,7 +3,7 @@ use crate::schema::types::field::FieldValue;
 use crate::schema::types::key_value::KeyValue;
 use crate::schema::types::operations::Query;
 use crate::view::transform_field_override::TransformFieldOverride;
-use crate::view::types::{TransformView, UnavailableReason, ViewCacheState};
+use crate::view::types::{InputDimension, TransformView, UnavailableReason, ViewCacheState};
 use crate::view::wasm_engine::WasmTransformEngine;
 use async_trait::async_trait;
 use std::collections::HashMap;
@@ -161,6 +161,31 @@ impl ViewResolver {
                 .entry(query.schema_name.clone())
                 .or_default()
                 .extend(query_results);
+        }
+
+        // MDT-F Phase 2 — runtime envelope rejection.
+        //
+        // If the transform has a calibrated gas model, reject inputs that
+        // fall outside the envelope BEFORE entering the WASM. This is
+        // distinct from `GasExceeded` (which is a runtime fuel trap): no
+        // fuel is burned here, and the failure is deterministic across
+        // devices because the measurement is over the input JSON shape,
+        // which every replayer sees identically.
+        if let Some(spec) = &view.wasm_transform {
+            if let Some(model) = &spec.gas_model {
+                let measured = measure_input(&all_query_results, &model.coefficients);
+                if measured > model.max_input_size {
+                    return Ok((
+                        HashMap::new(),
+                        ViewCacheState::Unavailable {
+                            reason: UnavailableReason::ExceedsCalibratedEnvelope {
+                                measured,
+                                limit: model.max_input_size,
+                            },
+                        },
+                    ));
+                }
+            }
         }
 
         // Compute output. WASM failures become an `Unavailable` state
@@ -379,6 +404,58 @@ impl ViewResolver {
     pub fn wasm_engine(&self) -> &Arc<WasmTransformEngine> {
         &self.wasm_engine
     }
+}
+
+/// Compute the measured input size for the runtime envelope check
+/// (MDT-F Phase 2).
+///
+/// Iterates the gas-model coefficient list and sums a per-dimension size
+/// across `all_query_results`. The coefficient *weights* are irrelevant
+/// for the envelope check — only the dimension identity matters — so
+/// they are ignored here; budget derivation (Phase 2 task 3/3) is a
+/// separate calculation that does use them.
+///
+/// Per-dimension measurement:
+/// * [`InputDimension::FieldBytes`]: sum of `serde_json::to_vec(value).len()`
+///   over every `(key, value)` entry on the named `(schema, field)`.
+///   Serialization failures fall back to `0` rather than panicking — the
+///   envelope check must stay permissive for values that can still be
+///   passed to the WASM.
+/// * [`InputDimension::FieldCount`]: number of `(key, value)` entries on
+///   the named `(schema, field)`. A plain row count is the intuitive
+///   meaning of "count" at the view-input level and composes with
+///   `FieldBytes` when a transform is priced on both axes.
+///
+/// The return type is `u64` so the sum can be compared directly against
+/// [`crate::view::types::GasModel::max_input_size`].
+fn measure_input(
+    all_query_results: &HashMap<String, HashMap<String, HashMap<KeyValue, FieldValue>>>,
+    coefficients: &[(InputDimension, f64)],
+) -> u64 {
+    let mut total: u64 = 0;
+    for (dim, _weight) in coefficients {
+        let (field_id, is_bytes) = match dim {
+            InputDimension::FieldBytes(id) => (id, true),
+            InputDimension::FieldCount(id) => (id, false),
+        };
+        let Some(schema_map) = all_query_results.get(&field_id.schema) else {
+            continue;
+        };
+        let Some(field_entries) = schema_map.get(&field_id.field) else {
+            continue;
+        };
+        if is_bytes {
+            for fv in field_entries.values() {
+                let n = serde_json::to_vec(&fv.value)
+                    .map(|v| v.len() as u64)
+                    .unwrap_or(0);
+                total = total.saturating_add(n);
+            }
+        } else {
+            total = total.saturating_add(field_entries.len() as u64);
+        }
+    }
+    total
 }
 
 /// Reverse of `KeyValue::Display`: `"hash:range"` → hash+range,
