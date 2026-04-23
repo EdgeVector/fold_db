@@ -50,6 +50,7 @@ async fn trigger_firing_schema_is_registered_at_startup() {
         fields::INPUT_ROW_COUNT,
         fields::OUTPUT_ROW_COUNT,
         fields::ERROR_MESSAGE,
+        fields::SKIP_REASON,
     ];
     expected.sort();
     assert_eq!(declared, expected);
@@ -73,12 +74,14 @@ async fn trigger_firing_schema_is_registered_at_startup() {
             "{string_field} should be String"
         );
     }
-    match schema.field_types.get(fields::ERROR_MESSAGE) {
-        Some(FieldValueType::OneOf(variants)) => {
-            assert!(variants.contains(&FieldValueType::String));
-            assert!(variants.contains(&FieldValueType::Null));
+    for nullable_string in [fields::ERROR_MESSAGE, fields::SKIP_REASON] {
+        match schema.field_types.get(nullable_string) {
+            Some(FieldValueType::OneOf(variants)) => {
+                assert!(variants.contains(&FieldValueType::String));
+                assert!(variants.contains(&FieldValueType::Null));
+            }
+            other => panic!("expected OneOf(String, Null) for {nullable_string}, got {other:?}"),
         }
-        other => panic!("expected OneOf(String, Null) for error_message, got {other:?}"),
     }
 }
 
