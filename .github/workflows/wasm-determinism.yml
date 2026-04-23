@@ -1,0 +1,128 @@
+# Cross-architecture WASM determinism CI.
+#
+# Purpose: enforce Invariant #1 of the multi-device transform design
+# (docs/design/multi_device_transforms.md in exemem-workspace, merged via
+# EdgeVector/exemem-workspace#137). Transforms must produce bit-identical
+# output on x86 laptops, ARM phones, and x86_64 Lambdas. A single
+# non-canonical float subtly diverges, and two devices disagree forever.
+#
+# How this job catches a regression: the `wasm_determinism` integration test
+# runs 5 fixture transforms (branches + integer math, f64 arithmetic, two
+# NaN-producing paths for NaN canonicalization coverage, and a UTF-8
+# passthrough) through `WasmTransformEngine`. It writes canonical per-fixture
+# output to `$WASM_DETERMINISM_OUTPUT`. The matrix runs on x86_64 and aarch64
+# Linux; the trailing `diff` job byte-compares the two artifacts and fails
+# the build on any byte-level divergence.
+#
+# If this job ever fails: DO NOT change the expected output to match
+# whichever architecture is loudest. A divergence here means wasmtime's
+# determinism guarantees are not holding — diagnose the configuration
+# (NaN canonicalization, floating-point mode, wasmtime version skew)
+# before changing fixture outputs.
+
+name: WASM Determinism (x86 vs ARM)
+
+on:
+  push:
+    branches: [mainline]
+  pull_request:
+  merge_group:
+
+concurrency:
+  group: wasm-determinism-${{ github.ref }}
+  cancel-in-progress: true
+
+# Principle of least privilege: only `contents: read` is needed — checkout
+# plus artifact upload/download (the artifact service uses its own API
+# and does not consume repo-scoped write permissions).
+permissions:
+  contents: read
+
+jobs:
+  run:
+    name: Run fixtures (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runs-on: ubuntu-24.04
+          - arch: aarch64
+            # GitHub-hosted ARM64 Linux runner. Free tier for public repos.
+            # See: https://github.blog/changelog/2025-01-16-linux-arm64-hosted-runners-now-available-for-free-in-public-repositories-public-preview/
+            runs-on: ubuntu-24.04-arm
+
+    runs-on: ${{ matrix.runs-on }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: wasm-determinism-${{ matrix.arch }}
+
+      - name: Run determinism fixtures
+        env:
+          WASM_DETERMINISM_OUTPUT: ${{ github.workspace }}/wasm-determinism.${{ matrix.arch }}.txt
+        run: |
+          cargo test \
+            --features transform-wasm \
+            --test wasm_determinism \
+            --release \
+            -- --nocapture
+
+      - name: Upload fixture output
+        uses: actions/upload-artifact@v4
+        with:
+          name: wasm-determinism-${{ matrix.arch }}
+          path: wasm-determinism.${{ matrix.arch }}.txt
+          if-no-files-found: error
+          retention-days: 7
+
+  diff:
+    name: Diff x86 vs ARM
+    needs: run
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download x86_64 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: wasm-determinism-x86_64
+          path: x86
+
+      - name: Download aarch64 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: wasm-determinism-aarch64
+          path: arm
+
+      - name: Byte-compare
+        run: |
+          # `cmp -s` is silent; it exits 0 on identical bytes, 1 on any
+          # difference. `diff -u` is run for logs only when cmp detects a
+          # difference so humans can see which line(s) diverged.
+          if ! cmp -s x86/wasm-determinism.x86_64.txt arm/wasm-determinism.aarch64.txt; then
+            echo "::error::WASM transform output differs between x86_64 and aarch64"
+            echo "::group::Unified diff"
+            diff -u x86/wasm-determinism.x86_64.txt arm/wasm-determinism.aarch64.txt || true
+            echo "::endgroup::"
+            echo "::group::x86_64 (bytes)"
+            cat x86/wasm-determinism.x86_64.txt | od -c | head -40
+            echo "::endgroup::"
+            echo "::group::aarch64 (bytes)"
+            cat arm/wasm-determinism.aarch64.txt | od -c | head -40
+            echo "::endgroup::"
+            exit 1
+          fi
+          echo "::notice::x86_64 and aarch64 produced byte-identical output"
+          echo "## WASM Determinism — OK" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Both architectures produced byte-identical output across all fixtures:" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cat x86/wasm-determinism.x86_64.txt >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
