@@ -32,6 +32,12 @@ concurrency:
   group: wasm-determinism-${{ github.ref }}
   cancel-in-progress: true
 
+# Principle of least privilege: only `contents: read` is needed — checkout
+# plus artifact upload/download (the artifact service uses its own API
+# and does not consume repo-scoped write permissions).
+permissions:
+  contents: read
+
 jobs:
   run:
     name: Run fixtures (${{ matrix.arch }})
