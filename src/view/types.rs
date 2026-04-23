@@ -8,20 +8,61 @@ use crate::triggers::types::Trigger;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+/// Reason a transform view attempted to compute but could not produce a value.
+///
+/// Carried by [`ViewCacheState::Unavailable`] so reads see an explicit failure
+/// instead of an endlessly-retrying `Empty` or a lying stale `Cached`. The
+/// state is sticky *per input* — a source mutation invalidates
+/// `Unavailable` back to `Empty` so recompute on the new input can succeed.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum UnavailableReason {
+    /// Transform exceeded its fuel budget for the given input size.
+    /// Implemented by MDT-E (system-wide `max_gas` enforcement); the variant
+    /// is defined here so the state machine is complete ahead of that work.
+    GasExceeded { input_size: u64 },
+    /// WASM module failed to compile.
+    CompileError { message: String },
+    /// Transform bytes could not be fetched from the schema-service registry.
+    TransformBytesUnavailable,
+    /// WASM runtime error during execution (trap, alloc failure, output
+    /// parse error, type-validation failure).
+    ExecutionError { message: String },
+}
+
+impl std::fmt::Display for UnavailableReason {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::GasExceeded { input_size } => {
+                write!(f, "gas exceeded (input_size={input_size})")
+            }
+            Self::CompileError { message } => write!(f, "compile error: {message}"),
+            Self::TransformBytesUnavailable => write!(f, "transform bytes unavailable"),
+            Self::ExecutionError { message } => write!(f, "execution error: {message}"),
+        }
+    }
+}
+
 /// Cache state for an entire view's computed output.
 /// Per-view (not per-field) since the WASM transform is holistic.
 ///
 /// ```text
 ///   Empty ──(background task spawned)──▶ Computing
-///     ▲                                      │
-///     │                                      │ (task completes)
-///     │                                      ▼
-///     └───────(invalidate)──────────── Cached
+///     ▲  │                                   │
+///     │  │                                   │ (task completes)
+///     │  │                                   ▼
+///     │  └─(compute fails)─▶ Unavailable  Cached
+///     │                           │          │
+///     └────(invalidate: source mutation)─────┘
 /// ```
 ///
 /// Views deeper than level 1 (i.e., depending on other views) transition
 /// through `Computing` during background precomputation. Queries against
 /// a `Computing` view return an error until precomputation finishes.
+///
+/// `Unavailable` is the terminal "compute attempted but failed" state. It
+/// does NOT loop retrying; reads return the carried reason. A source
+/// mutation invalidates it back to `Empty` (via [`ViewCacheState::invalidate`]),
+/// so the transform retries once the input has changed.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ViewCacheState {
     /// Never computed or invalidated.
@@ -32,10 +73,16 @@ pub enum ViewCacheState {
     Cached {
         entries: HashMap<String, Vec<(KeyValue, FieldValue)>>,
     },
+    /// Computation attempted but failed. Sticky per input — reads return
+    /// the reason instead of retrying. A source mutation invalidates this
+    /// back to `Empty` so recompute on the new input can succeed.
+    Unavailable { reason: UnavailableReason },
 }
 
 impl ViewCacheState {
-    /// Reset cache to Empty.
+    /// Reset cache to `Empty`. Called by the view orchestrator on source
+    /// mutation — this is the path that clears `Unavailable` so a retry can
+    /// succeed with the new input.
     pub fn invalidate(&mut self) {
         *self = ViewCacheState::Empty;
     }
@@ -46,6 +93,18 @@ impl ViewCacheState {
 
     pub fn is_computing(&self) -> bool {
         matches!(self, ViewCacheState::Computing)
+    }
+
+    pub fn is_unavailable(&self) -> bool {
+        matches!(self, ViewCacheState::Unavailable { .. })
+    }
+
+    /// Returns the failure reason when the state is `Unavailable`, else `None`.
+    pub fn unavailable_reason(&self) -> Option<&UnavailableReason> {
+        match self {
+            ViewCacheState::Unavailable { reason } => Some(reason),
+            _ => None,
+        }
     }
 }
 
@@ -173,6 +232,74 @@ mod tests {
         let mut empty = ViewCacheState::Empty;
         empty.invalidate();
         assert!(empty.is_empty());
+    }
+
+    #[test]
+    fn test_unavailable_invalidates_to_empty() {
+        // Source mutation → invalidate clears Unavailable back to Empty so
+        // the transform can retry on new input.
+        let mut unavail = ViewCacheState::Unavailable {
+            reason: UnavailableReason::GasExceeded { input_size: 42 },
+        };
+        assert!(unavail.is_unavailable());
+        assert!(!unavail.is_empty());
+        unavail.invalidate();
+        assert!(unavail.is_empty());
+        assert!(!unavail.is_unavailable());
+    }
+
+    #[test]
+    fn test_unavailable_reason_accessor() {
+        let state = ViewCacheState::Unavailable {
+            reason: UnavailableReason::CompileError {
+                message: "bad wasm".to_string(),
+            },
+        };
+        assert_eq!(
+            state.unavailable_reason(),
+            Some(&UnavailableReason::CompileError {
+                message: "bad wasm".to_string()
+            })
+        );
+
+        let empty = ViewCacheState::Empty;
+        assert_eq!(empty.unavailable_reason(), None);
+    }
+
+    #[test]
+    fn test_unavailable_round_trip() {
+        // Every variant must round-trip through serde_json (the backend
+        // TypedKvStore uses for persistence) so Unavailable survives restart.
+        let reasons = vec![
+            UnavailableReason::GasExceeded { input_size: 12345 },
+            UnavailableReason::CompileError {
+                message: "compile failed at offset 0xDEADBEEF".to_string(),
+            },
+            UnavailableReason::TransformBytesUnavailable,
+            UnavailableReason::ExecutionError {
+                message: "trap: unreachable".to_string(),
+            },
+        ];
+        for reason in reasons {
+            let state = ViewCacheState::Unavailable {
+                reason: reason.clone(),
+            };
+            let bytes = serde_json::to_vec(&state).expect("serialize");
+            let decoded: ViewCacheState = serde_json::from_slice(&bytes).expect("deserialize");
+            assert_eq!(decoded.unavailable_reason(), Some(&reason));
+        }
+    }
+
+    #[test]
+    fn test_unavailable_reason_display() {
+        assert_eq!(
+            UnavailableReason::GasExceeded { input_size: 100 }.to_string(),
+            "gas exceeded (input_size=100)"
+        );
+        assert_eq!(
+            UnavailableReason::TransformBytesUnavailable.to_string(),
+            "transform bytes unavailable"
+        );
     }
 
     #[test]

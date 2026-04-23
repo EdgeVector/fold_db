@@ -7,6 +7,6 @@ pub mod wasm_engine;
 pub use dependency_tracker::DependencyTracker;
 pub use registry::ViewRegistry;
 pub use resolver::ViewResolver;
-pub use types::{TransformView, ViewCacheState};
+pub use types::{TransformView, UnavailableReason, ViewCacheState};
 pub use wasm_engine::WasmTransformEngine;
 pub mod invertibility;

@@ -105,6 +105,17 @@ impl StandardSourceQuery {
 
         let cache_state = self.db_ops.get_view_cache_state(&view.name).await?;
 
+        // Unavailable propagates as an error up the view chain. A parent
+        // view that tried to read this view gets the same visibility as
+        // if it had queried this view directly — no silent empty results,
+        // no retry. Applies to both modes.
+        if let Some(reason) = cache_state.unavailable_reason() {
+            return Err(SchemaError::InvalidTransform(format!(
+                "View '{}' unavailable: {}",
+                view.name, reason
+            )));
+        }
+
         // Determine the effective cache state to hand to the resolver.
         let effective_cache = match self.mode {
             SourceQueryMode::Recursive => {
@@ -147,11 +158,24 @@ impl StandardSourceQuery {
             .resolve(&view, &query.fields, &effective_cache, &nested_source)
             .await?;
 
-        // Persist cache if it transitioned from Empty to Cached during this call.
-        if effective_cache.is_empty() && matches!(new_cache, ViewCacheState::Cached { .. }) {
-            self.db_ops
-                .set_view_cache_state(&view.name, &new_cache)
-                .await?;
+        // Persist terminal transitions from Empty. Cached makes the next
+        // read a hit; Unavailable makes it fail-fast with the reason.
+        match &new_cache {
+            ViewCacheState::Cached { .. } if effective_cache.is_empty() => {
+                self.db_ops
+                    .set_view_cache_state(&view.name, &new_cache)
+                    .await?;
+            }
+            ViewCacheState::Unavailable { reason } => {
+                self.db_ops
+                    .set_view_cache_state(&view.name, &new_cache)
+                    .await?;
+                return Err(SchemaError::InvalidTransform(format!(
+                    "View '{}' unavailable: {}",
+                    view.name, reason
+                )));
+            }
+            _ => {}
         }
 
         Ok(results)
