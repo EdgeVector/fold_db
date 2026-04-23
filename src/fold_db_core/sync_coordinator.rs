@@ -16,6 +16,12 @@ use crate::db_operations::DbOperations;
 use crate::storage::SledPool;
 use crate::sync::{SyncEngine, SyncError, SyncState, SyncStatus};
 
+/// Cap on the exponential backoff between sync cycles while the engine is in
+/// [`SyncState::Offline`]. Ten minutes is a balance between responsiveness
+/// (user opens the lid, expects sync within a reasonable time) and not
+/// hammering Exemem / the device battery during a sustained outage.
+const MAX_OFFLINE_BACKOFF: tokio::time::Duration = tokio::time::Duration::from_secs(600);
+
 /// Coordinates the optional cloud sync engine lifecycle.
 pub struct SyncCoordinator {
     engine: RwLock<Option<Arc<SyncEngine>>>,
@@ -50,6 +56,22 @@ impl SyncCoordinator {
     ///
     /// `db_ops` and `sled_pool` are needed to purge org data when the engine
     /// reports that the local node has been removed from an organization.
+    ///
+    /// ### Offline backoff
+    ///
+    /// While the engine state is [`SyncState::Offline`] (i.e. the last sync
+    /// failed with a network-class error), the inter-cycle delay doubles on
+    /// each consecutive failure — `interval_ms`, 2×, 4×, … — capped at
+    /// [`MAX_OFFLINE_BACKOFF`] (10 minutes). On the next successful cycle the
+    /// delay resets to `interval_ms`. This matters for laptops resuming from
+    /// sleep and phones with flaky connectivity: without the backoff, the
+    /// coordinator would hammer the presign endpoint every `interval_ms` for
+    /// the entire offline window (CPU and battery cost, plus noisy retries on
+    /// cold Lambda).
+    ///
+    /// Backoff only engages for `SyncState::Offline`. Auth failures have their
+    /// own refresh path (the `AuthRefreshCallback` on the engine) and permanent
+    /// errors aren't retried here.
     pub fn start_background_sync(
         &self,
         interval_ms: u64,
@@ -62,33 +84,55 @@ impl SyncCoordinator {
         };
 
         let handle = tokio::spawn(async move {
-            let interval = tokio::time::Duration::from_millis(interval_ms);
+            let base_interval = tokio::time::Duration::from_millis(interval_ms);
+            let max_delay = MAX_OFFLINE_BACKOFF;
+            let mut current_delay = base_interval;
             loop {
-                tokio::time::sleep(interval).await;
+                tokio::time::sleep(current_delay).await;
                 // Always run sync — even without pending writes, we need to
                 // download org data from other members.
                 let has_pending = engine.state().await == SyncState::Dirty;
                 let has_orgs = engine.has_org_sync().await;
-                if has_pending || has_orgs {
-                    if let Err(e) = engine.sync().await {
-                        if let SyncError::OrgMembershipRevoked(ref org_hash) = e {
-                            warn!("🚨 SYSTEM ALERT: You have been removed from organization (hash: {}) by an administrator. Proceeding to securely purge all locally cached copies of its data and schema to prevent orphans.", org_hash);
+                if !(has_pending || has_orgs) {
+                    // Nothing to sync. Keep polling at the configured interval.
+                    current_delay = base_interval;
+                    continue;
+                }
 
-                            // 1. Delete membership structure locally (if running on Sled backend)
-                            if let Some(pool) = &sled_pool {
-                                let _ = crate::org::operations::delete_org(pool, org_hash).map_err(
-                                    |err| log::error!("Failed to delete org structure: {}", err),
-                                );
-                            }
+                match engine.sync().await {
+                    Ok(_) => {
+                        // Success: reset backoff.
+                        current_delay = base_interval;
+                    }
+                    Err(SyncError::OrgMembershipRevoked(ref org_hash)) => {
+                        warn!("🚨 SYSTEM ALERT: You have been removed from organization (hash: {}) by an administrator. Proceeding to securely purge all locally cached copies of its data and schema to prevent orphans.", org_hash);
 
-                            // 2. Erase the orphaned physical footprints in local DB
-                            let _ = db_ops
-                                .purge_org_data(org_hash)
-                                .await
-                                .map_err(|err| log::error!("Failed to purge org data: {}", err));
-                        } else {
-                            warn!("sync cycle failed: {e}");
+                        // 1. Delete membership structure locally (if running on Sled backend)
+                        if let Some(pool) = &sled_pool {
+                            let _ =
+                                crate::org::operations::delete_org(pool, org_hash).map_err(|err| {
+                                    log::error!("Failed to delete org structure: {}", err)
+                                });
                         }
+
+                        // 2. Erase the orphaned physical footprints in local DB
+                        let _ = db_ops
+                            .purge_org_data(org_hash)
+                            .await
+                            .map_err(|err| log::error!("Failed to purge org data: {}", err));
+
+                        // Membership-revoked is not a transient retry target —
+                        // stay responsive.
+                        current_delay = base_interval;
+                    }
+                    Err(e) => {
+                        warn!("sync cycle failed: {e}");
+                        current_delay = next_backoff_on_failure(
+                            current_delay,
+                            base_interval,
+                            max_delay,
+                            engine.state().await,
+                        );
                     }
                 }
             }
@@ -154,5 +198,95 @@ impl SyncCoordinator {
 impl Default for SyncCoordinator {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// Compute the next inter-cycle sleep duration after a sync failure.
+///
+/// - `Offline` state (network-class failure): double the current delay, cap
+///   at `max`. This is the exponential backoff.
+/// - Any other state (auth errors, permanent errors): reset to `base`.
+///   Those failures have their own retry paths and we want to stay
+///   responsive for the next cycle.
+fn next_backoff_on_failure(
+    current: tokio::time::Duration,
+    base: tokio::time::Duration,
+    max: tokio::time::Duration,
+    state: SyncState,
+) -> tokio::time::Duration {
+    if state == SyncState::Offline {
+        current.saturating_mul(2).min(max)
+    } else {
+        base
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::time::Duration;
+
+    #[test]
+    fn offline_backoff_doubles_up_to_cap() {
+        let base = Duration::from_secs(30);
+        let max = MAX_OFFLINE_BACKOFF;
+
+        // First failure: 30s → 60s
+        let d1 = next_backoff_on_failure(base, base, max, SyncState::Offline);
+        assert_eq!(d1, Duration::from_secs(60));
+
+        // Second: 60s → 120s
+        let d2 = next_backoff_on_failure(d1, base, max, SyncState::Offline);
+        assert_eq!(d2, Duration::from_secs(120));
+
+        // Third: 120s → 240s
+        let d3 = next_backoff_on_failure(d2, base, max, SyncState::Offline);
+        assert_eq!(d3, Duration::from_secs(240));
+
+        // Fourth: 240s → 480s (still under 600s cap)
+        let d4 = next_backoff_on_failure(d3, base, max, SyncState::Offline);
+        assert_eq!(d4, Duration::from_secs(480));
+
+        // Fifth: 480s → 600s (capped, not 960s)
+        let d5 = next_backoff_on_failure(d4, base, max, SyncState::Offline);
+        assert_eq!(d5, max);
+
+        // Sixth: stays at cap.
+        let d6 = next_backoff_on_failure(d5, base, max, SyncState::Offline);
+        assert_eq!(d6, max);
+    }
+
+    #[test]
+    fn non_offline_failure_resets_to_base() {
+        let base = Duration::from_secs(30);
+        let max = MAX_OFFLINE_BACKOFF;
+
+        // Even after many offline cycles, a Dirty-state failure resets.
+        let at_cap = max;
+        let reset = next_backoff_on_failure(at_cap, base, max, SyncState::Dirty);
+        assert_eq!(reset, base);
+
+        // Same for other non-offline states.
+        let reset_idle = next_backoff_on_failure(at_cap, base, max, SyncState::Idle);
+        assert_eq!(reset_idle, base);
+    }
+
+    #[test]
+    fn backoff_respects_custom_base() {
+        let base = Duration::from_secs(5);
+        let max = Duration::from_secs(60);
+
+        let d1 = next_backoff_on_failure(base, base, max, SyncState::Offline);
+        assert_eq!(d1, Duration::from_secs(10));
+
+        let d2 = next_backoff_on_failure(d1, base, max, SyncState::Offline);
+        assert_eq!(d2, Duration::from_secs(20));
+
+        let d3 = next_backoff_on_failure(d2, base, max, SyncState::Offline);
+        assert_eq!(d3, Duration::from_secs(40));
+
+        // Next would be 80s but cap is 60s.
+        let d4 = next_backoff_on_failure(d3, base, max, SyncState::Offline);
+        assert_eq!(d4, max);
     }
 }
