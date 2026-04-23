@@ -533,23 +533,20 @@ impl SyncEngine {
     ///
     /// Returns Ok(true) if all pending entries were uploaded,
     /// Ok(false) if there was nothing to sync.
+    ///
+    /// A cycle always runs when the engine is configured, even if the local
+    /// state is `Idle`. Multi-device users have peers uploading to the shared
+    /// `{user_hash}/log/` prefix, and a passive reader needs to poll
+    /// downloads to pick those up. Previously the engine returned early when
+    /// `Idle && !has_orgs` — that blocked personal multi-device sync
+    /// completely. The only early exits now are "already syncing" (to avoid
+    /// overlapping cycles) and an empty targets list (no sync configured).
     pub async fn sync(&self) -> SyncResult<bool> {
-        // Check org sync before acquiring state lock to avoid holding state
-        // across an await on the partitioner lock.
-        let has_orgs = self.has_org_sync().await;
-
         // Atomic check-and-set: hold the lock for both the state check and transition
         {
             let mut state = self.state.lock().await;
             if *state == SyncState::Syncing {
                 log::info!("sync skipped: already syncing");
-                return Ok(false);
-            }
-            // When Idle with no pending writes, we still need to proceed if org
-            // sync is configured — other members may have uploaded data we need
-            // to download. Skip only when Idle AND no org memberships.
-            if *state == SyncState::Idle && !has_orgs {
-                log::info!("sync skipped: idle with no org targets");
                 return Ok(false);
             }
             *state = SyncState::Syncing;
@@ -704,13 +701,17 @@ impl SyncEngine {
             }
         }
 
-        // Download from all org targets
+        // Download from every configured target — personal included. Personal
+        // multi-device users have peers (other devices restored from the same
+        // mnemonic) writing to the shared `{user_hash}/log/` prefix, so we
+        // need to poll that prefix on every cycle, not just the org ones.
+        // Skipping personal broke cross-device convergence for passive
+        // readers: Node A would never see Node B's writes until Node A wrote
+        // something locally.
         for target in &targets {
-            if !target.prefix.is_empty() {
-                match self.download_with_auth_retry(target).await {
-                    Ok(n) => downloaded += n,
-                    Err(e) => log::warn!("download from '{}' failed: {e}", target.label),
-                }
+            match self.download_with_auth_retry(target).await {
+                Ok(n) => downloaded += n,
+                Err(e) => log::warn!("download from '{}' failed: {e}", target.label),
             }
         }
 
