@@ -2402,12 +2402,7 @@ mod tests {
             if !self.enabled(record.metadata()) {
                 return;
             }
-            let line = format!(
-                "{} {} {}",
-                record.level(),
-                record.target(),
-                record.args()
-            );
+            let line = format!("{} {} {}", record.level(), record.target(), record.args());
             CAPTURE_BUFFER.lock().unwrap().push(line);
         }
 
