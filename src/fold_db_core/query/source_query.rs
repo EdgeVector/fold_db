@@ -153,9 +153,24 @@ impl StandardSourceQuery {
             mode: self.mode,
         };
 
+        // Recursive resolution must also consult overrides — a view used as
+        // a source for another view must serve overridden values, not the
+        // computed-from-source values it would produce otherwise.
+        let overrides = self
+            .db_ops
+            .views()
+            .scan_transform_field_overrides(&view.name)
+            .await?;
+
         let (results, new_cache) = self
             .view_resolver
-            .resolve(&view, &query.fields, &effective_cache, &nested_source)
+            .resolve_with_overrides(
+                &view,
+                &query.fields,
+                &effective_cache,
+                &nested_source,
+                &overrides,
+            )
             .await?;
 
         // Persist terminal transitions from Empty. Cached makes the next

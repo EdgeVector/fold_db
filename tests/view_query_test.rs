@@ -272,8 +272,13 @@ async fn identity_view_write_invalidates_view_cache() {
     );
 }
 
+/// WASM (irreversible) views accept direct writes by persisting a
+/// `TransformFieldOverride` instead of redirecting to source — the field
+/// transitions to the `Overridden` state per `transform_views_design.md`.
+/// The mutation succeeds, no source data is touched, and the override is
+/// available through `views().get_transform_field_override`.
 #[tokio::test]
-async fn wasm_view_write_is_rejected() {
+async fn wasm_view_write_persists_override_in_view_query_test() {
     let db = setup_db().await;
 
     db.load_schema_from_json(&blogpost_schema_json())
@@ -284,7 +289,6 @@ async fn wasm_view_write_is_rejected() {
         .await
         .unwrap();
 
-    // Register a WASM view (not identity)
     let view = TransformView::new(
         "WasmView",
         SchemaType::Single,
@@ -293,28 +297,34 @@ async fn wasm_view_write_is_rejected() {
             "BlogPost".to_string(),
             vec!["content".to_string()],
         )],
-        Some(vec![0, 1, 2]), // Placeholder WASM — won't be executed
+        Some(vec![0, 1, 2]), // Placeholder WASM — never executed on the write path.
         HashMap::from([("out".to_string(), FieldValueType::String)]),
     );
     db.schema_manager().register_view(view).await.unwrap();
 
-    // Try to mutate the WASM view — should be rejected
+    let key = KeyValue::new(None, Some("2026-01-01".to_string()));
     let mut mutation_fields = HashMap::new();
-    mutation_fields.insert("out".to_string(), json!("should fail"));
+    mutation_fields.insert("out".to_string(), json!("user pinned"));
     let mutation = Mutation::new(
         "WasmView".to_string(),
         mutation_fields,
-        KeyValue::new(None, Some("2026-01-01".to_string())),
-        "pk".to_string(),
+        key.clone(),
+        "writer-pk".to_string(),
         MutationType::Create,
     );
-    let result = db
-        .mutation_manager()
+
+    db.mutation_manager()
         .write_mutations_batch_async(vec![mutation])
-        .await;
-    assert!(result.is_err());
-    assert!(
-        result.unwrap_err().to_string().contains("WASM view"),
-        "Should mention WASM view write-back not supported"
-    );
+        .await
+        .expect("WASM view writes now persist as overrides");
+
+    let stored = db
+        .db_ops()
+        .views()
+        .get_transform_field_override("WasmView", "out", &key.to_string())
+        .await
+        .unwrap()
+        .expect("override molecule should exist");
+    assert_eq!(stored.value, json!("user pinned"));
+    assert!(stored.source_link_stale);
 }

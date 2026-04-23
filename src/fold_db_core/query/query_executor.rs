@@ -233,9 +233,23 @@ impl QueryExecutor {
             ViewResolver::new(Arc::clone(self.view_resolver.wasm_engine())),
         );
 
+        // Load any per-(field, key) overrides — these take precedence over
+        // computed values on the read path, regardless of cache state.
+        let overrides = self
+            .db_ops
+            .views()
+            .scan_transform_field_overrides(&view.name)
+            .await?;
+
         let (results, new_cache) = self
             .view_resolver
-            .resolve(&view, &query.fields, &cache_state, &source_query)
+            .resolve_with_overrides(
+                &view,
+                &query.fields,
+                &cache_state,
+                &source_query,
+                &overrides,
+            )
             .await?;
 
         // Persist terminal state transitions so a follow-up query doesn't

@@ -16,6 +16,7 @@ use crate::db_operations::DbOperations;
 use crate::schema::types::Mutation;
 use crate::schema::{SchemaCore, SchemaError};
 use crate::view::resolver::ViewResolver;
+use crate::view::transform_field_override::TransformFieldOverride;
 use crate::view::types::ViewCacheState;
 
 use super::query::StandardSourceQuery;
@@ -36,8 +37,20 @@ impl ViewOrchestrator {
         }
     }
 
-    /// Redirect mutations targeting identity views to their source schemas.
-    /// WASM views are not writable (would require inverse transforms).
+    /// Route mutations targeting transform views.
+    ///
+    /// Identity views: writes go through to the source schema (the inverse
+    /// of identity is itself).
+    ///
+    /// WASM views (no inverse): writes are persisted as
+    /// `TransformFieldOverride` molecules per `transform_views_design.md` —
+    /// the field flips into the `Overridden` state and the source link is
+    /// marked stale. The override is stored in its own namespace so it
+    /// participates in the unified sync log and converges across replicas
+    /// via LWW on `written_at`. These mutations do NOT propagate further
+    /// down the pipeline (they are not source-schema mutations); the
+    /// returned vector contains only the rewritten source mutations and any
+    /// non-view mutations that pass through unchanged.
     pub async fn redirect_mutation(
         &self,
         mutations: Vec<Mutation>,
@@ -58,49 +71,86 @@ impl ViewOrchestrator {
                 continue;
             };
 
-            // Get source field map (only works for identity views)
-            let field_map = view.source_field_map().ok_or_else(|| {
-                SchemaError::InvalidData(format!(
-                    "Cannot write to WASM view '{}'. Write-back through WASM views is not yet supported.",
-                    view.name
-                ))
-            })?;
+            if let Some(field_map) = view.source_field_map() {
+                // Identity view — rewrite to source mutations.
+                let mut redirected: HashMap<String, HashMap<String, serde_json::Value>> =
+                    HashMap::new();
 
-            // Group mutation fields by target source schema
-            let mut redirected: HashMap<String, HashMap<String, serde_json::Value>> =
-                HashMap::new();
+                for (field_name, value) in &mutation.fields_and_values {
+                    let (source_schema, source_field) =
+                        field_map.get(field_name).ok_or_else(|| {
+                            SchemaError::InvalidField(format!(
+                                "Field '{}' not found in view '{}'",
+                                field_name, view.name
+                            ))
+                        })?;
 
-            for (field_name, value) in &mutation.fields_and_values {
-                let (source_schema, source_field) = field_map.get(field_name).ok_or_else(|| {
-                    SchemaError::InvalidField(format!(
-                        "Field '{}' not found in view '{}'",
-                        field_name, view.name
-                    ))
-                })?;
+                    redirected
+                        .entry(source_schema.clone())
+                        .or_default()
+                        .insert(source_field.clone(), value.clone());
+                }
 
-                redirected
-                    .entry(source_schema.clone())
-                    .or_default()
-                    .insert(source_field.clone(), value.clone());
-            }
-
-            // Create one redirected mutation per source schema
-            for (target_schema, fields_and_values) in redirected {
-                result.push(Mutation {
-                    uuid: uuid::Uuid::new_v4().to_string(),
-                    schema_name: target_schema,
-                    fields_and_values,
-                    key_value: mutation.key_value.clone(),
-                    pub_key: mutation.pub_key.clone(),
-                    mutation_type: mutation.mutation_type.clone(),
-                    synchronous: mutation.synchronous,
-                    source_file_name: mutation.source_file_name.clone(),
-                    metadata: mutation.metadata.clone(),
-                });
+                for (target_schema, fields_and_values) in redirected {
+                    result.push(Mutation {
+                        uuid: uuid::Uuid::new_v4().to_string(),
+                        schema_name: target_schema,
+                        fields_and_values,
+                        key_value: mutation.key_value.clone(),
+                        pub_key: mutation.pub_key.clone(),
+                        mutation_type: mutation.mutation_type.clone(),
+                        synchronous: mutation.synchronous,
+                        source_file_name: mutation.source_file_name.clone(),
+                        metadata: mutation.metadata.clone(),
+                    });
+                }
+            } else {
+                // Irreversible (WASM) view — persist each field as an override.
+                self.persist_overrides_for_mutation(&view.name, &mutation)
+                    .await?;
             }
         }
 
         Ok(result)
+    }
+
+    /// Persist a `TransformFieldOverride` for every (field, key) in the
+    /// mutation. The mutation's `pub_key` becomes the override's writer
+    /// pubkey; its `key_value` becomes the per-key handle. Each call stamps
+    /// `written_at = now`, so concurrent writes on different replicas resolve
+    /// via LWW once they meet through the sync log.
+    async fn persist_overrides_for_mutation(
+        &self,
+        view_name: &str,
+        mutation: &Mutation,
+    ) -> Result<(), SchemaError> {
+        // The view must be registered for us to honor the write — otherwise we
+        // would silently drop user data. The caller has already established
+        // the view exists, so this is just a defensive lookup against schema
+        // mutations between the registry read and now.
+        let view_exists = {
+            let registry = self.schema_manager.view_registry().lock().map_err(|_| {
+                SchemaError::InvalidData("Failed to acquire view_registry lock".to_string())
+            })?;
+            registry.get_view(view_name).is_some()
+        };
+        if !view_exists {
+            return Err(SchemaError::NotFound(format!(
+                "View '{}' disappeared mid-mutation",
+                view_name
+            )));
+        }
+
+        let key_str = mutation.key_value.to_string();
+        let view_store = self.db_ops.views();
+
+        for (field_name, value) in &mutation.fields_and_values {
+            let override_mol = TransformFieldOverride::new(value.clone(), mutation.pub_key.clone());
+            view_store
+                .put_transform_field_override(view_name, field_name, &key_str, &override_mol)
+                .await?;
+        }
+        Ok(())
     }
 
     /// Invalidate a single named view (and its cascade), then spawn a
@@ -352,8 +402,22 @@ impl ViewOrchestrator {
             );
 
             let resolver = ViewResolver::new(Arc::clone(&wasm_engine));
+            // Precompute also has to honor overrides — otherwise the
+            // background pass would write a `Cached` state that ignores the
+            // user's pin, and the next read would briefly serve the wrong
+            // value before being corrected by `resolve_with_overrides`.
+            let overrides = db_ops
+                .views()
+                .scan_transform_field_overrides(view_name)
+                .await?;
             match resolver
-                .resolve(&view, &[], &ViewCacheState::Empty, &source_query)
+                .resolve_with_overrides(
+                    &view,
+                    &[],
+                    &ViewCacheState::Empty,
+                    &source_query,
+                    &overrides,
+                )
                 .await
             {
                 Ok((_, new_cache)) => {

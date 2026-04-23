@@ -2,6 +2,7 @@ use crate::schema::types::errors::SchemaError;
 use crate::schema::types::field::FieldValue;
 use crate::schema::types::key_value::KeyValue;
 use crate::schema::types::operations::Query;
+use crate::view::transform_field_override::TransformFieldOverride;
 use crate::view::types::{TransformView, UnavailableReason, ViewCacheState};
 use crate::view::wasm_engine::WasmTransformEngine;
 use async_trait::async_trait;
@@ -82,6 +83,30 @@ impl ViewResolver {
         ),
         SchemaError,
     > {
+        self.resolve_with_overrides(view, requested_fields, cache_state, source_query, &[])
+            .await
+    }
+
+    /// Same as `resolve`, but applies any per-(field, key) overrides on top
+    /// of the computed output. Overrides are looked up from the override
+    /// store by the caller and passed in. When an override exists for a
+    /// `(field, key)` it supersedes whatever the WASM/identity path produced
+    /// — and the override survives even if the source link is stale, which
+    /// is what makes `Overridden` sticky against subsequent source mutations.
+    pub async fn resolve_with_overrides(
+        &self,
+        view: &TransformView,
+        requested_fields: &[String],
+        cache_state: &ViewCacheState,
+        source_query: &dyn SourceQueryFn,
+        overrides: &[(String, String, TransformFieldOverride)],
+    ) -> Result<
+        (
+            HashMap<String, HashMap<KeyValue, FieldValue>>,
+            ViewCacheState,
+        ),
+        SchemaError,
+    > {
         // Determine which fields to return
         let fields_to_return: Vec<String> = if requested_fields.is_empty() {
             view.output_fields.keys().cloned().collect()
@@ -105,6 +130,9 @@ impl ViewResolver {
                 let field_entries = entries.get(field_name).cloned().unwrap_or_default();
                 result.insert(field_name.clone(), field_entries.into_iter().collect());
             }
+            // Cached path still consults overrides — overrides are sticky and
+            // must beat anything in the per-view cache too.
+            self.apply_overrides(&mut result, overrides);
             return Ok((result, cache_state.clone()));
         }
 
@@ -136,7 +164,7 @@ impl ViewResolver {
         // rather than a hard error: they are per-input compute failures,
         // so the caller should persist the state (no retry) but callers
         // above the resolver are free to surface it to the user.
-        let output = if let Some(wasm_bytes) = &view.wasm_transform {
+        let mut output = if let Some(wasm_bytes) = &view.wasm_transform {
             match self.execute_wasm_transform(wasm_bytes, &all_query_results) {
                 Ok(output) => output,
                 Err(e) => {
@@ -147,6 +175,12 @@ impl ViewResolver {
         } else {
             self.identity_pass_through(&all_query_results, view)?
         };
+
+        // Apply overrides BEFORE type validation so the user-supplied value
+        // is what we validate. Overrides also extend the output to fields
+        // that the source path produced no entries for (overrides are
+        // sticky regardless of source state).
+        Self::apply_overrides_to_field_map(&mut output, view, overrides);
 
         // Validate output against declared types. A mismatch is a per-input
         // failure of the transform (the WASM produced a wrongly-shaped value
@@ -192,6 +226,49 @@ impl ViewResolver {
         }
 
         Ok((result, new_cache))
+    }
+
+    /// Substitute override values into an already-shaped result map.
+    /// Used by the cached short-circuit where we don't have the full
+    /// `output_fields` typing context and only care about the requested
+    /// subset.
+    fn apply_overrides(
+        &self,
+        result: &mut HashMap<String, HashMap<KeyValue, FieldValue>>,
+        overrides: &[(String, String, TransformFieldOverride)],
+    ) {
+        for (field_name, key_str, override_mol) in overrides {
+            if let Some(field_entries) = result.get_mut(field_name) {
+                let key = parse_key_str(key_str);
+                let fv = override_field_value(override_mol);
+                field_entries.insert(key, fv);
+            }
+        }
+    }
+
+    /// Substitute overrides into the freshly-computed output map. Unlike
+    /// `apply_overrides`, this version honors the view's declared
+    /// `output_fields` — overrides for fields not declared on the view are
+    /// ignored (defensive: a stale override left over from a removed field
+    /// shouldn't materialize). Overrides for declared fields are inserted
+    /// even if the source produced no entries, so the override survives a
+    /// stale source link.
+    fn apply_overrides_to_field_map(
+        output: &mut HashMap<String, HashMap<KeyValue, FieldValue>>,
+        view: &TransformView,
+        overrides: &[(String, String, TransformFieldOverride)],
+    ) {
+        for (field_name, key_str, override_mol) in overrides {
+            if !view.output_fields.contains_key(field_name) {
+                continue;
+            }
+            let key = parse_key_str(key_str);
+            let fv = override_field_value(override_mol);
+            output
+                .entry(field_name.clone())
+                .or_default()
+                .insert(key, fv);
+        }
     }
 
     /// Identity pass-through: collect all query results and map to output fields.
@@ -290,6 +367,43 @@ impl ViewResolver {
 
     pub fn wasm_engine(&self) -> &Arc<WasmTransformEngine> {
         &self.wasm_engine
+    }
+}
+
+/// Reverse of `KeyValue::Display`: `"hash:range"` → hash+range,
+/// `"hash"` → hash-only, `""` → both `None`. Range-only encoding (the
+/// default for view output) is the common case here.
+fn parse_key_str(s: &str) -> KeyValue {
+    if s.is_empty() {
+        KeyValue::new(None, None)
+    } else if let Some((hash, range)) = s.split_once(':') {
+        KeyValue::new(Some(hash.to_string()), Some(range.to_string()))
+    } else {
+        // Single-segment keys are ambiguous between hash-only and range-only;
+        // view output is keyed by range, and override writes are stored using
+        // `KeyValue::Display` which omits the colon when only `range` is set.
+        // So a bare segment here came from a range-only key.
+        KeyValue::new(None, Some(s.to_string()))
+    }
+}
+
+/// Convert an override molecule into a `FieldValue` suitable for view output.
+/// Override molecules don't have an underlying atom so atom-level provenance
+/// fields stay empty; the override's `writer_pubkey` is preserved so callers
+/// can attribute the value.
+fn override_field_value(o: &TransformFieldOverride) -> FieldValue {
+    FieldValue {
+        value: o.value.clone(),
+        atom_uuid: String::new(),
+        source_file_name: None,
+        metadata: None,
+        molecule_uuid: None,
+        molecule_version: None,
+        writer_pubkey: if o.writer_pubkey.is_empty() {
+            None
+        } else {
+            Some(o.writer_pubkey.clone())
+        },
     }
 }
 

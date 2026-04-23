@@ -54,6 +54,12 @@ impl DbOperations {
         // local-only — SyncingNamespacedStore explicitly excludes it from the
         // sync log so derived cache state cannot leak between devices.
         let transform_cache_kv = store.open_namespace("transform_cache").await?;
+        // `transform_field_overrides` holds per-(view, field, key) override
+        // molecules. Unlike transform_cache, overrides ARE user data, so this
+        // namespace participates in the unified sync log and converges across
+        // replicas via LWW on `written_at`.
+        let transform_field_overrides_kv =
+            store.open_namespace("transform_field_overrides").await?;
         let native_index_kv = store.open_namespace("native_index").await?;
 
         // Wrap KvStores in TypedKvStore adapters
@@ -69,12 +75,19 @@ impl DbOperations {
         let views_store = Arc::new(TypedKvStore::new(views_kv));
         let view_states_store = Arc::new(TypedKvStore::new(view_states_kv));
         let transform_cache_store = Arc::new(TypedKvStore::new(transform_cache_kv));
+        let transform_field_overrides_store =
+            Arc::new(TypedKvStore::new(transform_field_overrides_kv));
 
         // Domain stores
         let schema_store =
             SchemaStore::new(schemas_store, schema_states_store, superseded_by_store);
         let atom_store = AtomStore::new(main_store);
-        let view_store = ViewStore::new(views_store, view_states_store, transform_cache_store);
+        let view_store = ViewStore::new(
+            views_store,
+            view_states_store,
+            transform_cache_store,
+            transform_field_overrides_store,
+        );
         let permissions_store = PermissionsStore::new(permissions_typed, public_keys_typed);
         let metadata_store =
             MetadataStore::new(metadata_typed, idempotency_typed, process_results_typed);
