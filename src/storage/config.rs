@@ -20,18 +20,32 @@ impl std::fmt::Display for ConfigError {
 
 impl std::error::Error for ConfigError {}
 
-/// Configuration for cloud sync (Exemem encrypted S3 backup)
+/// Configuration for cloud sync (Exemem encrypted S3 backup).
+///
+/// **Field persistence model:** only `api_url` is serialized to disk.
+/// `api_key`, `session_token`, and `user_hash` are per-device secrets that
+/// live in the host application's credential store (e.g. fold_db_node's
+/// `credentials.json` / `credentials.enc`) and are hydrated into this
+/// struct at runtime — typically in the node-creation path before the
+/// sync engine is built. They are marked `#[serde(skip_serializing)]` so
+/// `node_config.json` is safe to back up or share.
+///
+/// Existing config files that contain these fields (from before this
+/// change) still deserialize cleanly — serde reads them, and the next
+/// save strips them out.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CloudSyncConfig {
-    /// Exemem API URL (sync routes at /api/sync/*)
+    /// Exemem API URL (sync routes at /api/sync/*). Persisted to disk.
     pub api_url: String,
-    /// API key for authentication
+    /// API key for authentication. Runtime-hydrated from the credential
+    /// store; never persisted to `node_config.json`.
+    #[serde(default, skip_serializing)]
     pub api_key: String,
-    /// Session token for authenticated API access
-    #[serde(default)]
+    /// Session token for authenticated API access. Runtime-hydrated.
+    #[serde(default, skip_serializing)]
     pub session_token: Option<String>,
-    /// User hash derived from public key
-    #[serde(default)]
+    /// User hash derived from public key. Runtime-hydrated.
+    #[serde(default, skip_serializing)]
     pub user_hash: Option<String>,
 }
 
@@ -269,5 +283,78 @@ mod tests {
         let config = DatabaseConfig::default();
         assert_eq!(config.path, PathBuf::from("data"));
         assert!(config.cloud_sync.is_none());
+    }
+
+    #[test]
+    fn serialize_omits_per_device_secrets() {
+        let config = DatabaseConfig::with_cloud_sync(
+            PathBuf::from("/data"),
+            CloudSyncConfig {
+                api_url: "https://api.example.com".to_string(),
+                api_key: "secret_api_key".to_string(),
+                session_token: Some("secret_token".to_string()),
+                user_hash: Some("user_abc".to_string()),
+            },
+        );
+        let json = serde_json::to_string(&config).unwrap();
+        assert!(
+            json.contains("api_url"),
+            "api_url must be persisted: {}",
+            json
+        );
+        assert!(
+            !json.contains("secret_api_key"),
+            "api_key must NOT be persisted to disk: {}",
+            json
+        );
+        assert!(
+            !json.contains("secret_token"),
+            "session_token must NOT be persisted to disk: {}",
+            json
+        );
+        assert!(
+            !json.contains("user_abc"),
+            "user_hash must NOT be persisted to disk: {}",
+            json
+        );
+    }
+
+    #[test]
+    fn deserialize_tolerates_legacy_files_with_secrets() {
+        // Files written before the skip_serializing change include api_key,
+        // session_token, and user_hash. They must still deserialize cleanly —
+        // the next save will strip them.
+        let json = r#"{
+            "path": "/data/db",
+            "cloud_sync": {
+                "api_url": "https://api.example.com",
+                "api_key": "legacy_key",
+                "session_token": "legacy_token",
+                "user_hash": "legacy_hash"
+            }
+        }"#;
+        let config: DatabaseConfig = serde_json::from_str(json).unwrap();
+        let sync = config.cloud_sync.unwrap();
+        assert_eq!(sync.api_url, "https://api.example.com");
+        assert_eq!(sync.api_key, "legacy_key");
+        assert_eq!(sync.session_token.as_deref(), Some("legacy_token"));
+        assert_eq!(sync.user_hash.as_deref(), Some("legacy_hash"));
+    }
+
+    #[test]
+    fn deserialize_new_file_without_secrets_defaults_fields() {
+        // Files written after this change contain only api_url. The runtime
+        // must see api_key = "" and session_token/user_hash = None until the
+        // credential-store hydration runs.
+        let json = r#"{
+            "path": "/data/db",
+            "cloud_sync": { "api_url": "https://api.example.com" }
+        }"#;
+        let config: DatabaseConfig = serde_json::from_str(json).unwrap();
+        let sync = config.cloud_sync.unwrap();
+        assert_eq!(sync.api_url, "https://api.example.com");
+        assert_eq!(sync.api_key, "");
+        assert!(sync.session_token.is_none());
+        assert!(sync.user_hash.is_none());
     }
 }
