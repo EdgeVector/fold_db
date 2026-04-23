@@ -440,9 +440,9 @@ async fn exceeds_envelope_rejects_before_wasm_runs() {
                 "measured must exceed the limit (got {measured})"
             );
         }
-        other => panic!(
-            "expected ExceedsCalibratedEnvelope — WASM must NOT have run; got {other:?}"
-        ),
+        other => {
+            panic!("expected ExceedsCalibratedEnvelope — WASM must NOT have run; got {other:?}")
+        }
     }
 }
 

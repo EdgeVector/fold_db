@@ -419,8 +419,7 @@ mod tests {
         // `gas_model` is `#[serde(default)]` so legacy WasmTransformSpec
         // values persisted before Phase 2 deserialize cleanly with
         // `gas_model = None`. This pins the compatibility contract.
-        let legacy_json =
-            serde_json::json!({ "bytes": [1, 2, 3], "max_gas": 1_000_000 });
+        let legacy_json = serde_json::json!({ "bytes": [1, 2, 3], "max_gas": 1_000_000 });
         let spec: WasmTransformSpec = serde_json::from_value(legacy_json).expect("deserialize");
         assert!(spec.gas_model.is_none());
         assert_eq!(spec.max_gas, 1_000_000);
