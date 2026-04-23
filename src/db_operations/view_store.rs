@@ -137,9 +137,7 @@ impl ViewStore {
 
     /// Clear cache state for a view (used when removing a view).
     pub async fn clear_view_cache_state(&self, view_name: &str) -> Result<(), SchemaError> {
-        self.transform_cache_store
-            .delete_item(view_name)
-            .await?;
+        self.transform_cache_store.delete_item(view_name).await?;
         self.transform_cache_store.inner().flush().await?;
         Ok(())
     }
