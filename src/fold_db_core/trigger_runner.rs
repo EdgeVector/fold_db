@@ -37,7 +37,7 @@
 //!   middle of a coalesce window doesn't drop events.
 
 use async_trait::async_trait;
-use log::{debug, warn};
+use log::{debug, info, warn};
 use serde::{Deserialize, Serialize};
 use std::cmp::Reverse;
 use std::collections::{BinaryHeap, HashMap};
@@ -942,9 +942,25 @@ impl<C: Clock> TriggerRunner<C> {
         };
         let lag_ms = now_ms - fire.fire_at_ms;
         if should_skip_catch_up(max_age, lag_ms) {
-            warn!(
-                "trigger '{}:{}': skipping catch-up tick — lag {}ms exceeds max_catch_up_age={:?}",
-                fire.view_name, fire.trigger_index, lag_ms, max_age
+            // info!, not warn!: skipping a stale catch-up is the configured
+            // policy outcome (max_catch_up_age budget exceeded), not an
+            // error. Operators investigating "why did this view stop
+            // firing after a 6h downtime?" need a breadcrumb per skipped
+            // fire, but the noise floor must not page on expected behavior.
+            info!(
+                target: "fold_db::triggers::catch_up_skip",
+                "trigger '{}:{}': skipping catch-up tick — \
+                 view_name={} trigger_index={} \
+                 scheduled_fire_ms={} now_ms={} lag_ms={} \
+                 max_catch_up_age={:?}",
+                fire.view_name,
+                fire.trigger_index,
+                fire.view_name,
+                fire.trigger_index,
+                fire.fire_at_ms,
+                now_ms,
+                lag_ms,
+                max_age,
             );
             if let Some((cron, tz)) = reschedule_cron {
                 if let Some(next_at) = next_fire_from_cron(&cron, &tz, now_ms) {
@@ -2363,6 +2379,157 @@ mod tests {
             fire.call_count.load(Ordering::SeqCst),
             1,
             "next in-budget cron tick after the skip must fire normally"
+        );
+    }
+
+    /// Process-wide capture logger for asserting log emission in tests.
+    /// `log::set_boxed_logger` is global and one-shot; we install once via
+    /// `Once`, and the buffer survives across tests in this binary. Tests
+    /// that care about emitted lines call `drain_capture` to read since
+    /// the last drain, then filter for their target message.
+    static CAPTURE_INIT: std::sync::Once = std::sync::Once::new();
+    static CAPTURE_BUFFER: once_cell::sync::Lazy<std::sync::Mutex<Vec<String>>> =
+        once_cell::sync::Lazy::new(|| std::sync::Mutex::new(Vec::new()));
+
+    struct CaptureLogger;
+
+    impl log::Log for CaptureLogger {
+        fn enabled(&self, metadata: &log::Metadata) -> bool {
+            metadata.level() <= log::Level::Info
+        }
+
+        fn log(&self, record: &log::Record) {
+            if !self.enabled(record.metadata()) {
+                return;
+            }
+            let line = format!("{} {} {}", record.level(), record.target(), record.args());
+            CAPTURE_BUFFER.lock().unwrap().push(line);
+        }
+
+        fn flush(&self) {}
+    }
+
+    fn install_capture_logger() {
+        CAPTURE_INIT.call_once(|| {
+            // If another logger was installed first (e.g. by another test
+            // binary or a future LoggingSystem call), fall through silently —
+            // capture-dependent tests will be skipped, not crashed.
+            let _ = log::set_boxed_logger(Box::new(CaptureLogger));
+            log::set_max_level(log::LevelFilter::Info);
+        });
+    }
+
+    fn drain_capture() -> Vec<String> {
+        std::mem::take(&mut *CAPTURE_BUFFER.lock().unwrap())
+    }
+
+    #[tokio::test]
+    async fn scheduled_catch_up_budget_skip_emits_observability_log() {
+        // INVARIANT: when `should_skip_catch_up` returns true and the
+        // runner advances the cursor without dispatching, it must emit
+        // exactly one info-level breadcrumb on
+        // `fold_db::triggers::catch_up_skip` carrying view_name,
+        // trigger_index, scheduled_fire_ms, now_ms, lag_ms, and
+        // max_catch_up_age. Without this, operators have no signal to
+        // explain "why did this view stop firing after a 6h downtime?".
+        install_capture_logger();
+        let _ = drain_capture();
+
+        let sm = make_schema_manager().await;
+        register_view(
+            &sm,
+            "V_skip_log",
+            "S1",
+            vec![Trigger::Scheduled {
+                cron: "0 * * * *".into(),
+                timezone: "UTC".into(),
+                max_catch_up_age: Some("1h".into()),
+                skip_if_idle: false,
+                schemas: vec!["S1".into()],
+            }],
+        );
+        let clock = Arc::new(MockClock::new(0));
+        let fire = RecordingFireHandler::all_success();
+        let writer = CountingFiringWriter::new();
+        let runner = make_runner(
+            Arc::clone(&sm),
+            Arc::clone(&clock),
+            Arc::clone(&fire) as Arc<dyn FireHandler>,
+            Arc::clone(&writer) as Arc<dyn FiringWriter>,
+        );
+
+        // First tick populates heap with 01:00 UTC fire (= 3_600_000 ms).
+        runner.tick_once().await;
+
+        // Advance to 04:05 UTC: 3h05m past the nominal fire, exceeding
+        // the 1h budget → skip path triggers.
+        let now_ms: i64 = 4 * 3_600_000 + 5 * 60_000;
+        let scheduled_fire_ms: i64 = 3_600_000;
+        let lag_ms: i64 = now_ms - scheduled_fire_ms;
+        clock.advance(now_ms as u64);
+        runner.tick_once().await;
+        for _ in 0..10 {
+            tokio::task::yield_now().await;
+        }
+        assert_eq!(
+            fire.call_count.load(Ordering::SeqCst),
+            0,
+            "stale catch-up must be skipped, not dispatched"
+        );
+
+        let captured = drain_capture();
+        // Filter on this test's unique view_name — the test binary runs
+        // tests in parallel, and `scheduled_catch_up_budget_skips_stale_
+        // fire_but_later_tick_runs` emits its own skip line for view "V1".
+        let skip_lines: Vec<&String> = captured
+            .iter()
+            .filter(|line| line.contains("fold_db::triggers::catch_up_skip"))
+            .filter(|line| line.contains("view_name=V_skip_log"))
+            .collect();
+        assert_eq!(
+            skip_lines.len(),
+            1,
+            "exactly one catch-up-skip log expected per skipped fire; got {} \
+             (full capture: {:?})",
+            skip_lines.len(),
+            captured
+        );
+
+        let line = skip_lines[0];
+        assert!(
+            line.starts_with("INFO "),
+            "skip breadcrumb must be INFO (policy outcome, not error); got: {}",
+            line
+        );
+        assert!(
+            line.contains("view_name=V_skip_log"),
+            "log line missing view_name field: {}",
+            line
+        );
+        assert!(
+            line.contains("trigger_index=0"),
+            "log line missing trigger_index field: {}",
+            line
+        );
+        assert!(
+            line.contains(&format!("scheduled_fire_ms={}", scheduled_fire_ms)),
+            "log line missing scheduled_fire_ms field: {}",
+            line
+        );
+        assert!(
+            line.contains(&format!("now_ms={}", now_ms)),
+            "log line missing now_ms field: {}",
+            line
+        );
+        assert!(
+            line.contains(&format!("lag_ms={}", lag_ms)),
+            "log line missing lag_ms field: {}",
+            line
+        );
+        assert!(
+            line.contains("max_catch_up_age=Some(\"1h\")"),
+            "log line missing max_catch_up_age field: {}",
+            line
         );
     }
 
