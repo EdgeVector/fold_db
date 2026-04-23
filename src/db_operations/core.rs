@@ -22,7 +22,8 @@ pub struct DbOperations {
     schema_store: SchemaStore,
     /// Main namespace — atoms, molecules, mutation events, sync conflicts
     atom_store: AtomStore,
-    /// Transform view definitions, view states, field cache state
+    /// Transform view definitions, view states, and the local-only
+    /// `transform_cache` namespace (derived per-device, excluded from sync).
     view_store: ViewStore,
     /// Permissions + public keys
     permissions_store: PermissionsStore,
@@ -49,7 +50,10 @@ impl DbOperations {
         let superseded_by_kv = store.open_namespace("schema_superseded_by").await?;
         let views_kv = store.open_namespace("views").await?;
         let view_states_kv = store.open_namespace("view_states").await?;
-        let transform_field_states_kv = store.open_namespace("transform_field_states").await?;
+        // `transform_cache` holds the per-view ViewCacheState output. It is
+        // local-only — SyncingNamespacedStore explicitly excludes it from the
+        // sync log so derived cache state cannot leak between devices.
+        let transform_cache_kv = store.open_namespace("transform_cache").await?;
         let native_index_kv = store.open_namespace("native_index").await?;
 
         // Wrap KvStores in TypedKvStore adapters
@@ -64,14 +68,13 @@ impl DbOperations {
         let superseded_by_store = Arc::new(TypedKvStore::new(superseded_by_kv));
         let views_store = Arc::new(TypedKvStore::new(views_kv));
         let view_states_store = Arc::new(TypedKvStore::new(view_states_kv));
-        let transform_field_states_store = Arc::new(TypedKvStore::new(transform_field_states_kv));
+        let transform_cache_store = Arc::new(TypedKvStore::new(transform_cache_kv));
 
         // Domain stores
         let schema_store =
             SchemaStore::new(schemas_store, schema_states_store, superseded_by_store);
         let atom_store = AtomStore::new(main_store);
-        let view_store =
-            ViewStore::new(views_store, view_states_store, transform_field_states_store);
+        let view_store = ViewStore::new(views_store, view_states_store, transform_cache_store);
         let permissions_store = PermissionsStore::new(permissions_typed, public_keys_typed);
         let metadata_store =
             MetadataStore::new(metadata_typed, idempotency_typed, process_results_typed);
