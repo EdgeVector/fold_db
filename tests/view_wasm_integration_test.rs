@@ -102,6 +102,7 @@ async fn wasm_view_query_returns_transformed_output() {
         Some(WasmTransformSpec {
             bytes: hardcoded_wasm(),
             max_gas: 1_000_000,
+            gas_model: None,
         }),
         HashMap::from([("summary".to_string(), FieldValueType::String)]),
     );
@@ -156,6 +157,7 @@ async fn wasm_view_output_type_validation_works() {
         Some(WasmTransformSpec {
             bytes: hardcoded_wasm(),
             max_gas: 1_000_000,
+            gas_model: None,
         }), // Returns {"summary": {"k1": "hardcoded"}} — a String
         HashMap::from([("summary".to_string(), FieldValueType::Integer)]), // Declared as Integer
     );
@@ -209,6 +211,7 @@ async fn wasm_view_cache_invalidation_works() {
         Some(WasmTransformSpec {
             bytes: hardcoded_wasm(),
             max_gas: 1_000_000,
+            gas_model: None,
         }),
         HashMap::from([("summary".to_string(), FieldValueType::String)]),
     );

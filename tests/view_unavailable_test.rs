@@ -19,7 +19,10 @@ use fold_db::schema::types::schema::DeclarativeSchemaType as SchemaType;
 use fold_db::schema::types::{KeyValue, Mutation};
 use fold_db::schema::SchemaState;
 use fold_db::test_helpers::TestSchemaBuilder;
-use fold_db::view::types::{TransformView, UnavailableReason, ViewCacheState, WasmTransformSpec};
+use fold_db::view::types::{
+    FieldId, GasModel, InputDimension, TransformView, UnavailableReason, ViewCacheState,
+    WasmTransformSpec,
+};
 use serde_json::json;
 use std::collections::HashMap;
 
@@ -119,6 +122,7 @@ async fn compute_failure_transitions_to_unavailable_and_does_not_retry() {
         Some(WasmTransformSpec {
             bytes: trapping_wasm(),
             max_gas: 1_000_000,
+            gas_model: None,
         }),
         HashMap::from([("summary".to_string(), FieldValueType::String)]),
     );
@@ -193,6 +197,7 @@ async fn source_mutation_clears_unavailable_to_empty() {
         Some(WasmTransformSpec {
             bytes: trapping_wasm(),
             max_gas: 1_000_000,
+            gas_model: None,
         }),
         HashMap::from([("summary".to_string(), FieldValueType::String)]),
     );
@@ -320,6 +325,7 @@ async fn gas_exhaustion_transitions_to_unavailable_gas_exceeded() {
         Some(WasmTransformSpec {
             bytes: fuel_burner_wasm(),
             max_gas: 5_000,
+            gas_model: None,
         }),
         HashMap::from([("summary".to_string(), FieldValueType::String)]),
     );
@@ -349,4 +355,203 @@ async fn gas_exhaustion_transitions_to_unavailable_gas_exceeded() {
         }
         other => panic!("expected GasExceeded, got {other:?}"),
     }
+}
+
+// ============= MDT-F Phase 2 — runtime envelope rejection ============= //
+
+/// An identity-looking WASM whose `transform` traps unconditionally. If
+/// the envelope check fails to short-circuit and we actually enter the
+/// guest, the surfaced reason would be `ExecutionError` (from the trap)
+/// rather than `ExceedsCalibratedEnvelope`. So this module serves as a
+/// canary: any test that expects `ExceedsCalibratedEnvelope` and gets
+/// `ExecutionError` has regressed the pre-execution envelope short-circuit.
+fn always_trapping_wasm() -> Vec<u8> {
+    trapping_wasm()
+}
+
+/// Oversized input should be rejected by the envelope check BEFORE the
+/// WASM runs. We detect "WASM did not run" by using a trapping module —
+/// if the envelope check short-circuits correctly, the surfaced reason is
+/// `ExceedsCalibratedEnvelope`; if it fails to short-circuit, the trap
+/// fires and the reason would be `ExecutionError`.
+#[tokio::test]
+async fn exceeds_envelope_rejects_before_wasm_runs() {
+    let db = setup_db().await;
+
+    db.load_schema_from_json(&blogpost_schema_json())
+        .await
+        .unwrap();
+    db.schema_manager()
+        .set_schema_state("BlogPost", SchemaState::Approved)
+        .await
+        .unwrap();
+    // A 500-character title JSON-encodes to ~502 bytes, well above the
+    // 100-byte limit below.
+    let big_title = "x".repeat(500);
+    write_blogpost(&db, &big_title, "2026-01-01").await;
+
+    let view = TransformView::new(
+        "EnvelopeView",
+        SchemaType::Single,
+        None,
+        vec![Query::new(
+            "BlogPost".to_string(),
+            vec!["title".to_string()],
+        )],
+        Some(WasmTransformSpec {
+            bytes: always_trapping_wasm(),
+            max_gas: 1_000_000,
+            gas_model: Some(GasModel {
+                base: 0,
+                coefficients: vec![(
+                    InputDimension::FieldBytes(FieldId {
+                        schema: "BlogPost".to_string(),
+                        field: "title".to_string(),
+                    }),
+                    1.0,
+                )],
+                max_input_size: 100,
+            }),
+        }),
+        HashMap::from([("summary".to_string(), FieldValueType::String)]),
+    );
+    db.schema_manager().register_view(view).await.unwrap();
+
+    let query = Query::new("EnvelopeView".to_string(), vec!["summary".to_string()]);
+    let result = db.query_executor().query(query).await;
+    assert!(
+        result.is_err(),
+        "query on oversized input must surface an error, got {result:?}"
+    );
+
+    let state = db
+        .db_ops()
+        .get_view_cache_state("EnvelopeView")
+        .await
+        .unwrap();
+    let reason = state
+        .unavailable_reason()
+        .expect("state should be Unavailable after envelope rejection");
+    match reason {
+        UnavailableReason::ExceedsCalibratedEnvelope { measured, limit } => {
+            assert_eq!(*limit, 100);
+            assert!(
+                *measured > 100,
+                "measured must exceed the limit (got {measured})"
+            );
+        }
+        other => panic!(
+            "expected ExceedsCalibratedEnvelope — WASM must NOT have run; got {other:?}"
+        ),
+    }
+}
+
+/// Input below the envelope runs the WASM normally. With a trapping WASM
+/// the surfaced reason is `ExecutionError`, confirming the envelope check
+/// did not reject and control reached the guest. This is the mirror of
+/// the oversized test — together they pin down the branch.
+#[tokio::test]
+async fn below_envelope_proceeds_to_wasm() {
+    let db = setup_db().await;
+
+    db.load_schema_from_json(&blogpost_schema_json())
+        .await
+        .unwrap();
+    db.schema_manager()
+        .set_schema_state("BlogPost", SchemaState::Approved)
+        .await
+        .unwrap();
+    // A 5-char title JSON-encodes well under 100 bytes.
+    write_blogpost(&db, "hi", "2026-01-01").await;
+
+    let view = TransformView::new(
+        "SmallEnvelopeView",
+        SchemaType::Single,
+        None,
+        vec![Query::new(
+            "BlogPost".to_string(),
+            vec!["title".to_string()],
+        )],
+        Some(WasmTransformSpec {
+            bytes: always_trapping_wasm(),
+            max_gas: 1_000_000,
+            gas_model: Some(GasModel {
+                base: 0,
+                coefficients: vec![(
+                    InputDimension::FieldBytes(FieldId {
+                        schema: "BlogPost".to_string(),
+                        field: "title".to_string(),
+                    }),
+                    1.0,
+                )],
+                max_input_size: 10_000,
+            }),
+        }),
+        HashMap::from([("summary".to_string(), FieldValueType::String)]),
+    );
+    db.schema_manager().register_view(view).await.unwrap();
+
+    let query = Query::new("SmallEnvelopeView".to_string(), vec!["summary".to_string()]);
+    let _ = db.query_executor().query(query).await;
+
+    let state = db
+        .db_ops()
+        .get_view_cache_state("SmallEnvelopeView")
+        .await
+        .unwrap();
+    let reason = state
+        .unavailable_reason()
+        .expect("below-envelope run still traps — should be Unavailable via trap");
+    assert!(
+        matches!(reason, UnavailableReason::ExecutionError { .. }),
+        "envelope check must have passed and WASM must have run; got {reason:?}"
+    );
+}
+
+/// `ExceedsCalibratedEnvelope` must round-trip through the storage serde
+/// path alongside the pre-existing variants, so the new state survives a
+/// restart exactly like the others do.
+#[tokio::test]
+async fn exceeds_envelope_state_persists_through_store() {
+    let db = setup_db().await;
+
+    db.load_schema_from_json(&blogpost_schema_json())
+        .await
+        .unwrap();
+    db.schema_manager()
+        .set_schema_state("BlogPost", SchemaState::Approved)
+        .await
+        .unwrap();
+
+    let view = TransformView::new(
+        "EnvelopeRoundTrip",
+        SchemaType::Single,
+        None,
+        vec![Query::new(
+            "BlogPost".to_string(),
+            vec!["title".to_string()],
+        )],
+        None,
+        HashMap::from([("title".to_string(), FieldValueType::Any)]),
+    );
+    db.schema_manager().register_view(view).await.unwrap();
+
+    let reason = UnavailableReason::ExceedsCalibratedEnvelope {
+        measured: 12_345,
+        limit: 1_000,
+    };
+    let state = ViewCacheState::Unavailable {
+        reason: reason.clone(),
+    };
+    db.db_ops()
+        .set_view_cache_state("EnvelopeRoundTrip", &state)
+        .await
+        .unwrap();
+
+    let loaded = db
+        .db_ops()
+        .get_view_cache_state("EnvelopeRoundTrip")
+        .await
+        .unwrap();
+    assert_eq!(loaded.unavailable_reason(), Some(&reason));
 }

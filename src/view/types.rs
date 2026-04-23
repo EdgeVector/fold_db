@@ -27,6 +27,12 @@ pub enum UnavailableReason {
     /// WASM runtime error during execution (trap, alloc failure, output
     /// parse error, type-validation failure).
     ExecutionError { message: String },
+    /// Measured input for this invocation exceeded the transform's
+    /// calibrated [`GasModel::max_input_size`] envelope. Rejected BEFORE
+    /// `execute_wasm_transform` is called — no fuel is burned — so the
+    /// failure is cleanly distinguishable from `GasExceeded` (which is a
+    /// runtime fuel trap during execution).
+    ExceedsCalibratedEnvelope { measured: u64, limit: u64 },
 }
 
 impl std::fmt::Display for UnavailableReason {
@@ -38,6 +44,12 @@ impl std::fmt::Display for UnavailableReason {
             Self::CompileError { message } => write!(f, "compile error: {message}"),
             Self::TransformBytesUnavailable => write!(f, "transform bytes unavailable"),
             Self::ExecutionError { message } => write!(f, "execution error: {message}"),
+            Self::ExceedsCalibratedEnvelope { measured, limit } => {
+                write!(
+                    f,
+                    "input exceeds calibrated envelope (measured={measured}, limit={limit})"
+                )
+            }
         }
     }
 }
@@ -108,6 +120,61 @@ impl ViewCacheState {
     }
 }
 
+/// Fully-qualified reference to a field on a source schema. Used by
+/// [`InputDimension`] to name the input slice a gas-model coefficient is
+/// measured against.
+///
+/// Mirrored from the schema-service gas-model fit output (MDT-F Phase 1);
+/// fold_db owns the canonical shape now and schema_service will adopt it in
+/// a follow-up so a future merge is trivial.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FieldId {
+    pub schema: String,
+    pub field: String,
+}
+
+/// A single input dimension the gas-model fit measures against. The
+/// coefficient weights themselves are irrelevant for the runtime envelope
+/// check (MDT-F Phase 2) — we only need to know which `(schema, field)`
+/// slices of input to size — but they are carried through for the later
+/// fuel-budget derivation (MDT-F Phase 2 task 3/3).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum InputDimension {
+    /// Sum of JSON-encoded byte length over every entry in the named
+    /// field. Used when the transform's cost scales with content bulk.
+    FieldBytes(FieldId),
+    /// Row count (number of `(key, value)` entries) on the named field.
+    /// Used when the transform's cost scales with cardinality.
+    FieldCount(FieldId),
+}
+
+/// Calibrated gas model fit for a transform. Produced once by the
+/// schema-service fit harness (MDT-F Phase 1) and carried forward on the
+/// [`WasmTransformSpec`]. The runtime uses it two ways:
+///
+/// 1. **Envelope rejection** (Phase 2 task 2/3 — this PR): before executing
+///    the WASM, sum the measured sizes along each [`InputDimension`] and
+///    reject with [`UnavailableReason::ExceedsCalibratedEnvelope`] if the
+///    total exceeds `max_input_size`. No fuel is burned on rejection.
+/// 2. **Budget derivation** (Phase 2 task 3/3 — follow-up): derive the
+///    per-invocation `max_gas` from `base + Σ coefficient_i * size_i`.
+///
+/// `coefficients` is ordered to match the schema-service fit output; the
+/// runtime iterates it as a flat list and does not rely on order.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct GasModel {
+    /// Constant overhead added to the fit regardless of input shape.
+    pub base: u64,
+    /// Per-dimension coefficients as `(dimension, weight)`. Weight is an
+    /// f64 because the fit output is real-valued; runtime envelope check
+    /// ignores the weight and uses only the dimension identity.
+    pub coefficients: Vec<(InputDimension, f64)>,
+    /// Upper bound on `Σ size_i(input)` summed across every dimension.
+    /// Inputs above this ceiling are rejected pre-execution so we stay
+    /// inside the calibrated regime where the fit is trustworthy.
+    pub max_input_size: u64,
+}
+
 /// A WASM transform attached to a view: compiled bytes + the per-invocation
 /// fuel ceiling enforced on every device that executes it.
 ///
@@ -118,6 +185,11 @@ impl ViewCacheState {
 /// produce state that other devices can't reproduce. The schema service
 /// enforces `0 < max_gas <= 10^18` at registration (see
 /// `schema_service_core::state_transforms::MAX_GAS_CEILING`).
+///
+/// `gas_model` is optional because views registered before MDT-F Phase 1
+/// have no fit. When present, the runtime enforces the calibrated
+/// [`GasModel::max_input_size`] envelope pre-execution (MDT-F Phase 2) and
+/// — in a later task — derives `max_gas` from the coefficients.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WasmTransformSpec {
     /// Compiled WASM module bytes.
@@ -125,6 +197,12 @@ pub struct WasmTransformSpec {
     /// Per-invocation fuel ceiling. Wasmtime fuel is set to exactly this
     /// value on every `Store` before `transform` is called.
     pub max_gas: u64,
+    /// Calibrated gas model from the MDT-F Phase 1 fit harness. `None`
+    /// for views that predate the fit — those views skip envelope
+    /// rejection and run under `max_gas` alone. `#[serde(default)]` so
+    /// existing persisted views deserialize without migration.
+    #[serde(default)]
+    pub gas_model: Option<GasModel>,
 }
 
 /// The view definition — a multi-query typed view.
@@ -301,6 +379,10 @@ mod tests {
             UnavailableReason::ExecutionError {
                 message: "trap: unreachable".to_string(),
             },
+            UnavailableReason::ExceedsCalibratedEnvelope {
+                measured: 98_765,
+                limit: 50_000,
+            },
         ];
         for reason in reasons {
             let state = ViewCacheState::Unavailable {
@@ -322,6 +404,56 @@ mod tests {
             UnavailableReason::TransformBytesUnavailable.to_string(),
             "transform bytes unavailable"
         );
+        assert_eq!(
+            UnavailableReason::ExceedsCalibratedEnvelope {
+                measured: 2048,
+                limit: 1024
+            }
+            .to_string(),
+            "input exceeds calibrated envelope (measured=2048, limit=1024)"
+        );
+    }
+
+    #[test]
+    fn test_wasm_transform_spec_gas_model_default_deserializes() {
+        // `gas_model` is `#[serde(default)]` so legacy WasmTransformSpec
+        // values persisted before Phase 2 deserialize cleanly with
+        // `gas_model = None`. This pins the compatibility contract.
+        let legacy_json =
+            serde_json::json!({ "bytes": [1, 2, 3], "max_gas": 1_000_000 });
+        let spec: WasmTransformSpec = serde_json::from_value(legacy_json).expect("deserialize");
+        assert!(spec.gas_model.is_none());
+        assert_eq!(spec.max_gas, 1_000_000);
+    }
+
+    #[test]
+    fn test_gas_model_round_trip() {
+        // The new GasModel / InputDimension / FieldId types must round-trip
+        // through serde since they're embedded in WasmTransformSpec which
+        // is persisted via TypedKvStore.
+        let model = GasModel {
+            base: 100,
+            coefficients: vec![
+                (
+                    InputDimension::FieldBytes(FieldId {
+                        schema: "BlogPost".to_string(),
+                        field: "content".to_string(),
+                    }),
+                    2.5,
+                ),
+                (
+                    InputDimension::FieldCount(FieldId {
+                        schema: "Author".to_string(),
+                        field: "name".to_string(),
+                    }),
+                    1.0,
+                ),
+            ],
+            max_input_size: 65_536,
+        };
+        let bytes = serde_json::to_vec(&model).expect("serialize");
+        let decoded: GasModel = serde_json::from_slice(&bytes).expect("deserialize");
+        assert_eq!(decoded, model);
     }
 
     #[test]
@@ -392,6 +524,7 @@ mod tests {
             Some(WasmTransformSpec {
                 bytes: vec![0, 1, 2],
                 max_gas: 1_000_000,
+                gas_model: None,
             }),
             HashMap::new(),
         );

@@ -9,6 +9,8 @@ pub use dependency_tracker::DependencyTracker;
 pub use registry::ViewRegistry;
 pub use resolver::ViewResolver;
 pub use transform_field_override::TransformFieldOverride;
-pub use types::{TransformView, UnavailableReason, ViewCacheState};
+pub use types::{
+    FieldId, GasModel, InputDimension, TransformView, UnavailableReason, ViewCacheState,
+};
 pub use wasm_engine::WasmTransformEngine;
 pub mod invertibility;

@@ -300,6 +300,7 @@ async fn wasm_view_write_persists_override_in_view_query_test() {
         Some(WasmTransformSpec {
             bytes: vec![0, 1, 2],
             max_gas: 1_000_000,
+            gas_model: None,
         }), // Placeholder WASM — never executed on the write path.
         HashMap::from([("out".to_string(), FieldValueType::String)]),
     );
