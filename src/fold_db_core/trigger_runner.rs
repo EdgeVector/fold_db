@@ -2578,6 +2578,143 @@ mod tests {
         );
     }
 
+    // --- ScheduledIfDirty × max_catch_up_age interaction tests ---------------
+    //
+    // INVARIANT: the dirty-bit gate and the catch-up-skip gate are
+    // *independent* predicates, and when both apply the catch-up-skip wins.
+    // A future refactor that reorders these predicates (e.g. runs the budget
+    // check before the dirty check, or folds them together) must not silently
+    // change behavior for `ScheduledIfDirty` triggers with a stale backlog.
+    //
+    // The `Scheduled` variant is covered by
+    // `scheduled_catch_up_budget_skips_stale_fire_but_later_tick_runs` and
+    // friends above; `ScheduledIfDirty` carries the same `max_catch_up_age`
+    // field but flows through a different `should_fire` branch (line ~875,
+    // reads `st.dirty` with no `skip_if_idle` switch). Tests below pin the
+    // interaction: dirty=true + over-budget lag → skip; dirty=true +
+    // unbounded budget → fire (unchanged legacy catch-up).
+
+    #[tokio::test]
+    async fn scheduled_if_dirty_catch_up_budget_skips_stale_fire_but_later_tick_runs() {
+        // `ScheduledIfDirty` + `max_catch_up_age: Some("1d")`: after a 3-day
+        // downtime with dirty=true, the stale backlog fire must be skipped
+        // (lag exceeds budget), the next cron occurrence re-enqueued, and an
+        // in-budget tick dispatched once dirty is still set.
+        let sm = make_schema_manager().await;
+        register_view(
+            &sm,
+            "V_sid_budget",
+            "S1",
+            vec![Trigger::ScheduledIfDirty {
+                cron: "0 * * * *".into(),
+                timezone: "UTC".into(),
+                max_catch_up_age: Some("1d".into()),
+                schemas: vec!["S1".into()],
+            }],
+        );
+        let clock = Arc::new(MockClock::new(0));
+        let fire = RecordingFireHandler::all_success();
+        let writer = CountingFiringWriter::new();
+        let runner = make_runner(
+            Arc::clone(&sm),
+            Arc::clone(&clock),
+            Arc::clone(&fire) as Arc<dyn FireHandler>,
+            Arc::clone(&writer) as Arc<dyn FiringWriter>,
+        );
+
+        // First tick populates heap with fire at 01:00 UTC (= 3_600_000 ms).
+        runner.tick_once().await;
+
+        // Mutate Source → flip dirty bit. Without this, the dirty gate skips
+        // the fire first and the budget gate never runs — we'd be testing
+        // the wrong predicate.
+        runner.on_mutation_notified("S1").await.unwrap();
+
+        // Simulate 3d downtime: advance to 72:00 UTC. Lag from the 01:00
+        // fire is 71h, well over the 24h budget. Both dirty=true AND
+        // over-budget apply; catch-up-skip must win.
+        clock.advance(3 * 24 * 3_600_000);
+        runner.tick_once().await;
+        for _ in 0..10 {
+            tokio::task::yield_now().await;
+        }
+        assert_eq!(
+            fire.call_count.load(Ordering::SeqCst),
+            0,
+            "ScheduledIfDirty + dirty=true + over-budget lag must be skipped, \
+             not dispatched (catch-up-skip wins over dirty-gate)"
+        );
+        assert!(
+            writer.rows.lock().await.is_empty(),
+            "skipped catch-up must not emit a TriggerFiring audit row even \
+             when the dirty bit was set"
+        );
+
+        // Skip path re-enqueued the NEXT cron occurrence after now_ms = 72:00,
+        // which is 73:00 UTC. Advance +1h and tick: lag = 0, dirty still set,
+        // must dispatch normally.
+        clock.advance(3_600_000);
+        runner.tick_once().await;
+        for _ in 0..30 {
+            if fire.call_count.load(Ordering::SeqCst) >= 1 {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+        assert_eq!(
+            fire.call_count.load(Ordering::SeqCst),
+            1,
+            "next in-budget cron tick after the skip must fire — dirty bit \
+             is still set, lag is zero, budget is not relevant"
+        );
+    }
+
+    #[tokio::test]
+    async fn scheduled_if_dirty_unbounded_catch_up_fires_after_long_downtime() {
+        // Negative control to the test above: same 3-day lag with dirty=true,
+        // but `max_catch_up_age: None`. Unbounded catch-up must preserve
+        // legacy behavior and fire the stale tick on resume.
+        let sm = make_schema_manager().await;
+        register_view(
+            &sm,
+            "V_sid_unbounded",
+            "S1",
+            vec![Trigger::ScheduledIfDirty {
+                cron: "0 * * * *".into(),
+                timezone: "UTC".into(),
+                max_catch_up_age: None,
+                schemas: vec!["S1".into()],
+            }],
+        );
+        let clock = Arc::new(MockClock::new(0));
+        let fire = RecordingFireHandler::all_success();
+        let writer = CountingFiringWriter::new();
+        let runner = make_runner(
+            Arc::clone(&sm),
+            Arc::clone(&clock),
+            Arc::clone(&fire) as Arc<dyn FireHandler>,
+            Arc::clone(&writer) as Arc<dyn FiringWriter>,
+        );
+
+        runner.tick_once().await;
+        runner.on_mutation_notified("S1").await.unwrap();
+
+        clock.advance(3 * 24 * 3_600_000);
+        runner.tick_once().await;
+        for _ in 0..30 {
+            if fire.call_count.load(Ordering::SeqCst) >= 1 {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+        assert_eq!(
+            fire.call_count.load(Ordering::SeqCst),
+            1,
+            "ScheduledIfDirty + dirty=true + max_catch_up_age=None must fire \
+             the stale catch-up on resume (unbounded legacy behavior)"
+        );
+    }
+
     #[tokio::test]
     async fn quarantine_persists_across_runner_restart() {
         // INVARIANT UNDER TEST (trigger_runner.rs:200-209, 614-617, 649):
