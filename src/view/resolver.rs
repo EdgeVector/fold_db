@@ -11,16 +11,19 @@ use std::sync::Arc;
 
 /// Classify a `SchemaError` produced during WASM transform execution into
 /// the corresponding [`UnavailableReason`]. Compile-time errors surface as
-/// `CompileError`; everything else from the WASM path is `ExecutionError`
-/// (including output parse failures and type-validation mismatches, which
-/// are downstream of the transform's runtime behavior).
+/// `CompileError`; fuel exhaustion (MDT-E) surfaces as `GasExceeded` with
+/// the recorded `input_size`; everything else from the WASM path is
+/// `ExecutionError` (including output parse failures and type-validation
+/// mismatches, which are downstream of the transform's runtime behavior).
 ///
-/// Gas classification (`GasExceeded`) and registry-fetch classification
-/// (`TransformBytesUnavailable`) are wired in by MDT-E and the transform
-/// resolver work respectively; they aren't reachable from today's code
-/// path but the variants exist so the state machine is complete.
+/// Registry-fetch classification (`TransformBytesUnavailable`) is wired in
+/// by the transform resolver work; that variant exists so the state
+/// machine is complete but isn't reachable from today's code path.
 fn classify_wasm_failure(err: &SchemaError) -> UnavailableReason {
     match err {
+        SchemaError::TransformGasExceeded { input_size } => UnavailableReason::GasExceeded {
+            input_size: *input_size,
+        },
         SchemaError::InvalidTransform(msg) => {
             if msg.starts_with("Failed to compile WASM module") {
                 UnavailableReason::CompileError {
@@ -164,8 +167,8 @@ impl ViewResolver {
         // rather than a hard error: they are per-input compute failures,
         // so the caller should persist the state (no retry) but callers
         // above the resolver are free to surface it to the user.
-        let mut output = if let Some(wasm_bytes) = &view.wasm_transform {
-            match self.execute_wasm_transform(wasm_bytes, &all_query_results) {
+        let mut output = if let Some(spec) = &view.wasm_transform {
+            match self.execute_wasm_transform(&spec.bytes, spec.max_gas, &all_query_results) {
                 Ok(output) => output,
                 Err(e) => {
                     let reason = classify_wasm_failure(&e);
@@ -300,9 +303,17 @@ impl ViewResolver {
     }
 
     /// Execute the WASM transform with assembled input from all queries.
+    ///
+    /// `max_gas` is the system-wide per-invocation fuel ceiling (MDT-E):
+    /// the engine seeds the `Store`'s fuel counter to exactly this value
+    /// before entering the guest, and fuel exhaustion surfaces as
+    /// [`SchemaError::TransformGasExceeded`] which the caller maps to
+    /// [`UnavailableReason::GasExceeded`] via
+    /// [`classify_wasm_failure`].
     fn execute_wasm_transform(
         &self,
         wasm_bytes: &[u8],
+        max_gas: u64,
         query_results: &HashMap<String, HashMap<String, HashMap<KeyValue, FieldValue>>>,
     ) -> Result<HashMap<String, HashMap<KeyValue, FieldValue>>, SchemaError> {
         // Assemble input JSON: { "inputs": { schema_name: { field: { key: value } } } }
@@ -324,7 +335,7 @@ impl ViewResolver {
         }
 
         let input_json = serde_json::json!({ "inputs": inputs });
-        let output_json = self.wasm_engine.execute(wasm_bytes, &input_json)?;
+        let output_json = self.wasm_engine.execute(wasm_bytes, &input_json, max_gas)?;
 
         // Parse output JSON: { "fields": { field_name: { key: value } } }
         let fields_obj = output_json

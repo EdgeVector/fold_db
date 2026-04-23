@@ -19,7 +19,7 @@ use fold_db::schema::types::schema::DeclarativeSchemaType as SchemaType;
 use fold_db::schema::types::{KeyValue, Mutation};
 use fold_db::schema::SchemaState;
 use fold_db::test_helpers::TestSchemaBuilder;
-use fold_db::view::types::{TransformView, UnavailableReason, ViewCacheState};
+use fold_db::view::types::{TransformView, UnavailableReason, ViewCacheState, WasmTransformSpec};
 use serde_json::json;
 use std::collections::HashMap;
 
@@ -34,6 +34,31 @@ fn trapping_wasm() -> Vec<u8> {
         )
         (func (export "transform") (param $ptr i32) (param $len i32) (result i64)
             unreachable
+        )
+    )"#;
+    wat::parse_str(wat).expect("valid WAT")
+}
+
+/// MDT-E fixture: a module whose `transform` enters an unconditional
+/// infinite loop. Any finite `max_gas` will trap it with
+/// `Trap::OutOfFuel`, which the engine classifies as
+/// `TransformGasExceeded` and the resolver surfaces as
+/// `UnavailableReason::GasExceeded`.
+fn fuel_burner_wasm() -> Vec<u8> {
+    let wat = r#"(module
+        (memory (export "memory") 1)
+        (global $bump (mut i32) (i32.const 4096))
+        (func (export "alloc") (param $size i32) (result i32)
+            (local $ptr i32)
+            (local.set $ptr (global.get $bump))
+            (global.set $bump (i32.add (global.get $bump) (local.get $size)))
+            (local.get $ptr)
+        )
+        (func (export "transform") (param $ptr i32) (param $len i32) (result i64)
+            (loop $spin
+                (br $spin)
+            )
+            (i64.const 0)
         )
     )"#;
     wat::parse_str(wat).expect("valid WAT")
@@ -91,7 +116,10 @@ async fn compute_failure_transitions_to_unavailable_and_does_not_retry() {
             "BlogPost".to_string(),
             vec!["title".to_string()],
         )],
-        Some(trapping_wasm()),
+        Some(WasmTransformSpec {
+            bytes: trapping_wasm(),
+            max_gas: 1_000_000,
+        }),
         HashMap::from([("summary".to_string(), FieldValueType::String)]),
     );
     db.schema_manager().register_view(view).await.unwrap();
@@ -162,7 +190,10 @@ async fn source_mutation_clears_unavailable_to_empty() {
             "BlogPost".to_string(),
             vec!["title".to_string()],
         )],
-        Some(trapping_wasm()),
+        Some(WasmTransformSpec {
+            bytes: trapping_wasm(),
+            max_gas: 1_000_000,
+        }),
         HashMap::from([("summary".to_string(), FieldValueType::String)]),
     );
     db.schema_manager().register_view(view).await.unwrap();
@@ -252,5 +283,70 @@ async fn unavailable_state_persists_through_store() {
             Some(&reason),
             "round-trip failed for {reason:?}"
         );
+    }
+}
+
+// ==================== MDT-E: max_gas end-to-end ==================== //
+
+/// MDT-E: a transform that blows through its fuel budget must land in
+/// `Unavailable { GasExceeded }` (not `ExecutionError`), so callers can
+/// distinguish "compute is impossible at this budget" from "guest
+/// trapped on some other path". The sticky-per-input re-read contract
+/// is the same as every other `Unavailable` variant — verified
+/// elsewhere in this file.
+#[tokio::test]
+async fn gas_exhaustion_transitions_to_unavailable_gas_exceeded() {
+    let db = setup_db().await;
+
+    db.load_schema_from_json(&blogpost_schema_json())
+        .await
+        .unwrap();
+    db.schema_manager()
+        .set_schema_state("BlogPost", SchemaState::Approved)
+        .await
+        .unwrap();
+    write_blogpost(&db, "Hello", "2026-01-01").await;
+
+    // 5_000 fuel units comfortably cover module setup but the guest's
+    // loop burns them all before `transform` could return.
+    let view = TransformView::new(
+        "FuelBurnerView",
+        SchemaType::Single,
+        None,
+        vec![Query::new(
+            "BlogPost".to_string(),
+            vec!["title".to_string()],
+        )],
+        Some(WasmTransformSpec {
+            bytes: fuel_burner_wasm(),
+            max_gas: 5_000,
+        }),
+        HashMap::from([("summary".to_string(), FieldValueType::String)]),
+    );
+    db.schema_manager().register_view(view).await.unwrap();
+
+    let query = Query::new("FuelBurnerView".to_string(), vec!["summary".to_string()]);
+    let result = db.query_executor().query(query).await;
+    assert!(
+        result.is_err(),
+        "fuel-exhausted transform must surface an error, got {result:?}"
+    );
+
+    let state = db
+        .db_ops()
+        .get_view_cache_state("FuelBurnerView")
+        .await
+        .unwrap();
+    let reason = state
+        .unavailable_reason()
+        .expect("state should be Unavailable after fuel exhaustion");
+    match reason {
+        UnavailableReason::GasExceeded { input_size } => {
+            assert!(
+                *input_size > 0,
+                "input_size must reflect serialized input bytes (> 0 for a non-empty query)"
+            );
+        }
+        other => panic!("expected GasExceeded, got {other:?}"),
     }
 }

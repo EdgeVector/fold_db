@@ -9,7 +9,7 @@ use fold_db::schema::types::schema::DeclarativeSchemaType as SchemaType;
 use fold_db::schema::types::{KeyValue, Mutation};
 use fold_db::schema::SchemaState;
 use fold_db::test_helpers::TestSchemaBuilder;
-use fold_db::view::types::TransformView;
+use fold_db::view::types::{TransformView, WasmTransformSpec};
 use serde_json::json;
 use std::collections::HashMap;
 
@@ -99,7 +99,10 @@ async fn wasm_view_query_returns_transformed_output() {
             "BlogPost".to_string(),
             vec!["title".to_string(), "content".to_string()],
         )],
-        Some(hardcoded_wasm()),
+        Some(WasmTransformSpec {
+            bytes: hardcoded_wasm(),
+            max_gas: 1_000_000,
+        }),
         HashMap::from([("summary".to_string(), FieldValueType::String)]),
     );
     db.schema_manager().register_view(view).await.unwrap();
@@ -150,7 +153,10 @@ async fn wasm_view_output_type_validation_works() {
             "BlogPost".to_string(),
             vec!["title".to_string()],
         )],
-        Some(hardcoded_wasm()), // Returns {"summary": {"k1": "hardcoded"}} — a String
+        Some(WasmTransformSpec {
+            bytes: hardcoded_wasm(),
+            max_gas: 1_000_000,
+        }), // Returns {"summary": {"k1": "hardcoded"}} — a String
         HashMap::from([("summary".to_string(), FieldValueType::Integer)]), // Declared as Integer
     );
     db.schema_manager().register_view(view).await.unwrap();
@@ -200,7 +206,10 @@ async fn wasm_view_cache_invalidation_works() {
             "BlogPost".to_string(),
             vec!["title".to_string()],
         )],
-        Some(hardcoded_wasm()),
+        Some(WasmTransformSpec {
+            bytes: hardcoded_wasm(),
+            max_gas: 1_000_000,
+        }),
         HashMap::from([("summary".to_string(), FieldValueType::String)]),
     );
     db.schema_manager().register_view(view).await.unwrap();

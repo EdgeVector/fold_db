@@ -238,6 +238,7 @@ mod tests {
     use crate::schema::types::field_value_type::FieldValueType;
     use crate::schema::types::operations::Query;
     use crate::schema::types::schema::DeclarativeSchemaType as SchemaType;
+    use crate::view::types::WasmTransformSpec;
 
     fn make_registry() -> ViewRegistry {
         let engine = Arc::new(WasmTransformEngine::new().unwrap());
@@ -467,7 +468,10 @@ mod tests {
             SchemaType::Hash,
             None,
             vec![Query::new("S1".to_string(), vec!["f1".to_string()])],
-            Some(vec![0, 1, 2]),
+            Some(WasmTransformSpec {
+                bytes: vec![0, 1, 2],
+                max_gas: 1_000_000,
+            }),
             HashMap::from([("out".to_string(), FieldValueType::Any)]),
         );
         let result = registry.register_view(view, |_| true);
@@ -483,7 +487,10 @@ mod tests {
             SchemaType::Single,
             None,
             vec![Query::new("S1".to_string(), vec!["f1".to_string()])],
-            Some(vec![0, 1, 2]),
+            Some(WasmTransformSpec {
+                bytes: vec![0, 1, 2],
+                max_gas: 1_000_000,
+            }),
             HashMap::from([("out".to_string(), FieldValueType::Any)]),
         );
         assert!(registry.register_view(single_view, |_| true).is_ok());
@@ -493,7 +500,10 @@ mod tests {
             SchemaType::Range,
             None,
             vec![Query::new("S2".to_string(), vec!["f2".to_string()])],
-            Some(vec![0, 1, 2]),
+            Some(WasmTransformSpec {
+                bytes: vec![0, 1, 2],
+                max_gas: 1_000_000,
+            }),
             HashMap::from([("out".to_string(), FieldValueType::Any)]),
         );
         assert!(registry.register_view(range_view, |_| true).is_ok());
@@ -560,7 +570,10 @@ mod tests {
                 ),
                 Query::new("Author".to_string(), vec!["name".to_string()]),
             ],
-            Some(vec![0, 1, 2]), // Placeholder WASM
+            Some(WasmTransformSpec {
+                bytes: vec![0, 1, 2],
+                max_gas: 1_000_000,
+            }), // Placeholder WASM
             HashMap::from([
                 ("enriched_title".to_string(), FieldValueType::String),
                 ("word_count".to_string(), FieldValueType::Integer),

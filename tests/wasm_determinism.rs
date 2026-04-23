@@ -306,7 +306,7 @@ fn wasm_transforms_produce_stable_output() {
         let wasm = wat::parse_str(&fx.wat)
             .unwrap_or_else(|e| panic!("fixture '{}' WAT failed to parse: {e}", fx.name));
         let output = engine
-            .execute(&wasm, &fx.input)
+            .execute(&wasm, &fx.input, 1_000_000_000)
             .unwrap_or_else(|e| panic!("fixture '{}' failed to execute: {e}", fx.name));
         let canonical = canonicalize(&output);
         lines.push(format!("{}\t{}", fx.name, canonical));

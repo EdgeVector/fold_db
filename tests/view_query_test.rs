@@ -6,7 +6,7 @@ use fold_db::schema::types::schema::DeclarativeSchemaType as SchemaType;
 use fold_db::schema::types::{KeyValue, Mutation};
 use fold_db::schema::SchemaState;
 use fold_db::test_helpers::TestSchemaBuilder;
-use fold_db::view::types::TransformView;
+use fold_db::view::types::{TransformView, WasmTransformSpec};
 use serde_json::json;
 use std::collections::HashMap;
 
@@ -297,7 +297,10 @@ async fn wasm_view_write_persists_override_in_view_query_test() {
             "BlogPost".to_string(),
             vec!["content".to_string()],
         )],
-        Some(vec![0, 1, 2]), // Placeholder WASM — never executed on the write path.
+        Some(WasmTransformSpec {
+            bytes: vec![0, 1, 2],
+            max_gas: 1_000_000,
+        }), // Placeholder WASM — never executed on the write path.
         HashMap::from([("out".to_string(), FieldValueType::String)]),
     );
     db.schema_manager().register_view(view).await.unwrap();

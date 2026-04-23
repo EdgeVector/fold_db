@@ -4,7 +4,7 @@ use fold_db::schema::types::schema::DeclarativeSchemaType as SchemaType;
 use fold_db::schema::SchemaCore;
 use fold_db::test_helpers::TestSchemaBuilder;
 use fold_db::view::registry::ViewState;
-use fold_db::view::types::TransformView;
+use fold_db::view::types::{TransformView, WasmTransformSpec};
 use std::collections::HashMap;
 
 fn blogpost_schema_json() -> String {
@@ -184,7 +184,10 @@ async fn multi_source_view() {
             Query::new("BlogPost".to_string(), vec!["content".to_string()]),
             Query::new("Weather".to_string(), vec!["temp_celsius".to_string()]),
         ],
-        Some(vec![0, 1, 2]), // Placeholder WASM (won't be executed in registration)
+        Some(WasmTransformSpec {
+            bytes: vec![0, 1, 2],
+            max_gas: 1_000_000,
+        }), // Placeholder WASM (won't be executed in registration)
         HashMap::from([
             ("summary".to_string(), FieldValueType::String),
             ("temp".to_string(), FieldValueType::Number),
@@ -255,7 +258,10 @@ async fn register_view_with_typed_output_fields() {
             "BlogPost".to_string(),
             vec!["title".to_string(), "content".to_string()],
         )],
-        Some(vec![0, 1, 2]), // WASM placeholder
+        Some(WasmTransformSpec {
+            bytes: vec![0, 1, 2],
+            max_gas: 1_000_000,
+        }), // WASM placeholder
         HashMap::from([
             ("word_count".to_string(), FieldValueType::Integer),
             ("enriched_title".to_string(), FieldValueType::String),
