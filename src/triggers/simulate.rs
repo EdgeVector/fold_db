@@ -70,6 +70,16 @@ pub fn parse_max_catch_up_age_ms(s: &str) -> Option<i64> {
 /// * `lag_ms <= 0` (fire arrived on time or early) → always returns
 ///   `false` regardless of budget.
 ///
+/// Contract: malformed budget strings ARE rejected upstream by
+/// `schema_service::state::validate_max_catch_up_age` at `PUT /v1/views`
+/// register time. The `Some(budget_str) → parse → None → false` branch
+/// here is defense in depth for non-HTTP code paths (direct in-process
+/// callers, pre-existing sled rows from older schema revisions, and
+/// loopback tests that bypass the HTTP validator) — production fires
+/// should never exercise it, and the schema_service validator's
+/// accept-set is kept a strict subset of `parse_max_catch_up_age_ms`'s
+/// `Some` set so a green registration is always a parseable budget here.
+///
 /// Purpose: bound fire storms after process downtime (laptop sleep, crash
 /// restart) when the cron scheduler would otherwise back-fill every missed
 /// tick between `last_fire_ms` and `now`.
