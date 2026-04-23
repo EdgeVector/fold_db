@@ -109,9 +109,10 @@ impl SyncCoordinator {
 
                         // 1. Delete membership structure locally (if running on Sled backend)
                         if let Some(pool) = &sled_pool {
-                            let _ = crate::org::operations::delete_org(pool, org_hash).map_err(
-                                |err| log::error!("Failed to delete org structure: {}", err),
-                            );
+                            let _ =
+                                crate::org::operations::delete_org(pool, org_hash).map_err(|err| {
+                                    log::error!("Failed to delete org structure: {}", err)
+                                });
                         }
 
                         // 2. Erase the orphaned physical footprints in local DB
