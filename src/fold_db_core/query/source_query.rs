@@ -203,7 +203,25 @@ impl SourceQueryFn for StandardSourceQuery {
         &self,
         query: &Query,
     ) -> Result<HashMap<String, HashMap<KeyValue, FieldValue>>, SchemaError> {
-        // Try as schema first.
+        // Views are now registered as both a view (WASM, triggers, cache)
+        // AND a synthesized schema (atom store for derived mutations —
+        // `projects/view-compute-as-mutations` PR 4). The view path still
+        // owns the primary semantics: it runs the WASM transform and
+        // applies overrides. Route view queries to the view path; only
+        // non-view schemas go down the atom-store path.
+        let is_view = {
+            let registry = self
+                .schema_manager
+                .view_registry()
+                .lock()
+                .map_err(|_| SchemaError::InvalidData("view_registry lock".to_string()))?;
+            registry.get_view(&query.schema_name).is_some()
+        };
+
+        if is_view {
+            return self.query_view(query).await;
+        }
+
         match self.schema_manager.get_schema(&query.schema_name).await? {
             Some(mut schema) => {
                 self.hash_range_processor
@@ -215,7 +233,10 @@ impl SourceQueryFn for StandardSourceQuery {
                     )
                     .await
             }
-            None => self.query_view(query).await,
+            None => Err(SchemaError::InvalidData(format!(
+                "'{}' not found as schema or view",
+                query.schema_name
+            ))),
         }
     }
 }
