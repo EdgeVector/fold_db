@@ -88,16 +88,22 @@ impl QueryExecutor {
         access_context: Option<&AccessContext>,
         payment_gate: Option<&PaymentGate>,
     ) -> Result<HashMap<String, HashMap<KeyValue, FieldValue>>, SchemaError> {
-        // Views are registered as both a view (with WASM + triggers) AND a
-        // synthesized schema (the atom store for derived-mutation writes
-        // from the fire path — see `projects/view-compute-as-mutations`
-        // PR 4). The view path still owns first-class semantics: it runs
-        // the WASM transform, applies overrides, manages the per-view
-        // cache lifecycle, and enforces `Blocked` / `Unavailable` state.
-        // Falling through to the schema path first would serve the atom
-        // store alone, which is empty before the first fire. Keep the
-        // view path as the primary resolver; only fall through to the
-        // schema path for queries against non-view schemas.
+        // Views are registered as both a view (with WASM + triggers — still
+        // what fires the transform) AND a synthesized schema (atom store
+        // populated by the derived-mutation fire path, PR 2). `projects/
+        // view-compute-as-mutations` PR 5: flip the reader to the atom
+        // store. When every requested field has atoms for at least one
+        // key, return atoms directly — carrying real `atom_uuid` /
+        // `molecule_uuid` / `written_at` / `Provenance::Derived`
+        // provenance — and skip the cache round-trip entirely.
+        //
+        // When the view has never fired (e.g. freshly registered, no
+        // source mutation yet) the atom store is empty for the requested
+        // fields, and we fall through to `try_query_view`. That path runs
+        // the WASM transform, dual-writes atoms via PR 2's
+        // `DerivedMutationWriter`, and returns the output immediately so
+        // the first-read experience is unchanged. After the first fire,
+        // subsequent reads come straight from atoms.
         let is_view = {
             let registry = self
                 .schema_manager
@@ -108,6 +114,9 @@ impl QueryExecutor {
         };
 
         if is_view {
+            if let Some(results) = self.read_view_atoms(&query).await? {
+                return Ok(results);
+            }
             return self.try_query_view(&query).await;
         }
 
@@ -181,6 +190,79 @@ impl QueryExecutor {
         }
 
         results
+    }
+
+    /// Try to serve a view query directly from its synthesized schema's
+    /// atom store (the molecules written by
+    /// `ViewOrchestrator::write_derived_mutations`). Returns `Ok(Some(_))`
+    /// when every requested field has at least one entry — a signal that
+    /// the view has fired at least once — and `Ok(None)` when the atom
+    /// store is cold and the caller should fall through to
+    /// [`Self::try_query_view`]. `Err` only propagates schema-level
+    /// failures (blocked state, access-filter logic); a legitimately
+    /// empty atom store is not an error.
+    async fn read_view_atoms(
+        &self,
+        query: &Query,
+    ) -> Result<Option<HashMap<String, HashMap<KeyValue, FieldValue>>>, SchemaError> {
+        let Some(mut schema) = self.schema_manager.get_schema(&query.schema_name).await? else {
+            return Ok(None);
+        };
+
+        let resolved_state = self
+            .schema_manager
+            .get_schema_states()?
+            .get(&schema.name)
+            .copied()
+            .unwrap_or_default();
+        if resolved_state == SchemaState::Blocked {
+            return Err(SchemaError::InvalidData(format!(
+                "Schema '{}' is blocked and cannot be queried",
+                schema.name
+            )));
+        }
+
+        let results = self
+            .hash_range_processor
+            .query_with_filter(
+                &mut schema,
+                &query.fields,
+                query.filter.clone(),
+                query.as_of,
+            )
+            .await?;
+
+        // Determine whether the atom store has results for every requested
+        // field. An empty `fields` list in the query means "all output
+        // fields"; we ask the view for its declared output fields so we
+        // fall through consistently when any one field is cold.
+        let requested_fields: Vec<String> = if query.fields.is_empty() {
+            let registry = self
+                .schema_manager
+                .view_registry()
+                .lock()
+                .map_err(|_| SchemaError::InvalidData("view_registry lock".to_string()))?;
+            let view = registry
+                .get_view(&query.schema_name)
+                .ok_or_else(|| SchemaError::InvalidData("view disappeared".to_string()))?;
+            view.output_fields.keys().cloned().collect()
+        } else {
+            query.fields.clone()
+        };
+
+        let all_fields_populated = !requested_fields.is_empty()
+            && requested_fields.iter().all(|field_name| {
+                results
+                    .get(field_name)
+                    .map(|entries| !entries.is_empty())
+                    .unwrap_or(false)
+            });
+
+        if !all_fields_populated {
+            return Ok(None);
+        }
+
+        Ok(Some(results))
     }
 
     /// Attempt to resolve a query against the view registry.
