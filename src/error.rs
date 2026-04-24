@@ -81,5 +81,12 @@ impl From<sled::Error> for FoldDbError {
     }
 }
 
+/// Conversion from storage::StorageError to FoldDbError
+impl From<crate::storage::StorageError> for FoldDbError {
+    fn from(error: crate::storage::StorageError) -> Self {
+        FoldDbError::Database(error.to_string())
+    }
+}
+
 /// Result type alias for operations that can result in a FoldDbError
 pub type FoldDbResult<T> = Result<T, FoldDbError>;

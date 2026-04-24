@@ -2,6 +2,7 @@
 pub mod core;
 // Domain stores (private namespace fields, public operation methods)
 pub mod atom_store;
+pub mod lineage_index;
 pub mod metadata_store;
 pub mod permissions_store;
 pub mod schema_store;
@@ -19,6 +20,7 @@ mod view_operations;
 // Re-exports
 pub use atom_store::{AtomStore, MoleculeData};
 pub use core::DbOperations;
+pub use lineage_index::LineageIndex;
 pub use metadata_store::MetadataStore;
 pub use native_index::{IndexResult, NativeIndexManager};
 pub use permissions_store::PermissionsStore;

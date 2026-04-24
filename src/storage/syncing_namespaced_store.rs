@@ -12,7 +12,12 @@ use std::sync::Arc;
 /// non-canonical state into the unified sync log and reintroduce the
 /// cache-coherence problem the multi-device transform design avoids
 /// (see `docs/design/multi_device_transforms.md`, "What Syncs vs. What Doesn't").
-const LOCAL_ONLY_NAMESPACES: &[&str] = &["transform_cache"];
+///
+/// `lineage_forward` / `lineage_reverse` back the derived-molecule lineage
+/// indexes (PR 6 of `projects/molecule-provenance-dag`). The full source list
+/// is rebuildable from replay — syncing it would waste bandwidth proportional
+/// to fan-in and is explicitly prohibited by the design.
+const LOCAL_ONLY_NAMESPACES: &[&str] = &["transform_cache", "lineage_forward", "lineage_reverse"];
 
 /// A NamespacedStore decorator that wraps each opened namespace with a SyncingKvStore.
 ///
@@ -198,8 +203,64 @@ mod tests {
     #[test]
     fn is_local_only_classification() {
         assert!(SyncingNamespacedStore::is_local_only("transform_cache"));
+        assert!(SyncingNamespacedStore::is_local_only("lineage_forward"));
+        assert!(SyncingNamespacedStore::is_local_only("lineage_reverse"));
         assert!(!SyncingNamespacedStore::is_local_only("main"));
         assert!(!SyncingNamespacedStore::is_local_only("metadata"));
         assert!(!SyncingNamespacedStore::is_local_only("schemas"));
+    }
+
+    /// Lineage indexes (forward + reverse) back `projects/molecule-provenance-dag`
+    /// PR 6 and must never enter the sync log. Mirrors
+    /// `transform_cache_writes_are_not_recorded`.
+    #[tokio::test]
+    async fn lineage_forward_writes_are_not_recorded() {
+        let (store, engine) = test_setup().await;
+
+        let fwd = store.open_namespace("lineage_forward").await.unwrap();
+        assert_eq!(engine.pending_count().await, 0);
+
+        fwd.put(b"derived:1", b"sources-1".to_vec()).await.unwrap();
+        fwd.put(b"derived:2", b"sources-2".to_vec()).await.unwrap();
+        fwd.delete(b"derived:2").await.unwrap();
+        fwd.batch_put(vec![
+            (b"derived:3".to_vec(), b"s3".to_vec()),
+            (b"derived:4".to_vec(), b"s4".to_vec()),
+        ])
+        .await
+        .unwrap();
+
+        assert_eq!(
+            engine.pending_count().await,
+            0,
+            "lineage_forward namespace must never append to the sync log"
+        );
+        assert_eq!(engine.state().await, crate::sync::SyncState::Idle);
+    }
+
+    #[tokio::test]
+    async fn lineage_reverse_writes_are_not_recorded() {
+        let (store, engine) = test_setup().await;
+
+        let rev = store.open_namespace("lineage_reverse").await.unwrap();
+        assert_eq!(engine.pending_count().await, 0);
+
+        rev.put(b"source:canonical-bytes-1", b"[\"derived:1\"]".to_vec())
+            .await
+            .unwrap();
+        rev.put(
+            b"source:canonical-bytes-2",
+            b"[\"derived:1\",\"derived:2\"]".to_vec(),
+        )
+        .await
+        .unwrap();
+        rev.delete(b"source:canonical-bytes-1").await.unwrap();
+
+        assert_eq!(
+            engine.pending_count().await,
+            0,
+            "lineage_reverse namespace must never append to the sync log"
+        );
+        assert_eq!(engine.state().await, crate::sync::SyncState::Idle);
     }
 }

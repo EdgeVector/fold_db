@@ -1,4 +1,5 @@
 use super::atom_store::AtomStore;
+use super::lineage_index::LineageIndex;
 use super::metadata_store::MetadataStore;
 use super::permissions_store::PermissionsStore;
 use super::schema_store::SchemaStore;
@@ -29,6 +30,12 @@ pub struct DbOperations {
     permissions_store: PermissionsStore,
     /// Metadata + idempotency + process results
     metadata_store: MetadataStore,
+    /// Forward + reverse lineage indexes for derived molecules. Both
+    /// backing namespaces (`lineage_forward`, `lineage_reverse`) are
+    /// local-only — excluded from the sync log by `SyncingNamespacedStore`.
+    /// Scaffolding only; no production call sites yet (PR 6 of
+    /// `projects/molecule-provenance-dag`).
+    lineage_index: LineageIndex,
 
     native_index_manager: Option<NativeIndexManager>,
 }
@@ -60,6 +67,13 @@ impl DbOperations {
         // replicas via LWW on `written_at`.
         let transform_field_overrides_kv =
             store.open_namespace("transform_field_overrides").await?;
+        // `lineage_forward` / `lineage_reverse` back the derived-molecule
+        // lineage index. Local-only by declaration in
+        // `SyncingNamespacedStore::LOCAL_ONLY_NAMESPACES`; rebuildable from
+        // replay (project 2). No production writers exist until
+        // `projects/view-compute-as-mutations` wires them in.
+        let lineage_forward_kv = store.open_namespace("lineage_forward").await?;
+        let lineage_reverse_kv = store.open_namespace("lineage_reverse").await?;
         let native_index_kv = store.open_namespace("native_index").await?;
 
         // Wrap KvStores in TypedKvStore adapters
@@ -91,6 +105,7 @@ impl DbOperations {
         let permissions_store = PermissionsStore::new(permissions_typed, public_keys_typed);
         let metadata_store =
             MetadataStore::new(metadata_typed, idempotency_typed, process_results_typed);
+        let lineage_index = LineageIndex::new(lineage_forward_kv, lineage_reverse_kv);
 
         // Create native index manager and load any previously stored embeddings.
         //
@@ -121,6 +136,7 @@ impl DbOperations {
             view_store,
             permissions_store,
             metadata_store,
+            lineage_index,
             native_index_manager,
         })
     }
@@ -158,6 +174,11 @@ impl DbOperations {
     /// Access the metadata / idempotency / process-results domain store.
     pub fn metadata(&self) -> &MetadataStore {
         &self.metadata_store
+    }
+
+    /// Access the derived-molecule lineage index (forward + reverse, local-only).
+    pub fn lineage(&self) -> &LineageIndex {
+        &self.lineage_index
     }
 
     /// Access the native index manager for embedding and search operations.
