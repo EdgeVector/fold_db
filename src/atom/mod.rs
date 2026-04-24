@@ -1,5 +1,6 @@
 mod atom_def;
 pub mod input_snapshot;
+pub mod merkle;
 mod molecule;
 mod molecule_hash;
 mod molecule_hash_range;
