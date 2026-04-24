@@ -110,6 +110,18 @@ pub async fn fetch_atoms_with_key_metadata_async_with_org(
                     ),
                     None => (atom.source_file_name().cloned(), atom.metadata().cloned()),
                 };
+                // Populate `written_at` from the atom's creation timestamp
+                // so downstream view compute-as-mutations can build canonical
+                // MoleculeRef leaves. `timestamp_nanos_opt` returns `None` for
+                // timestamps outside the representable range (±292y from
+                // epoch) — we skip `written_at` in that case rather than
+                // falling back to a lossy u64 cast. Nanos are cast to `u64`
+                // for dates after 1970; pre-1970 would be negative and also
+                // skipped via the `try_into` guard.
+                let written_at = atom
+                    .created_at()
+                    .timestamp_nanos_opt()
+                    .and_then(|ns| u64::try_from(ns).ok());
                 resolved_values.insert(
                     key,
                     FieldValue {
@@ -120,6 +132,7 @@ pub async fn fetch_atoms_with_key_metadata_async_with_org(
                         molecule_uuid: None,
                         molecule_version: None,
                         writer_pubkey: None,
+                        written_at,
                     },
                 );
             }

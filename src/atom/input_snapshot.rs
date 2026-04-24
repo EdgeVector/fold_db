@@ -156,6 +156,7 @@ mod tests {
             molecule_uuid: None,
             molecule_version: None,
             writer_pubkey: None,
+            written_at: None,
         }
     }
 

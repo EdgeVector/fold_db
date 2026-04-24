@@ -392,6 +392,7 @@ impl ViewResolver {
                     molecule_uuid: None,
                     molecule_version: None,
                     writer_pubkey: None,
+                    written_at: None,
                 };
                 field_entries.insert(key, fv);
             }
@@ -492,6 +493,7 @@ fn override_field_value(o: &TransformFieldOverride) -> FieldValue {
         } else {
             Some(o.writer_pubkey.clone())
         },
+        written_at: None,
     }
 }
 
@@ -529,6 +531,7 @@ mod tests {
             molecule_uuid: None,
             molecule_version: None,
             writer_pubkey: None,
+            written_at: None,
         }
     }
 
