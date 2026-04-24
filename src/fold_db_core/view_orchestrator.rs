@@ -102,6 +102,7 @@ impl ViewOrchestrator {
                         synchronous: mutation.synchronous,
                         source_file_name: mutation.source_file_name.clone(),
                         metadata: mutation.metadata.clone(),
+                        provenance: mutation.provenance.clone(),
                     });
                 }
             } else {

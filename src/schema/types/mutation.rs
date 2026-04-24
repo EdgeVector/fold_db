@@ -1,4 +1,5 @@
 use super::{key_value::KeyValue, operations::MutationType};
+use crate::atom::provenance::Provenance;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -20,6 +21,14 @@ pub struct Mutation {
     /// Excluded from content_hash — metadata doesn't affect deduplication.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub metadata: Option<HashMap<String, String>>,
+    /// Writer identity and verifiability info. Additive during the
+    /// `projects/molecule-provenance-dag` migration: `None` on mutations
+    /// constructed before provenance wire-through; `Some(Provenance::User{..})`
+    /// once a signature is available at construction. Kept alongside
+    /// `pub_key` (not in place of) until the full wire-through lands and
+    /// a follow-up PR removes `pub_key`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provenance: Option<Provenance>,
 }
 
 impl Mutation {
@@ -41,6 +50,7 @@ impl Mutation {
             synchronous: None,
             source_file_name: None,
             metadata: None,
+            provenance: None,
         }
     }
 
@@ -56,8 +66,20 @@ impl Mutation {
         self
     }
 
+    #[must_use]
+    pub fn with_provenance(mut self, provenance: Provenance) -> Self {
+        self.provenance = Some(provenance);
+        self
+    }
+
     /// Compute a deterministic content hash of this mutation's semantic fields.
-    /// Excludes uuid (random), synchronous (execution mode), backfill_hash, source_file_name (metadata).
+    /// Excludes uuid (random), synchronous (execution mode), source_file_name, metadata.
+    ///
+    /// `provenance` contributes to the hash only when `Some`. When `None`, the
+    /// output bytes are identical to pre-PR-4 mutations (`molecule-provenance-dag`
+    /// PR 4 additive field). This is a non-negotiable backward-compatibility
+    /// guarantee — the idempotency cache and sync log hold pre-PR-4 hashes, and
+    /// breaking them breaks deduplication and replay.
     #[must_use]
     pub fn content_hash(&self) -> String {
         let mut hasher = Sha256::new();
@@ -84,6 +106,13 @@ impl Mutation {
             );
         }
         hasher.update(self.pub_key.as_bytes());
+        if let Some(p) = &self.provenance {
+            hasher.update(
+                serde_json::to_string(p)
+                    .expect("Provenance is always serializable")
+                    .as_bytes(),
+            );
+        }
         let result = hasher.finalize();
         format!("{:x}", result)
     }
@@ -249,5 +278,99 @@ mod tests {
         )]));
 
         assert_eq!(m1.content_hash(), m2.content_hash());
+    }
+
+    // ------------------------------------------------------------------
+    // molecule-provenance-dag PR 4 — additive `provenance: Option<Provenance>`.
+    // ------------------------------------------------------------------
+
+    /// Fixed-shape Mutation used by the golden JSON / golden hash tests below.
+    /// UUID is hard-coded so the serialized form is stable.
+    fn golden_mutation() -> Mutation {
+        let mut fields = HashMap::new();
+        fields.insert("name".to_string(), serde_json::json!("Alice"));
+        Mutation {
+            uuid: "00000000-0000-0000-0000-000000000001".to_string(),
+            schema_name: "Person".to_string(),
+            fields_and_values: fields,
+            key_value: KeyValue::new(None, None),
+            pub_key: "pk".to_string(),
+            mutation_type: MutationType::Update,
+            synchronous: None,
+            source_file_name: None,
+            metadata: None,
+            provenance: None,
+        }
+    }
+
+    /// Pre-PR-4 serialized shape: same `golden_mutation()` minus the
+    /// `provenance` field, byte-for-byte what the old code path wrote.
+    const GOLDEN_PRE_PR4_JSON: &str = r#"{"uuid":"00000000-0000-0000-0000-000000000001","schema_name":"Person","fields_and_values":{"name":"Alice"},"key_value":{"hash":null,"range":null},"pub_key":"pk","mutation_type":"Update","synchronous":null,"source_file_name":null}"#;
+
+    /// content_hash of `golden_mutation()`. Computed once via the existing
+    /// hash formula; pinned here so any accidental change to the hash input
+    /// ordering or to backward-compat treatment of `provenance: None` will
+    /// break this test loudly.
+    const GOLDEN_CONTENT_HASH: &str =
+        "481ae8881607d674d9d857db4c9a82b0656a6056f35b6c9110e1b5f8fb473c71";
+
+    #[test]
+    fn provenance_round_trips_through_serde() {
+        let mut m = golden_mutation();
+        m.provenance = Some(Provenance::user(
+            "pk-b64".to_string(),
+            "sig-b64".to_string(),
+        ));
+        let json = serde_json::to_string(&m).expect("serialize");
+        let back: Mutation = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(m, back);
+    }
+
+    /// A pre-PR-4 JSON (no `provenance` field) deserializes into a
+    /// `Mutation` with `provenance: None` and re-serializes identically.
+    /// This is the "serde roll-forward" guarantee — a mutation already in
+    /// the sync log must not change shape after upgrade.
+    #[test]
+    fn pre_pr4_json_round_trips_unchanged() {
+        let parsed: Mutation =
+            serde_json::from_str(GOLDEN_PRE_PR4_JSON).expect("deserialize pre-PR-4 shape");
+        assert_eq!(parsed.provenance, None);
+        let reserialized = serde_json::to_string(&parsed).expect("serialize");
+        assert_eq!(reserialized, GOLDEN_PRE_PR4_JSON);
+    }
+
+    /// `provenance: None` must produce the *exact same* content_hash a
+    /// pre-PR-4 mutation would have produced. The idempotency cache and
+    /// sync log already hold these hashes; breaking this breaks dedup and
+    /// replay. Pinned to a hex golden so an accidental change (e.g.
+    /// unconditionally hashing serialized `None`) fails loudly.
+    #[test]
+    fn content_hash_without_provenance_matches_golden() {
+        let m = golden_mutation();
+        assert_eq!(m.content_hash(), GOLDEN_CONTENT_HASH);
+    }
+
+    #[test]
+    fn content_hash_is_sensitive_to_provenance_pubkey() {
+        let mut m1 = golden_mutation();
+        m1.provenance = Some(Provenance::user("pk-a".to_string(), "sig".to_string()));
+
+        let mut m2 = golden_mutation();
+        m2.provenance = Some(Provenance::user("pk-b".to_string(), "sig".to_string()));
+
+        // Every other field is identical; only the User.pubkey differs.
+        assert_ne!(m1.content_hash(), m2.content_hash());
+    }
+
+    /// `provenance: Some(...)` must produce a *different* content_hash
+    /// from `provenance: None`. Together with the golden-hash test above,
+    /// this pins both halves of the additive-hash contract: None → legacy
+    /// bytes unchanged; Some → hash includes the new field.
+    #[test]
+    fn content_hash_some_differs_from_none() {
+        let without = golden_mutation();
+        let mut with = golden_mutation();
+        with.provenance = Some(Provenance::user("pk".to_string(), "sig".to_string()));
+        assert_ne!(without.content_hash(), with.content_hash());
     }
 }
