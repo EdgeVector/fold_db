@@ -225,6 +225,16 @@ impl MutationManager {
             return Ok(Vec::new());
         }
 
+        // Phase -1: Shape-check derived mutations before anything else touches
+        // them. A mutation carrying `Provenance::Derived` must name a
+        // registered WASM view whose compiled bytes hash to the provenance's
+        // `wasm_hash`, and the `encoding_version` must be supported. Catches
+        // forged / stale derived writes before they pollute atoms. User
+        // mutations (`Provenance::User` or `None`) are untouched.
+        for mutation in &mutations {
+            validate_derived_provenance(mutation, &self.schema_manager)?;
+        }
+
         // Phase 0: Redirect identity view mutations to source schemas
         let mutations = self.view_orchestrator.redirect_mutation(mutations).await?;
 
@@ -1052,5 +1062,247 @@ impl DerivedMutationWriter for MutationManager {
         // `Provenance::Derived` pass-through in `ViewOrchestrator::redirect_mutation`,
         // so from here on they flow through exactly like any other batch.
         self.write_mutations_batch_async(mutations).await
+    }
+}
+
+/// Highest `encoding_version` the runtime knows how to accept for derived
+/// provenance. Bumped only when a new canonical byte layout for
+/// `input_snapshot_hash` / Merkle leaves is introduced — see the docstring
+/// on [`crate::atom::provenance::Provenance::Derived::encoding_version`].
+const SUPPORTED_DERIVED_ENCODING_VERSION: u8 = 1;
+
+/// Validate that a mutation carrying `Provenance::Derived` actually
+/// corresponds to a registered WASM view whose current compiled bytes
+/// hash to the provenance's `wasm_hash`.
+///
+/// Lightweight shape check — does NOT verify the Merkle root matches a
+/// concrete source list (the on-molecule provenance only carries the root,
+/// not the sources). The Merkle check happens at replay time via
+/// [`crate::db_operations::LineageIndex::verify_merkle_consistency`] once
+/// the local forward index has the stored sources.
+///
+/// Mutations without `Provenance::Derived` (user writes with
+/// `Provenance::User { .. }` or `None`) are returned unchecked.
+///
+/// # Errors
+///
+/// - [`SchemaError::InvalidData`] if the target schema is not a registered
+///   view, the view has no WASM transform (identity view), the wasm hash
+///   does not match the view's compiled bytes, or the encoding version is
+///   unsupported.
+fn validate_derived_provenance(
+    mutation: &Mutation,
+    schema_manager: &SchemaCore,
+) -> Result<(), SchemaError> {
+    use crate::atom::provenance::Provenance;
+    let (wasm_hash, encoding_version) = match &mutation.provenance {
+        Some(Provenance::Derived {
+            wasm_hash,
+            encoding_version,
+            ..
+        }) => (wasm_hash.clone(), *encoding_version),
+        _ => return Ok(()),
+    };
+
+    if encoding_version == 0 || encoding_version > SUPPORTED_DERIVED_ENCODING_VERSION {
+        return Err(SchemaError::InvalidData(format!(
+            "Derived mutation targets unsupported encoding_version {} (max supported: {})",
+            encoding_version, SUPPORTED_DERIVED_ENCODING_VERSION
+        )));
+    }
+
+    let view = {
+        let registry = schema_manager.view_registry().lock().map_err(|_| {
+            SchemaError::InvalidData(
+                "Failed to acquire view_registry lock during provenance check".to_string(),
+            )
+        })?;
+        registry.get_view(&mutation.schema_name).cloned()
+    };
+
+    let Some(view) = view else {
+        return Err(SchemaError::InvalidData(format!(
+            "Derived mutation targets schema '{}' which is not a registered view",
+            mutation.schema_name
+        )));
+    };
+
+    let Some(spec) = view.wasm_transform.as_ref() else {
+        return Err(SchemaError::InvalidData(format!(
+            "Derived mutation targets identity view '{}' (no WASM transform to derive from)",
+            mutation.schema_name
+        )));
+    };
+
+    let expected_hash = {
+        let mut hasher = Sha256::new();
+        hasher.update(&spec.bytes);
+        format!("{:x}", hasher.finalize())
+    };
+    if expected_hash != wasm_hash {
+        return Err(SchemaError::InvalidData(format!(
+            "Derived mutation wasm_hash mismatch for view '{}': provenance carries '{}', view bytes hash to '{}'",
+            mutation.schema_name, wasm_hash, expected_hash
+        )));
+    }
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod derived_provenance_validator_tests {
+    //! `validate_derived_provenance` is pure — no DB, no async. Drives a
+    //! real `SchemaCore` with registered views through every rejection
+    //! branch plus the happy path.
+
+    use super::*;
+    use crate::atom::provenance::Provenance;
+    use crate::schema::types::field_value_type::FieldValueType;
+    use crate::schema::types::operations::{MutationType, Query};
+    use crate::schema::types::schema::DeclarativeSchemaType;
+    use crate::schema::SchemaCore;
+    use crate::view::types::{TransformView, WasmTransformSpec};
+    use std::collections::HashMap;
+
+    fn sha256_hex(bytes: &[u8]) -> String {
+        let mut h = Sha256::new();
+        h.update(bytes);
+        format!("{:x}", h.finalize())
+    }
+
+    fn view_with_wasm(name: &str, wasm: Vec<u8>) -> TransformView {
+        TransformView::new(
+            name,
+            DeclarativeSchemaType::Single,
+            None,
+            vec![Query::new("Src".to_string(), vec!["f".to_string()])],
+            Some(WasmTransformSpec {
+                bytes: wasm,
+                max_gas: 1_000_000,
+                gas_model: None,
+            }),
+            HashMap::from([("out".to_string(), FieldValueType::String)]),
+        )
+    }
+
+    fn identity_view(name: &str) -> TransformView {
+        TransformView::new(
+            name,
+            DeclarativeSchemaType::Single,
+            None,
+            vec![Query::new("Src".to_string(), vec!["f".to_string()])],
+            None,
+            HashMap::from([("f".to_string(), FieldValueType::Any)]),
+        )
+    }
+
+    fn derived_mutation(schema_name: &str, wasm_hash: &str, encoding_version: u8) -> Mutation {
+        Mutation {
+            uuid: uuid::Uuid::new_v4().to_string(),
+            schema_name: schema_name.to_string(),
+            fields_and_values: HashMap::new(),
+            key_value: KeyValue::new(None, None),
+            pub_key: String::new(),
+            mutation_type: MutationType::Create,
+            synchronous: None,
+            source_file_name: None,
+            metadata: None,
+            provenance: Some(Provenance::Derived {
+                wasm_hash: wasm_hash.to_string(),
+                input_snapshot_hash: "i".repeat(64),
+                sources_merkle_root: "r".repeat(64),
+                encoding_version,
+            }),
+        }
+    }
+
+    async fn core_with_view(view: TransformView) -> SchemaCore {
+        use crate::test_helpers::TestSchemaBuilder;
+        let core = SchemaCore::new_for_testing().await.unwrap();
+        // `register_view` validates that every declared source schema exists
+        // in the core. All fixtures in this module target a `Src` schema, so
+        // register it once before the view.
+        core.load_schema_from_json(&TestSchemaBuilder::new("Src").fields(&["f"]).build_json())
+            .await
+            .unwrap();
+        core.register_view(view).await.unwrap();
+        core
+    }
+
+    #[tokio::test]
+    async fn user_mutation_is_not_validated() {
+        // No provenance → ok regardless of whether schema exists.
+        let core = SchemaCore::new_for_testing().await.unwrap();
+        let mut m = derived_mutation("absent", "w", 1);
+        m.provenance = None;
+        validate_derived_provenance(&m, &core).expect("None provenance passes");
+
+        m.provenance = Some(Provenance::user("pk".to_string(), "sig".to_string()));
+        validate_derived_provenance(&m, &core).expect("User provenance passes");
+    }
+
+    #[tokio::test]
+    async fn derived_with_unregistered_view_rejected() {
+        let core = SchemaCore::new_for_testing().await.unwrap();
+        let m = derived_mutation("Unregistered", &sha256_hex(b"w"), 1);
+        let err = validate_derived_provenance(&m, &core).unwrap_err();
+        assert!(
+            format!("{}", err).contains("not a registered view"),
+            "got: {}",
+            err
+        );
+    }
+
+    #[tokio::test]
+    async fn derived_with_identity_view_rejected() {
+        let core = core_with_view(identity_view("IdView")).await;
+        let m = derived_mutation("IdView", &sha256_hex(b"w"), 1);
+        let err = validate_derived_provenance(&m, &core).unwrap_err();
+        assert!(format!("{}", err).contains("identity view"), "got: {}", err);
+    }
+
+    #[tokio::test]
+    async fn derived_with_mismatched_wasm_hash_rejected() {
+        let core = core_with_view(view_with_wasm("V", b"correct".to_vec())).await;
+        // Provenance claims a different wasm hash than the view's actual bytes.
+        let m = derived_mutation("V", &sha256_hex(b"wrong"), 1);
+        let err = validate_derived_provenance(&m, &core).unwrap_err();
+        assert!(
+            format!("{}", err).contains("wasm_hash mismatch"),
+            "got: {}",
+            err
+        );
+    }
+
+    #[tokio::test]
+    async fn derived_with_zero_encoding_version_rejected() {
+        let core = core_with_view(view_with_wasm("V", b"x".to_vec())).await;
+        let m = derived_mutation("V", &sha256_hex(b"x"), 0);
+        let err = validate_derived_provenance(&m, &core).unwrap_err();
+        assert!(
+            format!("{}", err).contains("unsupported encoding_version"),
+            "got: {}",
+            err
+        );
+    }
+
+    #[tokio::test]
+    async fn derived_with_future_encoding_version_rejected() {
+        let core = core_with_view(view_with_wasm("V", b"x".to_vec())).await;
+        let m = derived_mutation("V", &sha256_hex(b"x"), 2);
+        let err = validate_derived_provenance(&m, &core).unwrap_err();
+        assert!(
+            format!("{}", err).contains("unsupported encoding_version"),
+            "got: {}",
+            err
+        );
+    }
+
+    #[tokio::test]
+    async fn derived_with_matching_wasm_hash_accepted() {
+        let wasm = b"some wasm bytes".to_vec();
+        let core = core_with_view(view_with_wasm("V", wasm.clone())).await;
+        let m = derived_mutation("V", &sha256_hex(&wasm), 1);
+        validate_derived_provenance(&m, &core).expect("matching hash should pass");
     }
 }
