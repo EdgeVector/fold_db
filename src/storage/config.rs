@@ -164,10 +164,18 @@ impl<'de> Deserialize<'de> for DatabaseConfig {
                     })
                 }
                 "exemem" => {
+                    // `api_url` is the only field required on disk — the
+                    // per-device secrets (api_key, session_token, user_hash)
+                    // are runtime-hydrated from the credential store, so
+                    // their absence is expected, not an error.
                     let api_url = value
                         .get("api_url")
                         .and_then(|v| v.as_str())
-                        .unwrap_or_default()
+                        .ok_or_else(|| {
+                            serde::de::Error::custom(
+                                "exemem database config missing required string field 'api_url'",
+                            )
+                        })?
                         .to_string();
                     let api_key = value
                         .get("api_key")
@@ -210,9 +218,14 @@ impl<'de> Deserialize<'de> for DatabaseConfig {
                 .map(PathBuf::from)
                 .unwrap_or_else(|| PathBuf::from("data"));
 
+            // If `cloud_sync` is present, it must parse — silently dropping a
+            // malformed block (e.g. missing `api_url`) would turn a broken
+            // cloud-mode config into an apparently-healthy local-mode one.
             let cloud_sync = value
                 .get("cloud_sync")
-                .and_then(|v| serde_json::from_value::<CloudSyncConfig>(v.clone()).ok());
+                .map(|v| serde_json::from_value::<CloudSyncConfig>(v.clone()))
+                .transpose()
+                .map_err(serde::de::Error::custom)?;
 
             Ok(DatabaseConfig { path, cloud_sync })
         }
@@ -356,5 +369,36 @@ mod tests {
         assert_eq!(sync.api_key, "");
         assert!(sync.session_token.is_none());
         assert!(sync.user_hash.is_none());
+    }
+
+    #[test]
+    fn legacy_exemem_missing_api_url_errors() {
+        // The only required field in the legacy exemem tag is api_url. A file
+        // missing it is broken — silently defaulting to empty string masks
+        // the bug and fails later with a confusing runtime error.
+        let json = r#"{"type": "exemem", "api_key": "key123"}"#;
+        let err = serde_json::from_str::<DatabaseConfig>(json).unwrap_err();
+        assert!(
+            err.to_string().contains("api_url"),
+            "error should mention api_url: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn new_format_malformed_cloud_sync_errors() {
+        // If cloud_sync is present, it must parse. Silently dropping a
+        // malformed block turns a broken cloud-mode config into an
+        // apparently-healthy local-mode one.
+        let json = r#"{
+            "path": "/data/db",
+            "cloud_sync": { "api_key": "key_without_url" }
+        }"#;
+        let err = serde_json::from_str::<DatabaseConfig>(json).unwrap_err();
+        assert!(
+            err.to_string().contains("api_url"),
+            "error should mention missing api_url: {}",
+            err
+        );
     }
 }
