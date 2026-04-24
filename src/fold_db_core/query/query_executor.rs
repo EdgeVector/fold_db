@@ -88,7 +88,29 @@ impl QueryExecutor {
         access_context: Option<&AccessContext>,
         payment_gate: Option<&PaymentGate>,
     ) -> Result<HashMap<String, HashMap<KeyValue, FieldValue>>, SchemaError> {
-        // First: try to resolve as a schema (existing path)
+        // Views are registered as both a view (with WASM + triggers) AND a
+        // synthesized schema (the atom store for derived-mutation writes
+        // from the fire path — see `projects/view-compute-as-mutations`
+        // PR 4). The view path still owns first-class semantics: it runs
+        // the WASM transform, applies overrides, manages the per-view
+        // cache lifecycle, and enforces `Blocked` / `Unavailable` state.
+        // Falling through to the schema path first would serve the atom
+        // store alone, which is empty before the first fire. Keep the
+        // view path as the primary resolver; only fall through to the
+        // schema path for queries against non-view schemas.
+        let is_view = {
+            let registry = self
+                .schema_manager
+                .view_registry()
+                .lock()
+                .map_err(|_| SchemaError::InvalidData("view_registry lock".to_string()))?;
+            registry.get_view(&query.schema_name).is_some()
+        };
+
+        if is_view {
+            return self.try_query_view(&query).await;
+        }
+
         match self.schema_manager.get_schema(&query.schema_name).await? {
             Some(mut schema) => {
                 // Enforce Blocked state
@@ -123,10 +145,10 @@ impl QueryExecutor {
                     Ok(results)
                 }
             }
-            None => {
-                // Second: try to resolve as a view
-                self.try_query_view(&query).await
-            }
+            None => Err(SchemaError::InvalidData(format!(
+                "'{}' not found as schema or view",
+                query.schema_name
+            ))),
         }
     }
 
