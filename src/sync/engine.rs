@@ -1001,35 +1001,50 @@ impl SyncEngine {
             .collect();
         new_seqs.sort();
 
-        // Loud-failure invariant: once we see any new seq, the set of new
-        // seqs must be contiguous (no holes between the smallest and
-        // largest). A hole here means S3 returned a partial view of the log
-        // — the exact silent-drop pattern 30a7b produced — and would cause
-        // `max_contiguous_seq` to advance past a seq that later appears.
-        if let (Some(&first), Some(&last)) = (new_seqs.first(), new_seqs.last()) {
-            let expected = (last - first + 1) as usize;
-            if new_seqs.len() != expected {
-                let set: std::collections::BTreeSet<u64> = new_seqs.iter().copied().collect();
-                let missing: Vec<u64> = (first..=last).filter(|s| !set.contains(s)).collect();
-                log::error!(
-                    "sync list '{}' returned non-contiguous seqs after cursor={}: first={} last={} count={} expected={} missing_sample={:?}",
-                    target.label,
-                    cursor,
-                    first,
-                    last,
-                    new_seqs.len(),
-                    expected,
-                    missing.iter().take(16).collect::<Vec<_>>()
-                );
-                return Err(SyncError::S3(format!(
-                    "non-contiguous log listing for '{}': cursor={} got {} seqs in range {}..={} (expected {})",
-                    target.label,
-                    cursor,
-                    new_seqs.len(),
-                    first,
-                    last,
-                    expected
-                )));
+        // Loud-failure invariant: for ORG prefixes, the set of new seqs must
+        // be contiguous (no holes between the smallest and largest) because
+        // org seqs are server-allocated in atomic blocks. A hole there means
+        // S3 returned a partial view of the log — the exact silent-drop
+        // pattern 30a7b produced — and would cause `max_contiguous_seq` to
+        // advance past a seq that later appears.
+        //
+        // PERSONAL prefixes (empty prefix) use client-assigned nanosecond
+        // timestamps, so the seq space is inherently sparse: a device writes
+        // at T1, then again at T1+100000, and the listing has "gaps" of
+        // hundreds of thousands of unused seq values between them. The
+        // contiguity check can't distinguish natural sparseness from S3
+        // dropping a seq, so it's skipped for personal and we trust the
+        // listing's completeness (typical path) plus cursor-replay semantics
+        // (missed seqs re-appear in future listings because cursor only
+        // advances to seqs we saw). See `designs/unified_sync.md` for the
+        // personal-vs-org split rationale.
+        let is_org_prefix = !target.prefix.is_empty();
+        if is_org_prefix {
+            if let (Some(&first), Some(&last)) = (new_seqs.first(), new_seqs.last()) {
+                let expected = (last - first + 1) as usize;
+                if new_seqs.len() != expected {
+                    let set: std::collections::BTreeSet<u64> = new_seqs.iter().copied().collect();
+                    let missing: Vec<u64> = (first..=last).filter(|s| !set.contains(s)).collect();
+                    log::error!(
+                        "sync list '{}' returned non-contiguous seqs after cursor={}: first={} last={} count={} expected={} missing_sample={:?}",
+                        target.label,
+                        cursor,
+                        first,
+                        last,
+                        new_seqs.len(),
+                        expected,
+                        missing.iter().take(16).collect::<Vec<_>>()
+                    );
+                    return Err(SyncError::S3(format!(
+                        "non-contiguous log listing for '{}': cursor={} got {} seqs in range {}..={} (expected {})",
+                        target.label,
+                        cursor,
+                        new_seqs.len(),
+                        first,
+                        last,
+                        expected
+                    )));
+                }
             }
         }
 
