@@ -17,8 +17,7 @@ use std::sync::Arc;
 /// indexes (PR 6 of `projects/molecule-provenance-dag`). The full source list
 /// is rebuildable from replay — syncing it would waste bandwidth proportional
 /// to fan-in and is explicitly prohibited by the design.
-const LOCAL_ONLY_NAMESPACES: &[&str] =
-    &["transform_cache", "lineage_forward", "lineage_reverse"];
+const LOCAL_ONLY_NAMESPACES: &[&str] = &["transform_cache", "lineage_forward", "lineage_reverse"];
 
 /// A NamespacedStore decorator that wraps each opened namespace with a SyncingKvStore.
 ///

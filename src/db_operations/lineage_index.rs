@@ -97,10 +97,7 @@ impl LineageIndex {
     /// List every derived molecule that consumed `source_ref`. Returns an
     /// empty `Vec` when the source has no known derivatives. The returned
     /// list is sorted ascending — callers may rely on this ordering.
-    pub async fn get_reverse(
-        &self,
-        source_ref: &MoleculeRef,
-    ) -> Result<Vec<String>, FoldDbError> {
+    pub async fn get_reverse(&self, source_ref: &MoleculeRef) -> Result<Vec<String>, FoldDbError> {
         let key = source_ref.canonical_bytes();
         Self::read_reverse(&self.reverse, &key).await
     }
@@ -224,7 +221,10 @@ mod tests {
         );
         // Unknown source returns empty, not an error.
         let unknown = mref("other", "atom", None, 0);
-        assert_eq!(idx.get_reverse(&unknown).await.unwrap(), Vec::<String>::new());
+        assert_eq!(
+            idx.get_reverse(&unknown).await.unwrap(),
+            Vec::<String>::new()
+        );
     }
 
     #[tokio::test]
@@ -346,8 +346,7 @@ mod tests {
         // Wrong hex — short, empty, or garbage — rejects.
         assert!(!LineageIndex::verify_merkle_consistency(&sources, ""));
         assert!(!LineageIndex::verify_merkle_consistency(
-            &sources,
-            "deadbeef"
+            &sources, "deadbeef"
         ));
     }
 }
