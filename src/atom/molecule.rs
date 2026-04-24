@@ -2,6 +2,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use super::{deterministic_molecule_uuid, now_nanos, MergeConflict};
+use crate::atom::provenance::Provenance;
 use crate::security::Ed25519KeyPair;
 
 /// A reference to a single atom version.
@@ -29,6 +30,16 @@ pub struct Molecule {
     /// Signature scheme version (1 = hand-rolled canonical concat).
     #[serde(default)]
     signature_version: u8,
+    /// Writer identity and verifiability info. Additive during the
+    /// `projects/molecule-provenance-dag` migration: `None` on pre-PR-5
+    /// molecules; `Some(Provenance::User{..})` once the signing path
+    /// populates it. Kept alongside `writer_pubkey` / `signature` /
+    /// `signature_version` (not in place of) until a follow-up PR removes
+    /// them after full wire-through. NOT included in the canonical signed
+    /// bytes — it duplicates pubkey + signature in a typed form and must
+    /// not perturb the signature verification payload.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    provenance: Option<Provenance>,
 }
 
 impl Molecule {
@@ -46,6 +57,7 @@ impl Molecule {
             writer_pubkey: String::new(),
             signature: String::new(),
             signature_version: 0,
+            provenance: None,
         }
     }
 
@@ -79,9 +91,11 @@ impl Molecule {
             self.written_at,
         );
         let (sig, pubkey) = crate::security::sign_molecule_update(&canonical, keypair);
-        self.signature = sig;
-        self.writer_pubkey = pubkey;
+        self.signature = sig.clone();
+        self.writer_pubkey = pubkey.clone();
         self.signature_version = 1;
+        self.provenance = Some(Provenance::user(pubkey, sig));
+        self.debug_assert_provenance_consistent();
     }
 
     /// Returns the version counter for this molecule.
@@ -142,6 +156,40 @@ impl Molecule {
     #[must_use]
     pub fn signature_version(&self) -> u8 {
         self.signature_version
+    }
+
+    /// Returns the typed provenance, when populated.
+    ///
+    /// Additive metadata alongside `writer_pubkey` / `signature` during the
+    /// `projects/molecule-provenance-dag` migration. `None` on molecules
+    /// written before PR 5 (or never signed).
+    #[must_use]
+    pub fn provenance(&self) -> Option<&Provenance> {
+        self.provenance.as_ref()
+    }
+
+    /// Debug-only assertion that `provenance` and the legacy
+    /// `writer_pubkey` / `signature` fields agree when both are populated.
+    ///
+    /// During the migration window `Provenance::User` duplicates the
+    /// existing fields. If a code path sets one and not the other — or
+    /// sets them to different values — that drift is a bug. In debug
+    /// builds this fires on the spot; in release it compiles out.
+    fn debug_assert_provenance_consistent(&self) {
+        debug_assert!(
+            matches!(
+                &self.provenance,
+                Some(Provenance::User {
+                    pubkey,
+                    signature,
+                    ..
+                }) if pubkey == &self.writer_pubkey && signature == &self.signature
+            ),
+            "Molecule.provenance drift: writer_pubkey={:?} signature={:?} provenance={:?}",
+            self.writer_pubkey,
+            self.signature,
+            self.provenance
+        );
     }
 
     /// Builds canonical bytes for signing/verification.
@@ -215,9 +263,11 @@ impl Molecule {
             self.written_at,
         );
         let (sig, pubkey) = crate::security::sign_molecule_update(&canonical, keypair);
-        self.signature = sig;
-        self.writer_pubkey = pubkey;
+        self.signature = sig.clone();
+        self.writer_pubkey = pubkey.clone();
         self.signature_version = 1;
+        self.provenance = Some(Provenance::user(pubkey, sig));
+        self.debug_assert_provenance_consistent();
 
         Some(MergeConflict {
             key: "single".to_string(),
@@ -341,5 +391,102 @@ mod tests {
     fn test_unsigned_molecule_verify_returns_false() {
         let mol = Molecule::new("atom-1".to_string(), "s", "f");
         assert!(!mol.verify(), "unsigned molecule should not verify");
+    }
+
+    // ------------------------------------------------------------------
+    // molecule-provenance-dag PR 5 — additive `provenance: Option<Provenance>`.
+    // ------------------------------------------------------------------
+
+    /// Pre-PR-5 serialized shape — no `provenance` field. This is what sits
+    /// in every sync log and every on-disk molecule written before the
+    /// migration. It must deserialize cleanly into `provenance: None` and
+    /// re-serialize byte-for-byte identical.
+    const GOLDEN_PRE_PR5_MOLECULE_JSON: &str = r#"{"molecule_uuid":"mol-1","atom_uuid":"atom-1","written_at":42,"updated_at":"2026-01-01T00:00:00Z","version":1,"writer_pubkey":"","signature":"","signature_version":0}"#;
+
+    #[test]
+    fn pre_pr5_molecule_json_round_trips_unchanged() {
+        let parsed: Molecule = serde_json::from_str(GOLDEN_PRE_PR5_MOLECULE_JSON)
+            .expect("deserialize pre-PR-5 molecule shape");
+        assert!(parsed.provenance().is_none());
+        let reserialized = serde_json::to_string(&parsed).expect("serialize");
+        assert_eq!(reserialized, GOLDEN_PRE_PR5_MOLECULE_JSON);
+    }
+
+    #[test]
+    fn molecule_round_trips_with_provenance_user() {
+        let kp = test_keypair();
+        let mut mol = Molecule::new("atom-1".to_string(), "s", "f");
+        mol.set_atom_uuid("atom-2".to_string(), &kp);
+        assert!(matches!(mol.provenance(), Some(Provenance::User { .. })));
+        let json = serde_json::to_string(&mol).expect("serialize");
+        assert!(json.contains(r#""provenance":{"kind":"user""#));
+        let back: Molecule = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back.provenance(), mol.provenance());
+    }
+
+    /// When a molecule is signed via `set_atom_uuid`, the `Provenance::User`
+    /// value must match the legacy `writer_pubkey` / `signature` fields.
+    /// This is the whole point of the additive migration.
+    #[test]
+    fn set_atom_uuid_populates_provenance_user_matching_legacy_fields() {
+        let kp = test_keypair();
+        let mut mol = Molecule::new("atom-1".to_string(), "s", "f");
+        mol.set_atom_uuid("atom-2".to_string(), &kp);
+        let prov = mol.provenance().expect("signed molecule has provenance");
+        match prov {
+            Provenance::User {
+                pubkey,
+                signature,
+                signature_version,
+            } => {
+                assert_eq!(pubkey, mol.writer_pubkey());
+                assert_eq!(signature, mol.signature());
+                assert_eq!(*signature_version, 1);
+            }
+            _ => panic!("expected User variant"),
+        }
+    }
+
+    /// `merge`'s sign-after-merge path must populate provenance too,
+    /// matching the merged-in signature.
+    #[test]
+    fn merge_populates_provenance_user_matching_legacy_fields() {
+        let kp = test_keypair();
+        let mut mol1 = Molecule::new("atom-1".to_string(), "s", "f");
+        std::thread::sleep(std::time::Duration::from_millis(1));
+        let mol2 = Molecule::new("atom-2".to_string(), "s", "f");
+        mol1.merge(&mol2, &kp).expect("should conflict");
+        let prov = mol1
+            .provenance()
+            .expect("merge-signed molecule has provenance");
+        match prov {
+            Provenance::User {
+                pubkey, signature, ..
+            } => {
+                assert_eq!(pubkey, mol1.writer_pubkey());
+                assert_eq!(signature, mol1.signature());
+            }
+            _ => panic!("expected User variant"),
+        }
+    }
+
+    /// Adding `provenance` must not change the canonical signed bytes.
+    /// The canonical bytes commit to `molecule_uuid | atom_uuid | version |
+    /// written_at`; anything else included there invalidates every
+    /// pre-existing signature. Pinned with a known hex vector.
+    #[test]
+    fn canonical_bytes_are_not_affected_by_provenance_field() {
+        let bytes =
+            Molecule::build_canonical_bytes("mol-x", "atom-x", 3, 0x0102_0304_0506_0708_u64);
+        let expected: Vec<u8> = [
+            b"mol-x".as_slice(),
+            &[0x00],
+            b"atom-x".as_slice(),
+            &[0x00],
+            &[0, 0, 0, 0, 0, 0, 0, 3],
+            &[0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08],
+        ]
+        .concat();
+        assert_eq!(bytes, expected);
     }
 }

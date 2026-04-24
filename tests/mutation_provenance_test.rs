@@ -1,11 +1,13 @@
 //! End-to-end integration test for `Mutation.provenance` — the additive
-//! `Option<Provenance>` field added in `projects/molecule-provenance-dag`
-//! PR 4. The field is not yet persisted to atoms/molecules (PR 5), so
-//! "round-trip" here means: a `Mutation` carrying `Provenance::User`
-//! survives serde, feeds cleanly into `MutationManager::write_mutations_batch_async`,
-//! and the underlying data lands on the target schema just as it would for
-//! a pre-PR-4 mutation.
+//! `Option<Provenance>` field added in `projects/molecule-provenance-dag`.
+//!
+//! PR 4 added the field on `Mutation`. PR 5 wires it through the write
+//! path so that `MutationEvent` records propagate the originating
+//! mutation's provenance. The underlying `Molecule` / `AtomEntry` also
+//! carry `Some(Provenance::User{..})` after signing (populated from the
+//! local signer, not the submitter's claimed provenance).
 
+use fold_db::atom::deterministic_molecule_uuid;
 use fold_db::atom::provenance::Provenance;
 use fold_db::fold_db_core::FoldDB;
 use fold_db::schema::types::operations::{MutationType, Query};
@@ -111,4 +113,58 @@ async fn mutation_without_provenance_still_writes() {
         .write_mutations_batch_async(vec![mutation])
         .await
         .expect("write should succeed with provenance = None");
+}
+
+/// PR 5 — the originating mutation's `Provenance::User` must appear on the
+/// resulting `MutationEvent` record. This is the end-to-end propagation
+/// guarantee: a submitter who signs once has that signature recorded at
+/// every durable layer, not only on the in-flight `Mutation` struct.
+#[tokio::test]
+async fn mutation_provenance_propagates_to_mutation_event() {
+    let db = setup_db().await;
+    db.load_schema_from_json(&person_schema_json())
+        .await
+        .unwrap();
+    db.schema_manager()
+        .set_schema_state("Person", SchemaState::Approved)
+        .await
+        .unwrap();
+
+    let mut fields = HashMap::new();
+    fields.insert("name".to_string(), json!("Carol"));
+    fields.insert("created_at".to_string(), json!("2026-01-03"));
+
+    let provenance = Provenance::user("submitter-pubkey".to_string(), "submitter-sig".to_string());
+    let mutation = Mutation::new(
+        "Person".to_string(),
+        fields,
+        KeyValue::new(None, Some("2026-01-03".to_string())),
+        "pk".to_string(),
+        MutationType::Create,
+    )
+    .with_provenance(provenance.clone());
+
+    db.mutation_manager()
+        .write_mutations_batch_async(vec![mutation])
+        .await
+        .expect("write should succeed");
+
+    let mol_uuid = deterministic_molecule_uuid("Person", "name");
+    let events = db
+        .db_ops()
+        .get_mutation_events(&mol_uuid, None)
+        .await
+        .expect("read events");
+    assert!(
+        !events.is_empty(),
+        "expected at least one event for Person.name"
+    );
+    assert!(
+        events
+            .iter()
+            .all(|e| e.provenance.as_ref() == Some(&provenance)),
+        "every MutationEvent for Person.name must carry the submitter's \
+         provenance; got {:?}",
+        events.iter().map(|e| &e.provenance).collect::<Vec<_>>()
+    );
 }

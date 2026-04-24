@@ -1781,6 +1781,10 @@ impl SyncEngine {
                 conflict_loser_atom: Some(conflict.loser_atom.clone()),
                 writer_pubkey: String::new(),
                 signature: String::new(),
+                // Conflict-originated events are synthesized during merge
+                // resolution and have no originating user mutation in scope;
+                // leave provenance `None`.
+                provenance: None,
             };
             let event_key = format!("history:{}:{:020}", mol_uuid, ts_nanos);
             let event_bytes = serde_json::to_vec(&event)?;

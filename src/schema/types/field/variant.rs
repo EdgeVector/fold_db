@@ -400,6 +400,7 @@ mod tests {
                 conflict_loser_atom: None,
                 writer_pubkey: String::new(),
                 signature: String::new(),
+                provenance: None,
             },
             MutationEvent {
                 molecule_uuid: mol_uuid.to_string(),
@@ -412,6 +413,7 @@ mod tests {
                 conflict_loser_atom: None,
                 writer_pubkey: String::new(),
                 signature: String::new(),
+                provenance: None,
             },
         ];
         db_ops
@@ -460,6 +462,7 @@ mod tests {
             conflict_loser_atom: None,
             writer_pubkey: String::new(),
             signature: String::new(),
+            provenance: None,
         }];
         db_ops
             .batch_store_mutation_events(events, None)
@@ -509,6 +512,7 @@ mod tests {
                 conflict_loser_atom: None,
                 writer_pubkey: String::new(),
                 signature: String::new(),
+                provenance: None,
             },
             MutationEvent {
                 molecule_uuid: mol_uuid.to_string(),
@@ -523,6 +527,7 @@ mod tests {
                 conflict_loser_atom: None,
                 writer_pubkey: String::new(),
                 signature: String::new(),
+                provenance: None,
             },
         ];
         db_ops
@@ -578,6 +583,7 @@ mod tests {
                 conflict_loser_atom: None,
                 writer_pubkey: String::new(),
                 signature: String::new(),
+                provenance: None,
             },
             MutationEvent {
                 molecule_uuid: mol_uuid.to_string(),
@@ -593,6 +599,7 @@ mod tests {
                 conflict_loser_atom: None,
                 writer_pubkey: String::new(),
                 signature: String::new(),
+                provenance: None,
             },
         ];
         db_ops
@@ -646,6 +653,7 @@ mod tests {
                 conflict_loser_atom: None,
                 writer_pubkey: String::new(),
                 signature: String::new(),
+                provenance: None,
             },
             MutationEvent {
                 molecule_uuid: mol_uuid.to_string(),
@@ -658,6 +666,7 @@ mod tests {
                 conflict_loser_atom: None,
                 writer_pubkey: String::new(),
                 signature: String::new(),
+                provenance: None,
             },
             MutationEvent {
                 molecule_uuid: mol_uuid.to_string(),
@@ -670,6 +679,7 @@ mod tests {
                 conflict_loser_atom: None,
                 writer_pubkey: String::new(),
                 signature: String::new(),
+                provenance: None,
             },
         ];
         db_ops

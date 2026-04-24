@@ -1,3 +1,4 @@
+use crate::atom::provenance::Provenance;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
@@ -25,6 +26,13 @@ pub struct MutationEvent {
     /// Base64-encoded Ed25519 signature from the molecule at the time of the mutation.
     #[serde(default)]
     pub signature: String,
+    /// Writer identity and verifiability info. Additive during the
+    /// `projects/molecule-provenance-dag` migration: propagated from the
+    /// originating `Mutation.provenance` when available; `None` otherwise
+    /// (including for merge-conflict-originated events). Kept alongside
+    /// `writer_pubkey` / `signature` until a follow-up PR removes them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provenance: Option<Provenance>,
 }
 
 /// Identifies which slot in the molecule was changed
@@ -53,6 +61,7 @@ mod tests {
             conflict_loser_atom: None,
             writer_pubkey: String::new(),
             signature: String::new(),
+            provenance: None,
         };
 
         let json = serde_json::to_string(&event).unwrap();
@@ -97,6 +106,7 @@ mod tests {
             conflict_loser_atom: None,
             writer_pubkey: String::new(),
             signature: String::new(),
+            provenance: None,
         };
 
         let json = serde_json::to_string(&event).unwrap();
@@ -119,6 +129,7 @@ mod tests {
             conflict_loser_atom: None,
             writer_pubkey: String::new(),
             signature: String::new(),
+            provenance: None,
         };
 
         let ts = event.timestamp.timestamp_nanos_opt().unwrap_or(0);
@@ -129,5 +140,44 @@ mod tests {
         // Timestamp part should be 20 digits (zero-padded)
         let parts: Vec<&str> = key.splitn(3, ':').collect();
         assert_eq!(parts[2].len(), 20);
+    }
+
+    // ------------------------------------------------------------------
+    // molecule-provenance-dag PR 5 — additive `provenance: Option<Provenance>`.
+    // ------------------------------------------------------------------
+
+    /// Pre-PR-5 serialized shape — no `provenance` field. Deserializes to
+    /// `None` and re-serializes byte-for-byte identical. Using a fixed
+    /// epoch timestamp so the literal is stable.
+    const GOLDEN_PRE_PR5_MUTATION_EVENT_JSON: &str = r#"{"molecule_uuid":"mol-1","timestamp":"2026-01-01T00:00:00Z","field_key":"Single","old_atom_uuid":null,"new_atom_uuid":"atom-1","version":0,"is_conflict":false,"writer_pubkey":"","signature":""}"#;
+
+    #[test]
+    fn pre_pr5_mutation_event_json_round_trips_unchanged() {
+        let parsed: MutationEvent = serde_json::from_str(GOLDEN_PRE_PR5_MUTATION_EVENT_JSON)
+            .expect("deserialize pre-PR-5 mutation event");
+        assert!(parsed.provenance.is_none());
+        let reserialized = serde_json::to_string(&parsed).expect("serialize");
+        assert_eq!(reserialized, GOLDEN_PRE_PR5_MUTATION_EVENT_JSON);
+    }
+
+    #[test]
+    fn mutation_event_round_trips_with_provenance_user() {
+        let event = MutationEvent {
+            molecule_uuid: "mol-1".to_string(),
+            timestamp: Utc::now(),
+            field_key: FieldKey::Single,
+            old_atom_uuid: None,
+            new_atom_uuid: "atom-1".to_string(),
+            version: 0,
+            is_conflict: false,
+            conflict_loser_atom: None,
+            writer_pubkey: "pk".to_string(),
+            signature: "sig".to_string(),
+            provenance: Some(Provenance::user("pk".to_string(), "sig".to_string())),
+        };
+        let json = serde_json::to_string(&event).expect("serialize");
+        assert!(json.contains(r#""provenance":{"kind":"user""#));
+        let back: MutationEvent = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back.provenance, event.provenance);
     }
 }
