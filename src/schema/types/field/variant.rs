@@ -40,6 +40,13 @@ pub struct FieldValue {
     pub molecule_version: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub writer_pubkey: Option<String>,
+    /// Nanoseconds since the Unix epoch at which the underlying atom was
+    /// first written. Populated from `Atom::created_at` during query
+    /// resolution so downstream callers (view compute-as-mutations) can
+    /// build canonical `MoleculeRef` leaves for the source Merkle tree.
+    /// Additive — legacy persisted FieldValues deserialize with `None`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub written_at: Option<u64>,
 }
 
 // Macro to reduce boilerplate for Field trait implementation

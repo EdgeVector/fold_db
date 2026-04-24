@@ -127,6 +127,7 @@ mod tests {
                 molecule_uuid: None,
                 molecule_version: None,
                 writer_pubkey: None,
+                written_at: None,
             },
         );
         f1_map.insert(
@@ -139,6 +140,7 @@ mod tests {
                 molecule_uuid: None,
                 molecule_version: None,
                 writer_pubkey: None,
+                written_at: None,
             },
         );
 
@@ -153,6 +155,7 @@ mod tests {
                 molecule_uuid: None,
                 molecule_version: None,
                 writer_pubkey: None,
+                written_at: None,
             },
         );
 
@@ -187,6 +190,7 @@ mod tests {
                 molecule_uuid: None,
                 molecule_version: None,
                 writer_pubkey: None,
+                written_at: None,
             },
         );
 
@@ -201,6 +205,7 @@ mod tests {
                 molecule_uuid: None,
                 molecule_version: None,
                 writer_pubkey: None,
+                written_at: None,
             },
         );
 
@@ -250,6 +255,7 @@ mod tests {
                 molecule_uuid: None,
                 molecule_version: None,
                 writer_pubkey: None,
+                written_at: None,
             },
         );
         field_map.insert(
@@ -262,6 +268,7 @@ mod tests {
                 molecule_uuid: None,
                 molecule_version: None,
                 writer_pubkey: None,
+                written_at: None,
             },
         );
 
