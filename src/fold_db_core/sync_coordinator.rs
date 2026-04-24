@@ -98,16 +98,16 @@ impl SyncCoordinator {
                 // path and `Ok(())` on the wake path — either way, the same
                 // check-and-sync logic below fires.
                 let _ = tokio::time::timeout(current_delay, wake.notified()).await;
-                // Always run sync — even without pending writes, we need to
-                // download org data from other members.
-                let has_pending = engine.state().await == SyncState::Dirty;
-                let has_orgs = engine.has_org_sync().await;
-                if !(has_pending || has_orgs) {
-                    // Nothing to sync. Keep polling at the configured interval.
-                    current_delay = base_interval;
-                    continue;
-                }
-
+                // Always call sync() when a sync engine is configured. A
+                // passive reader on a personal prefix (another device
+                // restored from the same mnemonic) needs the poll to see
+                // peer writes, even when locally clean and without org
+                // memberships. Previous "skip if nothing to upload and no
+                // orgs" check broke multi-device convergence — it matched
+                // an equivalent bailout inside `sync()` that #607 removed,
+                // but that was only half the fix. `sync()` is cheap on a
+                // no-op cycle (one list request per target with an
+                // already-advanced cursor → typically 0 matches).
                 match engine.sync().await {
                     Ok(_) => {
                         // Success: reset backoff.
