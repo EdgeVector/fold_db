@@ -126,7 +126,11 @@ mod atom_entry_provenance_tests {
         let mut mol = crate::atom::MoleculeRange::new("s", "f");
         mol.set_atom_uuid("k1".to_string(), "atom-1".to_string(), &kp);
         let entry = mol.get_atom_entry("k1").expect("entry present");
-        match entry.provenance.as_ref().expect("signed entry has provenance") {
+        match entry
+            .provenance
+            .as_ref()
+            .expect("signed entry has provenance")
+        {
             Provenance::User {
                 pubkey,
                 signature,
@@ -146,7 +150,11 @@ mod atom_entry_provenance_tests {
         let mut mol = crate::atom::MoleculeHash::new("s", "f");
         mol.set_atom_uuid("k1".to_string(), "atom-1".to_string(), &kp);
         let entry = mol.get_atom_entry("k1").expect("entry present");
-        match entry.provenance.as_ref().expect("signed entry has provenance") {
+        match entry
+            .provenance
+            .as_ref()
+            .expect("signed entry has provenance")
+        {
             Provenance::User {
                 pubkey, signature, ..
             } => {
@@ -168,7 +176,11 @@ mod atom_entry_provenance_tests {
             &kp,
         );
         let entry = mol.get_atom_entry("h1", "r1").expect("entry present");
-        match entry.provenance.as_ref().expect("signed entry has provenance") {
+        match entry
+            .provenance
+            .as_ref()
+            .expect("signed entry has provenance")
+        {
             Provenance::User {
                 pubkey, signature, ..
             } => {

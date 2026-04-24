@@ -456,7 +456,9 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_millis(1));
         let mol2 = Molecule::new("atom-2".to_string(), "s", "f");
         mol1.merge(&mol2, &kp).expect("should conflict");
-        let prov = mol1.provenance().expect("merge-signed molecule has provenance");
+        let prov = mol1
+            .provenance()
+            .expect("merge-signed molecule has provenance");
         match prov {
             Provenance::User {
                 pubkey, signature, ..
@@ -474,7 +476,8 @@ mod tests {
     /// pre-existing signature. Pinned with a known hex vector.
     #[test]
     fn canonical_bytes_are_not_affected_by_provenance_field() {
-        let bytes = Molecule::build_canonical_bytes("mol-x", "atom-x", 3, 0x0102_0304_0506_0708_u64);
+        let bytes =
+            Molecule::build_canonical_bytes("mol-x", "atom-x", 3, 0x0102_0304_0506_0708_u64);
         let expected: Vec<u8> = [
             b"mol-x".as_slice(),
             &[0x00],

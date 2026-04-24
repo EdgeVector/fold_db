@@ -134,8 +134,7 @@ async fn mutation_provenance_propagates_to_mutation_event() {
     fields.insert("name".to_string(), json!("Carol"));
     fields.insert("created_at".to_string(), json!("2026-01-03"));
 
-    let provenance =
-        Provenance::user("submitter-pubkey".to_string(), "submitter-sig".to_string());
+    let provenance = Provenance::user("submitter-pubkey".to_string(), "submitter-sig".to_string());
     let mutation = Mutation::new(
         "Person".to_string(),
         fields,
