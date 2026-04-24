@@ -315,6 +315,56 @@ impl TransformView {
         }
         Some(map)
     }
+
+    /// Synthesize a [`crate::schema::types::Schema`] (AKA
+    /// `DeclarativeSchemaDefinition`) that mirrors this view's declared
+    /// output shape. The synthesized schema is registered alongside the
+    /// view so derived mutations from the transform fire path — which
+    /// target `schema_name = view.name` — land as normal atoms via
+    /// `MutationManager::write_mutations_batch_async`.
+    ///
+    /// The synthesized schema has:
+    ///
+    /// - `name` / `schema_type` / `key` copied from the view.
+    /// - `fields` listing every output field.
+    /// - `field_types` mirroring the view's typed output fields.
+    /// - `runtime_fields` populated (via [`crate::schema::types::Schema::populate_runtime_fields`])
+    ///   so each field gets a `FieldVariant` matching the view's
+    ///   schema_type. This is what `MutationManager::write_mutations_batch_async`
+    ///   reaches for during Phase 2 (atom creation) — without it the
+    ///   mutation pipeline errors with "Schema not found".
+    /// - `source = SchemaSource::User` (views are treated as user-defined
+    ///   schemas from the runtime's perspective; their actual origin is
+    ///   recorded in the view registry).
+    ///
+    /// No data classifications are attached — the view's output inherits
+    /// whatever classification schema_service pinned at registration, and
+    /// the per-field classification check is enforced by
+    /// `load_schema_from_json`, not by `load_schema_internal`. Derived
+    /// views bypass the JSON path.
+    pub fn to_synthesized_schema(
+        &self,
+    ) -> Result<crate::schema::types::Schema, crate::schema::SchemaError> {
+        use crate::schema::types::Schema;
+
+        let field_names: Vec<String> = {
+            let mut v: Vec<String> = self.output_fields.keys().cloned().collect();
+            v.sort();
+            v
+        };
+
+        let mut schema = Schema::new(
+            self.name.clone(),
+            self.schema_type.clone(),
+            self.key_config.clone(),
+            Some(field_names),
+            None,
+            None,
+        );
+        schema.field_types = self.output_fields.clone();
+        schema.populate_runtime_fields()?;
+        Ok(schema)
+    }
 }
 
 #[cfg(test)]

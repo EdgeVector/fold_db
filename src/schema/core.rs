@@ -560,6 +560,19 @@ impl SchemaCore {
             .store_view_state(&view_clone.name, &ViewState::Available)
             .await?;
 
+        // Also register a synthesized schema mirroring the view's output
+        // shape. `projects/view-compute-as-mutations` PR 4: derived
+        // mutations from the transform fire path target `schema_name =
+        // view.name` and flow through `MutationManager::write_mutations_batch_async`,
+        // which looks up the schema in `schemas`. Without this registration,
+        // every derived write would fail with "Schema not found" and the
+        // dual-write silently drops (the error is logged in the orchestrator
+        // but atoms never land). Keeping the synthesized schema alongside
+        // the view is what makes views queryable as first-class schemas in
+        // the PR 5+ cache-free world.
+        let synthesized = view_clone.to_synthesized_schema()?;
+        self.load_schema_internal(synthesized).await?;
+
         Ok(())
     }
 
@@ -622,6 +635,20 @@ impl SchemaCore {
         self.db_ops.delete_view(name).await?;
         self.db_ops.delete_view_state(name).await?;
         self.db_ops.clear_view_cache_state(name).await?;
+
+        // Drop the synthesized schema registered for this view so future
+        // mutations don't resolve a stale name. Best-effort: if the
+        // schema is missing (e.g. a view registered before PR 4 shipped)
+        // we fall through silently.
+        {
+            let mut schemas = lock_map(&self.schemas, "schemas")?;
+            schemas.remove(name);
+        }
+        {
+            let mut states = lock_map(&self.schema_states, "schema_states")?;
+            states.remove(name);
+        }
+
         Ok(())
     }
 
