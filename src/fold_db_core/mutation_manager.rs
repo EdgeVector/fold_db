@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 use super::orchestration::index_status::IndexStatusTracker;
 use super::trigger_runner::TriggerDispatcher;
-use super::view_orchestrator::ViewOrchestrator;
+use super::view_orchestrator::{DerivedMutationWriter, ViewOrchestrator};
 use crate::atom::{Atom, FieldKey, MutationEvent};
 use crate::db_operations::{DbOperations, MoleculeData};
 use crate::messaging::events::query_events::MutationExecuted;
@@ -1037,5 +1037,20 @@ impl MutationManager {
             .await
         });
         Ok(())
+    }
+}
+
+#[async_trait::async_trait]
+impl DerivedMutationWriter for MutationManager {
+    async fn write_derived_batch(
+        &self,
+        mutations: Vec<Mutation>,
+    ) -> Result<Vec<String>, SchemaError> {
+        // Derived mutations skip the access-control wrapper because they are
+        // produced internally by the view fire path — there is no user
+        // identity to authorize against. The pipeline itself enforces the
+        // `Provenance::Derived` pass-through in `ViewOrchestrator::redirect_mutation`,
+        // so from here on they flow through exactly like any other batch.
+        self.write_mutations_batch_async(mutations).await
     }
 }

@@ -478,6 +478,20 @@ impl FoldDB {
             &trigger_runner,
         ))) as Arc<dyn TriggerDispatcher>);
 
+        // Wire the mutation manager into the view orchestrator as the
+        // derived-mutation writer. Same post-construction late-binding
+        // pattern as `set_trigger_dispatcher` — both directions of the
+        // `ViewOrchestrator` ↔ `MutationManager` edge need to exist, and
+        // construction can only build one at a time.
+        //
+        // `projects/view-compute-as-mutations` PR 2: the fire path now
+        // dual-writes derived mutations through this writer alongside the
+        // existing `ViewCacheState::Cached`.
+        view_orchestrator
+            .set_derived_mutation_writer(Arc::clone(&mutation_manager)
+                as Arc<dyn super::view_orchestrator::DerivedMutationWriter>)
+            .await;
+
         let trigger_shutdown = Arc::new(tokio::sync::Notify::new());
         {
             let runner = Arc::clone(&trigger_runner);

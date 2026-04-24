@@ -2,6 +2,7 @@ use crate::schema::types::errors::SchemaError;
 use crate::schema::types::field::FieldValue;
 use crate::schema::types::key_value::KeyValue;
 use crate::schema::types::operations::Query;
+use crate::view::derived_metadata::{compute_derived_metadata, DerivedMetadata};
 use crate::view::transform_field_override::TransformFieldOverride;
 use crate::view::types::{InputDimension, TransformView, UnavailableReason, ViewCacheState};
 use crate::view::wasm_engine::WasmTransformEngine;
@@ -110,6 +111,43 @@ impl ViewResolver {
         ),
         SchemaError,
     > {
+        let (result, state, _derived) = self
+            .resolve_with_overrides_and_derived(
+                view,
+                requested_fields,
+                cache_state,
+                source_query,
+                overrides,
+            )
+            .await?;
+        Ok((result, state))
+    }
+
+    /// Like [`resolve_with_overrides`] but additionally returns the
+    /// [`DerivedMetadata`] for the just-executed fire.
+    ///
+    /// `DerivedMetadata` is `Some` only when the resolver actually executed a
+    /// WASM transform on fresh input and produced a `ViewCacheState::Cached`
+    /// result. It is `None` when we took the cached short-circuit, when the
+    /// view is identity pass-through (no derivation happened), or when the
+    /// fire ended in `Unavailable`. Callers use the returned metadata to
+    /// build `Provenance::Derived` mutations downstream
+    /// (`projects/view-compute-as-mutations` PR 2).
+    pub async fn resolve_with_overrides_and_derived(
+        &self,
+        view: &TransformView,
+        requested_fields: &[String],
+        cache_state: &ViewCacheState,
+        source_query: &dyn SourceQueryFn,
+        overrides: &[(String, String, TransformFieldOverride)],
+    ) -> Result<
+        (
+            HashMap<String, HashMap<KeyValue, FieldValue>>,
+            ViewCacheState,
+            Option<DerivedMetadata>,
+        ),
+        SchemaError,
+    > {
         // Determine which fields to return
         let fields_to_return: Vec<String> = if requested_fields.is_empty() {
             view.output_fields.keys().cloned().collect()
@@ -136,7 +174,7 @@ impl ViewResolver {
             // Cached path still consults overrides — overrides are sticky and
             // must beat anything in the per-view cache too.
             self.apply_overrides(&mut result, overrides);
-            return Ok((result, cache_state.clone()));
+            return Ok((result, cache_state.clone(), None));
         }
 
         // Sticky-per-input: if the prior compute on this input already
@@ -149,6 +187,7 @@ impl ViewResolver {
                 ViewCacheState::Unavailable {
                     reason: reason.clone(),
                 },
+                None,
             ));
         }
 
@@ -183,6 +222,7 @@ impl ViewResolver {
                                 limit: model.max_input_size,
                             },
                         },
+                        None,
                     ));
                 }
             }
@@ -192,16 +232,22 @@ impl ViewResolver {
         // rather than a hard error: they are per-input compute failures,
         // so the caller should persist the state (no retry) but callers
         // above the resolver are free to surface it to the user.
-        let mut output = if let Some(spec) = &view.wasm_transform {
+        //
+        // Only WASM views produce `DerivedMetadata` — identity views are
+        // pass-through and have no derivation to record.
+        let (mut output, derived) = if let Some(spec) = &view.wasm_transform {
             match self.execute_wasm_transform(&spec.bytes, spec.max_gas, &all_query_results) {
-                Ok(output) => output,
+                Ok(output) => {
+                    let metadata = compute_derived_metadata(&spec.bytes, &all_query_results);
+                    (output, Some(metadata))
+                }
                 Err(e) => {
                     let reason = classify_wasm_failure(&e);
-                    return Ok((HashMap::new(), ViewCacheState::Unavailable { reason }));
+                    return Ok((HashMap::new(), ViewCacheState::Unavailable { reason }, None));
                 }
             }
         } else {
-            self.identity_pass_through(&all_query_results, view)?
+            (self.identity_pass_through(&all_query_results, view)?, None)
         };
 
         // Apply overrides BEFORE type validation so the user-supplied value
@@ -223,7 +269,7 @@ impl ViewResolver {
                                 view.name, field_name, e
                             ),
                         };
-                        return Ok((HashMap::new(), ViewCacheState::Unavailable { reason }));
+                        return Ok((HashMap::new(), ViewCacheState::Unavailable { reason }, None));
                     }
                 }
             }
@@ -253,7 +299,7 @@ impl ViewResolver {
             result.insert(field_name.clone(), field_entries);
         }
 
-        Ok((result, new_cache))
+        Ok((result, new_cache, derived))
     }
 
     /// Substitute override values into an already-shaped result map.
