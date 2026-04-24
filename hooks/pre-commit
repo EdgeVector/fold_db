@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# Pre-commit hook: cargo fmt gate.
+#
+# Why this exists: CI runs `cargo fmt --all -- --check`. Forgetting to run
+# fmt locally before committing → push → PR fails CI → churn of manual
+# fmt-fix commits. This hook catches that at commit time.
+#
+# To install (idempotent): scripts/install-hooks.sh
+# To bypass (use sparingly): git commit --no-verify
+
+set -euo pipefail
+
+# Only gate when .rs files are staged.
+RS_FILES=$(git diff --cached --name-only --diff-filter=ACMR | grep '\.rs$' || true)
+if [ -z "$RS_FILES" ]; then
+    exit 0
+fi
+
+if ! command -v cargo >/dev/null 2>&1; then
+    echo "pre-commit: cargo not on PATH — skipping fmt check" >&2
+    exit 0
+fi
+
+if ! cargo fmt --all -- --check >/dev/null 2>&1; then
+    echo "pre-commit: cargo fmt --check FAILED." >&2
+    echo "pre-commit: run \`cargo fmt --all\`, re-stage, and commit again." >&2
+    echo "pre-commit: (or \`git commit --no-verify\` to skip — don't.)" >&2
+    exit 1
+fi
+
+exit 0
