@@ -737,6 +737,12 @@ impl MutationManager {
                         conflict_loser_atom: None,
                         writer_pubkey: String::new(),
                         signature: String::new(),
+                        // Propagate the originating mutation's provenance onto
+                        // the event. If the mutation was submitted with a
+                        // signature (`Some(Provenance::User{..})`), the event
+                        // records it; otherwise `None`, matching pre-PR-5
+                        // behavior.
+                        provenance: mutation.provenance.clone(),
                     });
                 }
             }

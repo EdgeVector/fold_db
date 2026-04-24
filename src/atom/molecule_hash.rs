@@ -62,9 +62,10 @@ impl MoleculeHash {
             AtomEntry {
                 atom_uuid,
                 written_at,
-                writer_pubkey: pubkey,
-                signature: sig,
+                writer_pubkey: pubkey.clone(),
+                signature: sig.clone(),
                 signature_version: 1,
+                provenance: Some(super::Provenance::user(pubkey, sig)),
             },
         );
         self.updated_at = Utc::now();
@@ -132,6 +133,7 @@ impl MoleculeHash {
                 writer_pubkey: String::new(),
                 signature: String::new(),
                 signature_version: 0,
+                provenance: None,
             },
         );
         self.updated_at = Utc::now();

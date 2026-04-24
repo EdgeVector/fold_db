@@ -32,6 +32,13 @@ pub struct AtomEntry {
     /// Signature scheme version (1 = hand-rolled canonical concat).
     #[serde(default)]
     pub signature_version: u8,
+    /// Writer identity and verifiability info. Additive during the
+    /// `projects/molecule-provenance-dag` migration: `None` on pre-PR-5
+    /// entries; `Some(Provenance::User{..})` on signed entries. Kept
+    /// alongside `writer_pubkey` / `signature` (not in place of) until a
+    /// follow-up PR removes them after full wire-through.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provenance: Option<Provenance>,
 }
 
 /// Returns the current time in nanoseconds since the Unix epoch.
@@ -70,4 +77,105 @@ pub struct KeyMetadata {
     pub source_file_name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub metadata: Option<std::collections::HashMap<String, String>>,
+}
+
+#[cfg(test)]
+mod atom_entry_provenance_tests {
+    //! molecule-provenance-dag PR 5 — additive `AtomEntry.provenance`.
+
+    use super::*;
+
+    /// Pre-PR-5 on-disk shape — no `provenance` field. Deserializes to
+    /// `None` and re-serializes byte-for-byte identical.
+    const GOLDEN_PRE_PR5_ATOM_ENTRY_JSON: &str = r#"{"atom_uuid":"atom-1","written_at":42,"writer_pubkey":"","signature":"","signature_version":0}"#;
+
+    #[test]
+    fn pre_pr5_atom_entry_json_round_trips_unchanged() {
+        let parsed: AtomEntry = serde_json::from_str(GOLDEN_PRE_PR5_ATOM_ENTRY_JSON)
+            .expect("deserialize pre-PR-5 atom entry");
+        assert!(parsed.provenance.is_none());
+        let reserialized = serde_json::to_string(&parsed).expect("serialize");
+        assert_eq!(reserialized, GOLDEN_PRE_PR5_ATOM_ENTRY_JSON);
+    }
+
+    #[test]
+    fn atom_entry_round_trips_with_provenance_user() {
+        let entry = AtomEntry {
+            atom_uuid: "atom-1".to_string(),
+            written_at: 7,
+            writer_pubkey: "pk".to_string(),
+            signature: "sig".to_string(),
+            signature_version: 1,
+            provenance: Some(Provenance::user("pk".to_string(), "sig".to_string())),
+        };
+        let json = serde_json::to_string(&entry).expect("serialize");
+        assert!(json.contains(r#""provenance":{"kind":"user""#));
+        let back: AtomEntry = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back, entry);
+    }
+
+    /// Signed range insert must populate `Provenance::User` with the same
+    /// pubkey and signature that land in the legacy fields. The
+    /// consistency property — `writer_pubkey == Provenance::User.pubkey`
+    /// when both are populated — is what the drift debug-assert on
+    /// Molecule protects; entries don't have a helper of their own yet,
+    /// but the invariant is the same and is checked here.
+    #[test]
+    fn molecule_range_signed_entry_provenance_matches_legacy_fields() {
+        let kp = crate::security::Ed25519KeyPair::generate().unwrap();
+        let mut mol = crate::atom::MoleculeRange::new("s", "f");
+        mol.set_atom_uuid("k1".to_string(), "atom-1".to_string(), &kp);
+        let entry = mol.get_atom_entry("k1").expect("entry present");
+        match entry.provenance.as_ref().expect("signed entry has provenance") {
+            Provenance::User {
+                pubkey,
+                signature,
+                signature_version,
+            } => {
+                assert_eq!(pubkey, &entry.writer_pubkey);
+                assert_eq!(signature, &entry.signature);
+                assert_eq!(*signature_version, 1);
+            }
+            _ => panic!("expected User variant"),
+        }
+    }
+
+    #[test]
+    fn molecule_hash_signed_entry_provenance_matches_legacy_fields() {
+        let kp = crate::security::Ed25519KeyPair::generate().unwrap();
+        let mut mol = crate::atom::MoleculeHash::new("s", "f");
+        mol.set_atom_uuid("k1".to_string(), "atom-1".to_string(), &kp);
+        let entry = mol.get_atom_entry("k1").expect("entry present");
+        match entry.provenance.as_ref().expect("signed entry has provenance") {
+            Provenance::User {
+                pubkey, signature, ..
+            } => {
+                assert_eq!(pubkey, &entry.writer_pubkey);
+                assert_eq!(signature, &entry.signature);
+            }
+            _ => panic!("expected User variant"),
+        }
+    }
+
+    #[test]
+    fn molecule_hash_range_signed_entry_provenance_matches_legacy_fields() {
+        let kp = crate::security::Ed25519KeyPair::generate().unwrap();
+        let mut mol = crate::atom::MoleculeHashRange::new("s", "f");
+        mol.set_atom_uuid_from_values(
+            "h1".to_string(),
+            "r1".to_string(),
+            "atom-1".to_string(),
+            &kp,
+        );
+        let entry = mol.get_atom_entry("h1", "r1").expect("entry present");
+        match entry.provenance.as_ref().expect("signed entry has provenance") {
+            Provenance::User {
+                pubkey, signature, ..
+            } => {
+                assert_eq!(pubkey, &entry.writer_pubkey);
+                assert_eq!(signature, &entry.signature);
+            }
+            _ => panic!("expected User variant"),
+        }
+    }
 }
