@@ -23,8 +23,8 @@ pub struct DbOperations {
     schema_store: SchemaStore,
     /// Main namespace — atoms, molecules, mutation events, sync conflicts
     atom_store: AtomStore,
-    /// Transform view definitions, view states, and the local-only
-    /// `transform_cache` namespace (derived per-device, excluded from sync).
+    /// Transform view definitions, view states, and per-(view, field,
+    /// key) override molecules.
     view_store: ViewStore,
     /// Permissions + public keys
     permissions_store: PermissionsStore,
@@ -57,14 +57,14 @@ impl DbOperations {
         let superseded_by_kv = store.open_namespace("schema_superseded_by").await?;
         let views_kv = store.open_namespace("views").await?;
         let view_states_kv = store.open_namespace("view_states").await?;
-        // `transform_cache` holds the per-view ViewCacheState output. It is
-        // local-only — SyncingNamespacedStore explicitly excludes it from the
-        // sync log so derived cache state cannot leak between devices.
-        let transform_cache_kv = store.open_namespace("transform_cache").await?;
         // `transform_field_overrides` holds per-(view, field, key) override
-        // molecules. Unlike transform_cache, overrides ARE user data, so this
-        // namespace participates in the unified sync log and converges across
-        // replicas via LWW on `written_at`.
+        // molecules. Synced like any other molecule write — converges
+        // across replicas via LWW on `written_at`.
+        //
+        // The companion `transform_cache` namespace was retired with the
+        // cache-deletion follow-up of `projects/view-compute-as-mutations`;
+        // atoms produced by the derived-mutation fire path are now the
+        // only persistent record of a view's output.
         let transform_field_overrides_kv =
             store.open_namespace("transform_field_overrides").await?;
         // `lineage_forward` / `lineage_reverse` back the derived-molecule
@@ -88,7 +88,6 @@ impl DbOperations {
         let superseded_by_store = Arc::new(TypedKvStore::new(superseded_by_kv));
         let views_store = Arc::new(TypedKvStore::new(views_kv));
         let view_states_store = Arc::new(TypedKvStore::new(view_states_kv));
-        let transform_cache_store = Arc::new(TypedKvStore::new(transform_cache_kv));
         let transform_field_overrides_store =
             Arc::new(TypedKvStore::new(transform_field_overrides_kv));
 
@@ -99,7 +98,6 @@ impl DbOperations {
         let view_store = ViewStore::new(
             views_store,
             view_states_store,
-            transform_cache_store,
             transform_field_overrides_store,
         );
         let permissions_store = PermissionsStore::new(permissions_typed, public_keys_typed);

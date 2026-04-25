@@ -10,11 +10,11 @@ pub enum SchemaError {
     InvalidData(String),
     PermissionDenied(String),
     /// Transform exceeded its fuel budget (MDT-E). Carried separately from
-    /// `InvalidTransform` so the view resolver can classify it as
-    /// `UnavailableReason::GasExceeded` without stringly-typed sniffing —
-    /// `max_gas` must fail identically on every device, so mis-classifying
-    /// a fuel trap as a generic execution error would let the state
-    /// machine loop retrying on the same input.
+    /// `InvalidTransform` so the view resolver can recognize a fuel trap
+    /// and surface a `gas exceeded` cause string without parsing the
+    /// inner message — `max_gas` must fail identically on every device,
+    /// so mis-classifying a fuel trap as a generic execution error would
+    /// hide the canonical failure shape from the audit log.
     TransformGasExceeded {
         input_size: u64,
     },

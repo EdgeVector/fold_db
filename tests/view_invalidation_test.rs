@@ -1,3 +1,10 @@
+//! Externally-observable invalidation behavior for transform views.
+//!
+//! After the cache-deletion follow-up of `projects/view-compute-as-mutations`
+//! the per-view cache is gone — these tests pin behavior at the query
+//! interface: source mutations propagate through view chains and cascades,
+//! and re-queries return fresh data.
+
 use fold_db::fold_db_core::FoldDB;
 use fold_db::schema::types::field_value_type::FieldValueType;
 use fold_db::schema::types::key_config::KeyConfig;
@@ -6,7 +13,7 @@ use fold_db::schema::types::schema::DeclarativeSchemaType as SchemaType;
 use fold_db::schema::types::{KeyValue, Mutation};
 use fold_db::schema::SchemaState;
 use fold_db::test_helpers::TestSchemaBuilder;
-use fold_db::view::types::{TransformView, ViewCacheState};
+use fold_db::view::types::TransformView;
 use serde_json::json;
 use std::collections::HashMap;
 
@@ -37,10 +44,9 @@ fn identity_view(name: &str, source_schema: &str, source_field: &str) -> Transfo
 }
 
 #[tokio::test]
-async fn mutating_source_invalidates_view_cache() {
+async fn mutating_source_propagates_to_view_query() {
     let db = setup_db().await;
 
-    // Setup: schema + data + view
     db.load_schema_from_json(&blogpost_schema_json())
         .await
         .unwrap();
@@ -68,20 +74,12 @@ async fn mutating_source_invalidates_view_cache() {
         .await
         .unwrap();
 
-    // First query: populates cache
     let query = Query::new("CV".to_string(), vec!["content".to_string()]);
     let results = db.query_executor().query(query.clone()).await.unwrap();
     let first_value = results["content"].values().next().unwrap().value.clone();
     assert_eq!(first_value, json!("original"));
 
-    // Verify cache state is Cached
-    let state = db.db_ops().get_view_cache_state("CV").await.unwrap();
-    assert!(
-        matches!(state, ViewCacheState::Cached { .. }),
-        "View should be cached after first query"
-    );
-
-    // Mutate the source
+    // Mutate the source — trigger system fires the view, dual-writes derived atoms.
     let mut fields2 = HashMap::new();
     fields2.insert("content".to_string(), json!("updated"));
     fields2.insert("publish_date".to_string(), json!("2026-01-02"));
@@ -96,15 +94,7 @@ async fn mutating_source_invalidates_view_cache() {
         .await
         .unwrap();
 
-    // Verify cache state was invalidated to Empty
-    let state_after = db.db_ops().get_view_cache_state("CV").await.unwrap();
-    assert!(
-        matches!(state_after, ViewCacheState::Empty),
-        "View cache should be invalidated after source mutation, got {:?}",
-        state_after
-    );
-
-    // Re-query: should fetch fresh data
+    // Re-query: must include the updated value.
     let results2 = db.query_executor().query(query).await.unwrap();
     let all_values: Vec<_> = results2["content"]
         .values()
@@ -118,7 +108,7 @@ async fn mutating_source_invalidates_view_cache() {
 }
 
 #[tokio::test]
-async fn re_query_after_invalidation_re_caches() {
+async fn re_query_returns_consistent_results() {
     let db = setup_db().await;
 
     db.load_schema_from_json(&blogpost_schema_json())
@@ -148,137 +138,23 @@ async fn re_query_after_invalidation_re_caches() {
         .await
         .unwrap();
 
-    // First query: caches
+    // Two queries return the same data — the second should hit the
+    // dual-written atom store after the first served (via cold-fire path
+    // or trigger-driven fire).
     let query = Query::new("TV".to_string(), vec!["title".to_string()]);
-    db.query_executor().query(query.clone()).await.unwrap();
+    let results1 = db.query_executor().query(query.clone()).await.unwrap();
+    let results2 = db.query_executor().query(query).await.unwrap();
 
-    // Invalidate
-    let mut fields2 = HashMap::new();
-    fields2.insert("title".to_string(), json!("Updated"));
-    fields2.insert("publish_date".to_string(), json!("2026-01-02"));
-    db.mutation_manager()
-        .write_mutations_batch_async(vec![Mutation::new(
-            "BlogPost".to_string(),
-            fields2,
-            KeyValue::new(None, Some("2026-01-02".to_string())),
-            "pk".to_string(),
-            MutationType::Update,
-        )])
-        .await
-        .unwrap();
-
-    assert!(matches!(
-        db.db_ops().get_view_cache_state("TV").await.unwrap(),
-        ViewCacheState::Empty
-    ));
-
-    // Re-query: should re-cache
-    db.query_executor().query(query).await.unwrap();
-
-    assert!(matches!(
-        db.db_ops().get_view_cache_state("TV").await.unwrap(),
-        ViewCacheState::Cached { .. }
-    ));
-}
-
-#[tokio::test]
-async fn cascading_invalidation_through_view_chain() {
-    let db = setup_db().await;
-
-    // Setup: schema + data
-    db.load_schema_from_json(&blogpost_schema_json())
-        .await
-        .unwrap();
-    db.schema_manager()
-        .set_schema_state("BlogPost", SchemaState::Approved)
-        .await
-        .unwrap();
-
-    let mut fields = HashMap::new();
-    fields.insert("content".to_string(), json!("original"));
-    fields.insert("publish_date".to_string(), json!("2026-01-01"));
-    db.mutation_manager()
-        .write_mutations_batch_async(vec![Mutation::new(
-            "BlogPost".to_string(),
-            fields,
-            KeyValue::new(None, Some("2026-01-01".to_string())),
-            "pk".to_string(),
-            MutationType::Create,
-        )])
-        .await
-        .unwrap();
-
-    // ViewA reads from BlogPost.content
-    db.schema_manager()
-        .register_view(identity_view("ViewA", "BlogPost", "content"))
-        .await
-        .unwrap();
-
-    // ViewB reads from ViewA.content (view chain)
-    let view_b = TransformView::new(
-        "ViewB",
-        SchemaType::Range,
-        Some(KeyConfig::new(None, Some("publish_date".to_string()))),
-        vec![Query::new("ViewA".to_string(), vec!["content".to_string()])],
-        None,
-        HashMap::from([("content".to_string(), FieldValueType::Any)]),
-    );
-    db.schema_manager().register_view(view_b).await.unwrap();
-
-    // Query both views to populate caches
-    let query_a = Query::new("ViewA".to_string(), vec!["content".to_string()]);
-    let query_b = Query::new("ViewB".to_string(), vec!["content".to_string()]);
-    db.query_executor().query(query_a).await.unwrap();
-    db.query_executor().query(query_b).await.unwrap();
-
-    // Both should be cached
-    assert!(matches!(
-        db.db_ops().get_view_cache_state("ViewA").await.unwrap(),
-        ViewCacheState::Cached { .. }
-    ));
-    assert!(matches!(
-        db.db_ops().get_view_cache_state("ViewB").await.unwrap(),
-        ViewCacheState::Cached { .. }
-    ));
-
-    // Mutate the source schema
-    let mut fields2 = HashMap::new();
-    fields2.insert("content".to_string(), json!("updated"));
-    fields2.insert("publish_date".to_string(), json!("2026-01-02"));
-    db.mutation_manager()
-        .write_mutations_batch_async(vec![Mutation::new(
-            "BlogPost".to_string(),
-            fields2,
-            KeyValue::new(None, Some("2026-01-02".to_string())),
-            "pk".to_string(),
-            MutationType::Update,
-        )])
-        .await
-        .unwrap();
-
-    // ViewA (direct dependency) is invalidated. May already be re-Cached
-    // by background precomputation task.
-    let state_a = db.db_ops().get_view_cache_state("ViewA").await.unwrap();
-    assert!(
-        matches!(
-            state_a,
-            ViewCacheState::Empty | ViewCacheState::Computing | ViewCacheState::Cached { .. }
-        ),
-        "ViewA cache should be invalidated (Empty, Computing, or re-Cached), got {:?}",
-        state_a
-    );
-
-    // ViewB should ALSO be invalidated (cascade: ViewB depends on ViewA)
-    // Deep views transition to Computing for background precomputation
-    let state_b = db.db_ops().get_view_cache_state("ViewB").await.unwrap();
-    assert!(
-        matches!(
-            state_b,
-            ViewCacheState::Empty | ViewCacheState::Computing | ViewCacheState::Cached { .. }
-        ),
-        "ViewB cache should be invalidated via cascade (got {:?})",
-        state_b
-    );
+    let v1: Vec<_> = results1["title"]
+        .values()
+        .map(|fv| fv.value.clone())
+        .collect();
+    let v2: Vec<_> = results2["title"]
+        .values()
+        .map(|fv| fv.value.clone())
+        .collect();
+    assert_eq!(v1, v2, "consecutive view queries must agree");
+    assert!(v1.contains(&json!("Hello")));
 }
 
 #[tokio::test]
@@ -400,7 +276,7 @@ async fn three_level_chain_resolves_to_source() {
 }
 
 #[tokio::test]
-async fn chain_re_query_after_cascade_invalidation_gets_fresh_data() {
+async fn chain_re_query_after_source_mutation_gets_fresh_data() {
     let db = setup_db().await;
 
     db.load_schema_from_json(&blogpost_schema_json())
@@ -435,13 +311,14 @@ async fn chain_re_query_after_cascade_invalidation_gets_fresh_data() {
         .await
         .unwrap();
 
-    // Populate caches
+    // Prime by querying through the chain.
     let query_b = Query::new("ViewB".to_string(), vec!["content".to_string()]);
     let results = db.query_executor().query(query_b.clone()).await.unwrap();
     let val = results["content"].values().next().unwrap().value.clone();
     assert_eq!(val, json!("v1"));
 
-    // Mutate source — both caches cascade-invalidated
+    // Mutate source — triggers fire ViewA, which dual-writes atoms,
+    // which fires ViewB transitively through the trigger system.
     let mut fields2 = HashMap::new();
     fields2.insert("content".to_string(), json!("v2"));
     fields2.insert("publish_date".to_string(), json!("2026-01-01"));
@@ -456,10 +333,10 @@ async fn chain_re_query_after_cascade_invalidation_gets_fresh_data() {
         .await
         .unwrap();
 
-    // Wait for background precomputation to complete
+    // Allow trigger cascade to settle.
     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
 
-    // Re-query ViewB — should get fresh "v2" through the entire chain
+    // Re-query ViewB — should reflect the updated source.
     let results2 = db.query_executor().query(query_b).await.unwrap();
     let values: Vec<_> = results2["content"]
         .values()
@@ -467,7 +344,7 @@ async fn chain_re_query_after_cascade_invalidation_gets_fresh_data() {
         .collect();
     assert!(
         values.contains(&json!("v2")),
-        "ViewB should return fresh data after cascade invalidation, got {:?}",
+        "ViewB should return fresh data after source mutation, got {:?}",
         values
     );
 }
@@ -577,7 +454,7 @@ async fn multi_source_view_from_two_views() {
 }
 
 #[tokio::test]
-async fn three_level_cascade_invalidation() {
+async fn three_level_cascade_query_reflects_source_change() {
     let db = setup_db().await;
 
     db.load_schema_from_json(&blogpost_schema_json())
@@ -616,25 +493,13 @@ async fn three_level_cascade_invalidation() {
         .await
         .unwrap();
 
-    // Populate all caches
+    // Prime by querying each level.
     for name in &["ViewA", "ViewB", "ViewC"] {
         let q = Query::new(name.to_string(), vec!["content".to_string()]);
-        db.query_executor().query(q).await.unwrap();
+        let _ = db.query_executor().query(q).await.unwrap();
     }
 
-    // All should be cached
-    for name in &["ViewA", "ViewB", "ViewC"] {
-        assert!(
-            matches!(
-                db.db_ops().get_view_cache_state(name).await.unwrap(),
-                ViewCacheState::Cached { .. }
-            ),
-            "{} should be cached",
-            name
-        );
-    }
-
-    // Mutate source
+    // Mutate source.
     let mut fields2 = HashMap::new();
     fields2.insert("content".to_string(), json!("changed"));
     fields2.insert("publish_date".to_string(), json!("2026-01-02"));
@@ -649,18 +514,19 @@ async fn three_level_cascade_invalidation() {
         .await
         .unwrap();
 
-    // All three views should no longer hold stale Cached data.
-    // Deep views (ViewB, ViewC) may be Computing or already re-Cached
-    // via background precomputation.
+    // Allow trigger cascade to settle.
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+
+    // Each view in the chain must surface the updated value on re-query.
     for name in &["ViewA", "ViewB", "ViewC"] {
-        let state = db.db_ops().get_view_cache_state(name).await.unwrap();
+        let q = Query::new(name.to_string(), vec!["content".to_string()]);
+        let res = db.query_executor().query(q).await.unwrap();
+        let values: Vec<_> = res["content"].values().map(|fv| fv.value.clone()).collect();
         assert!(
-            matches!(
-                state,
-                ViewCacheState::Empty | ViewCacheState::Computing | ViewCacheState::Cached { .. }
-            ),
-            "{} should be invalidated via cascade",
-            name
+            values.contains(&json!("changed")),
+            "{} should surface updated source value, got {:?}",
+            name,
+            values
         );
     }
 }

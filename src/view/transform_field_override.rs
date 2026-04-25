@@ -13,9 +13,12 @@
 //! # State machine
 //!
 //! Per `transform_views_design.md` a transform field has three states:
-//! `Empty`, `Cached`, `Overridden`. This module owns the data shape for the
-//! `Overridden` state. Cache lifecycle (`Empty`, `Cached`) is handled by
-//! `ViewCacheState` and is intentionally untouched here.
+//! `Empty`, `Cached`, `Overridden`. This module owns the data shape for
+//! the `Overridden` state. The `Empty`/`Cached` lifecycle was driven by
+//! the per-view cache (`ViewCacheState`), which the cache-deletion
+//! follow-up of `projects/view-compute-as-mutations` retired in favor of
+//! atom-store reads — so this module is intentionally untouched but the
+//! companion cache no longer exists.
 //!
 //! # LWW
 //!

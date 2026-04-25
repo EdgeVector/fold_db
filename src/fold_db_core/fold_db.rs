@@ -484,12 +484,18 @@ impl FoldDB {
         // `ViewOrchestrator` ↔ `MutationManager` edge need to exist, and
         // construction can only build one at a time.
         //
-        // `projects/view-compute-as-mutations` PR 2: the fire path now
-        // dual-writes derived mutations through this writer alongside the
-        // existing `ViewCacheState::Cached`.
+        // `projects/view-compute-as-mutations` PR 2: the fire path
+        // dual-writes derived mutations through this writer.
         view_orchestrator
             .set_derived_mutation_writer(Arc::clone(&mutation_manager)
                 as Arc<dyn super::view_orchestrator::DerivedMutationWriter>)
+            .await;
+
+        // Wire the orchestrator into the query executor so cold reads
+        // (atom store empty for the requested fields) can fire the view
+        // inline. Same late-binding pattern as the writer above.
+        query_executor
+            .set_view_orchestrator(Arc::clone(&view_orchestrator))
             .await;
 
         let trigger_shutdown = Arc::new(tokio::sync::Notify::new());

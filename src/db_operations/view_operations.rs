@@ -5,7 +5,7 @@
 use super::core::DbOperations;
 use crate::schema::SchemaError;
 use crate::view::registry::ViewState;
-use crate::view::types::{TransformView, ViewCacheState};
+use crate::view::types::TransformView;
 use std::collections::HashMap;
 
 impl DbOperations {
@@ -43,24 +43,5 @@ impl DbOperations {
 
     pub async fn delete_view_state(&self, view_name: &str) -> Result<(), SchemaError> {
         self.views().delete_view_state(view_name).await
-    }
-
-    pub async fn get_view_cache_state(
-        &self,
-        view_name: &str,
-    ) -> Result<ViewCacheState, SchemaError> {
-        self.views().get_view_cache_state(view_name).await
-    }
-
-    pub async fn set_view_cache_state(
-        &self,
-        view_name: &str,
-        state: &ViewCacheState,
-    ) -> Result<(), SchemaError> {
-        self.views().set_view_cache_state(view_name, state).await
-    }
-
-    pub async fn clear_view_cache_state(&self, view_name: &str) -> Result<(), SchemaError> {
-        self.views().clear_view_cache_state(view_name).await
     }
 }

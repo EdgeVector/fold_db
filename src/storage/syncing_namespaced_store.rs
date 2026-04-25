@@ -17,7 +17,7 @@ use std::sync::Arc;
 /// indexes (PR 6 of `projects/molecule-provenance-dag`). The full source list
 /// is rebuildable from replay — syncing it would waste bandwidth proportional
 /// to fan-in and is explicitly prohibited by the design.
-const LOCAL_ONLY_NAMESPACES: &[&str] = &["transform_cache", "lineage_forward", "lineage_reverse"];
+const LOCAL_ONLY_NAMESPACES: &[&str] = &["lineage_forward", "lineage_reverse"];
 
 /// A NamespacedStore decorator that wraps each opened namespace with a SyncingKvStore.
 ///
@@ -31,7 +31,7 @@ const LOCAL_ONLY_NAMESPACES: &[&str] = &["transform_cache", "lineage_forward", "
 ///   ├── open_namespace("main")
 ///   │     └── SyncingKvStore("main")  ← records ops
 ///   │           └── inner KvStore     ← actual backend
-///   └── open_namespace("transform_cache")
+///   └── open_namespace("lineage_forward")
 ///         └── inner KvStore           ← no wrapper, never syncs
 /// ```
 pub struct SyncingNamespacedStore {
@@ -132,77 +132,8 @@ mod tests {
         assert!(names.contains(&"metadata".to_string()));
     }
 
-    #[tokio::test]
-    async fn transform_cache_writes_are_not_recorded() {
-        let (store, engine) = test_setup().await;
-
-        let cache = store.open_namespace("transform_cache").await.unwrap();
-        assert_eq!(engine.pending_count().await, 0);
-
-        cache
-            .put(b"view:analytics", b"cached-output".to_vec())
-            .await
-            .unwrap();
-        cache
-            .put(b"view:other", b"another-output".to_vec())
-            .await
-            .unwrap();
-        cache.delete(b"view:other").await.unwrap();
-        cache
-            .batch_put(vec![
-                (b"view:a".to_vec(), b"va".to_vec()),
-                (b"view:b".to_vec(), b"vb".to_vec()),
-            ])
-            .await
-            .unwrap();
-
-        assert_eq!(
-            engine.pending_count().await,
-            0,
-            "transform_cache namespace must never append to the sync log"
-        );
-        assert_eq!(
-            engine.state().await,
-            crate::sync::SyncState::Idle,
-            "sync engine state must stay Idle after transform_cache writes"
-        );
-    }
-
-    /// Positive control paired with `transform_cache_writes_are_not_recorded`:
-    /// writes to a synced namespace must record, writes to the local-only
-    /// namespace must not, under the same engine instance.
-    #[tokio::test]
-    async fn cache_writes_never_mix_with_synced_writes() {
-        let (store, engine) = test_setup().await;
-
-        let main = store.open_namespace("main").await.unwrap();
-        let cache = store.open_namespace("transform_cache").await.unwrap();
-
-        // Full cycle: compute → cache → read → recompute → cache again.
-        // None of this should enter the sync log.
-        for i in 0..5 {
-            let key = format!("view:v{}", i);
-            cache
-                .put(key.as_bytes(), format!("output-{}", i).into_bytes())
-                .await
-                .unwrap();
-            let got = cache.get(key.as_bytes()).await.unwrap();
-            assert!(got.is_some());
-            cache
-                .put(key.as_bytes(), format!("recomputed-{}", i).into_bytes())
-                .await
-                .unwrap();
-        }
-        assert_eq!(engine.pending_count().await, 0);
-
-        // A source-data write on the same engine must still record.
-        main.put(b"atom:1", b"source-data".to_vec()).await.unwrap();
-        assert_eq!(engine.pending_count().await, 1);
-    }
-
     #[test]
     fn is_local_only_classification() {
-        assert!(SyncingNamespacedStore::is_local_only("transform_cache"));
         assert!(SyncingNamespacedStore::is_local_only("lineage_forward"));
         assert!(SyncingNamespacedStore::is_local_only("lineage_reverse"));
         assert!(!SyncingNamespacedStore::is_local_only("main"));
@@ -211,8 +142,7 @@ mod tests {
     }
 
     /// Lineage indexes (forward + reverse) back `projects/molecule-provenance-dag`
-    /// PR 6 and must never enter the sync log. Mirrors
-    /// `transform_cache_writes_are_not_recorded`.
+    /// PR 6 and must never enter the sync log.
     #[tokio::test]
     async fn lineage_forward_writes_are_not_recorded() {
         let (store, engine) = test_setup().await;

@@ -1,21 +1,21 @@
 //! Transform-view domain store.
 //!
-//! Owns the namespaces for transform view definitions, view states,
-//! and the local-only transform cache. External callers reach these via
-//! `DbOperations::views()`.
+//! Owns the namespaces for transform view definitions, view states, and
+//! per-(view, field, key) override molecules. External callers reach
+//! these via `DbOperations::views()`.
 //!
-//! The `transform_cache` namespace is declared local-only in
-//! `SyncingNamespacedStore::LOCAL_ONLY_NAMESPACES` — writes to it never
-//! append to the sync log. Cached transform output is derived per-device
-//! and must not cross the wire (see `docs/design/multi_device_transforms.md`,
-//! "What Syncs vs. What Doesn't").
+//! The on-disk per-view cache (`transform_cache` namespace, `ViewCacheState`)
+//! was retired with the cache-deletion follow-up of
+//! `projects/view-compute-as-mutations`: atoms produced by the
+//! derived-mutation fire path are now the only persistent record of a
+//! view's output.
 
 use crate::schema::SchemaError;
 use crate::storage::traits::{KvStore, TypedStore};
 use crate::storage::TypedKvStore;
 use crate::view::registry::ViewState;
 use crate::view::transform_field_override::TransformFieldOverride;
-use crate::view::types::{TransformView, ViewCacheState};
+use crate::view::types::TransformView;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -24,10 +24,6 @@ use std::sync::Arc;
 pub struct ViewStore {
     views_store: Arc<TypedKvStore<dyn KvStore>>,
     view_states_store: Arc<TypedKvStore<dyn KvStore>>,
-    /// Local-only cache of computed `ViewCacheState` per view. Routed
-    /// through the `transform_cache` namespace, which `SyncingNamespacedStore`
-    /// excludes from the sync log.
-    transform_cache_store: Arc<TypedKvStore<dyn KvStore>>,
     /// Per-(view, field, key) override molecules. Synced like any other
     /// molecule write — converges across replicas via LWW on `written_at`.
     transform_field_overrides_store: Arc<TypedKvStore<dyn KvStore>>,
@@ -37,13 +33,11 @@ impl ViewStore {
     pub(crate) fn new(
         views_store: Arc<TypedKvStore<dyn KvStore>>,
         view_states_store: Arc<TypedKvStore<dyn KvStore>>,
-        transform_cache_store: Arc<TypedKvStore<dyn KvStore>>,
         transform_field_overrides_store: Arc<TypedKvStore<dyn KvStore>>,
     ) -> Self {
         Self {
             views_store,
             view_states_store,
-            transform_cache_store,
             transform_field_overrides_store,
         }
     }
@@ -55,10 +49,6 @@ impl ViewStore {
 
     pub(crate) fn raw_view_states(&self) -> &Arc<TypedKvStore<dyn KvStore>> {
         &self.view_states_store
-    }
-
-    pub(crate) fn raw_transform_cache(&self) -> &Arc<TypedKvStore<dyn KvStore>> {
-        &self.transform_cache_store
     }
 
     /// Store a transform view definition.
@@ -113,38 +103,6 @@ impl ViewStore {
     pub async fn delete_view_state(&self, view_name: &str) -> Result<(), SchemaError> {
         self.view_states_store.delete_item(view_name).await?;
         self.view_states_store.inner().flush().await?;
-        Ok(())
-    }
-
-    /// Get the cache state for an entire view.
-    pub async fn get_view_cache_state(
-        &self,
-        view_name: &str,
-    ) -> Result<ViewCacheState, SchemaError> {
-        Ok(self
-            .transform_cache_store
-            .get_item::<ViewCacheState>(view_name)
-            .await?
-            .unwrap_or(ViewCacheState::Empty))
-    }
-
-    /// Set the cache state for an entire view.
-    pub async fn set_view_cache_state(
-        &self,
-        view_name: &str,
-        state: &ViewCacheState,
-    ) -> Result<(), SchemaError> {
-        self.transform_cache_store
-            .put_item(view_name, state)
-            .await?;
-        self.transform_cache_store.inner().flush().await?;
-        Ok(())
-    }
-
-    /// Clear cache state for a view (used when removing a view).
-    pub async fn clear_view_cache_state(&self, view_name: &str) -> Result<(), SchemaError> {
-        self.transform_cache_store.delete_item(view_name).await?;
-        self.transform_cache_store.inner().flush().await?;
         Ok(())
     }
 

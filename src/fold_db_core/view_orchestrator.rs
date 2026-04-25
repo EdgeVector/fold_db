@@ -1,15 +1,20 @@
 //! View Orchestrator
 //!
-//! Extracted from MutationManager. Owns all view lifecycle logic triggered by
-//! mutations: redirecting mutations targeting identity views to their source
-//! schemas, invalidating dependent view caches, topologically ordering cascade
-//! views, and spawning background precomputation tasks.
+//! Extracted from MutationManager. Owns view-write redirection (identity
+//! views are rewritten to source mutations; WASM views' user writes are
+//! persisted as `TransformFieldOverride`) and the trigger-driven WASM
+//! fire path.
 //!
-//! This is pure graph/view orchestration — it has nothing to do with mutation
-//! execution per se (atoms, molecules, idempotency). It's triggered BY
-//! mutations but is not part of the mutation pipeline.
+//! Post-cache cleanup (`projects/view-compute-as-mutations`): the
+//! orchestrator no longer manages a per-view cache. Every fire runs the
+//! WASM transform synchronously and dual-writes the output as
+//! `Provenance::Derived` mutations through the `MutationManager`.
+//! Reads serve from the resulting atoms (PR 5). Cascades flow naturally
+//! through the trigger system: derived mutations produced by V1 land as
+//! atoms on V1's synthesized schema, which the trigger dispatcher
+//! observes and uses to fire V2.
 
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -23,7 +28,7 @@ use crate::schema::{SchemaCore, SchemaError};
 use crate::view::derived_metadata::DerivedMetadata;
 use crate::view::resolver::ViewResolver;
 use crate::view::transform_field_override::TransformFieldOverride;
-use crate::view::types::{TransformView, ViewCacheState};
+use crate::view::types::TransformView;
 
 use super::query::StandardSourceQuery;
 
@@ -49,16 +54,14 @@ pub trait DerivedMutationWriter: Send + Sync {
     ) -> Result<Vec<String>, SchemaError>;
 }
 
-/// Orchestrates view lifecycle: dependency-graph traversal, invalidation,
-/// and precomputation of derived views triggered by mutations.
+/// Orchestrates view-write redirection and trigger-driven WASM fires.
 pub struct ViewOrchestrator {
     schema_manager: Arc<SchemaCore>,
     db_ops: Arc<DbOperations>,
     /// Post-construction late-binding slot for the derived-mutation writer.
     /// `None` in tests and until `fold_db.rs` wires the `MutationManager` in.
-    /// When `None`, the orchestrator still updates `ViewCacheState::Cached` as
-    /// before — the derived-mutation path is the additive side of the
-    /// dual-write phase of `projects/view-compute-as-mutations`.
+    /// When `None`, the orchestrator runs the WASM transform but cannot
+    /// persist atoms — `fire_view` returns the output without dual-writing.
     derived_writer: Arc<RwLock<Option<Arc<dyn DerivedMutationWriter>>>>,
 }
 
@@ -79,8 +82,8 @@ impl ViewOrchestrator {
         *self.derived_writer.write().await = Some(writer);
     }
 
-    /// Accessor used by the background precompute task to grab the current
-    /// writer (if set) without holding the lock across the write operation.
+    /// Accessor used by `fire_view` to grab the current writer (if set)
+    /// without holding the lock across the write operation.
     async fn snapshot_derived_writer(&self) -> Option<Arc<dyn DerivedMutationWriter>> {
         self.derived_writer.read().await.clone()
     }
@@ -107,12 +110,12 @@ impl ViewOrchestrator {
 
         for mutation in mutations {
             // `Provenance::Derived` mutations are produced by the transform
-            // fire path itself (see `precompute_views` below). They are writes
-            // to the view's own output molecules, NOT user-originated writes
-            // against the view, so they must bypass identity-view redirection
-            // AND override persistence — both of which assume a user pin.
-            // Pass them straight through to the normal mutation pipeline so
-            // atoms land on the view schema's fields.
+            // fire path itself (see `fire_view` below). They are writes to
+            // the view's own output molecules, NOT user-originated writes
+            // against the view, so they must bypass identity-view
+            // redirection AND override persistence — both of which assume
+            // a user pin. Pass them straight through to the normal
+            // mutation pipeline so atoms land on the view schema's fields.
             if matches!(mutation.provenance, Some(Provenance::Derived { .. })) {
                 result.push(mutation);
                 continue;
@@ -214,347 +217,74 @@ impl ViewOrchestrator {
         Ok(())
     }
 
-    /// Invalidate a single named view (and its cascade), then spawn a
-    /// background precompute for the deep tier. Phase 1 trigger runner
-    /// entry: the runner decides which views fire, then calls this to
-    /// perform the actual cache lifecycle work.
-    pub async fn invalidate_view(&self, view_name: &str) -> Result<(), SchemaError> {
-        // Confirm the view exists before doing work.
-        {
-            let registry = self
-                .schema_manager
-                .view_registry()
-                .lock()
-                .map_err(|_| SchemaError::InvalidData("view_registry lock".to_string()))?;
-            if registry.get_view(view_name).is_none() {
-                return Err(SchemaError::NotFound(format!(
-                    "View '{}' not found",
-                    view_name
-                )));
-            }
-        }
-
-        let mut all_invalidated: Vec<String> = vec![view_name.to_string()];
-        let mut visited = std::collections::HashSet::new();
-        self.collect_cascade_views(view_name, &mut visited, &mut all_invalidated)?;
-
-        for v in &all_invalidated {
-            let current_state = self.db_ops.get_view_cache_state(v).await?;
-            if !current_state.is_empty() {
-                self.db_ops
-                    .set_view_cache_state(v, &ViewCacheState::Empty)
-                    .await?;
-                log::debug!(
-                    "Invalidated view cache '{}' ({:?} → Empty, trigger-driven)",
-                    v,
-                    current_state
-                );
-            }
-        }
-
-        let (all_ordered, deep_views) =
-            self.partition_views_for_precomputation(&all_invalidated)?;
-        if !deep_views.is_empty() {
-            self.spawn_background_precomputation(all_ordered, deep_views)
-                .await?;
-        }
-        Ok(())
-    }
-
-    // NOTE: `invalidate_on_mutation(schema, fields)` used to be the
-    // implicit fire path — every mutation would re-run every view
-    // dependent on the mutated fields. Phase 1 task 3 replaces that with
-    // explicit triggers on each view and routes dispatch through
-    // `TriggerRunner`, which calls `invalidate_view` per view it decides
-    // to fire. No call site remains for the old method, so it's removed.
-
-    /// Collect all transitive cascade views in one pass (single lock acquisition).
-    fn collect_cascade_views(
+    /// Fire a single view: run its WASM transform (or identity pass-through)
+    /// on the latest source data, then dual-write the output as
+    /// `Provenance::Derived` mutations through the configured writer.
+    ///
+    /// Synchronous and inline. Cascades are not walked here — derived
+    /// mutations land as atoms on the view's synthesized schema, which the
+    /// trigger dispatcher observes and uses to fire downstream views.
+    ///
+    /// Returns the computed output so the caller can return it to a user
+    /// query without a second round-trip through the atom store. Identity
+    /// views and views with no transform are still resolved; they just
+    /// don't produce derived mutations (the resolver's
+    /// `DerivedMetadata` is `None` for identity views, and we skip the
+    /// dual-write in that case).
+    ///
+    /// Errors:
+    /// * `NotFound` — view name does not resolve.
+    /// * `InvalidTransform` — WASM failed (gas, compile, trap, type
+    ///   validation, calibrated envelope). Trigger runner records this
+    ///   as `status="error"` in the `TriggerFiring` audit log.
+    pub async fn fire_view(
         &self,
         view_name: &str,
-        visited: &mut HashSet<String>,
-        result: &mut Vec<String>,
-    ) -> Result<(), SchemaError> {
-        if !visited.insert(view_name.to_string()) {
-            return Ok(());
-        }
-
-        let cascade_views: Vec<String> = {
+    ) -> Result<
+        HashMap<String, HashMap<KeyValue, crate::schema::types::field::FieldValue>>,
+        SchemaError,
+    > {
+        let (view, wasm_engine) = {
             let registry = self
                 .schema_manager
                 .view_registry()
                 .lock()
                 .map_err(|_| SchemaError::InvalidData("view_registry lock".to_string()))?;
-            registry
-                .dependency_tracker
-                .get_all_dependents_of_schema(view_name)
+            let view = registry
+                .get_view(view_name)
+                .cloned()
+                .ok_or_else(|| SchemaError::NotFound(format!("View '{}' not found", view_name)))?;
+            let engine = Arc::clone(registry.wasm_engine());
+            (view, engine)
         };
 
-        for dep in &cascade_views {
-            if !visited.contains(dep) {
-                result.push(dep.clone());
-                self.collect_cascade_views(dep, visited, result)?;
-            }
-        }
+        let resolver = ViewResolver::new(Arc::clone(&wasm_engine));
+        let source_query = StandardSourceQuery::new(
+            Arc::clone(&self.schema_manager),
+            Arc::clone(&self.db_ops),
+            ViewResolver::new(Arc::clone(&wasm_engine)),
+        );
 
-        Ok(())
-    }
+        let overrides = self
+            .db_ops
+            .views()
+            .scan_transform_field_overrides(view_name)
+            .await?;
 
-    /// Partition invalidated views into:
-    /// - `all_ordered`: all views in bottom-up order (leaves first) for precomputation
-    /// - `deep_only`: subset that depends on other views (level 2+), to be marked Computing
-    fn partition_views_for_precomputation(
-        &self,
-        invalidated: &[String],
-    ) -> Result<(Vec<String>, HashSet<String>), SchemaError> {
-        let registry = self
-            .schema_manager
-            .view_registry()
-            .lock()
-            .map_err(|_| SchemaError::InvalidData("view_registry lock".to_string()))?;
+        let (output, derived) = resolver
+            .resolve_with_overrides_and_derived(&view, &[], &source_query, &overrides)
+            .await?;
 
-        let invalidated_set: HashSet<&str> = invalidated.iter().map(|s| s.as_str()).collect();
-
-        // Classify each view as level-1 (only schema sources) or deep (has view sources).
-        // Also build an adjacency map for topological sorting.
-        let mut deep: HashSet<String> = HashSet::new();
-        let mut in_degree: HashMap<String, usize> = HashMap::new();
-        // view_name → list of views that depend on it (within the invalidated set)
-        let mut dependents_of: HashMap<String, Vec<String>> = HashMap::new();
-
-        for view_name in invalidated {
-            if let Some(view) = registry.get_view(view_name) {
-                let view_sources_in_set: Vec<String> = view
-                    .source_schemas()
-                    .into_iter()
-                    .filter(|source| {
-                        registry.get_view(source).is_some()
-                            && invalidated_set.contains(source.as_str())
-                    })
-                    .collect();
-
-                if !view_sources_in_set.is_empty() {
-                    deep.insert(view_name.clone());
-                }
-
-                in_degree.insert(view_name.clone(), view_sources_in_set.len());
-                for source in view_sources_in_set {
-                    dependents_of
-                        .entry(source)
-                        .or_default()
-                        .push(view_name.clone());
-                }
-            }
-        }
-
-        // Kahn's algorithm: topological sort so leaves (in_degree=0) come first
-        let mut queue: VecDeque<String> = in_degree
-            .iter()
-            .filter(|(_, &deg)| deg == 0)
-            .map(|(name, _)| name.clone())
-            .collect();
-        let mut all: Vec<String> = Vec::new();
-
-        while let Some(current) = queue.pop_front() {
-            all.push(current.clone());
-            if let Some(deps) = dependents_of.get(&current) {
-                for dep in deps {
-                    if let Some(deg) = in_degree.get_mut(dep) {
-                        *deg = deg.saturating_sub(1);
-                        if *deg == 0 {
-                            queue.push_back(dep.clone());
-                        }
-                    }
-                }
-            }
-        }
-
-        Ok((all, deep))
-    }
-
-    /// Mark deep views as Computing and spawn a background task to precompute
-    /// all views in bottom-up order. Level 1 views are computed first (they
-    /// only depend on schemas) so that deep views can resolve against them.
-    async fn spawn_background_precomputation(
-        &self,
-        all_ordered: Vec<String>,
-        deep_views: HashSet<String>,
-    ) -> Result<(), SchemaError> {
-        // Only mark deep views as Computing (level 1 stays Empty for lazy query)
-        for view_name in &deep_views {
-            self.db_ops
-                .set_view_cache_state(view_name, &ViewCacheState::Computing)
+        // Dual-write derived mutations when the resolver produced metadata
+        // (i.e., a WASM fire — identity views skip this branch). Best-effort
+        // per-view: errors here propagate so the trigger runner records
+        // them in the audit log.
+        if let (Some(metadata), Some(writer)) = (derived, self.snapshot_derived_writer().await) {
+            Self::write_derived_mutations(writer.as_ref(), &self.db_ops, &view, &output, metadata)
                 .await?;
-            log::debug!(
-                "View '{}' marked as Computing for background precomputation",
-                view_name
-            );
         }
 
-        // Spawn background task that computes ALL views bottom-up
-        let schema_manager = Arc::clone(&self.schema_manager);
-        let db_ops = Arc::clone(&self.db_ops);
-        let derived_writer = self.snapshot_derived_writer().await;
-
-        tokio::spawn(async move {
-            if let Err(e) =
-                Self::precompute_views(schema_manager, db_ops, all_ordered, derived_writer).await
-            {
-                log::error!("Background view precomputation failed: {}", e);
-            }
-        });
-
-        Ok(())
-    }
-
-    /// Background task: precompute views in bottom-up order.
-    /// Each view's sources must be Cached before it can be computed.
-    async fn precompute_views(
-        schema_manager: Arc<SchemaCore>,
-        db_ops: Arc<DbOperations>,
-        views_to_compute: Vec<String>,
-        derived_writer: Option<Arc<dyn DerivedMutationWriter>>,
-    ) -> Result<(), SchemaError> {
-        let wasm_engine = {
-            let registry = schema_manager
-                .view_registry()
-                .lock()
-                .map_err(|_| SchemaError::InvalidData("view_registry lock".to_string()))?;
-            Arc::clone(registry.wasm_engine())
-        };
-
-        for view_name in &views_to_compute {
-            // Get view definition
-            let view = {
-                let registry = schema_manager
-                    .view_registry()
-                    .lock()
-                    .map_err(|_| SchemaError::InvalidData("view_registry lock".to_string()))?;
-                match registry.get_view(view_name) {
-                    Some(v) => v.clone(),
-                    None => {
-                        log::warn!("View '{}' disappeared during precomputation", view_name);
-                        continue;
-                    }
-                }
-            };
-
-            // Check current state:
-            // - Computing: deep view, precompute and store
-            // - Empty: level-1 view, precompute and store (needed by deeper views)
-            // - Cached: already computed (perhaps by a lazy query), skip
-            // - Unavailable: compute already attempted and failed on this
-            //   input (sticky per input); skip — a source mutation will
-            //   invalidate it back to Empty before the next retry.
-            let state = db_ops.get_view_cache_state(view_name).await?;
-            if matches!(
-                state,
-                ViewCacheState::Cached { .. } | ViewCacheState::Unavailable { .. }
-            ) {
-                log::debug!(
-                    "View '{}' already in terminal state ({:?}), skipping precomputation",
-                    view_name,
-                    state
-                );
-                continue;
-            }
-
-            // Build source query for resolution
-            let source_query = StandardSourceQuery::new_precompute(
-                Arc::clone(&schema_manager),
-                Arc::clone(&db_ops),
-                ViewResolver::new(Arc::clone(&wasm_engine)),
-            );
-
-            let resolver = ViewResolver::new(Arc::clone(&wasm_engine));
-            // Precompute also has to honor overrides — otherwise the
-            // background pass would write a `Cached` state that ignores the
-            // user's pin, and the next read would briefly serve the wrong
-            // value before being corrected by `resolve_with_overrides`.
-            let overrides = db_ops
-                .views()
-                .scan_transform_field_overrides(view_name)
-                .await?;
-            match resolver
-                .resolve_with_overrides_and_derived(
-                    &view,
-                    &[],
-                    &ViewCacheState::Empty,
-                    &source_query,
-                    &overrides,
-                )
-                .await
-            {
-                Ok((output, new_cache, derived)) => {
-                    // Only store if not re-invalidated since we started
-                    // (e.g., a source mutation landed mid-compute and moved
-                    // the view back to Empty). Persist both successful
-                    // Cached and terminal Unavailable states — the latter
-                    // is what prevents retry storms.
-                    let current = db_ops.get_view_cache_state(view_name).await?;
-                    if !matches!(current, ViewCacheState::Cached { .. }) {
-                        db_ops.set_view_cache_state(view_name, &new_cache).await?;
-                        match &new_cache {
-                            ViewCacheState::Unavailable { reason } => {
-                                log::warn!(
-                                    "View '{}' precomputation → Unavailable: {}",
-                                    view_name,
-                                    reason
-                                );
-                            }
-                            _ => log::info!("View '{}' precomputed successfully", view_name),
-                        }
-                    }
-
-                    // Dual-write to the atom layer: on a successful WASM fire
-                    // (`derived` is `Some`), submit the output as a batch of
-                    // mutations carrying `Provenance::Derived` through
-                    // `MutationManager`. The cache write above keeps reads
-                    // working while PR 4 flips the read path to atoms; the
-                    // mutation write is what the future cache-free world
-                    // consumes. Identity views, sticky-Unavailable, and the
-                    // no-writer-configured case all land in this branch with
-                    // `derived = None` and skip the dual-write.
-                    if let (Some(metadata), Some(writer)) = (derived, derived_writer.as_ref()) {
-                        if let Err(e) = Self::write_derived_mutations(
-                            writer.as_ref(),
-                            &db_ops,
-                            &view,
-                            &output,
-                            metadata,
-                        )
-                        .await
-                        {
-                            // Derived-write failure should not abort
-                            // precomputation — the cache write already
-                            // happened, so the view is readable. Log loudly
-                            // so regressions surface in integration tests.
-                            log::error!(
-                                "Derived-mutation dual-write failed for view '{}': {}",
-                                view_name,
-                                e
-                            );
-                        }
-                    }
-                }
-                Err(e) => {
-                    log::error!("Failed to precompute view '{}': {}", view_name, e);
-                    // Reset Computing to Empty so it can be lazily computed on next query.
-                    // Note: per-input WASM failures never reach this branch — the
-                    // resolver converts them to `Ok(Unavailable)`. This path only
-                    // fires for infrastructure errors (lock poisoning, source query
-                    // failure) that are worth retrying.
-                    let current = db_ops.get_view_cache_state(view_name).await?;
-                    if current.is_computing() {
-                        db_ops
-                            .set_view_cache_state(view_name, &ViewCacheState::Empty)
-                            .await?;
-                    }
-                }
-            }
-        }
-
-        Ok(())
+        Ok(output)
     }
 
     /// Turn a successful WASM fire's output into a batch of derived-provenance
@@ -565,10 +295,6 @@ impl ViewOrchestrator {
     /// `Mutation` corresponds to one `(schema, key)` tuple. After the writer
     /// returns, lineage index entries are inserted so reverse queries
     /// ("which derived molecules came from source X?") can find these mutations.
-    ///
-    /// Best-effort: errors here do NOT abort precomputation — the cache write
-    /// is the authoritative result for readers until PR 4 of
-    /// `projects/view-compute-as-mutations` flips the read path.
     async fn write_derived_mutations(
         writer: &dyn DerivedMutationWriter,
         db_ops: &Arc<DbOperations>,

@@ -14,4 +14,4 @@ pub use formatter::{
 };
 pub use hash_range_query::HashRangeQueryProcessor;
 pub use query_executor::QueryExecutor;
-pub use source_query::{SourceQueryMode, StandardSourceQuery};
+pub use source_query::StandardSourceQuery;
