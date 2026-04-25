@@ -19,6 +19,7 @@ use fold_db::schema::types::operations::MutationType;
 use fold_db::schema::types::operations::Query;
 use fold_db::schema::types::{KeyValue, Mutation};
 use fold_db::schema::SchemaState;
+use fold_db::security::Ed25519KeyPair;
 use fold_db::storage::traits::NamespacedStore;
 use fold_db::sync::auth::{AuthClient, SyncAuth};
 use fold_db::sync::log::{LogEntry, LogOp};
@@ -109,6 +110,7 @@ fn build_replay_engine(
         auth,
         store,
         SyncConfig::default(),
+        Arc::new(Ed25519KeyPair::generate().unwrap()),
     )
 }
 

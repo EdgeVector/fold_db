@@ -124,6 +124,17 @@ async fn create_local_fold_db(
     let base_store: Arc<dyn crate::storage::traits::NamespacedStore> =
         Arc::new(crate::storage::SledNamespacedStore::new(Arc::clone(&pool)));
 
+    // Build the node signer once and share it with both SyncEngine (for signing
+    // merged molecules during replay) and FoldDB (used by MutationManager for
+    // signing local writes). Same keypair = merged writes trace to the same
+    // node identity as direct writes.
+    // TODO: Load this from the node's persistent identity in NodeConfigStore
+    // instead of generating per-process. Tracked alongside the matching TODO
+    // in `FoldDB::initialize_from_db_ops_with_sled`.
+    let node_signer = Arc::new(
+        crate::security::Ed25519KeyPair::generate().expect("Ed25519 key generation must not fail"),
+    );
+
     // Build the store stack, optionally inserting sync layer
     #[allow(clippy::type_complexity)]
     let (store, sync_engine, sync_interval_ms, enc_store_ref): (
@@ -149,6 +160,7 @@ async fn create_local_fold_db(
             auth,
             base_store.clone(),
             sync_config,
+            Arc::clone(&node_signer),
         );
         if let Some(cb) = setup.auth_refresh {
             engine.set_auth_refresh(cb);
@@ -238,6 +250,7 @@ async fn create_local_fold_db(
         "local".to_string(),
         Some(pool),
         enc_store_ref,
+        Some(node_signer),
     )
     .await
     .map_err(|e| FoldDbError::Config(e.to_string()))?;

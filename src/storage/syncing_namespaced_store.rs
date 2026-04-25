@@ -91,6 +91,7 @@ mod tests {
             SyncAuth::ApiKey("test".to_string()),
         );
 
+        let signer = Arc::new(crate::security::Ed25519KeyPair::generate().unwrap());
         let engine = Arc::new(SyncEngine::new(
             "test-device".to_string(),
             crypto,
@@ -98,6 +99,7 @@ mod tests {
             auth,
             inner.clone(),
             SyncConfig::default(),
+            signer,
         ));
 
         let syncing = SyncingNamespacedStore::new(inner, engine.clone());

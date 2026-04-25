@@ -8,6 +8,7 @@
 
 use fold_db::crypto::provider::LocalCryptoProvider;
 use fold_db::crypto::CryptoProvider;
+use fold_db::security::Ed25519KeyPair;
 use fold_db::storage::encrypting_namespaced_store::EncryptingNamespacedStore;
 use fold_db::storage::inmemory_backend::InMemoryNamespacedStore;
 use fold_db::storage::syncing_namespaced_store::SyncingNamespacedStore;
@@ -17,6 +18,10 @@ use fold_db::sync::s3::S3Client;
 use fold_db::sync::snapshot::Snapshot;
 use fold_db::sync::{SyncConfig, SyncEngine, SyncState};
 use std::sync::Arc;
+
+fn test_signer() -> Arc<Ed25519KeyPair> {
+    Arc::new(Ed25519KeyPair::generate().unwrap())
+}
 
 fn test_crypto() -> Arc<dyn CryptoProvider> {
     Arc::new(LocalCryptoProvider::from_key([0x42u8; 32]))
@@ -46,6 +51,7 @@ async fn build_stack() -> (
         auth,
         base.clone() as Arc<dyn NamespacedStore>,
         SyncConfig::default(),
+        test_signer(),
     ));
 
     // Stack: base → syncing → encrypting
@@ -278,6 +284,7 @@ async fn reconfigure_sharing_replaces_extra_targets_atomically() {
         auth,
         base.clone() as Arc<dyn NamespacedStore>,
         SyncConfig::default(),
+        test_signer(),
     );
 
     // Personal-only at startup.
