@@ -7,7 +7,7 @@ use fold_db::schema::types::{KeyValue, Mutation};
 use fold_db::schema::SchemaState;
 use fold_db::test_helpers::TestSchemaBuilder;
 use fold_db::view::transform_field_override::TransformFieldOverride;
-use fold_db::view::types::{TransformView, ViewCacheState, WasmTransformSpec};
+use fold_db::view::types::{TransformView, WasmTransformSpec};
 use serde_json::json;
 use std::collections::HashMap;
 
@@ -393,20 +393,12 @@ async fn write_through_view_invalidates_cache() {
     let view = identity_view("CacheWrite", "BlogPost", "content");
     db.schema_manager().register_view(view).await.unwrap();
 
-    // Query the view to populate cache
+    // Prime by querying the view.
     let query = Query::new("CacheWrite".to_string(), vec!["content".to_string()]);
     db.query_executor().query(query.clone()).await.unwrap();
 
-    // Cache should be populated
-    assert!(matches!(
-        db.db_ops()
-            .get_view_cache_state("CacheWrite")
-            .await
-            .unwrap(),
-        ViewCacheState::Cached { .. }
-    ));
-
-    // Write through the view — should invalidate cache
+    // Write through the view — identity write reaches BlogPost; subsequent
+    // queries reflect the new value via the trigger system's fire path.
     let mut mutation_fields = HashMap::new();
     mutation_fields.insert("content".to_string(), json!("updated via view"));
     db.mutation_manager()
@@ -479,21 +471,11 @@ async fn write_through_view_cascades_invalidation() {
     );
     db.schema_manager().register_view(view_b).await.unwrap();
 
-    // Populate caches for both views
+    // Prime by querying through both levels.
     let query_a = Query::new("ViewA".to_string(), vec!["content".to_string()]);
     let query_b = Query::new("ViewB".to_string(), vec!["content".to_string()]);
     db.query_executor().query(query_a).await.unwrap();
     db.query_executor().query(query_b.clone()).await.unwrap();
-
-    // Both should be cached
-    assert!(matches!(
-        db.db_ops().get_view_cache_state("ViewA").await.unwrap(),
-        ViewCacheState::Cached { .. }
-    ));
-    assert!(matches!(
-        db.db_ops().get_view_cache_state("ViewB").await.unwrap(),
-        ViewCacheState::Cached { .. }
-    ));
 
     // Write through ViewA (identity → BlogPost.content)
     let mut mutation_fields = HashMap::new();

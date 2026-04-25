@@ -265,8 +265,9 @@ fn max_gas_sufficient_budget_succeeds() {
 /// The MDT-E contract: when a transform exceeds its fuel budget, the
 /// engine surfaces `SchemaError::TransformGasExceeded` with the
 /// deterministic `input_size` (serialized JSON byte length). The
-/// resolver maps this to `UnavailableReason::GasExceeded`; that
-/// end-to-end path is covered separately in `view_unavailable_test.rs`.
+/// resolver maps this to an `InvalidTransform("... gas exceeded ...")`
+/// at the query interface; the end-to-end shape is covered separately
+/// in `view_unavailable_test.rs`.
 #[test]
 fn max_gas_exhausted_returns_transform_gas_exceeded() {
     use fold_db::schema::types::errors::SchemaError;

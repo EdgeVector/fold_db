@@ -4,41 +4,31 @@ use crate::schema::types::key_value::KeyValue;
 use crate::schema::types::operations::Query;
 use crate::view::derived_metadata::{compute_derived_metadata, DerivedMetadata};
 use crate::view::transform_field_override::TransformFieldOverride;
-use crate::view::types::{InputDimension, TransformView, UnavailableReason, ViewCacheState};
+use crate::view::types::{InputDimension, TransformView};
 use crate::view::wasm_engine::WasmTransformEngine;
 use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-/// Classify a `SchemaError` produced during WASM transform execution into
-/// the corresponding [`UnavailableReason`]. Compile-time errors surface as
-/// `CompileError`; fuel exhaustion (MDT-E) surfaces as `GasExceeded` with
-/// the recorded `input_size`; everything else from the WASM path is
-/// `ExecutionError` (including output parse failures and type-validation
-/// mismatches, which are downstream of the transform's runtime behavior).
-///
-/// Registry-fetch classification (`TransformBytesUnavailable`) is wired in
-/// by the transform resolver work; that variant exists so the state
-/// machine is complete but isn't reachable from today's code path.
-fn classify_wasm_failure(err: &SchemaError) -> UnavailableReason {
+/// Map a `SchemaError` produced by the WASM execution path into a
+/// human-readable cause string. Used to enrich the `InvalidTransform`
+/// error returned to callers (which gets surfaced through the trigger
+/// runner's `TriggerFiring` audit row) when fuel is exhausted, the
+/// module fails to compile, or the runtime traps. Compile failures keep
+/// their leading `"Failed to compile WASM module"` prefix so log
+/// downstream can tell them apart from execution traps.
+fn wasm_failure_cause(view_name: &str, err: &SchemaError) -> String {
     match err {
-        SchemaError::TransformGasExceeded { input_size } => UnavailableReason::GasExceeded {
-            input_size: *input_size,
-        },
-        SchemaError::InvalidTransform(msg) => {
-            if msg.starts_with("Failed to compile WASM module") {
-                UnavailableReason::CompileError {
-                    message: msg.clone(),
-                }
-            } else {
-                UnavailableReason::ExecutionError {
-                    message: msg.clone(),
-                }
-            }
+        SchemaError::TransformGasExceeded { input_size } => {
+            format!(
+                "View '{}' unavailable: gas exceeded (input_size={})",
+                view_name, input_size
+            )
         }
-        other => UnavailableReason::ExecutionError {
-            message: other.to_string(),
-        },
+        SchemaError::InvalidTransform(msg) => {
+            format!("View '{}' unavailable: {}", view_name, msg)
+        }
+        other => format!("View '{}' unavailable: {}", view_name, other),
     }
 }
 
@@ -56,6 +46,13 @@ pub trait SourceQueryFn: Send + Sync {
 
 /// Resolves view output by executing input queries, optionally running WASM,
 /// and validating output types.
+///
+/// Post-cache cleanup (`projects/view-compute-as-mutations` cache-deletion
+/// PR), the resolver is purely functional: given a view definition,
+/// requested fields, a source-query callback, and any user overrides, it
+/// returns the computed output (and metadata for the derived-mutation
+/// dual-write). Callers that need to persist the output write derived
+/// mutations themselves; the resolver no longer owns any cache lifecycle.
 #[derive(Debug)]
 pub struct ViewResolver {
     wasm_engine: Arc<WasmTransformEngine>,
@@ -68,82 +65,68 @@ impl ViewResolver {
 
     /// Resolve a view's output fields.
     ///
-    /// 1. If cached → validate requested fields exist, return from cache
-    /// 2. Execute each input query via SourceQueryFn
-    /// 3. If WASM: assemble input JSON, pass to WASM, parse output
-    /// 4. If no WASM (identity): pass through query results directly
-    /// 5. Validate output against output_fields types
-    /// 6. Cache entire output, return requested fields
+    /// 1. Execute each input query via SourceQueryFn
+    /// 2. If WASM: assemble input JSON, pass to WASM, parse output
+    /// 3. If no WASM (identity): pass through query results directly
+    /// 4. Validate output against output_fields types
+    /// 5. Return only requested fields
     pub async fn resolve(
         &self,
         view: &TransformView,
         requested_fields: &[String],
-        cache_state: &ViewCacheState,
         source_query: &dyn SourceQueryFn,
-    ) -> Result<
-        (
-            HashMap<String, HashMap<KeyValue, FieldValue>>,
-            ViewCacheState,
-        ),
-        SchemaError,
-    > {
-        self.resolve_with_overrides(view, requested_fields, cache_state, source_query, &[])
+    ) -> Result<HashMap<String, HashMap<KeyValue, FieldValue>>, SchemaError> {
+        self.resolve_with_overrides(view, requested_fields, source_query, &[])
             .await
     }
 
     /// Same as `resolve`, but applies any per-(field, key) overrides on top
     /// of the computed output. Overrides are looked up from the override
     /// store by the caller and passed in. When an override exists for a
-    /// `(field, key)` it supersedes whatever the WASM/identity path produced
-    /// — and the override survives even if the source link is stale, which
-    /// is what makes `Overridden` sticky against subsequent source mutations.
+    /// `(field, key)` it supersedes whatever the WASM/identity path
+    /// produced — and the override survives even if the source link is
+    /// stale, which is what makes `Overridden` sticky against subsequent
+    /// source mutations.
     pub async fn resolve_with_overrides(
         &self,
         view: &TransformView,
         requested_fields: &[String],
-        cache_state: &ViewCacheState,
         source_query: &dyn SourceQueryFn,
         overrides: &[(String, String, TransformFieldOverride)],
-    ) -> Result<
-        (
-            HashMap<String, HashMap<KeyValue, FieldValue>>,
-            ViewCacheState,
-        ),
-        SchemaError,
-    > {
-        let (result, state, _derived) = self
-            .resolve_with_overrides_and_derived(
-                view,
-                requested_fields,
-                cache_state,
-                source_query,
-                overrides,
-            )
+    ) -> Result<HashMap<String, HashMap<KeyValue, FieldValue>>, SchemaError> {
+        let (results, _derived) = self
+            .resolve_with_overrides_and_derived(view, requested_fields, source_query, overrides)
             .await?;
-        Ok((result, state))
+        Ok(results)
     }
 
     /// Like [`resolve_with_overrides`] but additionally returns the
     /// [`DerivedMetadata`] for the just-executed fire.
     ///
-    /// `DerivedMetadata` is `Some` only when the resolver actually executed a
-    /// WASM transform on fresh input and produced a `ViewCacheState::Cached`
-    /// result. It is `None` when we took the cached short-circuit, when the
-    /// view is identity pass-through (no derivation happened), or when the
-    /// fire ended in `Unavailable`. Callers use the returned metadata to
-    /// build `Provenance::Derived` mutations downstream
-    /// (`projects/view-compute-as-mutations` PR 2).
+    /// `DerivedMetadata` is `Some` only when the resolver actually executed
+    /// a WASM transform on fresh input. It is `None` when the view is an
+    /// identity pass-through (no derivation happened). Callers use the
+    /// returned metadata to build `Provenance::Derived` mutations
+    /// downstream (`projects/view-compute-as-mutations` PR 2).
+    ///
+    /// WASM failures (gas exceeded, compile error, execution trap, type
+    /// validation failure, calibrated envelope rejection) are returned as
+    /// `SchemaError::InvalidTransform`. Sticky-per-input behavior used to
+    /// live in the resolver via `ViewCacheState::Unavailable`; with the
+    /// cache gone, the trigger runner's `TriggerFiring` audit row records
+    /// the failure (status="error", error_message=cause). The next fire
+    /// (whether trigger-driven or read-driven) re-runs WASM on the latest
+    /// input — which is the right behavior since the input may have
+    /// changed.
     pub async fn resolve_with_overrides_and_derived(
         &self,
         view: &TransformView,
         requested_fields: &[String],
-        cache_state: &ViewCacheState,
         source_query: &dyn SourceQueryFn,
         overrides: &[(String, String, TransformFieldOverride)],
     ) -> Result<
         (
             HashMap<String, HashMap<KeyValue, FieldValue>>,
-            ViewCacheState,
             Option<DerivedMetadata>,
         ),
         SchemaError,
@@ -163,33 +146,6 @@ impl ViewResolver {
             }
             requested_fields.to_vec()
         };
-
-        // Check cache
-        if let ViewCacheState::Cached { entries } = cache_state {
-            let mut result = HashMap::new();
-            for field_name in &fields_to_return {
-                let field_entries = entries.get(field_name).cloned().unwrap_or_default();
-                result.insert(field_name.clone(), field_entries.into_iter().collect());
-            }
-            // Cached path still consults overrides — overrides are sticky and
-            // must beat anything in the per-view cache too.
-            self.apply_overrides(&mut result, overrides);
-            return Ok((result, cache_state.clone(), None));
-        }
-
-        // Sticky-per-input: if the prior compute on this input already
-        // failed, don't retry. Return the same Unavailable state so the
-        // caller can surface the reason without re-running the transform.
-        // Invalidation (source mutation) clears this back to Empty.
-        if let ViewCacheState::Unavailable { reason } = cache_state {
-            return Ok((
-                HashMap::new(),
-                ViewCacheState::Unavailable {
-                    reason: reason.clone(),
-                },
-                None,
-            ));
-        }
 
         // Execute all input queries, merging results when multiple queries target the same schema
         let mut all_query_results: HashMap<String, HashMap<String, HashMap<KeyValue, FieldValue>>> =
@@ -214,24 +170,18 @@ impl ViewResolver {
             if let Some(model) = &spec.gas_model {
                 let measured = measure_input(&all_query_results, &model.coefficients);
                 if measured > model.max_input_size {
-                    return Ok((
-                        HashMap::new(),
-                        ViewCacheState::Unavailable {
-                            reason: UnavailableReason::ExceedsCalibratedEnvelope {
-                                measured,
-                                limit: model.max_input_size,
-                            },
-                        },
-                        None,
-                    ));
+                    return Err(SchemaError::InvalidTransform(format!(
+                        "View '{}' unavailable: input exceeds calibrated envelope (measured={}, limit={})",
+                        view.name, measured, model.max_input_size
+                    )));
                 }
             }
         }
 
-        // Compute output. WASM failures become an `Unavailable` state
-        // rather than a hard error: they are per-input compute failures,
-        // so the caller should persist the state (no retry) but callers
-        // above the resolver are free to surface it to the user.
+        // Compute output. WASM failures surface as `InvalidTransform` so
+        // the trigger runner records them as `status="error"` rows in the
+        // `TriggerFiring` audit log; downstream (cron / re-fire) decides
+        // whether to retry.
         //
         // Only WASM views produce `DerivedMetadata` — identity views are
         // pass-through and have no derivation to record.
@@ -242,8 +192,9 @@ impl ViewResolver {
                     (output, Some(metadata))
                 }
                 Err(e) => {
-                    let reason = classify_wasm_failure(&e);
-                    return Ok((HashMap::new(), ViewCacheState::Unavailable { reason }, None));
+                    return Err(SchemaError::InvalidTransform(wasm_failure_cause(
+                        &view.name, &e,
+                    )));
                 }
             }
         } else {
@@ -257,40 +208,21 @@ impl ViewResolver {
         Self::apply_overrides_to_field_map(&mut output, view, overrides);
 
         // Validate output against declared types. A mismatch is a per-input
-        // failure of the transform (the WASM produced a wrongly-shaped value
-        // for this input) — same Unavailable semantics as an execution trap.
+        // failure of the transform (the WASM produced a wrongly-shaped
+        // value for this input) — same `InvalidTransform` error path as a
+        // runtime trap.
         for (field_name, field_type) in &view.output_fields {
             if let Some(field_entries) = output.get(field_name) {
                 for fv in field_entries.values() {
                     if let Err(e) = field_type.validate(&fv.value) {
-                        let reason = UnavailableReason::ExecutionError {
-                            message: format!(
-                                "View '{}' output field '{}' type validation failed: {}",
-                                view.name, field_name, e
-                            ),
-                        };
-                        return Ok((HashMap::new(), ViewCacheState::Unavailable { reason }, None));
+                        return Err(SchemaError::InvalidTransform(format!(
+                            "View '{}' unavailable: output field '{}' type validation failed: {}",
+                            view.name, field_name, e
+                        )));
                     }
                 }
             }
         }
-
-        // Build cache state
-        let cache_entries: HashMap<String, Vec<(KeyValue, FieldValue)>> = output
-            .iter()
-            .map(|(field_name, entries)| {
-                (
-                    field_name.clone(),
-                    entries
-                        .iter()
-                        .map(|(k, v)| (k.clone(), v.clone()))
-                        .collect(),
-                )
-            })
-            .collect();
-        let new_cache = ViewCacheState::Cached {
-            entries: cache_entries,
-        };
 
         // Return only requested fields
         let mut result = HashMap::new();
@@ -299,34 +231,15 @@ impl ViewResolver {
             result.insert(field_name.clone(), field_entries);
         }
 
-        Ok((result, new_cache, derived))
+        Ok((result, derived))
     }
 
-    /// Substitute override values into an already-shaped result map.
-    /// Used by the cached short-circuit where we don't have the full
-    /// `output_fields` typing context and only care about the requested
-    /// subset.
-    fn apply_overrides(
-        &self,
-        result: &mut HashMap<String, HashMap<KeyValue, FieldValue>>,
-        overrides: &[(String, String, TransformFieldOverride)],
-    ) {
-        for (field_name, key_str, override_mol) in overrides {
-            if let Some(field_entries) = result.get_mut(field_name) {
-                let key = parse_key_str(key_str);
-                let fv = override_field_value(override_mol);
-                field_entries.insert(key, fv);
-            }
-        }
-    }
-
-    /// Substitute overrides into the freshly-computed output map. Unlike
-    /// `apply_overrides`, this version honors the view's declared
-    /// `output_fields` — overrides for fields not declared on the view are
-    /// ignored (defensive: a stale override left over from a removed field
-    /// shouldn't materialize). Overrides for declared fields are inserted
-    /// even if the source produced no entries, so the override survives a
-    /// stale source link.
+    /// Substitute overrides into the freshly-computed output map.
+    /// Honors the view's declared `output_fields` — overrides for fields
+    /// not declared on the view are ignored (defensive: a stale override
+    /// left over from a removed field shouldn't materialize). Overrides
+    /// for declared fields are inserted even if the source produced no
+    /// entries, so the override survives a stale source link.
     fn apply_overrides_to_field_map(
         output: &mut HashMap<String, HashMap<KeyValue, FieldValue>>,
         view: &TransformView,
@@ -379,8 +292,7 @@ impl ViewResolver {
     /// the engine seeds the `Store`'s fuel counter to exactly this value
     /// before entering the guest, and fuel exhaustion surfaces as
     /// [`SchemaError::TransformGasExceeded`] which the caller maps to
-    /// [`UnavailableReason::GasExceeded`] via
-    /// [`classify_wasm_failure`].
+    /// the `gas exceeded` cause string via [`wasm_failure_cause`].
     fn execute_wasm_transform(
         &self,
         wasm_bytes: &[u8],
@@ -418,6 +330,13 @@ impl ViewResolver {
                 )
             })?;
 
+        // Build a transient FieldValue carrying just the WASM-produced
+        // value. The orchestrator's dual-write code reads `fv.value` to
+        // build a `Provenance::Derived` mutation; the rest of the FieldValue
+        // shape (atom_uuid / molecule_uuid / writer_pubkey / written_at) is
+        // populated downstream by `MutationManager::write_mutations_batch_async`
+        // when atoms land. The blank fields here NEVER reach a reader —
+        // PR 5's reader flip serves real atom-store FieldValues.
         let mut output = HashMap::new();
         for (field_name, entries_value) in fields_obj {
             let entries_obj = entries_value.as_object().ok_or_else(|| {
@@ -601,38 +520,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_resolve_cached() {
+    async fn test_resolve_identity_pass_through() {
         let resolver = make_resolver();
         let view = make_identity_view();
-
-        let mut entries = HashMap::new();
-        entries.insert(
-            "content".to_string(),
-            vec![(
-                KeyValue::new(None, Some("r1".into())),
-                make_field_value(serde_json::json!("cached_val")),
-            )],
-        );
-        let cache = ViewCacheState::Cached { entries };
-        let mock = MockSourceQuery {
-            results: HashMap::new(),
-        };
-
-        let (results, _) = resolver
-            .resolve(&view, &["content".to_string()], &cache, &mock)
-            .await
-            .unwrap();
-
-        assert_eq!(results.len(), 1);
-        let fv = results["content"].values().next().unwrap();
-        assert_eq!(fv.value, serde_json::json!("cached_val"));
-    }
-
-    #[tokio::test]
-    async fn test_resolve_empty_queries_source() {
-        let resolver = make_resolver();
-        let view = make_identity_view();
-        let cache = ViewCacheState::Empty;
 
         let mut source_field_values = HashMap::new();
         source_field_values.insert(
@@ -650,8 +540,8 @@ mod tests {
             results: results_map,
         };
 
-        let (results, new_cache) = resolver
-            .resolve(&view, &["content".to_string()], &cache, &mock)
+        let results = resolver
+            .resolve(&view, &["content".to_string()], &mock)
             .await
             .unwrap();
 
@@ -659,20 +549,18 @@ mod tests {
         let (key, fv) = results["content"].iter().next().unwrap();
         assert_eq!(key.range.as_deref(), Some("2026-01-01"));
         assert_eq!(fv.value, serde_json::json!("hello world"));
-        assert!(matches!(new_cache, ViewCacheState::Cached { .. }));
     }
 
     #[tokio::test]
     async fn test_resolve_unknown_field_errors() {
         let resolver = make_resolver();
         let view = make_identity_view();
-        let cache = ViewCacheState::Empty;
         let mock = MockSourceQuery {
             results: HashMap::new(),
         };
 
         let result = resolver
-            .resolve(&view, &["nonexistent".to_string()], &cache, &mock)
+            .resolve(&view, &["nonexistent".to_string()], &mock)
             .await;
         assert!(result.is_err());
     }
@@ -694,7 +582,6 @@ mod tests {
                 ("content".to_string(), FieldValueType::Any),
             ]),
         );
-        let cache = ViewCacheState::Empty;
 
         let mut title_values = HashMap::new();
         title_values.insert(
@@ -718,7 +605,7 @@ mod tests {
             results: results_map,
         };
 
-        let (results, _) = resolver.resolve(&view, &[], &cache, &mock).await.unwrap();
+        let results = resolver.resolve(&view, &[], &mock).await.unwrap();
 
         assert_eq!(results.len(), 2);
         assert!(results.contains_key("title"));
@@ -742,7 +629,6 @@ mod tests {
                 ("name".to_string(), FieldValueType::Any),
             ]),
         );
-        let cache = ViewCacheState::Empty;
 
         let mut title_values = HashMap::new();
         title_values.insert(
@@ -768,7 +654,7 @@ mod tests {
             results: results_map,
         };
 
-        let (results, _) = resolver.resolve(&view, &[], &cache, &mock).await.unwrap();
+        let results = resolver.resolve(&view, &[], &mock).await.unwrap();
 
         assert_eq!(results.len(), 2);
         assert_eq!(
@@ -785,7 +671,6 @@ mod tests {
     async fn test_empty_source_data() {
         let resolver = make_resolver();
         let view = make_identity_view();
-        let cache = ViewCacheState::Empty;
 
         // Source returns empty field results
         let mut blogpost_fields = HashMap::new();
@@ -798,14 +683,13 @@ mod tests {
             results: results_map,
         };
 
-        let (results, new_cache) = resolver
-            .resolve(&view, &["content".to_string()], &cache, &mock)
+        let results = resolver
+            .resolve(&view, &["content".to_string()], &mock)
             .await
             .unwrap();
 
         assert_eq!(results.len(), 1);
         assert!(results["content"].is_empty());
-        assert!(matches!(new_cache, ViewCacheState::Cached { .. }));
     }
 
     #[tokio::test]
@@ -826,7 +710,6 @@ mod tests {
                 ("content".to_string(), FieldValueType::Any),
             ]),
         );
-        let cache = ViewCacheState::Empty;
 
         let mut title_values = HashMap::new();
         title_values.insert(
@@ -851,7 +734,7 @@ mod tests {
             results: results_map,
         };
 
-        let (results, _) = resolver.resolve(&view, &[], &cache, &mock).await.unwrap();
+        let results = resolver.resolve(&view, &[], &mock).await.unwrap();
 
         // Both fields should be present (not overwritten)
         assert_eq!(results.len(), 2);
@@ -866,11 +749,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_type_validation_failure_becomes_unavailable() {
-        // Type-validation failure is a per-input compute failure — the
-        // transform (or identity pass-through) produced a wrongly-shaped
-        // value for this input. Resolver surfaces that as Unavailable
-        // (sticky per input) rather than a hard error.
+    async fn test_type_validation_failure_is_invalid_transform() {
+        // Type-validation failure surfaces as `InvalidTransform` so the
+        // trigger runner records `status="error"` in the audit log.
         let resolver = make_resolver();
         let view = TransformView::new(
             "TypedView",
@@ -883,7 +764,6 @@ mod tests {
             None,
             HashMap::from([("count".to_string(), FieldValueType::Integer)]),
         );
-        let cache = ViewCacheState::Empty;
 
         let mut count_values = HashMap::new();
         count_values.insert(
@@ -901,42 +781,15 @@ mod tests {
             results: results_map,
         };
 
-        let (results, new_cache) = resolver
-            .resolve(&view, &["count".to_string()], &cache, &mock)
+        let err = resolver
+            .resolve(&view, &["count".to_string()], &mock)
             .await
-            .expect("resolve should return Ok with Unavailable on compute failure");
-        assert!(results.is_empty());
-        let reason = new_cache
-            .unavailable_reason()
-            .expect("cache should be Unavailable");
-        assert!(matches!(reason, UnavailableReason::ExecutionError { .. }));
-        assert!(reason.to_string().contains("type validation failed"));
-    }
-
-    #[tokio::test]
-    async fn test_unavailable_input_does_not_retry() {
-        // When the cache is already Unavailable, resolve must not re-execute
-        // the source queries or the WASM — it returns the same state so the
-        // caller can surface the reason without burning cycles.
-        let resolver = make_resolver();
-        let view = make_identity_view();
-
-        let reason = UnavailableReason::GasExceeded { input_size: 500 };
-        let cache = ViewCacheState::Unavailable {
-            reason: reason.clone(),
-        };
-
-        // Mock returns NotFound for any schema; if resolve mistakenly
-        // touches the source_query, we'd get an Err instead of Ok.
-        let mock = MockSourceQuery {
-            results: HashMap::new(),
-        };
-
-        let (results, new_cache) = resolver
-            .resolve(&view, &["content".to_string()], &cache, &mock)
-            .await
-            .expect("Unavailable should short-circuit to Ok");
-        assert!(results.is_empty());
-        assert_eq!(new_cache.unavailable_reason(), Some(&reason));
+            .expect_err("type validation failure should error");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("type validation failed"),
+            "expected type validation failure, got: {}",
+            msg
+        );
     }
 }

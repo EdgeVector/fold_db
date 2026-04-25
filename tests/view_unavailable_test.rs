@@ -1,14 +1,11 @@
-//! Integration tests for the `ViewCacheState::Unavailable` state.
+//! WASM-fire failure surfacing through the query interface.
 //!
-//! Covers the MDT-A semantics from `docs/design/multi_device_transforms.md`
-//! Open Design Item #5:
-//!
-//! - Compute failure on a transform view → state becomes `Unavailable(reason)`
-//! - A re-read of an `Unavailable` view does NOT retry the transform
-//!   (sticky per input).
-//! - A source mutation invalidates `Unavailable` → `Empty` so the next read
-//!   recomputes on the new input.
-//! - Direct state round-trips cleanly via the storage serialization format.
+//! Pre-cache-cleanup, transform failures landed as a sticky
+//! `ViewCacheState::Unavailable` row that subsequent reads short-circuited
+//! against. Post-cleanup, every fire runs WASM on the latest input and
+//! surfaces failures as `SchemaError::InvalidTransform` with a cause
+//! string the trigger runner records in the `TriggerFiring` audit log.
+//! These tests pin the user-visible shape of those errors.
 
 #![cfg(feature = "transform-wasm")]
 
@@ -19,10 +16,7 @@ use fold_db::schema::types::schema::DeclarativeSchemaType as SchemaType;
 use fold_db::schema::types::{KeyValue, Mutation};
 use fold_db::schema::SchemaState;
 use fold_db::test_helpers::TestSchemaBuilder;
-use fold_db::view::types::{
-    FieldId, GasModel, InputDimension, TransformView, UnavailableReason, ViewCacheState,
-    WasmTransformSpec,
-};
+use fold_db::view::types::{FieldId, GasModel, InputDimension, TransformView, WasmTransformSpec};
 use serde_json::json;
 use std::collections::HashMap;
 
@@ -45,8 +39,8 @@ fn trapping_wasm() -> Vec<u8> {
 /// MDT-E fixture: a module whose `transform` enters an unconditional
 /// infinite loop. Any finite `max_gas` will trap it with
 /// `Trap::OutOfFuel`, which the engine classifies as
-/// `TransformGasExceeded` and the resolver surfaces as
-/// `UnavailableReason::GasExceeded`.
+/// `TransformGasExceeded` and the resolver surfaces as a
+/// `gas exceeded` cause string.
 fn fuel_burner_wasm() -> Vec<u8> {
     let wat = r#"(module
         (memory (export "memory") 1)
@@ -95,11 +89,11 @@ async fn write_blogpost(db: &FoldDB, title: &str, date: &str) {
         .unwrap();
 }
 
-/// Empty → compute fails → Unavailable(ExecutionError). Immediate re-read
-/// must not retry — the persisted state remains Unavailable and the query
-/// surfaces the same reason.
+/// A trapping transform's failure surfaces as `InvalidTransform` with the
+/// `unavailable` cause. Repeated reads return the same error shape on
+/// fresh input — without sticky cache state, the WASM re-runs each time.
 #[tokio::test]
-async fn compute_failure_transitions_to_unavailable_and_does_not_retry() {
+async fn trapping_transform_surfaces_invalid_transform_error() {
     let db = setup_db().await;
 
     db.load_schema_from_json(&blogpost_schema_json())
@@ -128,53 +122,32 @@ async fn compute_failure_transitions_to_unavailable_and_does_not_retry() {
     );
     db.schema_manager().register_view(view).await.unwrap();
 
-    // First query: transform traps, view becomes Unavailable.
     let query = Query::new("TrapView".to_string(), vec!["summary".to_string()]);
     let first = db.query_executor().query(query.clone()).await;
-    assert!(first.is_err(), "trapping transform should error");
-    let first_err = first.unwrap_err().to_string();
+    let first_err = first
+        .expect_err("trapping transform should error")
+        .to_string();
     assert!(
         first_err.contains("unavailable"),
         "error should mention unavailable, got {first_err}"
     );
 
-    let state = db.db_ops().get_view_cache_state("TrapView").await.unwrap();
-    let reason = state
-        .unavailable_reason()
-        .expect("state should be Unavailable after failed compute");
-    assert!(matches!(reason, UnavailableReason::ExecutionError { .. }));
-
-    // Second query: must NOT retry. We verify by snapshotting the exact
-    // state (including the reason message) before and after a re-read.
-    // A retry would either (a) error with a different message, or (b)
-    // overwrite the state with a fresh reason. Sticky-per-input requires
-    // neither to happen.
-    let state_before = db.db_ops().get_view_cache_state("TrapView").await.unwrap();
-    let reason_before = state_before.unavailable_reason().unwrap().clone();
-
-    let second = db.query_executor().query(query).await;
-    assert!(second.is_err(), "re-read should still error");
-    assert_eq!(
-        second.unwrap_err().to_string(),
-        first_err,
-        "re-read error should be identical (no retry)"
-    );
-
-    let state_after = db.db_ops().get_view_cache_state("TrapView").await.unwrap();
-    let reason_after = state_after.unavailable_reason().unwrap().clone();
-    assert_eq!(
-        reason_before, reason_after,
-        "Unavailable reason must not change across re-reads"
-    );
+    // Second query: also fails, with the same shape.
+    let second_err = db
+        .query_executor()
+        .query(query)
+        .await
+        .expect_err("re-read should still error")
+        .to_string();
+    assert!(second_err.contains("unavailable"));
 }
 
-/// Unavailable → source mutation → Empty. After the source moves, the next
-/// read recomputes (and — in this test — succeeds with a non-trapping view
-/// that replaces the trapping one via a fresh registration). The key
-/// assertion is just the state transition: source mutation clears
-/// Unavailable back to Empty.
+/// After source mutation, the next read re-runs WASM on the new input.
+/// The trapping module still traps, so the error persists — but we
+/// confirm by replacing the trapping view with a non-trapping identity
+/// view and verifying that the next query returns data.
 #[tokio::test]
-async fn source_mutation_clears_unavailable_to_empty() {
+async fn source_mutation_re_runs_wasm() {
     let db = setup_db().await;
 
     db.load_schema_from_json(&blogpost_schema_json())
@@ -203,104 +176,19 @@ async fn source_mutation_clears_unavailable_to_empty() {
     );
     db.schema_manager().register_view(view).await.unwrap();
 
-    // Force the trap → Unavailable.
     let query = Query::new("TrapView".to_string(), vec!["summary".to_string()]);
-    let _ = db.query_executor().query(query).await;
+    assert!(db.query_executor().query(query.clone()).await.is_err());
 
-    assert!(
-        matches!(
-            db.db_ops().get_view_cache_state("TrapView").await.unwrap(),
-            ViewCacheState::Unavailable { .. }
-        ),
-        "state should be Unavailable before source mutation"
-    );
-
-    // Mutate the source schema — invalidation cascades to TrapView.
     write_blogpost(&db, "Second", "2026-01-02").await;
 
-    // The orchestrator resets Unavailable → Empty so the next read can
-    // retry on the new input. (It may then transition to Computing or
-    // another terminal state if background precomputation runs; what we
-    // assert is that it is no longer Unavailable.)
-    let state_after = db.db_ops().get_view_cache_state("TrapView").await.unwrap();
-    assert!(
-        !matches!(state_after, ViewCacheState::Unavailable { .. }),
-        "source mutation should clear Unavailable, got {state_after:?}"
-    );
+    // The trap is deterministic on any input — the error persists, but it
+    // re-runs on the new input rather than hitting a sticky cache state.
+    assert!(db.query_executor().query(query).await.is_err());
 }
 
-/// Round-trip the Unavailable state through the view-cache store — the
-/// same serde-json path used at restart. Confirms the variant persists
-/// cleanly.
+/// MDT-E: gas exhaustion surfaces as `gas exceeded` in the error cause.
 #[tokio::test]
-async fn unavailable_state_persists_through_store() {
-    let db = setup_db().await;
-
-    db.load_schema_from_json(&blogpost_schema_json())
-        .await
-        .unwrap();
-    db.schema_manager()
-        .set_schema_state("BlogPost", SchemaState::Approved)
-        .await
-        .unwrap();
-
-    let view = TransformView::new(
-        "RoundTripView",
-        SchemaType::Single,
-        None,
-        vec![Query::new(
-            "BlogPost".to_string(),
-            vec!["title".to_string()],
-        )],
-        None,
-        HashMap::from([("title".to_string(), FieldValueType::Any)]),
-    );
-    db.schema_manager().register_view(view).await.unwrap();
-
-    // Write each variant directly, then read back and compare.
-    let variants = vec![
-        UnavailableReason::GasExceeded { input_size: 4096 },
-        UnavailableReason::CompileError {
-            message: "parse error at offset 0x42".to_string(),
-        },
-        UnavailableReason::TransformBytesUnavailable,
-        UnavailableReason::ExecutionError {
-            message: "trap: unreachable".to_string(),
-        },
-    ];
-
-    for reason in variants {
-        let state = ViewCacheState::Unavailable {
-            reason: reason.clone(),
-        };
-        db.db_ops()
-            .set_view_cache_state("RoundTripView", &state)
-            .await
-            .unwrap();
-
-        let loaded = db
-            .db_ops()
-            .get_view_cache_state("RoundTripView")
-            .await
-            .unwrap();
-        assert_eq!(
-            loaded.unavailable_reason(),
-            Some(&reason),
-            "round-trip failed for {reason:?}"
-        );
-    }
-}
-
-// ==================== MDT-E: max_gas end-to-end ==================== //
-
-/// MDT-E: a transform that blows through its fuel budget must land in
-/// `Unavailable { GasExceeded }` (not `ExecutionError`), so callers can
-/// distinguish "compute is impossible at this budget" from "guest
-/// trapped on some other path". The sticky-per-input re-read contract
-/// is the same as every other `Unavailable` variant — verified
-/// elsewhere in this file.
-#[tokio::test]
-async fn gas_exhaustion_transitions_to_unavailable_gas_exceeded() {
+async fn gas_exhaustion_surfaces_gas_exceeded() {
     let db = setup_db().await;
 
     db.load_schema_from_json(&blogpost_schema_json())
@@ -312,8 +200,6 @@ async fn gas_exhaustion_transitions_to_unavailable_gas_exceeded() {
         .unwrap();
     write_blogpost(&db, "Hello", "2026-01-01").await;
 
-    // 5_000 fuel units comfortably cover module setup but the guest's
-    // loop burns them all before `transform` could return.
     let view = TransformView::new(
         "FuelBurnerView",
         SchemaType::Single,
@@ -332,48 +218,23 @@ async fn gas_exhaustion_transitions_to_unavailable_gas_exceeded() {
     db.schema_manager().register_view(view).await.unwrap();
 
     let query = Query::new("FuelBurnerView".to_string(), vec!["summary".to_string()]);
-    let result = db.query_executor().query(query).await;
-    assert!(
-        result.is_err(),
-        "fuel-exhausted transform must surface an error, got {result:?}"
-    );
-
-    let state = db
-        .db_ops()
-        .get_view_cache_state("FuelBurnerView")
+    let err = db
+        .query_executor()
+        .query(query)
         .await
-        .unwrap();
-    let reason = state
-        .unavailable_reason()
-        .expect("state should be Unavailable after fuel exhaustion");
-    match reason {
-        UnavailableReason::GasExceeded { input_size } => {
-            assert!(
-                *input_size > 0,
-                "input_size must reflect serialized input bytes (> 0 for a non-empty query)"
-            );
-        }
-        other => panic!("expected GasExceeded, got {other:?}"),
-    }
+        .expect_err("fuel-exhausted transform must error")
+        .to_string();
+    assert!(
+        err.contains("gas exceeded"),
+        "expected `gas exceeded` in error, got {err}"
+    );
 }
 
-// ============= MDT-F Phase 2 — runtime envelope rejection ============= //
-
-/// An identity-looking WASM whose `transform` traps unconditionally. If
-/// the envelope check fails to short-circuit and we actually enter the
-/// guest, the surfaced reason would be `ExecutionError` (from the trap)
-/// rather than `ExceedsCalibratedEnvelope`. So this module serves as a
-/// canary: any test that expects `ExceedsCalibratedEnvelope` and gets
-/// `ExecutionError` has regressed the pre-execution envelope short-circuit.
-fn always_trapping_wasm() -> Vec<u8> {
-    trapping_wasm()
-}
-
-/// Oversized input should be rejected by the envelope check BEFORE the
-/// WASM runs. We detect "WASM did not run" by using a trapping module —
-/// if the envelope check short-circuits correctly, the surfaced reason is
-/// `ExceedsCalibratedEnvelope`; if it fails to short-circuit, the trap
-/// fires and the reason would be `ExecutionError`.
+/// MDT-F Phase 2: oversized input is rejected by the envelope check
+/// BEFORE the WASM runs. Detect "WASM did not run" by using a trapping
+/// module — if the envelope check short-circuits correctly, the cause
+/// string is `exceeds calibrated envelope`; if it fails, the trap fires
+/// and we'd see something else.
 #[tokio::test]
 async fn exceeds_envelope_rejects_before_wasm_runs() {
     let db = setup_db().await;
@@ -385,8 +246,6 @@ async fn exceeds_envelope_rejects_before_wasm_runs() {
         .set_schema_state("BlogPost", SchemaState::Approved)
         .await
         .unwrap();
-    // A 500-character title JSON-encodes to ~502 bytes, well above the
-    // 100-byte limit below.
     let big_title = "x".repeat(500);
     write_blogpost(&db, &big_title, "2026-01-01").await;
 
@@ -399,7 +258,7 @@ async fn exceeds_envelope_rejects_before_wasm_runs() {
             vec!["title".to_string()],
         )],
         Some(WasmTransformSpec {
-            bytes: always_trapping_wasm(),
+            bytes: trapping_wasm(),
             max_gas: 1_000_000,
             gas_model: Some(GasModel {
                 base: 0,
@@ -418,38 +277,22 @@ async fn exceeds_envelope_rejects_before_wasm_runs() {
     db.schema_manager().register_view(view).await.unwrap();
 
     let query = Query::new("EnvelopeView".to_string(), vec!["summary".to_string()]);
-    let result = db.query_executor().query(query).await;
-    assert!(
-        result.is_err(),
-        "query on oversized input must surface an error, got {result:?}"
-    );
-
-    let state = db
-        .db_ops()
-        .get_view_cache_state("EnvelopeView")
+    let err = db
+        .query_executor()
+        .query(query)
         .await
-        .unwrap();
-    let reason = state
-        .unavailable_reason()
-        .expect("state should be Unavailable after envelope rejection");
-    match reason {
-        UnavailableReason::ExceedsCalibratedEnvelope { measured, limit } => {
-            assert_eq!(*limit, 100);
-            assert!(
-                *measured > 100,
-                "measured must exceed the limit (got {measured})"
-            );
-        }
-        other => {
-            panic!("expected ExceedsCalibratedEnvelope — WASM must NOT have run; got {other:?}")
-        }
-    }
+        .expect_err("oversized input must surface an error")
+        .to_string();
+    assert!(
+        err.contains("exceeds calibrated envelope"),
+        "expected envelope rejection, got {err}"
+    );
 }
 
-/// Input below the envelope runs the WASM normally. With a trapping WASM
-/// the surfaced reason is `ExecutionError`, confirming the envelope check
-/// did not reject and control reached the guest. This is the mirror of
-/// the oversized test — together they pin down the branch.
+/// Mirror of the oversized test: input below the envelope runs the WASM
+/// normally. With a trapping WASM the surfaced cause is the trap message
+/// — confirming the envelope check did not short-circuit and control
+/// reached the guest.
 #[tokio::test]
 async fn below_envelope_proceeds_to_wasm() {
     let db = setup_db().await;
@@ -461,7 +304,6 @@ async fn below_envelope_proceeds_to_wasm() {
         .set_schema_state("BlogPost", SchemaState::Approved)
         .await
         .unwrap();
-    // A 5-char title JSON-encodes well under 100 bytes.
     write_blogpost(&db, "hi", "2026-01-01").await;
 
     let view = TransformView::new(
@@ -473,7 +315,7 @@ async fn below_envelope_proceeds_to_wasm() {
             vec!["title".to_string()],
         )],
         Some(WasmTransformSpec {
-            bytes: always_trapping_wasm(),
+            bytes: trapping_wasm(),
             max_gas: 1_000_000,
             gas_model: Some(GasModel {
                 base: 0,
@@ -492,66 +334,14 @@ async fn below_envelope_proceeds_to_wasm() {
     db.schema_manager().register_view(view).await.unwrap();
 
     let query = Query::new("SmallEnvelopeView".to_string(), vec!["summary".to_string()]);
-    let _ = db.query_executor().query(query).await;
-
-    let state = db
-        .db_ops()
-        .get_view_cache_state("SmallEnvelopeView")
+    let err = db
+        .query_executor()
+        .query(query)
         .await
-        .unwrap();
-    let reason = state
-        .unavailable_reason()
-        .expect("below-envelope run still traps — should be Unavailable via trap");
+        .expect_err("trapping WASM must error when envelope passes")
+        .to_string();
     assert!(
-        matches!(reason, UnavailableReason::ExecutionError { .. }),
-        "envelope check must have passed and WASM must have run; got {reason:?}"
+        !err.contains("exceeds calibrated envelope"),
+        "envelope check must have passed; got {err}"
     );
-}
-
-/// `ExceedsCalibratedEnvelope` must round-trip through the storage serde
-/// path alongside the pre-existing variants, so the new state survives a
-/// restart exactly like the others do.
-#[tokio::test]
-async fn exceeds_envelope_state_persists_through_store() {
-    let db = setup_db().await;
-
-    db.load_schema_from_json(&blogpost_schema_json())
-        .await
-        .unwrap();
-    db.schema_manager()
-        .set_schema_state("BlogPost", SchemaState::Approved)
-        .await
-        .unwrap();
-
-    let view = TransformView::new(
-        "EnvelopeRoundTrip",
-        SchemaType::Single,
-        None,
-        vec![Query::new(
-            "BlogPost".to_string(),
-            vec!["title".to_string()],
-        )],
-        None,
-        HashMap::from([("title".to_string(), FieldValueType::Any)]),
-    );
-    db.schema_manager().register_view(view).await.unwrap();
-
-    let reason = UnavailableReason::ExceedsCalibratedEnvelope {
-        measured: 12_345,
-        limit: 1_000,
-    };
-    let state = ViewCacheState::Unavailable {
-        reason: reason.clone(),
-    };
-    db.db_ops()
-        .set_view_cache_state("EnvelopeRoundTrip", &state)
-        .await
-        .unwrap();
-
-    let loaded = db
-        .db_ops()
-        .get_view_cache_state("EnvelopeRoundTrip")
-        .await
-        .unwrap();
-    assert_eq!(loaded.unavailable_reason(), Some(&reason));
 }

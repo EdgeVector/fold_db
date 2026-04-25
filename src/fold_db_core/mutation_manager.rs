@@ -391,7 +391,7 @@ impl MutationManager {
 
             // Phase 7.5: Notify the trigger runner. The runner decides
             // which views fire based on their declared triggers and
-            // dispatches via ViewOrchestrator::invalidate_view. The old
+            // dispatches via ViewOrchestrator::fire_view. The old
             // implicit "every mutation invalidates every dependent view"
             // cascade is gone — this is the ONLY fire path now.
             if let Some(dispatcher) = self.snapshot_trigger_dispatcher() {

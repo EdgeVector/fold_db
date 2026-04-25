@@ -634,7 +634,6 @@ impl SchemaCore {
         }
         self.db_ops.delete_view(name).await?;
         self.db_ops.delete_view_state(name).await?;
-        self.db_ops.clear_view_cache_state(name).await?;
 
         // Drop the synthesized schema registered for this view so future
         // mutations don't resolve a stale name. Best-effort: if the

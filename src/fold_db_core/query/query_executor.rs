@@ -12,20 +12,25 @@ use crate::schema::SchemaError;
 use crate::schema::{SchemaCore, SchemaState};
 use crate::storage::SledPool;
 use crate::view::registry::ViewState;
-use crate::view::resolver::ViewResolver;
-use crate::view::types::ViewCacheState;
 use std::collections::HashMap;
 use std::sync::Arc;
+use tokio::sync::RwLock;
 
+use super::super::view_orchestrator::ViewOrchestrator;
 use super::hash_range_query::HashRangeQueryProcessor;
-use super::source_query::StandardSourceQuery;
 
 /// Main query executor that handles all query operations
 pub struct QueryExecutor {
     schema_manager: Arc<SchemaCore>,
-    db_ops: Arc<DbOperations>,
     hash_range_processor: HashRangeQueryProcessor,
-    view_resolver: ViewResolver,
+    /// Late-bound orchestrator handle. Used by the cold-read path to fire
+    /// a view inline (run WASM, dual-write atoms, return output) when the
+    /// atom store is empty for the requested fields.
+    ///
+    /// Wired post-construction in `fold_db.rs`, mirroring the
+    /// `set_derived_mutation_writer` pattern. Optional so unit tests that
+    /// stub a partial executor still compile; production paths always set it.
+    view_orchestrator: Arc<RwLock<Option<Arc<ViewOrchestrator>>>>,
 }
 
 impl QueryExecutor {
@@ -42,22 +47,21 @@ impl QueryExecutor {
         let hash_range_processor =
             HashRangeQueryProcessor::new(Arc::clone(&db_ops), sled_pool.clone());
 
-        // Get the WASM engine from the view registry
-        let wasm_engine = {
-            let registry = schema_manager
-                .view_registry()
-                .lock()
-                .expect("view_registry lock");
-            Arc::clone(registry.wasm_engine())
-        };
-        let view_resolver = ViewResolver::new(wasm_engine);
-
         Self {
             schema_manager,
-            db_ops,
             hash_range_processor,
-            view_resolver,
+            view_orchestrator: Arc::new(RwLock::new(None)),
         }
+    }
+
+    /// Wire in the view orchestrator after construction. Idempotent —
+    /// re-calling replaces the prior handle.
+    pub async fn set_view_orchestrator(&self, orchestrator: Arc<ViewOrchestrator>) {
+        *self.view_orchestrator.write().await = Some(orchestrator);
+    }
+
+    async fn snapshot_orchestrator(&self) -> Option<Arc<ViewOrchestrator>> {
+        self.view_orchestrator.read().await.clone()
     }
 
     /// Query multiple fields from a schema or view (legacy — no access control)
@@ -90,20 +94,16 @@ impl QueryExecutor {
     ) -> Result<HashMap<String, HashMap<KeyValue, FieldValue>>, SchemaError> {
         // Views are registered as both a view (with WASM + triggers — still
         // what fires the transform) AND a synthesized schema (atom store
-        // populated by the derived-mutation fire path, PR 2). `projects/
-        // view-compute-as-mutations` PR 5: flip the reader to the atom
-        // store. When every requested field has atoms for at least one
-        // key, return atoms directly — carrying real `atom_uuid` /
-        // `molecule_uuid` / `written_at` / `Provenance::Derived`
-        // provenance — and skip the cache round-trip entirely.
+        // populated by the derived-mutation fire path, PR 2). The reader
+        // serves from the synthesized schema's atom store first; if every
+        // requested field is populated there, we return atoms directly —
+        // carrying real `atom_uuid` / `molecule_uuid` / `written_at` /
+        // `Provenance::Derived` provenance — and skip the WASM round-trip.
         //
-        // When the view has never fired (e.g. freshly registered, no
-        // source mutation yet) the atom store is empty for the requested
-        // fields, and we fall through to `try_query_view`. That path runs
-        // the WASM transform, dual-writes atoms via PR 2's
-        // `DerivedMutationWriter`, and returns the output immediately so
-        // the first-read experience is unchanged. After the first fire,
-        // subsequent reads come straight from atoms.
+        // When the atom store is cold (no fire has landed atoms for the
+        // requested fields), we fire the view inline through the
+        // orchestrator: run WASM, dual-write derived atoms, return the
+        // computed output. Subsequent reads serve from atoms.
         let is_view = {
             let registry = self
                 .schema_manager
@@ -117,7 +117,7 @@ impl QueryExecutor {
             if let Some(results) = self.read_view_atoms(&query).await? {
                 return Ok(results);
             }
-            return self.try_query_view(&query).await;
+            return self.fire_view_for_query(&query).await;
         }
 
         match self.schema_manager.get_schema(&query.schema_name).await? {
@@ -197,10 +197,9 @@ impl QueryExecutor {
     /// `ViewOrchestrator::write_derived_mutations`). Returns `Ok(Some(_))`
     /// when every requested field has at least one entry — a signal that
     /// the view has fired at least once — and `Ok(None)` when the atom
-    /// store is cold and the caller should fall through to
-    /// [`Self::try_query_view`]. `Err` only propagates schema-level
-    /// failures (blocked state, access-filter logic); a legitimately
-    /// empty atom store is not an error.
+    /// store is cold and the caller should fall through to a fresh fire.
+    /// `Err` only propagates schema-level failures (blocked state); a
+    /// legitimately empty atom store is not an error.
     async fn read_view_atoms(
         &self,
         query: &Query,
@@ -265,12 +264,20 @@ impl QueryExecutor {
         Ok(Some(results))
     }
 
-    /// Attempt to resolve a query against the view registry.
-    async fn try_query_view(
+    /// Cold-path: fire the view inline via the orchestrator (runs WASM,
+    /// dual-writes atoms, returns computed output) and return the
+    /// requested fields.
+    ///
+    /// Honors `View::Blocked` state. Errors thrown by the resolver
+    /// (gas exceeded, compile, trap, type validation) propagate as
+    /// `InvalidTransform` for the caller to surface.
+    async fn fire_view_for_query(
         &self,
         query: &Query,
     ) -> Result<HashMap<String, HashMap<KeyValue, FieldValue>>, SchemaError> {
-        let view = {
+        // Validate the view exists and isn't blocked. Cloning the registry
+        // entry here avoids holding the lock across the orchestrator call.
+        {
             let registry = self.schema_manager.view_registry().lock().map_err(|_| {
                 SchemaError::InvalidData("Failed to acquire view_registry lock".to_string())
             })?;
@@ -295,7 +302,6 @@ impl QueryExecutor {
                 ))
             })?;
 
-            // Check view state
             let state = registry
                 .get_view_state(&query.schema_name)
                 .unwrap_or(ViewState::Available);
@@ -306,78 +312,35 @@ impl QueryExecutor {
                 )));
             }
 
-            view.clone()
-        };
-
-        // Load cache state
-        let cache_state = self.db_ops.get_view_cache_state(&view.name).await?;
-
-        // Reject queries on views that are being precomputed in the background
-        if cache_state.is_computing() {
-            return Err(SchemaError::InvalidData(format!(
-                "View '{}' is currently being precomputed and is not ready for queries",
-                query.schema_name
-            )));
+            let _ = view; // hold the borrow lifetime; registry lock released at scope end
         }
 
-        // Sticky Unavailable: surface the reason immediately without
-        // retrying. A source mutation invalidates this state to Empty so
-        // the next read recomputes on the new input.
-        if let Some(reason) = cache_state.unavailable_reason() {
-            return Err(SchemaError::InvalidTransform(format!(
-                "View '{}' unavailable: {}",
-                view.name, reason
-            )));
-        }
-
-        // Create source query implementation for recursive resolution
-        let source_query = StandardSourceQuery::new_recursive(
-            Arc::clone(&self.schema_manager),
-            Arc::clone(&self.db_ops),
-            ViewResolver::new(Arc::clone(self.view_resolver.wasm_engine())),
-        );
-
-        // Load any per-(field, key) overrides — these take precedence over
-        // computed values on the read path, regardless of cache state.
-        let overrides = self
-            .db_ops
-            .views()
-            .scan_transform_field_overrides(&view.name)
-            .await?;
-
-        let (results, new_cache) = self
-            .view_resolver
-            .resolve_with_overrides(
-                &view,
-                &query.fields,
-                &cache_state,
-                &source_query,
-                &overrides,
+        let orchestrator = self.snapshot_orchestrator().await.ok_or_else(|| {
+            SchemaError::InvalidData(
+                "Internal: ViewOrchestrator not wired into QueryExecutor".to_string(),
             )
-            .await?;
+        })?;
 
-        // Persist terminal state transitions so a follow-up query doesn't
-        // redo work: Empty → Cached (hit the next time) and Empty →
-        // Unavailable (fail-fast the next time). `Computing` is not
-        // written here — background precomputation owns that transition.
-        match &new_cache {
-            ViewCacheState::Cached { .. } if cache_state.is_empty() => {
-                self.db_ops
-                    .set_view_cache_state(&view.name, &new_cache)
-                    .await?;
+        let output = orchestrator.fire_view(&query.schema_name).await?;
+
+        // The resolver returns FieldValues with blank atom-level provenance
+        // because it works against in-flight WASM output, not landed atoms.
+        // Once the dual-write completes, atoms are persisted with full
+        // provenance — this in-line path returns the computed values
+        // immediately so the caller doesn't have to wait for a re-read.
+        // Subsequent reads hit `read_view_atoms` and serve real atoms.
+        if query.fields.is_empty() {
+            Ok(output)
+        } else {
+            // Filter to requested fields, preserving the validate-fields-exist
+            // semantics that the resolver enforced internally.
+            let mut filtered = HashMap::new();
+            for field_name in &query.fields {
+                if let Some(entries) = output.get(field_name) {
+                    filtered.insert(field_name.clone(), entries.clone());
+                }
             }
-            ViewCacheState::Unavailable { reason } => {
-                self.db_ops
-                    .set_view_cache_state(&view.name, &new_cache)
-                    .await?;
-                return Err(SchemaError::InvalidTransform(format!(
-                    "View '{}' unavailable: {}",
-                    view.name, reason
-                )));
-            }
-            _ => {}
+            Ok(filtered)
         }
-
-        Ok(results)
     }
 }

@@ -554,10 +554,9 @@ impl<C: Clock> TriggerRunner<C> {
     /// the caller doesn't block through exponential backoff.
     ///
     /// This path exists specifically for OnWrite triggers where the
-    /// caller (the mutation path) must observe the invalidation
-    /// synchronously — downstream tests read `ViewCacheState::Computing`
-    /// immediately after the mutation returns, and the old implicit
-    /// cascade did the invalidation inline too.
+    /// caller (the mutation path) must observe the fire synchronously
+    /// so downstream readers see the derived atoms before returning to
+    /// user code.
     async fn dispatch_inline_once(
         self: &Arc<Self>,
         view_name: &str,
@@ -1182,10 +1181,11 @@ impl<C: Clock> TriggerDispatcher for ArcTriggerDispatcher<C> {
     }
 }
 
-/// `FireHandler` that delegates to the existing `ViewOrchestrator` cache
-/// invalidation + background precompute. We don't duplicate materialization
-/// — this is exactly the path the old implicit cascade used to take, just
-/// gated behind explicit triggers now.
+/// `FireHandler` that delegates to `ViewOrchestrator::fire_view` — runs
+/// the WASM transform synchronously and dual-writes the output as
+/// `Provenance::Derived` mutations. Cascades flow naturally through the
+/// trigger system: the derived atoms land on the view's synthesized
+/// schema, which the dispatcher observes to fire downstream views.
 pub struct ViewOrchestratorFireHandler {
     view_orchestrator: Arc<ViewOrchestrator>,
 }
@@ -1193,8 +1193,8 @@ pub struct ViewOrchestratorFireHandler {
 #[async_trait]
 impl FireHandler for ViewOrchestratorFireHandler {
     async fn fire(&self, view_name: &str) -> FireOutcome {
-        match self.view_orchestrator.invalidate_view(view_name).await {
-            Ok(()) => FireOutcome::success(0, 0),
+        match self.view_orchestrator.fire_view(view_name).await {
+            Ok(_output) => FireOutcome::success(0, 0),
             Err(e) => FireOutcome::error(e.to_string()),
         }
     }
