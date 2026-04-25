@@ -16,6 +16,21 @@ use serde::Serialize;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
+/// Maximum number of seq_numbers per presign request.
+///
+/// `storage_service` (the personal/org presign Lambda) hard-caps `seq_numbers`
+/// (and the org `count`) at 1000 per call — see `lambdas/storage_service/
+/// src/handlers.rs` (`presign_log_upload` / `presign_log_download` /
+/// `presign_log_delete` arms). Any pending bucket larger than this must be
+/// chunked here; otherwise the Lambda returns
+/// `seq_numbers exceeds maximum length of 1000` (surfaced as `SyncError::Auth`)
+/// and the entire bucket fails to upload.
+///
+/// Personal sync queues can blow past this easily on a fresh node — pulling
+/// schemas, native_index entries, and a handful of mutations in the first
+/// cycle is enough — so chunking is mandatory, not optional.
+const MAX_PRESIGN_BATCH: usize = 1000;
+
 /// Sync engine state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -910,10 +925,57 @@ impl SyncEngine {
     /// `presign_upload_alloc`; each entry's `seq` is rewritten to its
     /// server-assigned value before sealing so the S3 key, the sealed
     /// payload, and the downloader's parsed seq all agree.
+    ///
+    /// Chunked at `MAX_PRESIGN_BATCH` to respect storage_service's per-request
+    /// cap on `seq_numbers`. Earlier successful chunks are counted toward the
+    /// returned `usize` even when a later chunk fails — `do_sync` uses that
+    /// count to decide whether to drain pending or keep everything for retry,
+    /// and reporting fewer than expected is the correct signal there. Each
+    /// chunk's presign + seal + S3 PUTs happen as one logical step;
+    /// retries across chunks are safe because S3 PUTs at the same seq key
+    /// overwrite idempotently.
     async fn upload_entries(&self, target: &SyncTarget, entries: &[LogEntry]) -> SyncResult<usize> {
         if entries.is_empty() {
             return Ok(0);
         }
+        let mut total = 0;
+        for chunk in entries.chunks(MAX_PRESIGN_BATCH) {
+            match self.upload_entries_chunk(target, chunk).await {
+                Ok(n) => total += n,
+                Err(e) => {
+                    if total > 0 {
+                        log::warn!(
+                            "upload to '{}' partial: {}/{} entries uploaded across chunks before {}",
+                            target.label,
+                            total,
+                            entries.len(),
+                            e
+                        );
+                    }
+                    return Err(e);
+                }
+            }
+        }
+        Ok(total)
+    }
+
+    /// Upload a single chunk of entries (≤ `MAX_PRESIGN_BATCH`) to a target.
+    /// Caller is responsible for chunking; this is the original single-batch
+    /// presign + seal + S3 PUT path, factored out so `upload_entries` can loop.
+    async fn upload_entries_chunk(
+        &self,
+        target: &SyncTarget,
+        entries: &[LogEntry],
+    ) -> SyncResult<usize> {
+        if entries.is_empty() {
+            return Ok(0);
+        }
+        debug_assert!(
+            entries.len() <= MAX_PRESIGN_BATCH,
+            "upload_entries_chunk called with {} entries (cap {})",
+            entries.len(),
+            MAX_PRESIGN_BATCH
+        );
 
         let is_org = !target.prefix.is_empty();
 
@@ -1104,8 +1166,6 @@ impl SyncEngine {
             cursor
         );
 
-        let urls = self.auth.presign_download(target, &new_seqs).await?;
-
         let mut total_replayed = 0u64;
         // Advance the cursor contiguously: if any seq in this batch fails, we
         // stop before it so the next cycle re-downloads it. Silent drops (where
@@ -1114,68 +1174,84 @@ impl SyncEngine {
         let mut schemas_replayed = false;
         let mut embeddings_replayed = false;
 
-        for (seq, url) in new_seqs.iter().zip(urls.iter()) {
-            let downloaded = self
-                .retry_s3(&format!("download '{}' seq {}", target.label, seq), || {
-                    let url = url.clone();
-                    async move { self.s3.download(&url).await }
-                })
-                .await?;
-            let bytes = downloaded.ok_or_else(|| {
-                log::error!(
-                    "sync replay aborted: entry not found in '{}' seq={} (server listed this seq but S3 returned 404); cursor will NOT advance past seq={}",
+        // Chunk the presign call at MAX_PRESIGN_BATCH — storage_service caps
+        // `seq_numbers` per request and a fresh node can easily list >1000
+        // new objects on first sync. Chunks are processed in seq order so the
+        // contiguous-cursor invariant still holds: if chunk N fails partway,
+        // chunks 1..N-1 fully replayed and `max_contiguous_seq` reflects that.
+        for chunk in new_seqs.chunks(MAX_PRESIGN_BATCH) {
+            let urls = self.auth.presign_download(target, chunk).await?;
+            if urls.len() != chunk.len() {
+                return Err(SyncError::Auth(format!(
+                    "presign_download '{}': expected {} urls, got {}",
                     target.label,
-                    seq,
-                    max_contiguous_seq
-                );
-                SyncError::CorruptEntry {
-                    seq: *seq,
-                    reason: format!(
-                        "object missing from '{}' after server listed it",
-                        target.label
-                    ),
-                }
-            })?;
-            let entry = LogEntry::unseal(&bytes, &target.crypto).await.map_err(|e| {
-                log::error!(
-                    "sync replay aborted: failed to unseal entry in '{}' seq={}: {}; cursor will NOT advance past seq={}",
-                    target.label,
-                    seq,
-                    e,
-                    max_contiguous_seq
-                );
-                SyncError::CorruptEntry {
-                    seq: *seq,
-                    reason: format!("unseal failed: {e}"),
-                }
-            })?;
-            // `schema_states` shares the schema reloader: replaying a pure
-            // state flip on an org schema (approve/block) must still refresh
-            // the in-memory state cache, otherwise `/api/schemas` lags the
-            // on-disk truth until the next schemas-namespace write lands.
-            match entry.op.namespace() {
-                "schemas" | "schema_states" => schemas_replayed = true,
-                "native_index" => embeddings_replayed = true,
-                _ => {}
+                    chunk.len(),
+                    urls.len()
+                )));
             }
-            log::info!(
-                "replay '{}' seq={}: {}",
-                target.label,
-                seq,
-                entry.op.describe()
-            );
-            self.replay_entry(&entry, Some(target)).await.map_err(|e| {
-                log::error!(
-                    "sync replay aborted: apply failed in '{}' seq={}: {}; cursor will NOT advance past seq={}",
+            for (seq, url) in chunk.iter().zip(urls.iter()) {
+                let downloaded = self
+                    .retry_s3(&format!("download '{}' seq {}", target.label, seq), || {
+                        let url = url.clone();
+                        async move { self.s3.download(&url).await }
+                    })
+                    .await?;
+                let bytes = downloaded.ok_or_else(|| {
+                    log::error!(
+                        "sync replay aborted: entry not found in '{}' seq={} (server listed this seq but S3 returned 404); cursor will NOT advance past seq={}",
+                        target.label,
+                        seq,
+                        max_contiguous_seq
+                    );
+                    SyncError::CorruptEntry {
+                        seq: *seq,
+                        reason: format!(
+                            "object missing from '{}' after server listed it",
+                            target.label
+                        ),
+                    }
+                })?;
+                let entry = LogEntry::unseal(&bytes, &target.crypto).await.map_err(|e| {
+                    log::error!(
+                        "sync replay aborted: failed to unseal entry in '{}' seq={}: {}; cursor will NOT advance past seq={}",
+                        target.label,
+                        seq,
+                        e,
+                        max_contiguous_seq
+                    );
+                    SyncError::CorruptEntry {
+                        seq: *seq,
+                        reason: format!("unseal failed: {e}"),
+                    }
+                })?;
+                // `schema_states` shares the schema reloader: replaying a pure
+                // state flip on an org schema (approve/block) must still refresh
+                // the in-memory state cache, otherwise `/api/schemas` lags the
+                // on-disk truth until the next schemas-namespace write lands.
+                match entry.op.namespace() {
+                    "schemas" | "schema_states" => schemas_replayed = true,
+                    "native_index" => embeddings_replayed = true,
+                    _ => {}
+                }
+                log::info!(
+                    "replay '{}' seq={}: {}",
                     target.label,
                     seq,
-                    e,
-                    max_contiguous_seq
+                    entry.op.describe()
                 );
-                e
-            })?;
-            total_replayed += 1;
-            max_contiguous_seq = *seq;
+                self.replay_entry(&entry, Some(target)).await.map_err(|e| {
+                    log::error!(
+                        "sync replay aborted: apply failed in '{}' seq={}: {}; cursor will NOT advance past seq={}",
+                        target.label,
+                        seq,
+                        e,
+                        max_contiguous_seq
+                    );
+                    e
+                })?;
+                total_replayed += 1;
+                max_contiguous_seq = *seq;
+            }
         }
 
         // Invoke reloaders for any namespaces that received new entries
@@ -1258,20 +1334,31 @@ impl SyncEngine {
                     .filter(|seq| *seq <= last_seq)
                     .collect();
                 if !old_seqs.is_empty() {
-                    match self.auth.presign_log_delete(&old_seqs).await {
-                        Ok(delete_urls) => {
-                            for url in &delete_urls {
-                                if let Err(e) = self.s3.delete(url).await {
-                                    log::warn!("failed to delete compacted log (non-fatal): {e}");
+                    let mut deleted = 0usize;
+                    let mut presign_err: Option<SyncError> = None;
+                    for chunk in old_seqs.chunks(MAX_PRESIGN_BATCH) {
+                        match self.auth.presign_log_delete(chunk).await {
+                            Ok(delete_urls) => {
+                                for url in &delete_urls {
+                                    if let Err(e) = self.s3.delete(url).await {
+                                        log::warn!(
+                                            "failed to delete compacted log (non-fatal): {e}"
+                                        );
+                                    }
                                 }
+                                deleted += delete_urls.len();
                             }
-                            log::info!("deleted {} compacted log entries", delete_urls.len());
+                            Err(e) => {
+                                presign_err = Some(e);
+                                break;
+                            }
                         }
-                        Err(e) => {
-                            log::warn!(
-                                "failed to get delete URLs for compacted logs (non-fatal): {e}"
-                            );
-                        }
+                    }
+                    if let Some(e) = presign_err {
+                        log::warn!("failed to get delete URLs for compacted logs (non-fatal): {e}");
+                    }
+                    if deleted > 0 {
+                        log::info!("deleted {} compacted log entries", deleted);
                     }
                 }
             }
@@ -1981,7 +2068,7 @@ impl SyncEngine {
             .filter_map(|obj| parse_flat_log_key(&obj.key))
             .collect();
 
-        for chunk in log_seqs.chunks(1000) {
+        for chunk in log_seqs.chunks(MAX_PRESIGN_BATCH) {
             let urls = self.auth.presign_log_delete(chunk).await?;
             for url in &urls {
                 self.s3.delete(url).await?;
@@ -2105,6 +2192,45 @@ mod tests {
         assert_eq!(config.compaction_threshold, 100);
         assert_eq!(config.lock_ttl_secs, 300);
         assert_eq!(config.max_retries, 2);
+    }
+
+    /// `MAX_PRESIGN_BATCH` must stay aligned with `storage_service`'s
+    /// hard cap of 1000 (`lambdas/storage_service/src/handlers.rs`).
+    /// Bumping this without bumping the Lambda — or vice versa — silently
+    /// re-breaks `seq_numbers exceeds maximum length of 1000` on personal
+    /// uploads. Pin the value here so a thoughtless change trips this test.
+    #[test]
+    fn presign_batch_cap_matches_storage_service() {
+        assert_eq!(MAX_PRESIGN_BATCH, 1000);
+    }
+
+    /// Verify the chunking arithmetic that `upload_entries` /
+    /// `download_entries` rely on: ceil(N / MAX_PRESIGN_BATCH) chunks,
+    /// with no chunk exceeding the cap. Catches off-by-one regressions if
+    /// someone replaces `chunks(MAX_PRESIGN_BATCH)` with `chunks(N - 1)`
+    /// or similar.
+    #[test]
+    fn presign_chunking_produces_no_oversized_chunks() {
+        for n in [0usize, 1, 999, 1000, 1001, 1999, 2000, 2001, 5_000] {
+            let v: Vec<u64> = (0..n as u64).collect();
+            let chunks: Vec<&[u64]> = v.chunks(MAX_PRESIGN_BATCH).collect();
+            let expected_chunk_count = n.div_ceil(MAX_PRESIGN_BATCH);
+            assert_eq!(
+                chunks.len(),
+                expected_chunk_count,
+                "n={n}: expected {expected_chunk_count} chunks, got {}",
+                chunks.len()
+            );
+            let total: usize = chunks.iter().map(|c| c.len()).sum();
+            assert_eq!(total, n, "n={n}: chunks must cover every element");
+            for (i, chunk) in chunks.iter().enumerate() {
+                assert!(
+                    chunk.len() <= MAX_PRESIGN_BATCH,
+                    "n={n} chunk {i}: {} entries exceeds cap",
+                    chunk.len()
+                );
+            }
+        }
     }
 
     /// Regression for alpha BLOCKER 30a7b: the old `download_entries` built a
