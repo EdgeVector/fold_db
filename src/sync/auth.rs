@@ -250,6 +250,17 @@ impl AuthClient {
         .await
     }
 
+    /// Presign a DELETE URL for a snapshot object (e.g., `latest.enc` or
+    /// `{seq}.enc`). Used by the cloud-aware reset path that purges the
+    /// personal sync log along with its snapshots.
+    pub async fn presign_snapshot_delete(&self, snapshot_name: &str) -> SyncResult<PresignedUrl> {
+        self.presign_single_url(serde_json::json!({
+            "action": "presign_snapshot_delete",
+            "snapshot_name": snapshot_name,
+        }))
+        .await
+    }
+
     /// Acquire the device lock.
     pub async fn acquire_lock(&self, device_id: &str, ttl_secs: u64) -> SyncResult<bool> {
         let body = serde_json::json!({
@@ -430,6 +441,34 @@ impl AuthClient {
         target: &super::org_sync::SyncTarget,
     ) -> SyncResult<Vec<S3ObjectInfo>> {
         self.list_log_objects_after(target, None).await
+    }
+
+    /// List snapshot objects (`snapshots/*.enc`) under a sync target's prefix.
+    ///
+    /// Used by the cloud-aware reset path to enumerate every snapshot
+    /// (including `latest.enc` and any compacted `{seq}.enc`) so each can
+    /// be deleted via `presign_snapshot_delete`.
+    pub async fn list_snapshot_objects(
+        &self,
+        target: &super::org_sync::SyncTarget,
+    ) -> SyncResult<Vec<S3ObjectInfo>> {
+        let mut body = serde_json::json!({
+            "action": "list_objects",
+            "prefix": "snapshots/",
+        });
+        if !target.prefix.is_empty() {
+            body["org_hash"] = serde_json::Value::String(target.prefix.clone());
+        }
+        let resp = self.post("/api/sync/list", body).await?;
+        let parsed: ListObjectsResponse = serde_json::from_value(resp)?;
+        if !parsed.ok {
+            return Err(SyncError::Auth(
+                parsed
+                    .error
+                    .unwrap_or_else(|| "list snapshot objects failed".to_string()),
+            ));
+        }
+        Ok(parsed.objects)
     }
 
     /// List log objects for a sync target, optionally starting after a given key.

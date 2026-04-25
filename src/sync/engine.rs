@@ -42,6 +42,17 @@ pub struct SyncStatus {
     pub last_error: Option<String>,
 }
 
+/// Outcome of `SyncEngine::purge_personal_log`. Counts of cloud-side
+/// objects deleted, returned to the caller for logging and progress
+/// reporting.
+#[derive(Debug, Default, Clone, Serialize)]
+pub struct PurgeOutcome {
+    /// Number of `{user_hash}/log/{seq}.enc` objects deleted.
+    pub deleted_log_objects: usize,
+    /// Number of `{user_hash}/snapshots/*.enc` objects deleted.
+    pub deleted_snapshots: usize,
+}
+
 /// A merge conflict detected during sync replay.
 /// Stored at key `conflict:{mol_uuid}:{ts}` for efficient scanning.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -1884,6 +1895,92 @@ impl SyncEngine {
         self.auth
             .renew_lock(&self.device_id, self.config.lock_ttl_secs)
             .await
+    }
+
+    // =========================================================================
+    // Cloud-aware reset
+    // =========================================================================
+
+    /// Delete every cloud-side log entry and snapshot for the personal
+    /// target, leaving the prefix empty.
+    ///
+    /// Used by `fold_db_node`'s `reset-database` flow to make local wipe
+    /// actually stick: without this, the next sync cycle would re-bootstrap
+    /// from `latest.enc` and replay the full personal log, undoing the
+    /// reset.
+    ///
+    /// Org targets (`targets[1..]`) are intentionally untouched. Org logs
+    /// are shared state across members; leaving an org is a separate flow
+    /// the user must perform explicitly.
+    ///
+    /// The device write lock is acquired for the duration of the purge so
+    /// no other device can race uploads against us. The lock is released
+    /// best-effort on the way out — a stuck lock self-heals via TTL.
+    pub async fn purge_personal_log(&self) -> SyncResult<PurgeOutcome> {
+        self.acquire_lock().await?;
+        let result = self.purge_personal_log_inner().await;
+        if let Err(e) = self.release_lock().await {
+            log::warn!("purge_personal_log: failed to release device lock (non-fatal): {e}");
+        }
+        result
+    }
+
+    async fn purge_personal_log_inner(&self) -> SyncResult<PurgeOutcome> {
+        let personal = self.targets.lock().await[0].clone();
+        if !personal.prefix.is_empty() {
+            // Defense-in-depth: targets[0] is always personal (empty
+            // prefix) by construction. If this ever changes upstream we
+            // want to fail loud, not nuke the wrong prefix.
+            return Err(SyncError::Auth(
+                "purge_personal_log: targets[0] is not the personal target".to_string(),
+            ));
+        }
+
+        let mut outcome = PurgeOutcome::default();
+
+        // 1) Delete every log object: list → presign DELETE in chunks of
+        //    1000 (Lambda cap) → DELETE each presigned URL.
+        let log_objects = self.auth.list_log_objects(&personal).await?;
+        let log_seqs: Vec<u64> = log_objects
+            .iter()
+            .filter_map(|obj| parse_flat_log_key(&obj.key))
+            .collect();
+
+        for chunk in log_seqs.chunks(1000) {
+            let urls = self.auth.presign_log_delete(chunk).await?;
+            for url in &urls {
+                self.s3.delete(url).await?;
+            }
+            outcome.deleted_log_objects += urls.len();
+        }
+
+        // 2) Delete every snapshot under `snapshots/`. Includes
+        //    `latest.enc` plus any compacted `{seq}.enc` left behind by
+        //    prior compactions. Listing first (rather than only attempting
+        //    `latest.enc`) ensures the prefix is fully empty after reset.
+        let snapshot_objects = self.auth.list_snapshot_objects(&personal).await?;
+        for obj in snapshot_objects {
+            // The Lambda strips the scope prefix on list responses, so
+            // keys come back as `snapshots/{name}` — we want the bare
+            // `{name}` for the delete request.
+            let Some(name) = obj.key.strip_prefix("snapshots/") else {
+                log::warn!(
+                    "purge_personal_log: skipping snapshot key '{}' that doesn't start with 'snapshots/'",
+                    obj.key
+                );
+                continue;
+            };
+            let url = self.auth.presign_snapshot_delete(name).await?;
+            self.s3.delete(&url).await?;
+            outcome.deleted_snapshots += 1;
+        }
+
+        log::info!(
+            "purge_personal_log: deleted {} log objects, {} snapshots",
+            outcome.deleted_log_objects,
+            outcome.deleted_snapshots,
+        );
+        Ok(outcome)
     }
 
     // =========================================================================
