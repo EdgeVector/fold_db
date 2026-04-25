@@ -376,8 +376,10 @@ impl FoldDB {
         job_store: Option<Arc<dyn JobStore>>,
         user_id: String,
     ) -> Result<Self, StorageError> {
-        Self::initialize_from_db_ops_with_sled(db_ops, db_path, job_store, user_id, None, None, None)
-            .await
+        Self::initialize_from_db_ops_with_sled(
+            db_ops, db_path, job_store, user_id, None, None, None,
+        )
+        .await
     }
 
     /// Internal initializer that optionally retains the SledPool handle.

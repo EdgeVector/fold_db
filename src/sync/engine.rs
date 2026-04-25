@@ -1777,8 +1777,7 @@ impl SyncEngine {
         if let Some(result) = Self::try_merge::<MoleculeRange>(local_bytes, incoming_bytes, kp) {
             return result;
         }
-        if let Some(result) =
-            Self::try_merge::<MoleculeHashRange>(local_bytes, incoming_bytes, kp)
+        if let Some(result) = Self::try_merge::<MoleculeHashRange>(local_bytes, incoming_bytes, kp)
         {
             return result;
         }

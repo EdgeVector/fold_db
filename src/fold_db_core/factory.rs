@@ -132,8 +132,7 @@ async fn create_local_fold_db(
     // instead of generating per-process. Tracked alongside the matching TODO
     // in `FoldDB::initialize_from_db_ops_with_sled`.
     let node_signer = Arc::new(
-        crate::security::Ed25519KeyPair::generate()
-            .expect("Ed25519 key generation must not fail"),
+        crate::security::Ed25519KeyPair::generate().expect("Ed25519 key generation must not fail"),
     );
 
     // Build the store stack, optionally inserting sync layer
