@@ -32,6 +32,7 @@ fn make_engine(store: Arc<dyn NamespacedStore>) -> SyncEngine {
         auth,
         store,
         SyncConfig::default(),
+        Arc::new(Ed25519KeyPair::generate().unwrap()),
     )
 }
 

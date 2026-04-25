@@ -9,6 +9,7 @@ use crate::atom::{
     MutationEvent,
 };
 use crate::crypto::CryptoProvider;
+use crate::security::Ed25519KeyPair;
 use crate::storage::traits::NamespacedStore;
 use chrono::Utc;
 use serde::Serialize;
@@ -115,42 +116,57 @@ pub type StatusCallback = Box<dyn Fn(SyncState, Option<&str>) + Send + Sync>;
 /// Each molecule type has a `merge` method but with slightly different return types
 /// (`Vec<MergeConflict>` vs `Option<MergeConflict>`). This trait normalizes them
 /// into a single `Vec<MergeConflict>` so `try_merge` can be generic.
+///
+/// The `keypair` is the node signer plumbed through `SyncEngine`. For `Molecule`
+/// (single-atom) merges it signs the resulting canonical bytes so a remote peer
+/// can attribute the merged write to this node. Collection-typed merges
+/// (`MoleculeHash`, `MoleculeRange`, `MoleculeHashRange`) preserve per-entry
+/// signatures from the original writers, so the keypair is unused there.
 trait MergeMolecule {
-    fn merge_into_conflicts(&mut self, other: &Self) -> Vec<MergeConflict>;
+    fn merge_into_conflicts(
+        &mut self,
+        other: &Self,
+        keypair: &Ed25519KeyPair,
+    ) -> Vec<MergeConflict>;
 }
 
 impl MergeMolecule for MoleculeHash {
-    fn merge_into_conflicts(&mut self, other: &Self) -> Vec<MergeConflict> {
-        // TODO: Thread node signer through sync engine for proper keypair usage.
-        // Collection merges preserve per-entry signatures so the keypair is unused.
-        let kp = crate::security::Ed25519KeyPair::generate()
-            .expect("Ed25519 key generation must not fail");
-        self.merge(other, &kp)
+    fn merge_into_conflicts(
+        &mut self,
+        other: &Self,
+        keypair: &Ed25519KeyPair,
+    ) -> Vec<MergeConflict> {
+        self.merge(other, keypair)
     }
 }
 
 impl MergeMolecule for MoleculeRange {
-    fn merge_into_conflicts(&mut self, other: &Self) -> Vec<MergeConflict> {
-        let kp = crate::security::Ed25519KeyPair::generate()
-            .expect("Ed25519 key generation must not fail");
-        self.merge(other, &kp)
+    fn merge_into_conflicts(
+        &mut self,
+        other: &Self,
+        keypair: &Ed25519KeyPair,
+    ) -> Vec<MergeConflict> {
+        self.merge(other, keypair)
     }
 }
 
 impl MergeMolecule for MoleculeHashRange {
-    fn merge_into_conflicts(&mut self, other: &Self) -> Vec<MergeConflict> {
-        let kp = crate::security::Ed25519KeyPair::generate()
-            .expect("Ed25519 key generation must not fail");
-        self.merge(other, &kp)
+    fn merge_into_conflicts(
+        &mut self,
+        other: &Self,
+        keypair: &Ed25519KeyPair,
+    ) -> Vec<MergeConflict> {
+        self.merge(other, keypair)
     }
 }
 
 impl MergeMolecule for Molecule {
-    fn merge_into_conflicts(&mut self, other: &Self) -> Vec<MergeConflict> {
-        // TODO: Thread node signer through sync engine for proper merge signing.
-        let kp = crate::security::Ed25519KeyPair::generate()
-            .expect("Ed25519 key generation must not fail");
-        self.merge(other, &kp).into_iter().collect()
+    fn merge_into_conflicts(
+        &mut self,
+        other: &Self,
+        keypair: &Ed25519KeyPair,
+    ) -> Vec<MergeConflict> {
+        self.merge(other, keypair).into_iter().collect()
     }
 }
 
@@ -255,6 +271,10 @@ pub struct SyncEngine {
     /// at most one pending notification across multiple writes — concurrent
     /// writes coalesce into the next sync cycle naturally.
     wake: Arc<tokio::sync::Notify>,
+    /// Node signing keypair, shared with `MutationManager`. Used to sign
+    /// `Molecule` merge results during sync replay so a peer can attribute the
+    /// merged write to this node's identity instead of an ephemeral keypair.
+    node_signer: Arc<Ed25519KeyPair>,
 }
 
 impl SyncEngine {
@@ -265,6 +285,7 @@ impl SyncEngine {
         auth: AuthClient,
         store: Arc<dyn NamespacedStore>,
         config: SyncConfig,
+        node_signer: Arc<Ed25519KeyPair>,
     ) -> Self {
         Self {
             state: Arc::new(Mutex::new(SyncState::Idle)),
@@ -290,6 +311,7 @@ impl SyncEngine {
             embedding_reloader: Arc::new(Mutex::new(None)),
             auth_refresh: None,
             wake: Arc::new(tokio::sync::Notify::new()),
+            node_signer,
         }
     }
 
@@ -387,6 +409,13 @@ impl SyncEngine {
     /// Get the device identifier.
     pub fn device_id(&self) -> &str {
         &self.device_id
+    }
+
+    /// Returns the node signing keypair used to sign merge results during replay.
+    /// Shared with `MutationManager` so local writes and merged writes trace to
+    /// the same node identity.
+    pub fn node_signer(&self) -> &Arc<Ed25519KeyPair> {
+        &self.node_signer
     }
 
     /// Get the current sync state.
@@ -1686,7 +1715,7 @@ impl SyncEngine {
             match local_bytes {
                 Some(local) => {
                     // Both exist — try molecule merge
-                    let (merged_bytes, conflicts) = Self::merge_molecules(&local, &value_bytes)?;
+                    let (merged_bytes, conflicts) = self.merge_molecules(&local, &value_bytes)?;
                     kv.put(&key_bytes, merged_bytes).await?;
 
                     // Store any merge conflicts
@@ -1712,6 +1741,7 @@ impl SyncEngine {
     fn try_merge<T>(
         local_bytes: &[u8],
         incoming_bytes: &[u8],
+        keypair: &Ed25519KeyPair,
     ) -> Option<SyncResult<(Vec<u8>, Vec<MergeConflict>)>>
     where
         T: serde::de::DeserializeOwned + serde::Serialize + MergeMolecule,
@@ -1723,7 +1753,7 @@ impl SyncEngine {
             (Ok(l), Ok(i)) => (l, i),
             _ => return None,
         };
-        let conflicts = local.merge_into_conflicts(&incoming);
+        let conflicts = local.merge_into_conflicts(&incoming, keypair);
         Some(
             serde_json::to_vec(&local)
                 .map(|merged| (merged, conflicts))
@@ -1732,21 +1762,27 @@ impl SyncEngine {
     }
 
     /// Attempt molecule merge by trying each molecule type in order.
-    /// Returns the serialized merged result and any conflicts.
+    /// Returns the serialized merged result and any conflicts. The node signer
+    /// is used to re-sign single-`Molecule` merge results so a peer can verify
+    /// the merge was committed by this node.
     fn merge_molecules(
+        &self,
         local_bytes: &[u8],
         incoming_bytes: &[u8],
     ) -> SyncResult<(Vec<u8>, Vec<MergeConflict>)> {
-        if let Some(result) = Self::try_merge::<MoleculeHash>(local_bytes, incoming_bytes) {
+        let kp = self.node_signer.as_ref();
+        if let Some(result) = Self::try_merge::<MoleculeHash>(local_bytes, incoming_bytes, kp) {
             return result;
         }
-        if let Some(result) = Self::try_merge::<MoleculeRange>(local_bytes, incoming_bytes) {
+        if let Some(result) = Self::try_merge::<MoleculeRange>(local_bytes, incoming_bytes, kp) {
             return result;
         }
-        if let Some(result) = Self::try_merge::<MoleculeHashRange>(local_bytes, incoming_bytes) {
+        if let Some(result) =
+            Self::try_merge::<MoleculeHashRange>(local_bytes, incoming_bytes, kp)
+        {
             return result;
         }
-        if let Some(result) = Self::try_merge::<Molecule>(local_bytes, incoming_bytes) {
+        if let Some(result) = Self::try_merge::<Molecule>(local_bytes, incoming_bytes, kp) {
             return result;
         }
 
@@ -2509,6 +2545,7 @@ mod tests {
         let s3 = S3Client::new(http);
         let crypto: Arc<dyn CryptoProvider> = Arc::new(LocalCryptoProvider::from_key([0x77u8; 32]));
         let store: Arc<dyn NamespacedStore> = Arc::new(InMemoryNamespacedStore::new());
+        let signer = Arc::new(Ed25519KeyPair::generate().unwrap());
         SyncEngine::new(
             "test-device".to_string(),
             crypto,
@@ -2516,6 +2553,7 @@ mod tests {
             auth,
             store,
             SyncConfig::default(),
+            signer,
         )
     }
 

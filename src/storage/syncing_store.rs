@@ -128,6 +128,7 @@ mod tests {
         );
         let ns_store_arc: Arc<dyn NamespacedStore> = Arc::new(ns_store);
 
+        let signer = Arc::new(crate::security::Ed25519KeyPair::generate().unwrap());
         let engine = Arc::new(SyncEngine::new(
             "test-device".to_string(),
             crypto,
@@ -135,6 +136,7 @@ mod tests {
             auth,
             ns_store_arc,
             SyncConfig::default(),
+            signer,
         ));
 
         let syncing = Arc::new(SyncingKvStore::new(

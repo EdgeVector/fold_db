@@ -251,6 +251,7 @@ impl FoldDB {
             auth_client,
             base_store,
             sync_config,
+            Arc::clone(&self.signer),
         );
         if let Some(cb) = auth_refresh {
             engine.set_auth_refresh(cb);
@@ -363,6 +364,7 @@ impl FoldDB {
             "local".to_string(),
             Some(pool),
             None,
+            None,
         )
         .await
     }
@@ -374,12 +376,18 @@ impl FoldDB {
         job_store: Option<Arc<dyn JobStore>>,
         user_id: String,
     ) -> Result<Self, StorageError> {
-        Self::initialize_from_db_ops_with_sled(db_ops, db_path, job_store, user_id, None, None)
+        Self::initialize_from_db_ops_with_sled(db_ops, db_path, job_store, user_id, None, None, None)
             .await
     }
 
     /// Internal initializer that optionally retains the SledPool handle.
     /// The pool is needed by org operations and org sync configuration.
+    ///
+    /// `signer`, when supplied, is the node signing keypair shared with the
+    /// sync engine so merged-molecule writes during replay carry the same
+    /// node identity as direct writes via `MutationManager`. When `None`, a
+    /// fresh keypair is generated for this process (sync replay would then
+    /// run with a different keypair — the factory always passes `Some`).
     pub async fn initialize_from_db_ops_with_sled(
         db_ops: Arc<DbOperations>,
         _db_path: &str,
@@ -387,6 +395,7 @@ impl FoldDB {
         user_id: String,
         sled_pool: Option<Arc<SledPool>>,
         encrypting_store: Option<Arc<crate::storage::EncryptingNamespacedStore>>,
+        signer: Option<Arc<crate::security::Ed25519KeyPair>>,
     ) -> Result<Self, StorageError> {
         // Initialize message bus
         let message_bus = Arc::new(AsyncMessageBus::new());
@@ -439,12 +448,16 @@ impl FoldDB {
         // The sled_pool is plumbed through so the manager can consult the
         // org memberships tree and reject mutations against org-scoped
         // schemas the node is not a member of.
-        // Generate a signing keypair for molecule signatures.
+        // Reuse the caller-provided signer when present (sync engine and
+        // mutation manager must trace to the same node identity); otherwise
+        // generate one for this process.
         // TODO: In production, this should be loaded from the node's persistent identity key.
-        let signer = Arc::new(
-            crate::security::Ed25519KeyPair::generate()
-                .expect("Ed25519 key generation must not fail"),
-        );
+        let signer = signer.unwrap_or_else(|| {
+            Arc::new(
+                crate::security::Ed25519KeyPair::generate()
+                    .expect("Ed25519 key generation must not fail"),
+            )
+        });
 
         let mutation_manager = Arc::new(MutationManager::new(
             Arc::clone(&db_ops),
