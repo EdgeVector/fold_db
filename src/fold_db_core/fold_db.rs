@@ -282,8 +282,15 @@ impl FoldDB {
     }
 
     /// Creates a new FoldDB instance with the specified storage path.
-    /// All initializations happen here. This is the main entry point for the FoldDB system.
-    /// Do not initialize anywhere else.
+    ///
+    /// This is a convenience path for tests and other in-process callers
+    /// that do not have a persistent node identity (e.g., ephemeral
+    /// `tempdir` storage). It generates a fresh Ed25519 signing keypair
+    /// on the fly. **Production callers must go through
+    /// [`crate::fold_db_core::factory::create_fold_db`] and pass in a
+    /// signer loaded from the node's persistent identity** — otherwise
+    /// every boot produces a different signing key and molecule
+    /// signatures will not match the node's public identity.
     pub async fn new(path: &str) -> Result<Self, StorageError> {
         let pool = Arc::new(SledPool::new(std::path::PathBuf::from(path)));
 
@@ -292,8 +299,9 @@ impl FoldDB {
 
     /// Creates a new FoldDB instance with fully initialized components.
     ///
-    /// This is the most flexible constructor, allowing the injection of
-    /// specific implementations for storage, progress tracking, etc.
+    /// This is the most flexible in-process constructor; it generates a
+    /// fresh signing keypair on the fly. See [`FoldDB::new`] for why
+    /// production callers must use the factory instead.
     pub async fn new_with_components(
         db_ops: Arc<DbOperations>,
         db_path: &str,
@@ -302,6 +310,16 @@ impl FoldDB {
     ) -> Result<Self, StorageError> {
         let actual_user_id = user_id.unwrap_or_else(|| "global".to_string());
         Self::initialize_from_db_ops(db_ops, db_path, job_store, actual_user_id).await
+    }
+
+    /// Generate a signing keypair for in-process / test callers that do
+    /// not have a persistent node identity. Wraps the error so callers
+    /// get a single failure mode.
+    fn generate_ephemeral_signer() -> Result<Arc<crate::security::Ed25519KeyPair>, StorageError> {
+        let keypair = crate::security::Ed25519KeyPair::generate().map_err(|e| {
+            StorageError::BackendError(format!("ephemeral signer generation failed: {}", e))
+        })?;
+        Ok(Arc::new(keypair))
     }
 
     /// Common initialization logic shared by both new() and new_with_s3()
@@ -357,6 +375,7 @@ impl FoldDB {
         // For local Sled backend, create persistent progress store
         let job_store: ProgressTracker =
             crate::progress::create_tracker_with_sled(Arc::clone(&pool));
+        let signer = Self::generate_ephemeral_signer()?;
         Self::initialize_from_db_ops_with_sled(
             db_ops,
             db_path,
@@ -364,20 +383,22 @@ impl FoldDB {
             "local".to_string(),
             Some(pool),
             None,
-            None,
+            signer,
         )
         .await
     }
 
-    /// Common initialization logic that creates all FoldDB components from DbOperations
+    /// Common initialization logic that creates all FoldDB components from DbOperations.
+    /// Generates an ephemeral signing keypair — see [`FoldDB::new`].
     pub async fn initialize_from_db_ops(
         db_ops: Arc<DbOperations>,
         db_path: &str,
         job_store: Option<Arc<dyn JobStore>>,
         user_id: String,
     ) -> Result<Self, StorageError> {
+        let signer = Self::generate_ephemeral_signer()?;
         Self::initialize_from_db_ops_with_sled(
-            db_ops, db_path, job_store, user_id, None, None, None,
+            db_ops, db_path, job_store, user_id, None, None, signer,
         )
         .await
     }
@@ -385,11 +406,12 @@ impl FoldDB {
     /// Internal initializer that optionally retains the SledPool handle.
     /// The pool is needed by org operations and org sync configuration.
     ///
-    /// `signer`, when supplied, is the node signing keypair shared with the
-    /// sync engine so merged-molecule writes during replay carry the same
-    /// node identity as direct writes via `MutationManager`. When `None`, a
-    /// fresh keypair is generated for this process (sync replay would then
-    /// run with a different keypair — the factory always passes `Some`).
+    /// `signer` is the Ed25519 keypair used to sign molecule mutations.
+    /// It is shared with the sync engine so merged-molecule writes during
+    /// replay carry the same node identity as direct writes via
+    /// `MutationManager`. Production callers (via the factory) must load
+    /// this from the node's persistent identity so signatures match the
+    /// node's public key — see the module docs on [`FoldDB::new`] for why.
     pub async fn initialize_from_db_ops_with_sled(
         db_ops: Arc<DbOperations>,
         _db_path: &str,
@@ -397,7 +419,7 @@ impl FoldDB {
         user_id: String,
         sled_pool: Option<Arc<SledPool>>,
         encrypting_store: Option<Arc<crate::storage::EncryptingNamespacedStore>>,
-        signer: Option<Arc<crate::security::Ed25519KeyPair>>,
+        signer: Arc<crate::security::Ed25519KeyPair>,
     ) -> Result<Self, StorageError> {
         // Initialize message bus
         let message_bus = Arc::new(AsyncMessageBus::new());
@@ -450,17 +472,11 @@ impl FoldDB {
         // The sled_pool is plumbed through so the manager can consult the
         // org memberships tree and reject mutations against org-scoped
         // schemas the node is not a member of.
-        // Reuse the caller-provided signer when present (sync engine and
-        // mutation manager must trace to the same node identity); otherwise
-        // generate one for this process.
-        // TODO: In production, this should be loaded from the node's persistent identity key.
-        let signer = signer.unwrap_or_else(|| {
-            Arc::new(
-                crate::security::Ed25519KeyPair::generate()
-                    .expect("Ed25519 key generation must not fail"),
-            )
-        });
-
+        //
+        // The signer was loaded and validated by the caller (in
+        // production, from the node's persistent identity). It is shared
+        // with the sync engine so merged-molecule writes trace to the
+        // same node identity as direct writes via `MutationManager`.
         let mutation_manager = Arc::new(MutationManager::new(
             Arc::clone(&db_ops),
             Arc::clone(&schema_manager),

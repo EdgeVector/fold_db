@@ -2,6 +2,7 @@ use crate::crypto::E2eKeys;
 use crate::db_operations::DbOperations;
 use crate::error::{FoldDbError, FoldDbResult};
 use crate::fold_db_core::FoldDB;
+use crate::security::Ed25519KeyPair;
 use crate::storage::config::DatabaseConfig;
 use crate::storage::node_config_store::NodeConfigStore;
 use crate::storage::SledPool;
@@ -12,11 +13,17 @@ use std::sync::Arc;
 ///
 /// Always uses local Sled storage. When `cloud_sync` is configured, layers on
 /// encrypted S3 sync via the Exemem platform.
+///
+/// `signer` is the Ed25519 keypair used to sign molecule mutations. Callers are
+/// responsible for loading and validating it from the node's persistent identity
+/// before calling this factory — passing a freshly-generated keypair on every
+/// boot would produce signatures that do not match the node's public key.
 pub async fn create_fold_db(
     config: &DatabaseConfig,
     e2e_keys: &E2eKeys,
+    signer: Arc<Ed25519KeyPair>,
 ) -> FoldDbResult<Arc<FoldDB>> {
-    create_fold_db_with_auth_refresh(config, e2e_keys, None).await
+    create_fold_db_with_auth_refresh(config, e2e_keys, signer, None).await
 }
 
 /// Creates a FoldDB instance with an optional auth-refresh callback for the sync engine.
@@ -27,9 +34,10 @@ pub async fn create_fold_db(
 pub async fn create_fold_db_with_auth_refresh(
     config: &DatabaseConfig,
     e2e_keys: &E2eKeys,
+    signer: Arc<Ed25519KeyPair>,
     auth_refresh: Option<crate::sync::AuthRefreshCallback>,
 ) -> FoldDbResult<Arc<FoldDB>> {
-    create_fold_db_with_pool_and_auth_refresh(config, e2e_keys, auth_refresh, None).await
+    create_fold_db_with_pool_and_auth_refresh(config, e2e_keys, signer, auth_refresh, None).await
 }
 
 /// Like [`create_fold_db_with_auth_refresh`], but accepts an optional pre-existing
@@ -45,6 +53,7 @@ pub async fn create_fold_db_with_auth_refresh(
 pub async fn create_fold_db_with_pool_and_auth_refresh(
     config: &DatabaseConfig,
     e2e_keys: &E2eKeys,
+    signer: Arc<Ed25519KeyPair>,
     auth_refresh: Option<crate::sync::AuthRefreshCallback>,
     pool: Option<Arc<SledPool>>,
 ) -> FoldDbResult<Arc<FoldDB>> {
@@ -57,7 +66,7 @@ pub async fn create_fold_db_with_pool_and_auth_refresh(
         None
     };
 
-    let db = create_local_fold_db(&config.path, e2e_keys, sync_setup, pool).await?;
+    let db = create_local_fold_db(&config.path, e2e_keys, signer, sync_setup, pool).await?;
 
     // If cloud sync is configured, persist ONLY api_url and user_hash to Sled.
     // API keys and session tokens are per-device secrets stored in credentials.json
@@ -94,6 +103,7 @@ pub async fn create_fold_db_with_pool_and_auth_refresh(
 async fn create_local_fold_db(
     path: &std::path::Path,
     e2e_keys: &E2eKeys,
+    signer: Arc<Ed25519KeyPair>,
     sync_setup: Option<SyncSetup>,
     injected_pool: Option<Arc<SledPool>>,
 ) -> FoldDbResult<Arc<FoldDB>> {
@@ -124,16 +134,11 @@ async fn create_local_fold_db(
     let base_store: Arc<dyn crate::storage::traits::NamespacedStore> =
         Arc::new(crate::storage::SledNamespacedStore::new(Arc::clone(&pool)));
 
-    // Build the node signer once and share it with both SyncEngine (for signing
-    // merged molecules during replay) and FoldDB (used by MutationManager for
-    // signing local writes). Same keypair = merged writes trace to the same
-    // node identity as direct writes.
-    // TODO: Load this from the node's persistent identity in NodeConfigStore
-    // instead of generating per-process. Tracked alongside the matching TODO
-    // in `FoldDB::initialize_from_db_ops_with_sled`.
-    let node_signer = Arc::new(
-        crate::security::Ed25519KeyPair::generate().expect("Ed25519 key generation must not fail"),
-    );
+    // The signer was loaded and validated by the caller (in production,
+    // from the node's persistent identity). We share the same Arc with
+    // both SyncEngine (for signing merged molecules during replay) and
+    // FoldDB (used by MutationManager for signing local writes) so
+    // merged writes trace to the same node identity as direct writes.
 
     // Build the store stack, optionally inserting sync layer
     #[allow(clippy::type_complexity)]
@@ -160,7 +165,7 @@ async fn create_local_fold_db(
             auth,
             base_store.clone(),
             sync_config,
-            Arc::clone(&node_signer),
+            Arc::clone(&signer),
         );
         if let Some(cb) = setup.auth_refresh {
             engine.set_auth_refresh(cb);
@@ -250,7 +255,7 @@ async fn create_local_fold_db(
         "local".to_string(),
         Some(pool),
         enc_store_ref,
-        Some(node_signer),
+        signer,
     )
     .await
     .map_err(|e| FoldDbError::Config(e.to_string()))?;

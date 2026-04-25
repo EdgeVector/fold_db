@@ -27,14 +27,22 @@ impl Ed25519KeyPair {
 
     /// Create a key pair from a secret key
     pub fn from_secret_key(secret_key: &[u8]) -> SecurityResult<Self> {
-        if secret_key.len() != 32 {
-            return Err(SecurityError::KeyGenerationFailed(
-                "Secret key must be 32 bytes".to_string(),
-            ));
-        }
+        // Ed25519 private keys are either 32 bytes (raw seed) or 64 bytes
+        // (seed || derived public). Accept both so callers that stored the
+        // 64-byte form (e.g. older identity writers) still round-trip.
+        let seed = match secret_key.len() {
+            32 => secret_key,
+            64 => &secret_key[..32],
+            n => {
+                return Err(SecurityError::KeyGenerationFailed(format!(
+                    "Ed25519 secret key must be 32 or 64 bytes, got {}",
+                    n
+                )));
+            }
+        };
 
         let mut key_bytes = [0u8; 32];
-        key_bytes.copy_from_slice(secret_key);
+        key_bytes.copy_from_slice(seed);
 
         let signing_key = SigningKey::from_bytes(&key_bytes);
         let verifying_key = signing_key.verifying_key();
@@ -43,6 +51,28 @@ impl Ed25519KeyPair {
             signing_key,
             verifying_key,
         })
+    }
+
+    /// Create a key pair from a base64-encoded secret key. This is the
+    /// canonical loader for the node's persistent identity — the private
+    /// key is stored as base64 in the identity tree. Fails loudly with a
+    /// clear error when the input is missing, malformed, or the wrong
+    /// length.
+    pub fn from_secret_key_base64(secret_key_base64: &str) -> SecurityResult<Self> {
+        if secret_key_base64.is_empty() {
+            return Err(SecurityError::KeyGenerationFailed(
+                "Ed25519 secret key is empty".to_string(),
+            ));
+        }
+        let bytes = general_purpose::STANDARD
+            .decode(secret_key_base64)
+            .map_err(|e| {
+                SecurityError::KeyGenerationFailed(format!(
+                    "Ed25519 secret key is not valid base64: {}",
+                    e
+                ))
+            })?;
+        Self::from_secret_key(&bytes)
     }
 
     /// Get the public key as bytes
@@ -216,6 +246,64 @@ mod tests {
 
         assert!(!public_b64.is_empty());
         assert!(!secret_b64.is_empty());
+    }
+
+    #[test]
+    fn test_from_secret_key_base64_roundtrip() {
+        let original = Ed25519KeyPair::generate().unwrap();
+        let b64 = original.secret_key_base64();
+
+        let reloaded = Ed25519KeyPair::from_secret_key_base64(&b64)
+            .expect("reloading the same base64 secret must succeed");
+
+        // Reloaded pair derives the same public key — this is the property
+        // production relies on to keep the signing keypair aligned with
+        // the node's persistent public identity.
+        assert_eq!(original.public_key_bytes(), reloaded.public_key_bytes());
+        assert_eq!(original.secret_key_bytes(), reloaded.secret_key_bytes());
+    }
+
+    #[test]
+    fn test_from_secret_key_base64_rejects_empty() {
+        let err = Ed25519KeyPair::from_secret_key_base64("").expect_err("empty must fail");
+        match err {
+            SecurityError::KeyGenerationFailed(msg) => assert!(msg.contains("empty")),
+            other => panic!("expected KeyGenerationFailed, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_from_secret_key_base64_rejects_invalid_base64() {
+        let err = Ed25519KeyPair::from_secret_key_base64("!!!not base64!!!")
+            .expect_err("garbage input must fail");
+        match err {
+            SecurityError::KeyGenerationFailed(msg) => {
+                assert!(
+                    msg.contains("base64"),
+                    "error should name the decode failure, got: {}",
+                    msg
+                );
+            }
+            other => panic!("expected KeyGenerationFailed, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_from_secret_key_base64_rejects_wrong_length() {
+        // Valid base64, but only 16 bytes — Ed25519 seeds must be 32.
+        let short = general_purpose::STANDARD.encode([0u8; 16]);
+        let err = Ed25519KeyPair::from_secret_key_base64(&short)
+            .expect_err("wrong-length seed must fail");
+        match err {
+            SecurityError::KeyGenerationFailed(msg) => {
+                assert!(
+                    msg.contains("32 or 64 bytes"),
+                    "error should name the expected length, got: {}",
+                    msg
+                );
+            }
+            other => panic!("expected KeyGenerationFailed, got {:?}", other),
+        }
     }
 
     #[test]
