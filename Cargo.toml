@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/core"]
+members = ["crates/core", "crates/observability"]
 resolver = "2"
 
 [profile.dev-release]
