@@ -240,6 +240,7 @@ impl FoldDB {
         let base_store: Arc<dyn crate::storage::traits::NamespacedStore> =
             Arc::new(crate::storage::SledNamespacedStore::new(pool));
 
+        // trace-egress: propagate (shared with skip-s3 — see docs/observability/egress-classification-notes.md)
         let http = Arc::new(reqwest::Client::new());
         let s3 = crate::sync::s3::S3Client::new(http.clone());
         let auth_client = crate::sync::auth::AuthClient::new(http, setup.auth_url, setup.auth);

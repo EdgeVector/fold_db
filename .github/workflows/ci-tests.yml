@@ -29,6 +29,11 @@ jobs:
       - name: Cache Rust artifacts
         uses: Swatinem/rust-cache@v2
 
+      - name: Lint tracing egress classifiers
+        id: trace-egress
+        continue-on-error: true
+        run: bash scripts/lint-tracing-egress.sh
+
       - name: Check formatting
         id: fmt
         continue-on-error: true
@@ -49,13 +54,15 @@ jobs:
       - name: Rust test summary
         if: always()
         run: |
-          for step_name in fmt clippy cargo-test; do
+          for step_name in trace-egress fmt clippy cargo-test; do
             case "$step_name" in
+              trace-egress)   label="Trace Egress Lint" ;;
               fmt)            label="Rust Format" ;;
               clippy)         label="Rust Clippy" ;;
               cargo-test)     label="Rust Tests" ;;
             esac
             case "$step_name" in
+              trace-egress)   status="${{ steps.trace-egress.outcome }}" ;;
               fmt)            status="${{ steps.fmt.outcome }}" ;;
               clippy)         status="${{ steps.clippy.outcome }}" ;;
               cargo-test)     status="${{ steps.cargo-test.outcome }}" ;;
@@ -67,8 +74,9 @@ jobs:
             esac
           done
 
-      - name: Fail if clippy or tests failed
+      - name: Fail if any check failed
         if: |
+          steps.trace-egress.outcome == 'failure' ||
           steps.fmt.outcome == 'failure' ||
           steps.clippy.outcome == 'failure' ||
           steps.cargo-test.outcome == 'failure'

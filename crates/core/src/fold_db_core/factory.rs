@@ -154,6 +154,7 @@ async fn create_local_fold_db(
         let sync_crypto: Arc<dyn crate::crypto::CryptoProvider> = Arc::new(
             crate::crypto::LocalCryptoProvider::from_key(e2e_keys.encryption_key()),
         );
+        // trace-egress: propagate (shared with skip-s3 — see docs/observability/egress-classification-notes.md)
         let http = Arc::new(reqwest::Client::new());
         let s3 = crate::sync::s3::S3Client::new(http.clone());
         let auth = crate::sync::auth::AuthClient::new(http, setup.auth_url, setup.auth);

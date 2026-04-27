@@ -124,6 +124,7 @@ impl AuthClient {
         let url = format!("{}{}", self.base_url, path);
         let req = self.http.post(&url).json(&body);
         let req = self.apply_auth(req).await;
+        let req = observability::propagation::inject_w3c(req);
 
         let response = req.send().await.map_err(|e| {
             if e.is_timeout() {
