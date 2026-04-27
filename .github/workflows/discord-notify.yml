@@ -1,0 +1,102 @@
+name: Discord Notifications
+
+on:
+  push:
+    branches: [mainline]
+  pull_request:
+    types: [opened, closed, reopened]
+  issues:
+    types: [opened, closed, reopened]
+  issue_comment:
+    types: [created]
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Push
+        if: github.event_name == 'push'
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          MSG: ${{ github.event.head_commit.message }}
+          AUTHOR: ${{ github.event.head_commit.author.name }}
+          URL: ${{ github.event.head_commit.url }}
+          REPO: ${{ github.repository }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          payload=$(jq -nc \
+            --arg title "Push to $BRANCH" \
+            --arg desc "$MSG" \
+            --arg url "$URL" \
+            --arg author "$AUTHOR" \
+            --arg repo "$REPO" \
+            '{embeds:[{title:$title, description:($desc|.[0:200]), url:$url, color:3066993, author:{name:$author}, footer:{text:$repo}}]}')
+          curl -fsS -H "Content-Type: application/json" -d "$payload" "$DISCORD_WEBHOOK"
+
+      - name: PR
+        if: github.event_name == 'pull_request'
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          ACTION: ${{ github.event.action }}
+          MERGED: ${{ github.event.pull_request.merged }}
+          TITLE: ${{ github.event.pull_request.title }}
+          AUTHOR: ${{ github.event.pull_request.user.login }}
+          URL: ${{ github.event.pull_request.html_url }}
+          NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          if [ "$ACTION" = "closed" ] && [ "$MERGED" = "true" ]; then
+            verb="merged"
+            color=10181046
+          else
+            verb="$ACTION"
+            color=1752220
+          fi
+          payload=$(jq -nc \
+            --arg title "PR #$NUMBER $verb" \
+            --arg desc "$TITLE" \
+            --arg url "$URL" \
+            --arg author "$AUTHOR" \
+            --arg repo "$REPO" \
+            --argjson color "$color" \
+            '{embeds:[{title:$title, description:$desc, url:$url, color:$color, author:{name:$author}, footer:{text:$repo}}]}')
+          curl -fsS -H "Content-Type: application/json" -d "$payload" "$DISCORD_WEBHOOK"
+
+      - name: Issue
+        if: github.event_name == 'issues'
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          ACTION: ${{ github.event.action }}
+          TITLE: ${{ github.event.issue.title }}
+          AUTHOR: ${{ github.event.issue.user.login }}
+          URL: ${{ github.event.issue.html_url }}
+          NUMBER: ${{ github.event.issue.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          payload=$(jq -nc \
+            --arg title "Issue #$NUMBER $ACTION" \
+            --arg desc "$TITLE" \
+            --arg url "$URL" \
+            --arg author "$AUTHOR" \
+            --arg repo "$REPO" \
+            '{embeds:[{title:$title, description:$desc, url:$url, color:15105570, author:{name:$author}, footer:{text:$repo}}]}')
+          curl -fsS -H "Content-Type: application/json" -d "$payload" "$DISCORD_WEBHOOK"
+
+      - name: Comment
+        if: github.event_name == 'issue_comment'
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          BODY: ${{ github.event.comment.body }}
+          AUTHOR: ${{ github.event.comment.user.login }}
+          URL: ${{ github.event.comment.html_url }}
+          NUMBER: ${{ github.event.issue.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          payload=$(jq -nc \
+            --arg title "Comment on #$NUMBER" \
+            --arg body "$BODY" \
+            --arg url "$URL" \
+            --arg author "$AUTHOR" \
+            --arg repo "$REPO" \
+            '{embeds:[{title:$title, description:($body|.[0:300]), url:$url, color:9807270, author:{name:$author}, footer:{text:$repo}}]}')
+          curl -fsS -H "Content-Type: application/json" -d "$payload" "$DISCORD_WEBHOOK"
