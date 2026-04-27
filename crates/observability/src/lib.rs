@@ -6,19 +6,24 @@
 //! so it can be consumed from sibling crates and external repos without
 //! pulling the world.
 //!
-//! Phase 1 / T2 ships:
+//! Phase 1 ships:
 //!
 //! - [`attrs`] — canonical attribute keys + the [`redact!`] / [`redact_id!`]
-//!   macros used at log call-sites for PII opacity.
+//!   macros used at log call-sites for PII opacity (T2).
 //! - [`propagation`] — W3C `traceparent` inject on `reqwest` egress and
-//!   extract from `http::HeaderMap` on ingress.
-//! - [`init`] and [`layers`] — empty stubs; future tasks (T3..T6) populate
-//!   the FMT, RELOAD, RING layers and the `init_*` helpers.
+//!   extract from `http::HeaderMap` on ingress (T2).
+//! - [`layers`] — FMT (redacting JSON formatter, T3), RELOAD (runtime
+//!   `EnvFilter` swap, T4), RING (bounded in-memory log buffer, T5).
+//! - [`init`] — `init_node` / `init_lambda` / `init_tauri` / `init_cli`
+//!   helpers (T6) that compose the layers per binary type and return an
+//!   [`ObsGuard`] for the lifetime of the process.
 
 pub mod attrs;
 pub mod init;
 pub mod layers;
 pub mod propagation;
+
+pub use init::{init_cli, init_lambda, init_node, init_tauri, ObsGuard};
 
 /// Errors raised by `init_*` helpers and other crate-level operations.
 #[derive(Debug, thiserror::Error)]
