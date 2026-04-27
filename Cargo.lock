@@ -1253,6 +1253,7 @@ dependencies = [
  "hmac",
  "image",
  "log",
+ "observability",
  "once_cell",
  "ort",
  "rand 0.8.5",

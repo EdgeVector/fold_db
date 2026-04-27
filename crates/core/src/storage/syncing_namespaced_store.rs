@@ -83,6 +83,7 @@ mod tests {
         let inner = Arc::new(InMemoryNamespacedStore::new());
         let crypto: Arc<dyn crate::crypto::CryptoProvider> =
             Arc::new(LocalCryptoProvider::from_key([0x42u8; 32]));
+        // trace-egress: loopback (test scaffold targeting unreachable localhost)
         let http = Arc::new(reqwest::Client::new());
         let s3 = S3Client::new(http.clone());
         let auth = AuthClient::new(

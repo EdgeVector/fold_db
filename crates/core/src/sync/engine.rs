@@ -2661,6 +2661,7 @@ mod tests {
         use crate::sync::auth::AuthClient;
         use crate::sync::s3::S3Client;
 
+        // trace-egress: loopback (test scaffold targeting unreachable localhost)
         let http = Arc::new(reqwest::Client::new());
         let auth = AuthClient::new(
             http.clone(),
