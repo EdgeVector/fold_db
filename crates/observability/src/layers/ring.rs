@@ -450,4 +450,65 @@ mod tests {
             "zero-capacity ring would silently drop everything"
         );
     }
+
+    /// Phase 3 / T6 — pattern test for `tokio::spawn(... .instrument(Span::current()))`.
+    /// A future polled inside a spawned task must observe the *parent* span's
+    /// trace_id, not a fresh root context. Drives a `current_thread` runtime so
+    /// the thread-local subscriber set by `with_default` is also live when the
+    /// runtime polls the spawned task.
+    #[test]
+    fn instrument_propagates_parent_trace_id_across_tokio_spawn() {
+        use tracing::Instrument;
+
+        let provider = SdkTracerProvider::builder().build();
+        let tracer = provider.tracer("spawn-instrument-test");
+        let otel_layer = tracing_opentelemetry::layer().with_tracer(tracer);
+
+        let (ring_layer, handle) = build_ring_layer(16);
+        let subscriber = Registry::default().with(otel_layer).with(ring_layer);
+
+        let parent_trace_id = with_default(subscriber, || {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("build current_thread runtime");
+
+            rt.block_on(async {
+                let parent = tracing::info_span!("parent_request");
+                let trace_id = {
+                    let _enter = parent.enter();
+                    let ctx = parent.context().span().span_context().clone();
+                    assert!(ctx.is_valid(), "OtelLayer must seed a valid span context");
+                    format!("{:032x}", ctx.trace_id())
+                };
+
+                tokio::spawn(
+                    async {
+                        tracing::info!("from spawned task");
+                    }
+                    .instrument(parent),
+                )
+                .await
+                .expect("spawned task panicked");
+
+                trace_id
+            })
+        });
+
+        let logs = handle.query(None, None);
+        let entry = logs
+            .iter()
+            .find(|e| e.message == "from spawned task")
+            .expect("spawned task event must reach RING");
+        let meta = entry
+            .metadata
+            .as_ref()
+            .expect("spawned task event must carry metadata");
+        assert_eq!(
+            meta.get("trace_id").map(String::as_str),
+            Some(parent_trace_id.as_str()),
+            "spawned task event must inherit parent trace_id; saw {:?}",
+            meta.get("trace_id"),
+        );
+    }
 }

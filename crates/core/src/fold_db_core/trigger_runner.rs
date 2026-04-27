@@ -42,7 +42,7 @@ use std::cmp::Reverse;
 use std::collections::{BinaryHeap, HashMap};
 use std::sync::Arc;
 use tokio::sync::{Mutex, Notify};
-use tracing::{debug, info, warn};
+use tracing::{debug, info, warn, Instrument};
 
 use super::view_orchestrator::ViewOrchestrator;
 use crate::schema::types::{KeyValue, Mutation};
@@ -541,12 +541,15 @@ impl<C: Clock> TriggerRunner<C> {
         let runner = Arc::clone(self);
         let rt = Arc::clone(rt);
         let view_name = view_name.to_string();
-        tokio::spawn(async move {
-            runner
-                .run_fire_with_refire_loop(&view_name, trigger_index, &rt)
-                .await;
-            rt.dispatch_in_flight.store(false, Ordering::SeqCst);
-        });
+        tokio::spawn(
+            async move {
+                runner
+                    .run_fire_with_refire_loop(&view_name, trigger_index, &rt)
+                    .await;
+                rt.dispatch_in_flight.store(false, Ordering::SeqCst);
+            }
+            .instrument(tracing::Span::current()),
+        );
     }
 
     /// Inline dispatch: claim the slot, run ONE fire synchronously,
@@ -594,15 +597,18 @@ impl<C: Clock> TriggerRunner<C> {
         let runner = Arc::clone(self);
         let rt_clone = Arc::clone(rt);
         let view_name = view_name.to_string();
-        tokio::spawn(async move {
-            // Sleep before the retry — backoff driven by fail_streak.
-            let streak = rt_clone.persisted.lock().await.fail_streak;
-            runner.clock.sleep(exp_backoff_ms(streak)).await;
-            runner
-                .run_fire_with_refire_loop(&view_name, trigger_index, &rt_clone)
-                .await;
-            rt_clone.dispatch_in_flight.store(false, Ordering::SeqCst);
-        });
+        tokio::spawn(
+            async move {
+                // Sleep before the retry — backoff driven by fail_streak.
+                let streak = rt_clone.persisted.lock().await.fail_streak;
+                runner.clock.sleep(exp_backoff_ms(streak)).await;
+                runner
+                    .run_fire_with_refire_loop(&view_name, trigger_index, &rt_clone)
+                    .await;
+                rt_clone.dispatch_in_flight.store(false, Ordering::SeqCst);
+            }
+            .instrument(tracing::Span::current()),
+        );
     }
 
     /// Execute one fire attempt and persist results. Returns true when
