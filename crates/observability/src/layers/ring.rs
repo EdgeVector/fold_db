@@ -84,7 +84,7 @@ pub enum LogLevel {
 }
 
 impl LogLevel {
-    fn from_tracing(level: &tracing::Level) -> Self {
+    pub(super) fn from_tracing(level: &tracing::Level) -> Self {
         match *level {
             tracing::Level::TRACE => LogLevel::Trace,
             tracing::Level::DEBUG => LogLevel::Debug,
@@ -229,9 +229,9 @@ where
 /// (it's how `tracing::info!("hello")` is recorded — as a debug field named
 /// `message`) and stuffs everything else into a `String → String` map.
 #[derive(Default)]
-struct FieldVisitor {
-    message: String,
-    fields: HashMap<String, String>,
+pub(super) struct FieldVisitor {
+    pub(super) message: String,
+    pub(super) fields: HashMap<String, String>,
 }
 
 impl FieldVisitor {
