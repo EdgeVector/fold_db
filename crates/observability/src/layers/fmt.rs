@@ -167,12 +167,24 @@ impl DenyList {
 #[derive(Clone, Debug)]
 pub(crate) struct RedactingFormat {
     deny_list: DenyList,
+    service_name: Option<String>,
 }
 
 impl RedactingFormat {
     pub(crate) fn from_env() -> Self {
         Self {
             deny_list: DenyList::from_env(),
+            service_name: None,
+        }
+    }
+
+    /// Like [`Self::from_env`] but stamps every formatted line with the OTel
+    /// resource attribute `service.name = <name>`. Used by [`crate::init_node`]
+    /// so a binary's file output is self-identifying.
+    pub(crate) fn from_env_with_service(service_name: &str) -> Self {
+        Self {
+            deny_list: DenyList::from_env(),
+            service_name: Some(service_name.to_string()),
         }
     }
 
@@ -180,6 +192,7 @@ impl RedactingFormat {
     pub(crate) fn with_extras(extras: &[&str]) -> Self {
         Self {
             deny_list: DenyList::with_extras(extras),
+            service_name: None,
         }
     }
 }
@@ -219,6 +232,9 @@ where
             "target".into(),
             Value::String(metadata.target().to_string()),
         );
+        if let Some(name) = self.service_name.as_deref() {
+            obj.insert("service.name".into(), Value::String(name.to_string()));
+        }
         if let Some(span) = ctx.lookup_current() {
             obj.insert("span".into(), Value::String(span.name().to_string()));
         }

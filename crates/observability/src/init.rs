@@ -39,7 +39,9 @@ use std::{fs, io};
 
 use once_cell::sync::OnceCell;
 use opentelemetry::global;
+use opentelemetry::trace::TracerProvider as _;
 use opentelemetry_sdk::propagation::TraceContextPropagator;
+use opentelemetry_sdk::trace::TracerProvider as SdkTracerProvider;
 use tracing_log::LogTracer;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::{EnvFilter, Registry};
@@ -138,15 +140,29 @@ pub fn init_node(service_name: &'static str, _version: &str) -> Result<ObsGuard,
     let (writer, fmt_guard) = build_fmt_writer(FmtTarget::File(path))?;
     let (reload_layer, reload) = build_reload_layer::<Registry>(default_env_filter());
     let (ring_layer, ring) = build_ring_layer(OBS_RING_CAPACITY);
+    // No-op TracerProvider: gives every span a real W3C trace/span id so the
+    // RING layer can stamp `trace_id` / `span_id` onto each entry and so
+    // `propagation::inject_w3c` (Phase 2) has a real context to propagate.
+    // No exporter is wired in Phase 1 — Phase 4 swaps this for OTLP.
+    let tracer_provider = SdkTracerProvider::builder().build();
+    let tracer = tracer_provider.tracer(service_name);
+    let otel_layer = tracing_opentelemetry::layer().with_tracer(tracer);
     // The fmt layer is constructed inline so the compiler infers its
     // `Subscriber` type parameter from the composition site, which
     // includes the reload Layered<...> wrapping below.
     let fmt_layer = tracing_subscriber::fmt::layer()
-        .event_format(RedactingFormat::from_env())
+        .event_format(RedactingFormat::from_env_with_service(service_name))
         .with_writer(writer);
 
+    // RELOAD is innermost so its `S = Registry` type binding matches; the
+    // remaining layers are generic over `S` and the compiler infers each one
+    // from the composition site. By the time RING's `on_event` runs, OTel's
+    // `on_new_span` has already attached `OtelData` to the parent span, so
+    // RING's extension lookup finds the trace/span ids regardless of layer
+    // ordering at this level.
     let subscriber = Registry::default()
         .with(reload_layer)
+        .with(otel_layer)
         .with(fmt_layer)
         .with(ring_layer);
     install_subscriber(subscriber)?;
