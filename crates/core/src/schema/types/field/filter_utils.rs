@@ -139,7 +139,7 @@ pub async fn fetch_atoms_with_key_metadata_async_with_org(
             Ok(None) => {
                 let key_str = key.to_string();
                 if org_hash.is_some() {
-                    log::warn!(
+                    tracing::warn!(
                         "Skipping unresolvable atom ref — pre-tag molecule ref leaked \
                          without atom data (alpha BLOCKER 4b171)"
                     );

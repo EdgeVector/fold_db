@@ -92,7 +92,7 @@ impl crate::schema::types::field::Field for HashRangeField {
                 }
             }
             _ => {
-                log::warn!(
+                tracing::warn!(
                     "HashRangeField::write_mutation: atom {} not indexed — hash={:?}, range={:?}. \
                      Both hash and range keys are required for HashRange fields.",
                     ctx.atom.uuid(),

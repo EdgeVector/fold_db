@@ -117,7 +117,7 @@ impl DbOperations {
             .map(|v| matches!(v.trim(), "1" | "true" | "TRUE" | "yes" | "YES"))
             .unwrap_or(false);
         let native_index_manager = if native_index_disabled {
-            log::info!(
+            tracing::info!(
                 "Native index disabled via FOLD_DISABLE_NATIVE_INDEX — \
                  embedding-based search will not function; hash/range queries still work."
             );

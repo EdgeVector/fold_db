@@ -62,7 +62,7 @@ where
                 Err(e) => {
                     // Non-fatal: molecule ref may be in an old serialization format.
                     // The field still works — data is read from atoms directly.
-                    log::warn!(
+                    tracing::warn!(
                         "FieldBase: skipping molecule ref for {}: {}",
                         molecule_uuid,
                         e
@@ -74,12 +74,17 @@ where
             if self.inner.org_hash().is_some() {
                 match store.get_item::<M>(&base_key).await {
                     Ok(Some(molecule)) => {
-                        log::debug!("FieldBase: resolved molecule via pre-tag (unprefixed) key");
+                        tracing::debug!(
+                            "FieldBase: resolved molecule via pre-tag (unprefixed) key"
+                        );
                         self.molecule = Some(molecule);
                     }
                     Ok(None) => {}
                     Err(e) => {
-                        log::warn!("FieldBase: pre-tag fallback for molecule ref failed: {}", e);
+                        tracing::warn!(
+                            "FieldBase: pre-tag fallback for molecule ref failed: {}",
+                            e
+                        );
                     }
                 }
             }

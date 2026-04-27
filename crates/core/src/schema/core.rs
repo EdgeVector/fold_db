@@ -151,7 +151,7 @@ impl SchemaCore {
         }
 
         if changed > 0 {
-            log::info!(
+            tracing::info!(
                 "reload_from_store: refreshed {} schema(s) in cache",
                 changed
             );
@@ -223,7 +223,7 @@ impl SchemaCore {
             .unwrap_or_default();
 
         if current_state == SchemaState::Blocked {
-            log::debug!(
+            tracing::debug!(
                 "Skipping approve for blocked schema '{}' — it has been superseded",
                 schema_name
             );
@@ -294,7 +294,7 @@ impl SchemaCore {
         }
 
         if !names_to_remove.is_empty() {
-            log::info!(
+            tracing::info!(
                 "purged {} org schemas for org {}: {:?}",
                 names_to_remove.len(),
                 org_hash,
@@ -362,7 +362,7 @@ impl SchemaCore {
             };
 
             if let Some(new_name) = successor {
-                log::info!(
+                tracing::info!(
                     "Schema '{}' is blocked with successor, redirecting to '{}'",
                     schema_name,
                     new_name
@@ -384,7 +384,7 @@ impl SchemaCore {
             {
                 // Update memory
                 self.load_schema_internal(schema.clone()).await?;
-                log::info!(
+                tracing::info!(
                     "Refreshed schema '{}' from database (stale cache)",
                     schema.name
                 );
@@ -439,7 +439,7 @@ impl SchemaCore {
                         .is_some_and(|m| !m.is_empty());
                     if cached_has_molecules {
                         // Cached schema has molecule state, incoming doesn't — preserve cache
-                        log::debug!(
+                        tracing::debug!(
                             "load_schema_internal: preserving cached molecule state for '{}'",
                             name
                         );

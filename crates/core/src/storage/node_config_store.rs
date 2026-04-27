@@ -195,7 +195,7 @@ impl NodeConfigStore {
         let private_key = match self.decrypt_sensitive(stored_private) {
             Ok(p) => p,
             Err(e) => {
-                log::error!("failed to load encrypted node identity: {}", e);
+                tracing::error!("failed to load encrypted node identity: {}", e);
                 return None;
             }
         };

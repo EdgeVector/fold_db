@@ -290,7 +290,7 @@ impl QueryExecutor {
                     .iter()
                     .map(|v| v.name.clone())
                     .collect();
-                log::error!(
+                tracing::error!(
                     "'{}' not found as schema or view. Schemas: {:?}, Views: {:?}",
                     query.schema_name,
                     schema_names,

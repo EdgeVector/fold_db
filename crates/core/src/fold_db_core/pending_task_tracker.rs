@@ -1,8 +1,8 @@
-use log::{debug, info, warn};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Notify;
+use tracing::{debug, info, warn};
 
 /// Tracks pending background tasks to ensure clean shutdown in serverless environments.
 ///

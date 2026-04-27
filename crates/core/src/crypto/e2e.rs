@@ -99,8 +99,8 @@ impl E2eKeys {
                 })?;
             }
 
-            log::info!("Generated new E2E key at {}", key_path.display());
-            log::warn!("Back up your E2E key! Without it, encrypted data cannot be recovered.");
+            tracing::info!("Generated new E2E key at {}", key_path.display());
+            tracing::warn!("Back up your E2E key! Without it, encrypted data cannot be recovered.");
 
             secret
         };

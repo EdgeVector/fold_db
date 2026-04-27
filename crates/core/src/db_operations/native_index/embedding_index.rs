@@ -130,7 +130,7 @@ impl EmbeddingIndex {
         let raw = match store.scan_prefix(EMB_PREFIX.as_bytes()).await {
             Ok(r) => r,
             Err(e) => {
-                log::warn!("Failed to scan embedding index from store: {}", e);
+                tracing::warn!("Failed to scan embedding index from store: {}", e);
                 return Vec::new();
             }
         };
@@ -151,11 +151,11 @@ impl EmbeddingIndex {
                         face_confidence: stored.face_confidence,
                     });
                 }
-                Err(e) => log::warn!("Failed to deserialize StoredEmbedding: {}", e),
+                Err(e) => tracing::warn!("Failed to deserialize StoredEmbedding: {}", e),
             }
         }
 
-        log::info!("Loaded {} embeddings from store", entries.len());
+        tracing::info!("Loaded {} embeddings from store", entries.len());
         entries
     }
 
@@ -258,7 +258,7 @@ impl EmbeddingIndex {
 
         let added = current.len() - before;
         if added > 0 {
-            log::info!("reload_from_store: added {} new embeddings to index", added);
+            tracing::info!("reload_from_store: added {} new embeddings to index", added);
         }
         added
     }
@@ -272,7 +272,7 @@ impl EmbeddingIndex {
         entries.retain(|e| !e.schema.starts_with(&prefix));
         let removed = before - entries.len();
         if removed > 0 {
-            log::info!(
+            tracing::info!(
                 "purge_org: removed {} embeddings for org {}",
                 removed,
                 &org_hash[..12.min(org_hash.len())]

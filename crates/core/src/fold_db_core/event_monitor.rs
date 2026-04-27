@@ -7,7 +7,7 @@
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use log::info;
+use tracing::info;
 
 pub use super::event_statistics::{EventStatistics, MutationStats, QueryStats};
 use crate::messaging::{AsyncMessageBus, Event};

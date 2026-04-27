@@ -7,8 +7,8 @@
 
 use std::sync::{Mutex, RwLock};
 
-use log::{debug, warn};
 use tokio::task::JoinHandle;
+use tracing::{debug, warn};
 
 use std::sync::Arc;
 
@@ -120,7 +120,7 @@ impl SyncCoordinator {
                         if let Some(pool) = &sled_pool {
                             let _ =
                                 crate::org::operations::delete_org(pool, org_hash).map_err(|err| {
-                                    log::error!("Failed to delete org structure: {}", err)
+                                    tracing::error!("Failed to delete org structure: {}", err)
                                 });
                         }
 
@@ -128,7 +128,7 @@ impl SyncCoordinator {
                         let _ = db_ops
                             .purge_org_data(org_hash)
                             .await
-                            .map_err(|err| log::error!("Failed to purge org data: {}", err));
+                            .map_err(|err| tracing::error!("Failed to purge org data: {}", err));
 
                         // Membership-revoked is not a transient retry target —
                         // stay responsive.

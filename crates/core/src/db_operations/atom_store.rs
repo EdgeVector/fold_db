@@ -123,14 +123,14 @@ impl AtomStore {
             })
             .collect();
 
-        log::info!("💾 Batch storing {} atoms (after dedup)", items.len());
+        tracing::info!("💾 Batch storing {} atoms (after dedup)", items.len());
 
         self.main_store.batch_put_items(items).await.map_err(|e| {
-            log::error!("❌ Failed to batch store atoms: {}", e);
+            tracing::error!("❌ Failed to batch store atoms: {}", e);
             SchemaError::InvalidData(format!("Failed to batch store atoms: {}", e))
         })?;
 
-        log::info!("✅ Batch stored atoms successfully");
+        tracing::info!("✅ Batch stored atoms successfully");
         Ok(())
     }
 
@@ -175,14 +175,14 @@ impl AtomStore {
             })
             .collect();
 
-        log::info!("💾 Batch storing {} molecules (after dedup)", items.len());
+        tracing::info!("💾 Batch storing {} molecules (after dedup)", items.len());
 
         self.main_store.batch_put_items(items).await.map_err(|e| {
-            log::error!("❌ Failed to batch store molecules: {}", e);
+            tracing::error!("❌ Failed to batch store molecules: {}", e);
             SchemaError::InvalidData(format!("Failed to batch store molecules: {}", e))
         })?;
 
-        log::info!("✅ Batch stored molecules successfully");
+        tracing::info!("✅ Batch stored molecules successfully");
         Ok(())
     }
 
@@ -215,22 +215,22 @@ impl AtomStore {
         let base_key = format!("atom:{}", new_atom.uuid());
         let atom_key = build_storage_key(org_hash, &base_key);
 
-        log::debug!("🔍 Checking for existing atom: {}", atom_key);
+        tracing::debug!("🔍 Checking for existing atom: {}", atom_key);
         if let Some(existing_atom) =
             self.main_store
                 .get_item::<Atom>(&atom_key)
                 .await
                 .map_err(|e| {
-                    log::error!("❌ Failed to check existing atom '{}': {}", atom_key, e);
+                    tracing::error!("❌ Failed to check existing atom '{}': {}", atom_key, e);
                     SchemaError::InvalidData(format!("Failed to check existing atom: {}", e))
                 })?
         {
-            log::debug!("✅ Atom already exists, returning existing: {}", atom_key);
+            tracing::debug!("✅ Atom already exists, returning existing: {}", atom_key);
             return Ok(existing_atom);
         }
 
         // Store the new atom (deferred - no immediate flush)
-        log::info!(
+        tracing::info!(
             "💾 Writing atom: key={}, uuid={}",
             atom_key,
             new_atom.uuid()
@@ -239,10 +239,10 @@ impl AtomStore {
             .put_item(&atom_key, &new_atom)
             .await
             .map_err(|e| {
-                log::error!("❌ Failed to store atom '{}': {}", atom_key, e);
+                tracing::error!("❌ Failed to store atom '{}': {}", atom_key, e);
                 SchemaError::InvalidData(format!("Failed to store atom: {}", e))
             })?;
-        log::info!("✅ Atom written: {}", atom_key);
+        tracing::info!("✅ Atom written: {}", atom_key);
 
         Ok(new_atom)
     }

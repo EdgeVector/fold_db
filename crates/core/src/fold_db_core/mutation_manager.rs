@@ -20,9 +20,9 @@ use crate::schema::types::{KeyValue, Mutation, Schema};
 use crate::schema::{SchemaCore, SchemaError};
 use crate::storage::SledPool;
 use chrono::Utc;
-use log::{debug, error, warn};
 use sha2::{Digest, Sha256};
 use std::collections::HashSet;
+use tracing::{debug, error, warn};
 
 /// Manages mutation operations for the FoldDB system
 pub struct MutationManager {
@@ -238,11 +238,11 @@ impl MutationManager {
         // Phase 0: Redirect identity view mutations to source schemas
         let mutations = self.view_orchestrator.redirect_mutation(mutations).await?;
 
-        log::info!(
+        tracing::info!(
             "🔄 write_mutations_batch_async: Starting batch of {} mutations",
             mutations.len()
         );
-        log::debug!(
+        tracing::debug!(
             "DEBUG: MutationManager::write_mutations_batch_async started for {} mutations",
             mutations.len()
         );
@@ -257,14 +257,14 @@ impl MutationManager {
         timing_breakdown.insert("idempotency_check", idem_start.elapsed());
 
         if new_mutations.is_empty() {
-            log::info!(
+            tracing::info!(
                 "All {} mutations were idempotency duplicates, skipping processing",
                 already_seen_ids.len()
             );
             return Ok(already_seen_ids);
         }
 
-        log::debug!(
+        tracing::debug!(
             "Idempotency: {} new, {} duplicates",
             new_mutations.len(),
             already_seen_ids.len()
@@ -421,7 +421,7 @@ impl MutationManager {
         let mut all_ids = already_seen_ids;
         all_ids.extend(mutation_ids.iter().cloned());
 
-        log::info!(
+        tracing::info!(
             "✅ write_mutations_batch_async: Completed {} mutations ({} new, {} cached) in {:.2}ms",
             all_ids.len(),
             mutation_ids.len(),
@@ -439,7 +439,7 @@ impl MutationManager {
         timing_breakdown: &HashMap<&str, std::time::Duration>,
         total_time: std::time::Duration,
     ) {
-        log::debug!(
+        tracing::debug!(
             "Batch mutation timing breakdown (total: {:.2}ms):",
             total_time.as_millis()
         );
@@ -479,7 +479,7 @@ impl MutationManager {
                 .await
             {
                 Ok(Some(cached_id)) => {
-                    log::debug!(
+                    tracing::debug!(
                         "Idempotency hit for mutation hash {}, returning cached id {}",
                         hash,
                         cached_id
@@ -607,7 +607,7 @@ impl MutationManager {
 
         // Batch store all atoms at once
         if !atoms_to_store.is_empty() {
-            log::info!("💾 Batch storing {} atoms", atoms_to_store.len());
+            tracing::info!("💾 Batch storing {} atoms", atoms_to_store.len());
             self.db_ops
                 .batch_store_atoms(atoms_to_store.clone(), schema.org_hash.as_deref())
                 .await?;
@@ -789,7 +789,7 @@ impl MutationManager {
 
         // Batch store all molecules at once
         if !molecules_to_store.is_empty() {
-            log::info!("💾 Batch storing {} molecules", molecules_to_store.len());
+            tracing::info!("💾 Batch storing {} molecules", molecules_to_store.len());
             self.db_ops
                 .batch_store_molecules(molecules_to_store.clone(), schema.org_hash.as_deref())
                 .await?;
@@ -798,7 +798,7 @@ impl MutationManager {
         // Store mutation events for point-in-time queries
         if !mutation_events.is_empty() {
             let phase4_start = std::time::Instant::now();
-            log::debug!("💾 Storing {} mutation events", mutation_events.len());
+            tracing::debug!("💾 Storing {} mutation events", mutation_events.len());
             self.db_ops
                 .batch_store_mutation_events(mutation_events.clone(), schema.org_hash.as_deref())
                 .await?;
@@ -916,14 +916,14 @@ impl MutationManager {
         timing_breakdown: &mut HashMap<&str, std::time::Duration>,
     ) -> Result<(), SchemaError> {
         // Single flush for entire batch (async)
-        log::debug!("💾 Flushing database after batch mutations");
+        tracing::debug!("💾 Flushing database after batch mutations");
         let flush_start = std::time::Instant::now();
         self.db_ops.flush().await.map_err(|e| {
-            log::error!("❌ Failed to flush database after batch mutations: {}", e);
+            tracing::error!("❌ Failed to flush database after batch mutations: {}", e);
             SchemaError::InvalidData(format!("Flush failed: {}", e))
         })?;
         timing_breakdown.insert("flush", flush_start.elapsed());
-        log::debug!("✅ Database flushed in {:?}", flush_start.elapsed());
+        tracing::debug!("✅ Database flushed in {:?}", flush_start.elapsed());
 
         // Store idempotency entries for successfully processed mutations
         let idem_store_start = std::time::Instant::now();
@@ -937,7 +937,7 @@ impl MutationManager {
                 .batch_put_idempotency(idem_entries)
                 .await
                 .map_err(|e| {
-                    log::error!("Failed to store idempotency entries: {}", e);
+                    tracing::error!("Failed to store idempotency entries: {}", e);
                     e
                 })?;
         }
