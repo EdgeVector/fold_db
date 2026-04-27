@@ -1,7 +1,8 @@
 //! Subscriber layer implementations.
 //!
-//! Each submodule is an empty stub for Phase 1; it will be populated by the
-//! follow-up tasks (T3 FMT, T4 RELOAD, T5 RING).
+//! - [`fmt`] — JSON formatter with redaction (T3, stub).
+//! - [`reload`] — runtime [`tracing_subscriber::EnvFilter`] swap (T4).
+//! - [`ring`] — bounded in-memory log buffer (T5, stub).
 
 pub mod fmt;
 pub mod reload;
