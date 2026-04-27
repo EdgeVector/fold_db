@@ -69,7 +69,7 @@ impl FaceProcessor for OnnxFaceProcessor {
                     });
                 }
                 Err(e) => {
-                    log::warn!("Failed to embed face: {}", e);
+                    tracing::warn!("Failed to embed face: {}", e);
                 }
             }
         }

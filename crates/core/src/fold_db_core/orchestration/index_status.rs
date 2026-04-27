@@ -102,7 +102,7 @@ impl IndexStatusTracker {
 
     /// Mark the start of a batch indexing operation
     pub async fn start_batch(&self, batch_size: usize) {
-        log::debug!("IndexStatusTracker: Starting batch of size {}", batch_size);
+        tracing::debug!("IndexStatusTracker: Starting batch of size {}", batch_size);
         let mut status = self.load_status().await.unwrap_or_default();
 
         status.state = IndexingState::Indexing;
@@ -111,18 +111,18 @@ impl IndexStatusTracker {
         status.current_batch_start_time = Some(Self::current_timestamp());
 
         if let Err(e) = self.save_status(&status).await {
-            log::error!(
+            tracing::error!(
                 "IndexStatusTracker: Failed to save status in start_batch: {}",
                 e
             );
         } else {
-            log::debug!("IndexStatusTracker: Batch started, status saved");
+            tracing::debug!("IndexStatusTracker: Batch started, status saved");
         }
     }
 
     /// Mark the completion of a batch indexing operation
     pub async fn complete_batch(&self, batch_size: usize, duration_ms: u128) {
-        log::debug!(
+        tracing::debug!(
             "IndexStatusTracker: Completing batch of size {}, duration {}ms",
             batch_size,
             duration_ms
@@ -133,7 +133,7 @@ impl IndexStatusTracker {
         if let Some(start_time) = status.current_batch_start_time {
             let elapsed = Self::current_timestamp() - start_time;
             if elapsed < 500 {
-                log::debug!(
+                tracing::debug!(
                     "IndexStatusTracker: Sleeping for {}ms to ensure visibility",
                     500 - elapsed
                 );
@@ -164,12 +164,12 @@ impl IndexStatusTracker {
         }
 
         if let Err(e) = self.save_status(&status).await {
-            log::error!(
+            tracing::error!(
                 "IndexStatusTracker: Failed to save status in complete_batch: {}",
                 e
             );
         } else {
-            log::debug!(
+            tracing::debug!(
                 "IndexStatusTracker: Batch completed, status saved. Total ops: {}",
                 status.total_operations_processed
             );
@@ -181,7 +181,7 @@ impl IndexStatusTracker {
         let mut status = self.load_status().await.unwrap_or_default();
         status.operations_queued = count;
         if let Err(e) = self.save_status(&status).await {
-            log::error!(
+            tracing::error!(
                 "IndexStatusTracker: Failed to save status in set_queued: {}",
                 e
             );
@@ -192,12 +192,12 @@ impl IndexStatusTracker {
     pub async fn get_status(&self) -> IndexingStatus {
         match self.load_status().await {
             Ok(status) => {
-                log::debug!("IndexStatusTracker: get_status loaded: {:?}", status);
+                tracing::debug!("IndexStatusTracker: get_status loaded: {:?}", status);
                 status
             }
             Err(e) => {
                 // If it fails (e.g. timeout), log and return default
-                log::error!("IndexStatusTracker: Failed to load status: {}", e);
+                tracing::error!("IndexStatusTracker: Failed to load status: {}", e);
                 IndexingStatus::default()
             }
         }

@@ -160,7 +160,7 @@ impl Logger for MultiAsyncLogger {
 
 /// Bridge that forwards Rust's log crate to custom Logger
 ///
-/// This allows all internal FoldDB logging (using `log::info!()`, etc.)
+/// This allows all internal FoldDB logging (using `tracing::info!()`, etc.)
 /// to be captured and sent to your custom logger implementation.
 ///
 /// **Note**: LogEntry does not contain user_id. Your logger implementation
@@ -168,7 +168,7 @@ impl Logger for MultiAsyncLogger {
 ///
 /// Bridge that forwards Rust's log crate to custom Logger
 ///
-/// This allows all internal FoldDB logging (using `log::info!()`, etc.)
+/// This allows all internal FoldDB logging (using `tracing::info!()`, etc.)
 /// to be captured and sent to your custom logger implementation.
 ///
 /// **Note**: LogEntry does not contain user_id. Your logger implementation

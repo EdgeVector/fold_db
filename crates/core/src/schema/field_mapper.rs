@@ -96,7 +96,7 @@ impl FieldMapperService {
             };
 
             let Some(source_field) = source_schema.runtime_fields.get(mapper.source_field()) else {
-                log::warn!(
+                tracing::warn!(
                     "apply_field_mappers: source field '{}.{}' not in runtime_fields, skipping",
                     source_schema_name,
                     mapper.source_field()
@@ -111,7 +111,7 @@ impl FieldMapperService {
             };
 
             let Some(target_runtime_field) = schema.runtime_fields.get_mut(&target_field) else {
-                log::warn!(
+                tracing::warn!(
                     "apply_field_mappers: target field '{}' not in runtime_fields, skipping",
                     target_field
                 );
@@ -160,14 +160,14 @@ impl FieldMapperService {
             let fetched = match self.db_ops.get_schema(source_schema_name).await {
                 Ok(Some(s)) => s,
                 Ok(None) => {
-                    log::warn!(
+                    tracing::warn!(
                         "apply_field_mappers: source schema '{}' not found, skipping its mappers",
                         source_schema_name
                     );
                     return None;
                 }
                 Err(e) => {
-                    log::warn!(
+                    tracing::warn!(
                         "apply_field_mappers: error loading source schema '{}': {}, skipping",
                         source_schema_name,
                         e

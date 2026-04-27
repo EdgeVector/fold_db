@@ -74,15 +74,15 @@ pub async fn create_fold_db_with_pool_and_auth_refresh(
     if let Some(cloud) = &config.cloud_sync {
         if let Some(cs) = db.config_store() {
             if let Err(e) = cs.set("cloud:api_url", &cloud.api_url) {
-                log::warn!("failed to persist cloud api_url to Sled: {e}");
+                tracing::warn!("failed to persist cloud api_url to Sled: {e}");
             }
             if let Some(ref uh) = cloud.user_hash {
                 if let Err(e) = cs.set("cloud:user_hash", uh) {
-                    log::warn!("failed to persist cloud user_hash to Sled: {e}");
+                    tracing::warn!("failed to persist cloud user_hash to Sled: {e}");
                 }
             }
             if let Err(e) = cs.set("cloud:enabled", "true") {
-                log::warn!("failed to persist cloud:enabled to Sled: {e}");
+                tracing::warn!("failed to persist cloud:enabled to Sled: {e}");
             }
         }
     }
@@ -178,10 +178,10 @@ async fn create_local_fold_db(
         let namespaces = base_store.list_namespaces().await.unwrap_or_default();
         let has_user_data = namespaces.iter().any(|ns| ns != "__sled__default");
         if !has_user_data {
-            log::info!("empty local database with sync enabled — bootstrapping from cloud");
+            tracing::info!("empty local database with sync enabled — bootstrapping from cloud");
             match engine.bootstrap().await {
-                Ok(seq) => log::info!("bootstrap complete: restored to seq {seq}"),
-                Err(e) => log::warn!("bootstrap failed (starting fresh): {e}"),
+                Ok(seq) => tracing::info!("bootstrap complete: restored to seq {seq}"),
+                Err(e) => tracing::warn!("bootstrap failed (starting fresh): {e}"),
             }
         }
 
@@ -240,7 +240,7 @@ async fn create_local_fold_db(
                 crate::db_operations::native_index::face::OnnxFaceProcessor::new(&home_path),
             );
             mgr.set_face_processor(processor);
-            log::info!(
+            tracing::info!(
                 "Face detection processor initialized (models at {}/models/)",
                 home_path.display()
             );

@@ -121,7 +121,7 @@ impl EncryptingKvStore {
 
         // No ENC: prefix — this is either plaintext or raw binary
         if self.migration_mode {
-            log::debug!("No ENC: prefix in migration mode, returning raw data as plaintext");
+            tracing::debug!("No ENC: prefix in migration mode, returning raw data as plaintext");
             Ok(data)
         } else {
             Err(StorageError::EncryptionError(

@@ -70,7 +70,7 @@ impl MetadataStore {
             }
             Ok(Some(_)) | Ok(None) => {}
             Err(e) => {
-                log::warn!(
+                tracing::warn!(
                     "Failed to deserialize node_id (possibly old format): {}, creating new",
                     e
                 );

@@ -344,14 +344,14 @@ impl SyncEngine {
         let kv = match self.store.open_namespace("sync_cursors").await {
             Ok(kv) => kv,
             Err(e) => {
-                log::warn!("Failed to open sync_cursors namespace: {}", e);
+                tracing::warn!("Failed to open sync_cursors namespace: {}", e);
                 return;
             }
         };
         let entries = match kv.scan_prefix(b"cursor:").await {
             Ok(entries) => entries,
             Err(e) => {
-                log::warn!("Failed to scan cursor keys: {}", e);
+                tracing::warn!("Failed to scan cursor keys: {}", e);
                 return;
             }
         };
@@ -366,7 +366,7 @@ impl SyncEngine {
             }
         }
         if !cursors.is_empty() {
-            log::info!("Loaded {} download cursors from storage", cursors.len());
+            tracing::info!("Loaded {} download cursors from storage", cursors.len());
         }
     }
 
@@ -409,13 +409,13 @@ impl SyncEngine {
         if let Some(reloader) = reloader_slot.lock().await.as_ref() {
             match reloader().await {
                 Ok(count) if count > 0 => {
-                    log::info!(
+                    tracing::info!(
                         "{kind} reloader added {count} item(s) after sync from '{target_label}'"
                     );
                 }
                 Ok(_) => {}
                 Err(e) => {
-                    log::warn!("failed to reload {kind}s after sync: {e}");
+                    tracing::warn!("failed to reload {kind}s after sync: {e}");
                 }
             }
         }
@@ -478,7 +478,7 @@ impl SyncEngine {
             // Dropping pending entries silently would cause permanent data
             // loss on peers — upgrade from warn to error so this is
             // unmissable in logs (alpha BLOCKER 4439b class of bug).
-            log::error!(
+            tracing::error!(
                 "SYNC DATA LOSS: pending queue exceeded max_pending ({}), dropping {} oldest entries — these writes will NOT reach sync peers",
                 max,
                 overflow
@@ -601,7 +601,7 @@ impl SyncEngine {
         {
             let mut state = self.state.lock().await;
             if *state == SyncState::Syncing {
-                log::info!("sync skipped: already syncing");
+                tracing::info!("sync skipped: already syncing");
                 return Ok(false);
             }
             *state = SyncState::Syncing;
@@ -619,7 +619,7 @@ impl SyncEngine {
             Ok(()) => true,
             Err(SyncError::Auth(_)) => false, // auth error — will be caught by do_sync
             Err(e) => {
-                log::warn!("failed to acquire sync lock (proceeding anyway): {e}");
+                tracing::warn!("failed to acquire sync lock (proceeding anyway): {e}");
                 false
             }
         };
@@ -634,7 +634,7 @@ impl SyncEngine {
         // Always release the lock, even on error
         if lock_held {
             if let Err(e) = self.release_lock().await {
-                log::warn!("failed to release sync lock: {e}");
+                tracing::warn!("failed to release sync lock: {e}");
             }
         }
 
@@ -673,14 +673,14 @@ impl SyncEngine {
             None => return Err(SyncError::Auth("authentication failed".to_string())),
         };
 
-        log::info!("{context} auth failed, attempting token refresh");
+        tracing::info!("{context} auth failed, attempting token refresh");
         let new_auth = refresh_cb().await.map_err(|e| {
-            log::warn!("{context} token refresh failed: {e}");
+            tracing::warn!("{context} token refresh failed: {e}");
             SyncError::Auth("authentication failed after token refresh failure".to_string())
         })?;
 
         self.auth.update_auth(new_auth).await;
-        log::info!("{context} token refreshed");
+        tracing::info!("{context} token refreshed");
         Ok(())
     }
 
@@ -713,7 +713,7 @@ impl SyncEngine {
             // Upload each bucket with its target's crypto
             let mut upload_auth_error = false;
             for (target_idx, bucket) in &buckets {
-                log::info!(
+                tracing::info!(
                     "uploading {} entries to target {} ('{}')",
                     bucket.len(),
                     target_idx,
@@ -726,10 +726,10 @@ impl SyncEngine {
                 match self.upload_entries(target, bucket).await {
                     Ok(n) => uploaded += n,
                     Err(ref e) if matches!(e, SyncError::Auth(_)) => {
-                        log::warn!("upload to '{}' failed (auth): {e}", target.label);
+                        tracing::warn!("upload to '{}' failed (auth): {e}", target.label);
                         upload_auth_error = true;
                     }
-                    Err(e) => log::warn!("upload to '{}' failed: {e}", target.label),
+                    Err(e) => tracing::warn!("upload to '{}' failed: {e}", target.label),
                 }
             }
 
@@ -748,7 +748,7 @@ impl SyncEngine {
                 let count = entries.len().min(pending.len());
                 pending.drain(..count);
             } else if uploaded > 0 {
-                log::warn!(
+                tracing::warn!(
                     "partial upload: {}/{} entries succeeded, keeping all in pending for retry",
                     uploaded,
                     entries.len()
@@ -766,7 +766,7 @@ impl SyncEngine {
         for target in &targets {
             match self.download_with_auth_retry(target).await {
                 Ok(n) => downloaded += n,
-                Err(e) => log::warn!("download from '{}' failed: {e}", target.label),
+                Err(e) => tracing::warn!("download from '{}' failed: {e}", target.label),
             }
         }
 
@@ -775,7 +775,7 @@ impl SyncEngine {
             let current_seq = *self.seq.lock().await;
             if current_seq > 0 {
                 if let Err(e) = self.compact(current_seq).await {
-                    log::warn!("compaction failed (non-fatal): {e}");
+                    tracing::warn!("compaction failed (non-fatal): {e}");
                 }
             }
         }
@@ -901,7 +901,7 @@ impl SyncEngine {
                 Err(e) if matches!(&e, SyncError::Auth(_)) => return Err(e),
                 Err(e) => {
                     let delay_ms = 500 * 2u64.pow(attempt);
-                    log::warn!(
+                    tracing::warn!(
                         "{}: attempt {}/{} failed ({}), retrying in {}ms",
                         label,
                         attempt + 1,
@@ -944,7 +944,7 @@ impl SyncEngine {
                 Ok(n) => total += n,
                 Err(e) => {
                     if total > 0 {
-                        log::warn!(
+                        tracing::warn!(
                             "upload to '{}' partial: {}/{} entries uploaded across chunks before {}",
                             target.label,
                             total,
@@ -1047,7 +1047,7 @@ impl SyncEngine {
             Ok(n) => Ok(n),
             Err(ref e) if matches!(e, SyncError::Auth(_)) => {
                 if let Some(ref refresh_cb) = self.auth_refresh {
-                    log::info!(
+                    tracing::info!(
                         "org download from '{}' auth failed, refreshing",
                         target.label
                     );
@@ -1127,7 +1127,7 @@ impl SyncEngine {
                 if new_seqs.len() != expected {
                     let set: std::collections::BTreeSet<u64> = new_seqs.iter().copied().collect();
                     let missing: Vec<u64> = (first..=last).filter(|s| !set.contains(s)).collect();
-                    log::error!(
+                    tracing::error!(
                         "sync list '{}' returned non-contiguous seqs after cursor={}: first={} last={} count={} expected={} missing_sample={:?}",
                         target.label,
                         cursor,
@@ -1151,7 +1151,7 @@ impl SyncEngine {
         }
 
         if new_seqs.is_empty() {
-            log::info!(
+            tracing::info!(
                 "download '{}': 0 new entries (cursor={})",
                 target.label,
                 cursor
@@ -1159,7 +1159,7 @@ impl SyncEngine {
             return Ok(0);
         }
 
-        log::info!(
+        tracing::info!(
             "download '{}': {} new entries after cursor={}",
             target.label,
             new_seqs.len(),
@@ -1197,7 +1197,7 @@ impl SyncEngine {
                     })
                     .await?;
                 let bytes = downloaded.ok_or_else(|| {
-                    log::error!(
+                    tracing::error!(
                         "sync replay aborted: entry not found in '{}' seq={} (server listed this seq but S3 returned 404); cursor will NOT advance past seq={}",
                         target.label,
                         seq,
@@ -1212,7 +1212,7 @@ impl SyncEngine {
                     }
                 })?;
                 let entry = LogEntry::unseal(&bytes, &target.crypto).await.map_err(|e| {
-                    log::error!(
+                    tracing::error!(
                         "sync replay aborted: failed to unseal entry in '{}' seq={}: {}; cursor will NOT advance past seq={}",
                         target.label,
                         seq,
@@ -1233,14 +1233,14 @@ impl SyncEngine {
                     "native_index" => embeddings_replayed = true,
                     _ => {}
                 }
-                log::info!(
+                tracing::info!(
                     "replay '{}' seq={}: {}",
                     target.label,
                     seq,
                     entry.op.describe()
                 );
                 self.replay_entry(&entry, Some(target)).await.map_err(|e| {
-                    log::error!(
+                    tracing::error!(
                         "sync replay aborted: apply failed in '{}' seq={}: {}; cursor will NOT advance past seq={}",
                         target.label,
                         seq,
@@ -1287,14 +1287,14 @@ impl SyncEngine {
                     .put(cursor_key.as_bytes(), seq.to_be_bytes().to_vec())
                     .await
                 {
-                    log::error!(
+                    tracing::error!(
                         "failed to save download cursor for '{}' at seq {}: {} — next restart will re-download from last saved cursor",
                         prefix, seq, e
                     );
                 }
             }
             Err(e) => {
-                log::error!(
+                tracing::error!(
                     "failed to open sync_cursors namespace for '{}': {} — cursor not persisted",
                     prefix,
                     e
@@ -1308,7 +1308,7 @@ impl SyncEngine {
     // =========================================================================
 
     async fn compact(&self, last_seq: u64) -> SyncResult<()> {
-        log::info!("compacting: creating snapshot at seq {last_seq}");
+        tracing::info!("compacting: creating snapshot at seq {last_seq}");
 
         let snapshot = Snapshot::create(self.store.as_ref(), &self.device_id, last_seq).await?;
 
@@ -1341,7 +1341,7 @@ impl SyncEngine {
                             Ok(delete_urls) => {
                                 for url in &delete_urls {
                                     if let Err(e) = self.s3.delete(url).await {
-                                        log::warn!(
+                                        tracing::warn!(
                                             "failed to delete compacted log (non-fatal): {e}"
                                         );
                                     }
@@ -1355,19 +1355,21 @@ impl SyncEngine {
                         }
                     }
                     if let Some(e) = presign_err {
-                        log::warn!("failed to get delete URLs for compacted logs (non-fatal): {e}");
+                        tracing::warn!(
+                            "failed to get delete URLs for compacted logs (non-fatal): {e}"
+                        );
                     }
                     if deleted > 0 {
-                        log::info!("deleted {} compacted log entries", deleted);
+                        tracing::info!("deleted {} compacted log entries", deleted);
                     }
                 }
             }
             Err(e) => {
-                log::warn!("failed to list logs for compaction cleanup (non-fatal): {e}");
+                tracing::warn!("failed to list logs for compaction cleanup (non-fatal): {e}");
             }
         }
 
-        log::info!("compaction complete: snapshot at seq {last_seq}");
+        tracing::info!("compaction complete: snapshot at seq {last_seq}");
         Ok(())
     }
 
@@ -1429,7 +1431,7 @@ impl SyncEngine {
             targets[idx].clone()
         };
 
-        log::info!(
+        tracing::info!(
             "bootstrapping target '{}' (idx={}, prefix='{}')",
             target.label,
             idx,
@@ -1447,7 +1449,7 @@ impl SyncEngine {
                 Some(data) => {
                     let snapshot = Snapshot::unseal(&data, &target.crypto).await?;
                     let last_seq = snapshot.last_seq;
-                    log::info!(
+                    tracing::info!(
                         "restoring snapshot for '{}': {} namespaces, last_seq={}",
                         target.label,
                         snapshot.namespaces.len(),
@@ -1457,7 +1459,7 @@ impl SyncEngine {
                     last_seq
                 }
                 None => {
-                    log::info!("no snapshot found for '{}' — starting fresh", target.label);
+                    tracing::info!("no snapshot found for '{}' — starting fresh", target.label);
                     0
                 }
             }
@@ -1479,7 +1481,7 @@ impl SyncEngine {
         let mut entries_replayed: usize = 0;
 
         if !log_seqs.is_empty() {
-            log::info!(
+            tracing::info!(
                 "replaying {} log entries for '{}' (seq {}..={})",
                 log_seqs.len(),
                 target.label,
@@ -1492,7 +1494,7 @@ impl SyncEngine {
             for (seq, url) in log_seqs.iter().zip(urls.iter()) {
                 let data = self.s3.download(url).await?;
                 let bytes = data.ok_or_else(|| {
-                    log::error!(
+                    tracing::error!(
                         "bootstrap aborted: log entry for '{}' seq={seq} not found in S3 after listing",
                         target.label
                     );
@@ -1507,7 +1509,7 @@ impl SyncEngine {
                 let entry = LogEntry::unseal(&bytes, &target.crypto)
                     .await
                     .map_err(|e| {
-                        log::error!(
+                        tracing::error!(
                             "bootstrap aborted: failed to unseal log entry for '{}' seq={seq}: {e}",
                             target.label
                         );
@@ -1523,7 +1525,7 @@ impl SyncEngine {
                     "native_index" => embeddings_replayed = true,
                     _ => {}
                 }
-                log::info!(
+                tracing::info!(
                     "bootstrap replay '{}' seq={}: {}",
                     target.label,
                     seq,
@@ -1555,7 +1557,7 @@ impl SyncEngine {
             self.save_download_cursor(&target.prefix, last_seq).await;
         }
 
-        log::info!(
+        tracing::info!(
             "bootstrap of '{}' complete at seq {} ({} entries replayed)",
             target.label,
             last_seq,
@@ -1590,7 +1592,7 @@ impl SyncEngine {
         // Snapshot target count and release the lock before iterating so
         // per-target calls can reacquire it.
         let target_count = self.targets.lock().await.len();
-        log::info!("bootstrap_all: starting restore of {target_count} target(s)");
+        tracing::info!("bootstrap_all: starting restore of {target_count} target(s)");
 
         let mut outcomes: Vec<BootstrapOutcome> = Vec::with_capacity(target_count);
         for idx in 0..target_count {
@@ -1626,7 +1628,7 @@ impl SyncEngine {
                 .await;
         }
 
-        log::info!(
+        tracing::info!(
             "bootstrap_all: completed {} target(s) successfully",
             outcomes.len()
         );
@@ -1672,7 +1674,7 @@ impl SyncEngine {
                 for (idx, (key, value)) in items.iter().enumerate() {
                     let final_key =
                         Self::rewrite_key_if_needed(namespace, key, target).map_err(|e| {
-                            log::error!(
+                            tracing::error!(
                                 "replay BatchPut abort: key rewrite failed at item {}/{} ns={}: {}",
                                 idx + 1,
                                 total,
@@ -1690,7 +1692,7 @@ impl SyncEngine {
                     )
                     .await
                     .map_err(|e| {
-                        log::error!(
+                        tracing::error!(
                             "replay BatchPut abort: item {}/{} ns={} failed to apply: {}",
                             idx + 1,
                             total,
@@ -1968,7 +1970,7 @@ impl SyncEngine {
 
     async fn backup_snapshot_once(&self) -> SyncResult<u64> {
         let current_seq = *self.seq.lock().await;
-        log::info!(
+        tracing::info!(
             "backup_snapshot: creating snapshot at seq {} (device='{}')",
             current_seq,
             self.device_id,
@@ -1985,7 +1987,7 @@ impl SyncEngine {
         let latest_url = self.auth.presign_snapshot_upload("latest.enc").await?;
         self.s3.upload(&latest_url, sealed).await?;
 
-        log::info!(
+        tracing::info!(
             "backup_snapshot: uploaded {} namespaces at seq {} as 'latest.enc' and '{}' (device='{}')",
             namespace_count,
             current_seq,
@@ -2042,7 +2044,7 @@ impl SyncEngine {
         self.acquire_lock().await?;
         let result = self.purge_personal_log_inner().await;
         if let Err(e) = self.release_lock().await {
-            log::warn!("purge_personal_log: failed to release device lock (non-fatal): {e}");
+            tracing::warn!("purge_personal_log: failed to release device lock (non-fatal): {e}");
         }
         result
     }
@@ -2086,7 +2088,7 @@ impl SyncEngine {
             // keys come back as `snapshots/{name}` — we want the bare
             // `{name}` for the delete request.
             let Some(name) = obj.key.strip_prefix("snapshots/") else {
-                log::warn!(
+                tracing::warn!(
                     "purge_personal_log: skipping snapshot key '{}' that doesn't start with 'snapshots/'",
                     obj.key
                 );
@@ -2097,7 +2099,7 @@ impl SyncEngine {
             outcome.deleted_snapshots += 1;
         }
 
-        log::info!(
+        tracing::info!(
             "purge_personal_log: deleted {} log objects, {} snapshots",
             outcome.deleted_log_objects,
             outcome.deleted_snapshots,

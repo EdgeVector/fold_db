@@ -42,7 +42,7 @@ impl ProcessResultsSubscriber {
                         Self::handle_event(&e, &db_ops).await;
                     }
                 }
-                log::warn!("ProcessResultsSubscriber: consumer disconnected");
+                tracing::warn!("ProcessResultsSubscriber: consumer disconnected");
             })
             .await
         });
@@ -77,7 +77,7 @@ impl ProcessResultsSubscriber {
         // Write: key = "{progress_id}:mut:{mutation_id}"
         let key = format!("{}:mut:{}", progress_id, mutation_id);
         if let Err(e) = db_ops.metadata().put_process_result(&key, &result).await {
-            log::error!(
+            tracing::error!(
                 "ProcessResultsSubscriber: failed to write result for key '{}': {}",
                 key,
                 e

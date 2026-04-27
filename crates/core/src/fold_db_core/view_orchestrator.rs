@@ -324,7 +324,7 @@ impl ViewOrchestrator {
         let lineage = db_ops.lineage();
         for uuid in mutation_uuids {
             if let Err(e) = lineage.insert(&uuid, sources).await {
-                log::warn!(
+                tracing::warn!(
                     "Lineage index insert failed for derived mutation '{}' on view '{}': {}",
                     uuid,
                     view.name,

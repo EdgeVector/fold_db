@@ -80,7 +80,7 @@ impl ModelManager {
         std::fs::rename(&tmp, &dest).map_err(|e| {
             SchemaError::InvalidData(format!("Failed to rename {tmp:?} -> {dest:?}: {e}"))
         })?;
-        log::info!(
+        tracing::info!(
             "Extracted bundled face model {} ({} bytes)",
             dest.display(),
             bytes.len()

@@ -59,7 +59,7 @@ impl DbOperations {
             total_deleted += emb_count;
         }
 
-        log::info!(
+        tracing::info!(
             "successfully purged {} keys for org {}",
             total_deleted,
             org_hash

@@ -162,7 +162,7 @@ macro_rules! impl_field {
             }
 
             async fn refresh_from_db(&mut self, db_ops: &$crate::db_operations::DbOperations) {
-                log::error!("refresh_from_db not implemented for {}", stringify!($t));
+                tracing::error!("refresh_from_db not implemented for {}", stringify!($t));
             }
 
             fn write_mutation(
@@ -171,7 +171,7 @@ macro_rules! impl_field {
                 ctx: $crate::schema::types::field::WriteContext,
             ) {
                 let _ = (key_value, ctx);
-                log::error!("write_mutation not implemented for {}", stringify!($t));
+                tracing::error!("write_mutation not implemented for {}", stringify!($t));
             }
 
             async fn resolve_value(
@@ -186,7 +186,7 @@ macro_rules! impl_field {
                 >,
                 $crate::schema::types::SchemaError,
             > {
-                log::error!("resolve_value not implemented for {}", stringify!($t));
+                tracing::error!("resolve_value not implemented for {}", stringify!($t));
                 Err($crate::schema::types::SchemaError::InvalidField(format!(
                     "resolve_value not implemented for {}",
                     stringify!($t)

@@ -44,7 +44,7 @@ impl HashRangeQueryProcessor {
         as_of: Option<DateTime<Utc>>,
     ) -> Result<HashMap<String, HashMap<KeyValue, FieldValue>>, SchemaError> {
         let current_user = crate::logging::core::get_current_user_id();
-        log::info!(
+        tracing::info!(
             "🔍 HashRangeQueryProcessor: schema={}, filter={:?}, user_context={:?}",
             schema.name,
             filter,
@@ -66,13 +66,13 @@ impl HashRangeQueryProcessor {
             if !return_all && !fields.contains(field_name) {
                 continue;
             }
-            log::debug!("🔍 Resolving field: {}", field_name);
+            tracing::debug!("🔍 Resolving field: {}", field_name);
 
             // Resolve against the schema's native namespace (personal or org).
             let mut field_value = field
                 .resolve_value(&self.db_ops, filter.clone(), as_of)
                 .await?;
-            log::debug!(
+            tracing::debug!(
                 "✅ Field '{}' resolved {} values from own namespace",
                 field_name,
                 field_value.len()
@@ -85,7 +85,7 @@ impl HashRangeQueryProcessor {
                     .await
                 {
                     Ok(mut shared) => {
-                        log::debug!(
+                        tracing::debug!(
                             "✅ Field '{}' resolved {} values from namespace '{}'",
                             field_name,
                             shared.len(),
@@ -125,7 +125,7 @@ impl HashRangeQueryProcessor {
 
             result.insert(field_name.clone(), field_value);
         }
-        log::debug!(
+        tracing::debug!(
             "✅ HashRangeQueryProcessor::query_with_filter: returning {} fields",
             result.len()
         );
@@ -146,7 +146,7 @@ impl HashRangeQueryProcessor {
         let subs = match crate::sharing::store::list_share_subscriptions(pool) {
             Ok(s) => s,
             Err(e) => {
-                log::error!(
+                tracing::error!(
                     "HashRangeQueryProcessor: failed to list share subscriptions: {}",
                     e
                 );
@@ -167,7 +167,7 @@ impl HashRangeQueryProcessor {
                     }
                 }
                 None => {
-                    log::error!(
+                    tracing::error!(
                         "HashRangeQueryProcessor: subscription has unparseable \
                          share_prefix '{}' (expected 'share:{{sender}}:{{recipient}}'); \
                          skipping.",

@@ -37,12 +37,12 @@
 //!   middle of a coalesce window doesn't drop events.
 
 use async_trait::async_trait;
-use log::{debug, info, warn};
 use serde::{Deserialize, Serialize};
 use std::cmp::Reverse;
 use std::collections::{BinaryHeap, HashMap};
 use std::sync::Arc;
 use tokio::sync::{Mutex, Notify};
+use tracing::{debug, info, warn};
 
 use super::view_orchestrator::ViewOrchestrator;
 use crate::schema::types::{KeyValue, Mutation};
@@ -2517,40 +2517,66 @@ mod tests {
         );
     }
 
-    /// Process-wide capture logger for asserting log emission in tests.
-    /// `log::set_boxed_logger` is global and one-shot; we install once via
-    /// `Once`, and the buffer survives across tests in this binary. Tests
-    /// that care about emitted lines call `drain_capture` to read since
-    /// the last drain, then filter for their target message.
+    /// Process-wide capture subscriber for asserting tracing event emission
+    /// in tests. `tracing::subscriber::set_global_default` is global and
+    /// one-shot; we install once via `Once`, and the buffer survives across
+    /// tests in this binary. Tests that care about emitted lines call
+    /// `drain_capture` to read since the last drain, then filter for their
+    /// target message.
     static CAPTURE_INIT: std::sync::Once = std::sync::Once::new();
     static CAPTURE_BUFFER: once_cell::sync::Lazy<std::sync::Mutex<Vec<String>>> =
         once_cell::sync::Lazy::new(|| std::sync::Mutex::new(Vec::new()));
 
-    struct CaptureLogger;
+    struct CaptureLayer;
 
-    impl log::Log for CaptureLogger {
-        fn enabled(&self, metadata: &log::Metadata) -> bool {
-            metadata.level() <= log::Level::Info
-        }
+    impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for CaptureLayer {
+        fn on_event(
+            &self,
+            event: &tracing::Event<'_>,
+            _ctx: tracing_subscriber::layer::Context<'_, S>,
+        ) {
+            let metadata = event.metadata();
+            let level = match *metadata.level() {
+                tracing::Level::ERROR => "ERROR",
+                tracing::Level::WARN => "WARN",
+                tracing::Level::INFO => "INFO",
+                _ => return,
+            };
 
-        fn log(&self, record: &log::Record) {
-            if !self.enabled(record.metadata()) {
-                return;
+            struct MessageVisitor(String);
+            impl tracing::field::Visit for MessageVisitor {
+                fn record_debug(
+                    &mut self,
+                    field: &tracing::field::Field,
+                    value: &dyn std::fmt::Debug,
+                ) {
+                    if field.name() == "message" {
+                        self.0 = format!("{:?}", value);
+                    }
+                }
+                fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
+                    if field.name() == "message" {
+                        self.0 = value.to_string();
+                    }
+                }
             }
-            let line = format!("{} {} {}", record.level(), record.target(), record.args());
+            let mut visitor = MessageVisitor(String::new());
+            event.record(&mut visitor);
+
+            let line = format!("{} {} {}", level, metadata.target(), visitor.0);
             CAPTURE_BUFFER.lock().unwrap().push(line);
         }
-
-        fn flush(&self) {}
     }
 
     fn install_capture_logger() {
         CAPTURE_INIT.call_once(|| {
-            // If another logger was installed first (e.g. by another test
-            // binary or a future LoggingSystem call), fall through silently —
-            // capture-dependent tests will be skipped, not crashed.
-            let _ = log::set_boxed_logger(Box::new(CaptureLogger));
-            log::set_max_level(log::LevelFilter::Info);
+            use tracing_subscriber::layer::SubscriberExt;
+            let subscriber = tracing_subscriber::Registry::default().with(CaptureLayer);
+            // If another subscriber was installed first (e.g. by another
+            // test binary or a future LoggingSystem call), fall through
+            // silently — capture-dependent tests will be skipped, not
+            // crashed.
+            let _ = tracing::subscriber::set_global_default(subscriber);
         });
     }
 

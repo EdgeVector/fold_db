@@ -145,7 +145,7 @@ impl SledPool {
                     && inner.active_ops == 0
                     && inner.last_activity.elapsed() >= idle_timeout
                 {
-                    log::debug!(
+                    tracing::debug!(
                         "SledPool: releasing idle database at {}",
                         pool.path.display()
                     );

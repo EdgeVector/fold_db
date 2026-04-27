@@ -146,7 +146,7 @@ impl NativeIndexManager {
 
         let total = sled_count.max(mem_count);
         if total > 0 {
-            log::info!(
+            tracing::info!(
                 "purge_org_embeddings: deleted {} from store, {} from memory for org {}",
                 sled_count,
                 mem_count,
@@ -230,7 +230,7 @@ impl NativeIndexManager {
         }
 
         if count > 0 {
-            log::info!(
+            tracing::info!(
                 "index_faces: indexed {} face(s) for schema={} key={:?}",
                 count,
                 schema,

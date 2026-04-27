@@ -103,11 +103,11 @@ impl LocalCryptoProvider {
                 })?;
             }
 
-            log::info!(
+            tracing::info!(
                 "Generated new local encryption key at {}",
                 key_path.display()
             );
-            log::warn!(
+            tracing::warn!(
                 "⚠️  Back up your encryption key! Without it, encrypted data cannot be recovered."
             );
 

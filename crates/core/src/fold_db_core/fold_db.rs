@@ -7,7 +7,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 // External crate imports
-use log::{debug, info};
+use tracing::{debug, info};
 
 // Internal crate imports
 use crate::db_operations::{DbOperations, IndexResult};
@@ -98,7 +98,7 @@ impl FoldDB {
             "Shutting down FoldDB: flushing sync and storage"
         );
         if let Err(e) = self.stop_sync().await {
-            log::warn!("sync flush on shutdown failed: {e}");
+            tracing::warn!("sync flush on shutdown failed: {e}");
         }
         self.flush().await
     }
@@ -366,7 +366,7 @@ impl FoldDB {
                     crate::db_operations::native_index::face::OnnxFaceProcessor::new(&home_path),
                 );
                 mgr.set_face_processor(processor);
-                log::info!(
+                tracing::info!(
                     "Face detection processor initialized (models at {}/models/)",
                     home_path.display()
                 );
