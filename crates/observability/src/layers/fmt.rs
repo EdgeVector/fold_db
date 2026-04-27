@@ -132,10 +132,7 @@ impl DenyList {
     }
 
     pub(crate) fn with_extras(extras: &[&str]) -> Self {
-        let mut set: HashSet<String> = STATIC_DENY_LIST
-            .iter()
-            .map(|s| (*s).to_string())
-            .collect();
+        let mut set: HashSet<String> = STATIC_DENY_LIST.iter().map(|s| (*s).to_string()).collect();
         for extra in extras {
             set.insert((*extra).to_string());
         }
@@ -202,7 +199,10 @@ where
             Value::from(severity_number(level)),
         );
         obj.insert("body".into(), Value::String(body.unwrap_or_default()));
-        obj.insert("target".into(), Value::String(metadata.target().to_string()));
+        obj.insert(
+            "target".into(),
+            Value::String(metadata.target().to_string()),
+        );
         if let Some(span) = ctx.lookup_current() {
             obj.insert("span".into(), Value::String(span.name().to_string()));
         }
@@ -534,9 +534,7 @@ mod tests {
             .find(|l| !l.is_empty())
             .expect("at least one line");
         let parsed: Value = serde_json::from_str(line).expect("valid json");
-        let attrs = parsed["attributes"]
-            .as_object()
-            .expect("attributes object");
+        let attrs = parsed["attributes"].as_object().expect("attributes object");
         assert_eq!(
             attrs["password"],
             Value::String(REDACTED_PLACEHOLDER.into()),
