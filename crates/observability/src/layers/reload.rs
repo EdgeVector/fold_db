@@ -53,9 +53,7 @@ impl std::fmt::Debug for ReloadHandle {
 /// Returns the layer (to be added to a `Registry`) and a [`ReloadHandle`]
 /// that can be stored on the node / lambda / app context and exposed to
 /// HTTP or IPC handlers for runtime filter updates.
-pub fn build_reload_layer<S>(
-    initial: EnvFilter,
-) -> (reload::Layer<EnvFilter, S>, ReloadHandle)
+pub fn build_reload_layer<S>(initial: EnvFilter) -> (reload::Layer<EnvFilter, S>, ReloadHandle)
 where
     S: Subscriber,
 {
@@ -113,8 +111,7 @@ mod tests {
         initial: &str,
         writer: CaptureWriter,
     ) -> (impl Subscriber + Send + Sync, ReloadHandle) {
-        let (reload_layer, handle) =
-            build_reload_layer::<Registry>(EnvFilter::new(initial));
+        let (reload_layer, handle) = build_reload_layer::<Registry>(EnvFilter::new(initial));
         let fmt_layer = tracing_subscriber::fmt::layer()
             .with_writer(writer)
             .without_time()
