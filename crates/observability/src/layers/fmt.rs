@@ -31,7 +31,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde_json::{Map, Value};
 use tracing::field::{Field, Visit};
 use tracing::{Event, Level, Subscriber};
-use tracing_appender::non_blocking::WorkerGuard;
+use tracing_appender::non_blocking::{NonBlocking, WorkerGuard};
 use tracing_subscriber::fmt::format::Writer;
 use tracing_subscriber::fmt::{FmtContext, FormatEvent, FormatFields};
 use tracing_subscriber::registry::LookupSpan;
@@ -69,10 +69,29 @@ pub struct FmtGuard {
 /// lifetime of the process. The layer applies the format-time redaction
 /// deny-list (static names + `OBS_REDACT_EXTRA` env var) regardless of
 /// what the call site passed for those fields.
+///
+/// This convenience constructor fixes the layer's `Subscriber` type
+/// parameter to `S`, which limits how it can compose with other layers.
+/// For multi-layer registries (FMT + RELOAD + RING), prefer
+/// [`build_fmt_writer`] and inline the [`tracing_subscriber::fmt::layer`]
+/// call so the compiler can infer the right `S` at the composition site.
 pub fn build_fmt_layer<S>(target: FmtTarget) -> Result<(impl Layer<S>, FmtGuard), ObsError>
 where
     S: Subscriber + for<'a> LookupSpan<'a>,
 {
+    let (writer, guard) = build_fmt_writer(target)?;
+    let layer = tracing_subscriber::fmt::layer()
+        .event_format(RedactingFormat::from_env())
+        .with_writer(writer);
+    Ok((layer, guard))
+}
+
+/// Open the target sink and wrap it in [`tracing_appender::non_blocking`].
+///
+/// Used by [`build_fmt_layer`] above and by the multi-layer init helpers in
+/// [`crate::init`], which build the fmt layer inline so the layer's
+/// `Subscriber` type parameter is inferred at the composition site.
+pub(crate) fn build_fmt_writer(target: FmtTarget) -> Result<(NonBlocking, FmtGuard), ObsError> {
     let writer: Box<dyn io::Write + Send + 'static> = match target {
         FmtTarget::File(path) => {
             let file = OpenOptions::new().create(true).append(true).open(&path)?;
@@ -82,10 +101,7 @@ where
         FmtTarget::Stderr => Box::new(io::stderr()),
     };
     let (non_blocking, worker) = tracing_appender::non_blocking(writer);
-    let layer = tracing_subscriber::fmt::layer()
-        .event_format(RedactingFormat::from_env())
-        .with_writer(non_blocking);
-    Ok((layer, FmtGuard { _worker: worker }))
+    Ok((non_blocking, FmtGuard { _worker: worker }))
 }
 
 // ---------------------------------------------------------------------------
