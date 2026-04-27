@@ -450,4 +450,62 @@ mod tests {
             "zero-capacity ring would silently drop everything"
         );
     }
+
+    /// INVARIANT: a future spawned with `tokio::spawn(fut.instrument(Span::current()))`
+    /// runs under the parent span's context, so events emitted inside the
+    /// spawned task carry the parent's `trace_id` in the RING `LogEntry`.
+    ///
+    /// Without `.instrument(...)` the spawned task starts with no current span
+    /// and the event's `trace_id` would be missing — that's the regression
+    /// guard. We use a `current_thread` runtime so the thread-local default
+    /// subscriber is visible to spawned tasks.
+    #[test]
+    fn instrument_propagates_trace_id_across_tokio_spawn() {
+        use tracing::Instrument;
+
+        let provider = SdkTracerProvider::builder().build();
+        let tracer = provider.tracer("spawn-test");
+        let otel_layer = tracing_opentelemetry::layer().with_tracer(tracer);
+        let (ring_layer, handle) = build_ring_layer(16);
+        let subscriber = Registry::default().with(otel_layer).with(ring_layer);
+
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .expect("current_thread runtime");
+
+        let parent_trace_id = with_default(subscriber, || {
+            runtime.block_on(async {
+                let parent = tracing::info_span!("parent.request");
+                let trace_id_hex =
+                    format!("{:032x}", parent.context().span().span_context().trace_id());
+
+                let join = parent.in_scope(|| {
+                    tokio::spawn(
+                        async {
+                            tracing::info!("from-spawned-task");
+                        }
+                        .instrument(tracing::Span::current()),
+                    )
+                });
+                join.await.expect("spawned task joins cleanly");
+
+                trace_id_hex
+            })
+        });
+
+        let logs = handle.query(None, None);
+        let spawned = logs
+            .iter()
+            .find(|e| e.message == "from-spawned-task")
+            .expect("spawned event must be captured");
+        let meta = spawned
+            .metadata
+            .as_ref()
+            .expect("spawned event must carry metadata with trace_id");
+        assert_eq!(
+            meta.get("trace_id"),
+            Some(&parent_trace_id),
+            "spawned task must inherit parent's trace_id via .instrument(Span::current())"
+        );
+    }
 }
