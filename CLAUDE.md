@@ -95,7 +95,7 @@ pub async fn handle_query(
 Before every push, first fetch and rebase on the latest base branch:
 ```bash
 git fetch origin
-git rebase origin/<base-branch>   # e.g. origin/mainline
+git rebase origin/<base-branch>   # e.g. origin/main
 ```
 
 Then run CI checks:

@@ -24,7 +24,7 @@ name: WASM Determinism (x86 vs ARM)
 
 on:
   push:
-    branches: [mainline]
+    branches: [main]
   pull_request:
   merge_group:
 
