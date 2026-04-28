@@ -105,10 +105,10 @@ cargo test --workspace --all-targets
 
 After creating the PR, enable auto-merge:
 ```bash
-gh pr merge --auto <PR_URL>
+gh pr merge --auto --squash <PR_URL>
 ```
 
-Do NOT pass `--squash`, `--merge`, or `--rebase`. The org-wide merge queue ruleset enforces SQUASH; passing a strategy flag here makes `gh` store an inconsistent `autoMergeRequest.mergeMethod` that the queue silently refuses, stranding the PR. The merge queue rebases the PR onto current main inside its merge group, so "Update branch" never needs to be clicked manually.
+Pass `--squash` explicitly. The org-wide merge queue ruleset enforces SQUASH; without `--squash`, `gh` stores `autoMergeRequest.mergeMethod = MERGE` (the repo's UI default merge button), and the queue silently refuses the mismatched method — stranding the PR until someone re-enables auto-merge with the right flag. The benign "merge strategy is set by the merge queue" warning gh prints is fine; what matters is that the auto-merge request and queue agree on SQUASH. The merge queue rebases the PR onto current main inside its merge group, so "Update branch" never needs to be clicked manually.
 
 **Monitor the PR until it merges — your task is NOT done until the PR is merged.**
 Poll CI status (`gh pr view <PR_URL> --json state,statusCheckRollup,mergeStateStatus`) every 30-60 seconds.
