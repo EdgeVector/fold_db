@@ -30,17 +30,23 @@
 //!
 //! ## Drop counter
 //!
-//! [`OtlpGuard::dropped`] returns a snapshot of the lifetime drop count.
-//! Phase 4 / T3 (OTLP METRICS) will publish this as an OTel counter named
-//! `obs.spans.dropped`; for now it is queryable in-process and asserted
-//! against by the integration test.
+//! Drops are tracked in two places: an in-process [`AtomicU64`] returned by
+//! [`OtlpGuard::dropped`] (cheap, lock-free, used by the unit test) and an
+//! OTel `u64` counter named [`OBS_SPANS_DROPPED_METRIC`] published through the
+//! global [`MeterProvider`]. The OTel counter is the operator-facing surface:
+//! once Phase 4 / T3 wires the OTLP metrics exporter into
+//! [`opentelemetry::global`], the counter flows to Honeycomb where the user
+//! can alert on non-zero drops (silent trace loss).
+//!
+//! [`MeterProvider`]: opentelemetry::metrics::MeterProvider
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use opentelemetry::metrics::Counter;
 use opentelemetry::trace::{TraceResult, TracerProvider as _};
-use opentelemetry::{Context, KeyValue};
+use opentelemetry::{global, Context, KeyValue};
 use opentelemetry_otlp::{Protocol, SpanExporter, WithExportConfig};
 use opentelemetry_sdk::export::trace::{SpanData, SpanExporter as SpanExporterTrait};
 use opentelemetry_sdk::trace::{Span as SdkSpan, SpanProcessor, Tracer, TracerProvider};
@@ -63,6 +69,16 @@ pub const MAX_EXPORT_BATCH_SIZE: usize = 512;
 /// Maximum delay between scheduled flushes when the batch is not yet full.
 pub const SCHEDULED_DELAY: Duration = Duration::from_secs(5);
 
+/// Name of the self-monitoring OTel counter incremented every time the
+/// bounded queue overflows and a span is dropped. Operators alert on this
+/// being non-zero in prod (silent trace loss).
+pub const OBS_SPANS_DROPPED_METRIC: &str = "obs.spans.dropped";
+
+/// Instrumentation scope name used when creating the dropped-span counter
+/// off `opentelemetry::global::meter`. Kept as a constant so production code
+/// and tests agree on the same scope.
+pub const OBS_METER_SCOPE: &str = "observability";
+
 /// RAII handle returned alongside the OTLP layer. Holds a clone of the
 /// dropped-span counter and the [`TracerProvider`] so its `Drop` can issue an
 /// orderly shutdown that drains any in-flight spans.
@@ -74,7 +90,9 @@ pub struct OtlpGuard {
 
 impl OtlpGuard {
     /// Lifetime count of spans dropped because the worker channel was full.
-    /// Surfaced as the `obs.spans.dropped` self-monitoring metric.
+    /// The same drops are also published as the [`OBS_SPANS_DROPPED_METRIC`]
+    /// OTel counter; this accessor is the in-process surface used by tests
+    /// and any caller that needs a synchronous read.
     pub fn dropped(&self) -> u64 {
         self.dropped.load(Ordering::Relaxed)
     }
@@ -140,7 +158,18 @@ where
     };
 
     let dropped = Arc::new(AtomicU64::new(0));
-    let processor = BoundedDropProcessor::spawn(exporter, dropped.clone());
+    // Pull the counter from `global::meter` rather than a parameter so that
+    // any binary that has installed an OTLP-metrics-bound `MeterProvider`
+    // (Phase 4 / T3) automatically picks it up. When no provider is set the
+    // counter is a no-op — production stays correct, the AtomicU64 is still
+    // authoritative for the in-process surface.
+    let dropped_counter = global::meter(OBS_METER_SCOPE)
+        .u64_counter(OBS_SPANS_DROPPED_METRIC)
+        .with_description(
+            "Spans dropped by the OTLP traces exporter because the bounded queue was full.",
+        )
+        .build();
+    let processor = BoundedDropProcessor::spawn(exporter, dropped.clone(), dropped_counter);
 
     let provider = TracerProvider::builder()
         .with_span_processor(processor)
@@ -176,6 +205,7 @@ struct BoundedDropProcessor {
     span_tx: tokio::sync::mpsc::Sender<SpanData>,
     ctrl_tx: tokio::sync::mpsc::Sender<CtrlMsg>,
     dropped: Arc<AtomicU64>,
+    dropped_counter: Counter<u64>,
     worker: Mutex<Option<std::thread::JoinHandle<()>>>,
 }
 
@@ -202,7 +232,7 @@ impl std::fmt::Debug for BoundedDropProcessor {
 }
 
 impl BoundedDropProcessor {
-    fn spawn<E>(exporter: E, dropped: Arc<AtomicU64>) -> Self
+    fn spawn<E>(exporter: E, dropped: Arc<AtomicU64>, dropped_counter: Counter<u64>) -> Self
     where
         E: SpanExporterTrait + 'static,
     {
@@ -220,6 +250,7 @@ impl BoundedDropProcessor {
             span_tx,
             ctrl_tx,
             dropped,
+            dropped_counter,
             worker: Mutex::new(Some(worker)),
         }
     }
@@ -235,6 +266,10 @@ impl SpanProcessor for BoundedDropProcessor {
         // shutdown, where dropping is the only sane behavior anyway.
         if self.span_tx.try_send(span).is_err() {
             self.dropped.fetch_add(1, Ordering::Relaxed);
+            // No attributes: the metric is per-process self-monitoring; any
+            // extra dimension would just inflate cardinality on the metrics
+            // backend without giving operators new information.
+            self.dropped_counter.add(1, &[]);
         }
     }
 
@@ -487,5 +522,174 @@ mod tests {
         // emission. The point of the assert is that calling `.dropped()`
         // works through the public surface.
         let _ = otlp_guard.dropped();
+    }
+
+    // -----------------------------------------------------------------
+    // obs.spans.dropped — counter wiring
+    //
+    // The drop path is the whole reason this layer exists: a saturated
+    // collector must never block the application thread. We assert on
+    // both the in-process AtomicU64 *and* the OTel counter — the OTel
+    // surface is what flows to Honeycomb, so a regression that breaks
+    // it would cause silent trace loss in prod with no alert.
+    //
+    // The test bypasses the worker thread entirely: it constructs a
+    // BoundedDropProcessor whose receiver is held but never drained,
+    // so try_send saturates after exactly `capacity` successful sends
+    // and every subsequent send takes the drop branch. That's the
+    // behaviour we want to pin — not "the worker is slower than the
+    // producer", which would be a flaky timing-dependent test.
+    // -----------------------------------------------------------------
+
+    use opentelemetry::metrics::MeterProvider as _;
+    use opentelemetry_sdk::metrics::data::{ResourceMetrics, Sum};
+    use opentelemetry_sdk::metrics::reader::MetricReader;
+    use opentelemetry_sdk::metrics::{ManualReader, SdkMeterProvider};
+
+    /// `MetricReader` shim that delegates to a shared `Arc<ManualReader>`.
+    /// Lets the test keep one handle for `.collect()` while the
+    /// `SdkMeterProvider` owns its own.
+    struct SharedManualReader(std::sync::Arc<ManualReader>);
+
+    impl std::fmt::Debug for SharedManualReader {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.debug_struct("SharedManualReader").finish()
+        }
+    }
+
+    impl MetricReader for SharedManualReader {
+        fn register_pipeline(
+            &self,
+            pipeline: std::sync::Weak<opentelemetry_sdk::metrics::Pipeline>,
+        ) {
+            self.0.register_pipeline(pipeline)
+        }
+        fn collect(
+            &self,
+            rm: &mut ResourceMetrics,
+        ) -> opentelemetry_sdk::metrics::MetricResult<()> {
+            self.0.collect(rm)
+        }
+        fn force_flush(&self) -> opentelemetry_sdk::metrics::MetricResult<()> {
+            self.0.force_flush()
+        }
+        fn shutdown(&self) -> opentelemetry_sdk::metrics::MetricResult<()> {
+            self.0.shutdown()
+        }
+        fn temporality(
+            &self,
+            kind: opentelemetry_sdk::metrics::InstrumentKind,
+        ) -> opentelemetry_sdk::metrics::Temporality {
+            self.0.temporality(kind)
+        }
+    }
+
+    fn empty_resource_metrics() -> ResourceMetrics {
+        ResourceMetrics {
+            resource: Resource::empty(),
+            scope_metrics: Vec::new(),
+        }
+    }
+
+    fn collect_u64_counter_total(rm: &ResourceMetrics, name: &str) -> Option<u64> {
+        for scope in &rm.scope_metrics {
+            for metric in &scope.metrics {
+                if metric.name == name {
+                    if let Some(sum) = metric.data.as_any().downcast_ref::<Sum<u64>>() {
+                        return Some(sum.data_points.iter().map(|dp| dp.value).sum());
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// Build a fresh meter provider + manual reader paired with a counter
+    /// named [`OBS_SPANS_DROPPED_METRIC`]. The provider is fully local —
+    /// no `global::set_meter_provider` mutation, so this test is safe to
+    /// run in parallel with siblings.
+    fn make_local_dropped_counter() -> (SdkMeterProvider, std::sync::Arc<ManualReader>, Counter<u64>)
+    {
+        let reader = std::sync::Arc::new(ManualReader::builder().build());
+        let provider = SdkMeterProvider::builder()
+            .with_reader(SharedManualReader(reader.clone()))
+            .build();
+        let counter = provider
+            .meter(OBS_METER_SCOPE)
+            .u64_counter(OBS_SPANS_DROPPED_METRIC)
+            .build();
+        (provider, reader, counter)
+    }
+
+    /// Build a `SpanData` with just enough fields to satisfy the type. The
+    /// processor's drop path never inspects the contents, so default values
+    /// are fine.
+    fn fake_span() -> SpanData {
+        use opentelemetry::trace::{SpanContext, SpanId, SpanKind, Status, TraceFlags, TraceState};
+        SpanData {
+            span_context: SpanContext::new(
+                opentelemetry::trace::TraceId::INVALID,
+                SpanId::INVALID,
+                TraceFlags::default(),
+                false,
+                TraceState::default(),
+            ),
+            parent_span_id: SpanId::INVALID,
+            span_kind: SpanKind::Internal,
+            name: "burst".into(),
+            start_time: std::time::SystemTime::now(),
+            end_time: std::time::SystemTime::now(),
+            attributes: Vec::new(),
+            dropped_attributes_count: 0,
+            events: Default::default(),
+            links: Default::default(),
+            status: Status::Unset,
+            instrumentation_scope: opentelemetry::InstrumentationScope::default(),
+        }
+    }
+
+    #[test]
+    fn on_end_drops_increment_both_atomic_and_otel_counter() {
+        let (_provider, reader, dropped_counter) = make_local_dropped_counter();
+        let dropped = Arc::new(AtomicU64::new(0));
+
+        // Tiny channel — capacity 2 — and a held-but-undrained receiver.
+        // No worker thread is spawned, so every send past the first 2 hits
+        // the drop branch deterministically.
+        let (span_tx, span_rx) = tokio::sync::mpsc::channel::<SpanData>(2);
+        let (ctrl_tx, _ctrl_rx) = tokio::sync::mpsc::channel::<CtrlMsg>(4);
+        let processor = BoundedDropProcessor {
+            span_tx,
+            ctrl_tx,
+            dropped: dropped.clone(),
+            dropped_counter,
+            worker: Mutex::new(None),
+        };
+        let _hold_receiver = span_rx;
+
+        for _ in 0..100 {
+            processor.on_end(fake_span());
+        }
+
+        let in_process = dropped.load(Ordering::Relaxed);
+        assert!(
+            in_process > 90,
+            "queue cap is 2, so at least 98 of 100 must drop; got {in_process}",
+        );
+
+        let mut rm = empty_resource_metrics();
+        reader
+            .collect(&mut rm)
+            .expect("manual reader should collect");
+        let otel_total = collect_u64_counter_total(&rm, OBS_SPANS_DROPPED_METRIC)
+            .expect("obs.spans.dropped counter must be present in collected metrics");
+        assert!(
+            otel_total > 90,
+            "OTel counter must mirror the in-process drop count; got {otel_total}",
+        );
+        assert_eq!(
+            otel_total, in_process,
+            "OTel counter and AtomicU64 must agree exactly",
+        );
     }
 }

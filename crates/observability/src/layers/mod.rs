@@ -19,7 +19,10 @@ pub mod span_metrics;
 pub mod web;
 
 pub use error::{build_error_layer, ErrorLayer, SentryGuard, OBS_SENTRY_DSN_ENV};
-pub use otlp_traces::{build_otlp_traces_layer, OtlpGuard, OBS_OTLP_ENDPOINT_ENV};
+pub use otlp_traces::{
+    build_otlp_traces_layer, OtlpGuard, OBS_METER_SCOPE, OBS_OTLP_ENDPOINT_ENV,
+    OBS_SPANS_DROPPED_METRIC,
+};
 pub use ring::{build_ring_layer, LogEntry, LogLevel, RingHandle, RingLayer, OBS_RING_CAPACITY};
 pub use span_metrics::{
     build_span_metrics_layer, SpanMetricsLayer, ALLOWED_LABEL_KEYS, PRE_REGISTERED_SPANS,
