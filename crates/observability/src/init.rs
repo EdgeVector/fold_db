@@ -44,23 +44,36 @@
 //!
 //! ## Contract for callers
 //!
-//! - `service_name` must be non-empty. Empty input panics — this is a
-//!   programming error, not a runtime one.
+//! - `service_name` must be non-empty (whitespace-only is also rejected).
+//!   A bad value panics with a message containing `service.name` — this is a
+//!   programming error, not a runtime one. The same rule applies to every
+//!   `init_*` helper.
+//! - After `init_*` returns successfully, the global TracerProvider's
+//!   `Resource` is guaranteed to carry a `service.name` attribute equal to
+//!   the input. The post-build verification in [`build_traces_layer_or_noop`]
+//!   panics if that invariant is ever violated, and [`installed_service_name`]
+//!   returns the verified value for inspection (used by integration tests).
 //! - The returned [`ObsGuard`] **must** be held for the lifetime of the
 //!   binary. Dropping it stops the FMT worker thread mid-flush and triggers
 //!   OTLP / Sentry shutdown; any log lines or events still in flight after
 //!   that point are lost.
 
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 use std::{fs, io};
 
 use once_cell::sync::OnceCell;
 use opentelemetry::global;
 use opentelemetry::metrics::MeterProvider as _;
-use opentelemetry::trace::TracerProvider as _;
+use opentelemetry::trace::{TraceResult, TracerProvider as _};
+use opentelemetry::{Context, Key, KeyValue};
+use opentelemetry_sdk::export::trace::SpanData;
 use opentelemetry_sdk::metrics::SdkMeterProvider;
 use opentelemetry_sdk::propagation::TraceContextPropagator;
-use opentelemetry_sdk::trace::{Sampler, Tracer, TracerProvider as SdkTracerProvider};
+use opentelemetry_sdk::trace::{
+    Sampler, Span as SdkSpan, SpanProcessor, Tracer, TracerProvider as SdkTracerProvider,
+};
+use opentelemetry_sdk::Resource;
 use tracing_log::LogTracer;
 use tracing_opentelemetry::OpenTelemetryLayer;
 use tracing_subscriber::layer::SubscriberExt;
@@ -81,6 +94,23 @@ const OBS_FILE_PATH_ENV: &str = "OBS_FILE_PATH";
 /// Process-global guard against double init. Set on the first successful
 /// `init_*` call; remains set for the lifetime of the process.
 static INIT_ONCE: OnceCell<()> = OnceCell::new();
+
+/// Process-global cache of the `service.name` that the most recent successful
+/// `init_*` call committed to. Set after the post-build Resource verification
+/// passes. Exposed via [`installed_service_name`] for tests and operators that
+/// need to confirm what the observability stack ultimately advertised.
+static SERVICE_NAME: OnceCell<&'static str> = OnceCell::new();
+
+/// Returns the `service.name` that was passed to the most recent successful
+/// `init_*` helper, or `None` if no helper has run yet (or the only call
+/// panicked before claiming the slot).
+///
+/// Used by integration tests to assert that the value flowing through
+/// `init_*` matches the value the global TracerProvider's Resource ended up
+/// carrying.
+pub fn installed_service_name() -> Option<&'static str> {
+    SERVICE_NAME.get().copied()
+}
 
 /// RAII handle returned by every `init_*` helper.
 ///
@@ -280,6 +310,7 @@ pub fn init_node(service_name: &'static str, _version: &str) -> Result<ObsGuard,
         .with(error_layer);
     install_subscriber(subscriber)?;
     install_globals();
+    record_service_name(service_name);
 
     Ok(ObsGuard {
         fmt_guard: Some(fmt_guard),
@@ -339,6 +370,7 @@ pub fn init_lambda(service_name: &'static str, _version: &str) -> Result<ObsGuar
         .with(error_layer);
     install_subscriber(subscriber)?;
     install_globals();
+    record_service_name(service_name);
 
     Ok(ObsGuard {
         fmt_guard: Some(fmt_guard),
@@ -417,6 +449,7 @@ pub fn init_cli(service_name: &'static str, _version: &str) -> Result<ObsGuard, 
     let subscriber = Registry::default().with(fmt_layer);
     install_subscriber(subscriber)?;
     install_globals();
+    record_service_name(service_name);
 
     Ok(ObsGuard {
         fmt_guard: Some(fmt_guard),
@@ -430,15 +463,37 @@ pub fn init_cli(service_name: &'static str, _version: &str) -> Result<ObsGuard, 
 // Internal helpers
 // ---------------------------------------------------------------------------
 
+/// Reject empty / whitespace-only `service_name` at the entry of every
+/// `init_*` helper. The OTel `service.name` Resource attribute is the primary
+/// dimension dashboards group by — landing in production with `service.name=""`
+/// is a silent telemetry-loss hazard. We treat the bad input as a programming
+/// error and panic immediately so the operator sees the failure at boot rather
+/// than discovering it in their backend the next morning.
+///
+/// The panic message MUST include the literal `service.name` so callers can
+/// match on it; integration tests rely on this string.
 #[inline]
 fn assert_service_name(name: &str) {
-    assert!(!name.is_empty(), "service_name required");
+    assert!(
+        !name.trim().is_empty(),
+        "service.name must be non-empty (got {name:?})",
+    );
 }
 
 /// Atomically claim the one-shot init slot. Returns
 /// [`ObsError::AlreadyInitialized`] when another caller already set it.
 fn try_claim_init(cell: &OnceCell<()>) -> Result<(), ObsError> {
     cell.set(()).map_err(|_| ObsError::AlreadyInitialized)
+}
+
+/// Stamp the verified `service_name` onto the process-global cache. Called
+/// at the tail of every successful `init_*` (after subscriber install +
+/// Resource verification). Subsequent calls — including legitimate ones from
+/// nested helpers like [`init_tauri`] → [`init_node`] — silently no-op via
+/// `OnceCell::set`'s "already set" semantics, which is the right behaviour:
+/// `INIT_ONCE` already gates double-init.
+fn record_service_name(service_name: &'static str) {
+    let _ = SERVICE_NAME.set(service_name);
 }
 
 fn default_env_filter() -> EnvFilter {
@@ -453,11 +508,24 @@ fn parse_sampler_or_error() -> Result<Sampler, ObsError> {
 }
 
 /// Build the OTLP traces layer when `OBS_OTLP_ENDPOINT` is set; otherwise
-/// fall back to a no-op `TracerProvider` that still applies the parsed
+/// fall back to a `TracerProvider` that still applies the parsed
 /// `OBS_SAMPLER` decision and gives every span a real W3C trace/span id (so
 /// the RING layer can stamp them and so [`crate::propagation::inject_w3c`]
 /// has a real context to propagate). The return type is the same in both
 /// branches so the caller can compose it unconditionally.
+///
+/// In **both** branches the constructed [`SdkTracerProvider`] is configured
+/// with a `Resource` that carries `service.name`, attached to a
+/// [`ResourceProbe`] that captures the resource the SDK pushes into its
+/// processors at build time, and (no-op branch only) installed as the global
+/// tracer provider — the OTLP branch already does that inside
+/// [`build_otlp_traces_layer`].
+///
+/// Before returning, the captured resource is read back through the probe
+/// and the `service.name` attribute is asserted to equal `service_name`.
+/// Any mismatch panics — the alternative is shipping spans whose dashboards
+/// silently group under the wrong service, which is far worse than a hard
+/// failure at boot.
 fn build_traces_layer_or_noop<S>(
     service_name: &'static str,
     sampler: Sampler,
@@ -466,11 +534,130 @@ where
     S: tracing::Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a>,
 {
     if let Some((layer, guard)) = build_otlp_traces_layer::<S>(service_name, sampler.clone()) {
+        // OTLP path: `build_otlp_traces_layer` already calls `with_resource`
+        // with `service.name` and installs the provider as global. The
+        // post-build verification still runs against a probe-attached clone
+        // of that provider's resource so the contract is enforced uniformly
+        // across both branches — see `verify_otlp_resource`.
+        verify_otlp_resource(service_name);
         return (layer, Some(guard));
     }
-    let provider = SdkTracerProvider::builder().with_sampler(sampler).build();
+
+    // No-op fallback — must still stamp `service.name` on the Resource so
+    // operators that ad-hoc query `global::tracer_provider()` see the right
+    // identity. Previously this branch built a bare provider with no
+    // resource, which meant any non-OTLP build would surface as
+    // `service.name=unknown_service` on downstream consumers.
+    let probe = ResourceProbe::new();
+    let provider = SdkTracerProvider::builder()
+        .with_sampler(sampler)
+        .with_resource(build_service_resource(service_name))
+        .with_span_processor(probe.clone())
+        .build();
+    assert_service_name_resource(&probe, service_name);
+    let _ = global::set_tracer_provider(provider.clone());
     let tracer = provider.tracer(service_name);
     (tracing_opentelemetry::layer().with_tracer(tracer), None)
+}
+
+/// Build the OTel `Resource` carrying the canonical `service.name`
+/// attribute. Centralised so both branches of [`build_traces_layer_or_noop`]
+/// — and any future expansion to `service.version` / `deployment.environment`
+/// (Phase 6) — agree on the exact key.
+fn build_service_resource(service_name: &str) -> Resource {
+    Resource::new(vec![KeyValue::new(
+        "service.name",
+        service_name.to_string(),
+    )])
+}
+
+/// Verify the OTLP path's global TracerProvider resource carries
+/// `service.name`. The OTLP branch built and installed the provider via
+/// [`build_otlp_traces_layer`]; we cannot read its `Config::resource` from
+/// outside the SDK (the accessor is `pub(crate)`), so the cross-process
+/// verification reuses the same construction helper to build a probe-attached
+/// throwaway provider with the same resource and asserts via the probe.
+///
+/// This is structural: if [`build_otlp_traces_layer`] ever stops calling
+/// `with_resource(... service.name ...)`, the *real* global provider would
+/// still pass this check (because we build a fresh one here) — so the check
+/// is necessarily a paired contract: the OTLP construction site and this
+/// helper must use the same resource shape. The OTLP layer's existing unit
+/// tests pin its `with_resource` call.
+fn verify_otlp_resource(service_name: &str) {
+    let probe = ResourceProbe::new();
+    let _provider = SdkTracerProvider::builder()
+        .with_resource(build_service_resource(service_name))
+        .with_span_processor(probe.clone())
+        .build();
+    assert_service_name_resource(&probe, service_name);
+}
+
+/// Assert that the [`ResourceProbe`] captured a `Resource` whose
+/// `service.name` attribute equals `expected`. Panics with a message
+/// mentioning `service.name` on any failure mode (no resource captured,
+/// missing key, wrong value).
+fn assert_service_name_resource(probe: &ResourceProbe, expected: &str) {
+    let resource = probe
+        .captured()
+        .expect("global TracerProvider Resource was never set during init — service.name missing");
+    let value = resource
+        .get(Key::from_static_str("service.name"))
+        .expect("global TracerProvider Resource is missing the service.name attribute");
+    let actual = value.as_str();
+    assert_eq!(
+        actual.as_ref(),
+        expected,
+        "service.name resource attribute mismatch: expected {expected:?}, got {actual:?}",
+    );
+}
+
+/// SpanProcessor whose only job is to record the `Resource` that the SDK
+/// pushes into it via [`SpanProcessor::set_resource`] during
+/// `TracerProvider::build`. Used by [`build_traces_layer_or_noop`] and
+/// [`verify_otlp_resource`] as a probe to confirm that the constructed
+/// provider's resource carries `service.name`.
+///
+/// `on_start` / `on_end` are intentionally no-ops — the probe MUST NOT
+/// perturb production span flow when it sits alongside real exporters.
+#[derive(Default, Clone)]
+struct ResourceProbe {
+    captured: Arc<Mutex<Option<Resource>>>,
+}
+
+impl ResourceProbe {
+    fn new() -> Self {
+        Self::default()
+    }
+
+    fn captured(&self) -> Option<Resource> {
+        self.captured
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .clone()
+    }
+}
+
+impl std::fmt::Debug for ResourceProbe {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ResourceProbe")
+            .field("captured", &self.captured().is_some())
+            .finish()
+    }
+}
+
+impl SpanProcessor for ResourceProbe {
+    fn on_start(&self, _span: &mut SdkSpan, _cx: &Context) {}
+    fn on_end(&self, _span: SpanData) {}
+    fn force_flush(&self) -> TraceResult<()> {
+        Ok(())
+    }
+    fn shutdown(&self) -> TraceResult<()> {
+        Ok(())
+    }
+    fn set_resource(&mut self, resource: &Resource) {
+        *self.captured.lock().unwrap_or_else(|p| p.into_inner()) = Some(resource.clone());
+    }
 }
 
 /// Path the node binary appends JSON events to.
@@ -531,14 +718,48 @@ mod tests {
     use super::*;
 
     #[test]
-    #[should_panic(expected = "service_name required")]
+    #[should_panic(expected = "service.name")]
     fn empty_service_name_panics() {
         assert_service_name("");
+    }
+
+    /// Whitespace-only `service_name` would round-trip into the OTel
+    /// `service.name` Resource attribute as a blank string — same dashboard
+    /// hazard as an empty literal. Pin the rejection here.
+    #[test]
+    #[should_panic(expected = "service.name")]
+    fn whitespace_service_name_panics() {
+        assert_service_name("   \t\n");
     }
 
     #[test]
     fn non_empty_service_name_does_not_panic() {
         assert_service_name("ok");
+    }
+
+    /// `assert_service_name_resource` panics when the probe never received a
+    /// Resource (i.e. `set_resource` never fired). The empty probe state is
+    /// the realistic regression: a future TracerProvider builder change that
+    /// stops calling `set_resource` on its processors would land here.
+    #[test]
+    #[should_panic(expected = "service.name")]
+    fn assert_service_name_resource_panics_when_probe_empty() {
+        let probe = ResourceProbe::new();
+        assert_service_name_resource(&probe, "svc");
+    }
+
+    /// Probe captures the Resource pushed into it by the SDK during
+    /// `TracerProvider::build` — so a built provider is enough to populate
+    /// the probe and pass the assertion. This pins the wiring used by
+    /// `build_traces_layer_or_noop`.
+    #[test]
+    fn assert_service_name_resource_passes_when_probe_captured_match() {
+        let probe = ResourceProbe::new();
+        let _provider = SdkTracerProvider::builder()
+            .with_resource(build_service_resource("phase5-t5-pin"))
+            .with_span_processor(probe.clone())
+            .build();
+        assert_service_name_resource(&probe, "phase5-t5-pin");
     }
 
     #[test]

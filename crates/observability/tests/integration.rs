@@ -209,10 +209,12 @@ fn init_emit_capture_reload_then_already_initialized() {
 }
 
 #[test]
-#[should_panic(expected = "service_name required")]
+#[should_panic(expected = "service.name")]
 fn empty_service_name_panics() {
     // `init_node` asserts `service_name` non-empty BEFORE claiming the
     // process-global `INIT_ONCE`, so this test does not interfere with the
-    // happy-path test running in parallel in the same binary.
+    // happy-path test running in parallel in the same binary. Phase 5 / T5
+    // strengthened the message to include `service.name` (the OTel attribute
+    // key) so the panic surface lines up with what dashboards expect.
     let _ = init_node("", "0.0.0");
 }
