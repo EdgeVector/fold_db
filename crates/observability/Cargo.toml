@@ -15,6 +15,10 @@ tracing-log = "0.2"
 opentelemetry = "0.27"
 opentelemetry_sdk = { version = "0.27", features = ["rt-tokio", "metrics"] }
 opentelemetry-http = "0.27"
+# default features pull in grpc-tonic — the OTLP traces layer (Phase 4 / T1)
+# only uses the HTTP/protobuf path via reqwest, so opt-out of the tonic stack
+# to keep build times sane.
+opentelemetry-otlp = { version = "0.27", default-features = false, features = ["http-proto", "reqwest-client", "trace"] }
 
 thiserror = "1"
 once_cell = "1"
@@ -25,7 +29,9 @@ xxhash-rust = { version = "0.8", features = ["xxh64"] }
 
 http = "1"
 reqwest = { version = "0.11", default-features = false }
-tokio = { version = "1.0", features = ["sync"] }
+# `macros` + `time` + `rt` power the OTLP traces worker thread; the rest of
+# the crate only needs `sync` (broadcast channel for the WEB layer).
+tokio = { version = "1.0", features = ["sync", "macros", "time", "rt"] }
 
 [dev-dependencies]
 tempfile = "3"
