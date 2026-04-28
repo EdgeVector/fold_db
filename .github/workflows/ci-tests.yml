@@ -2,7 +2,7 @@ name: Test Suite
 
 on:
   push:
-    branches: [mainline]
+    branches: [main]
   pull_request:
   merge_group:
 
