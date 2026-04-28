@@ -22,13 +22,14 @@ impl std::error::Error for ConfigError {}
 
 /// Configuration for cloud sync (Exemem encrypted S3 backup).
 ///
-/// **Field persistence model:** only `api_url` is serialized to disk.
-/// `api_key`, `session_token`, and `user_hash` are per-device secrets that
-/// live in the host application's credential store (e.g. fold_db_node's
-/// `credentials.json` / `credentials.enc`) and are hydrated into this
-/// struct at runtime — typically in the node-creation path before the
-/// sync engine is built. They are marked `#[serde(skip_serializing)]` so
-/// `node_config.json` is safe to back up or share.
+/// **Field persistence model:** only `api_url` and `p2p_sync` are serialized
+/// to disk. `api_key`, `session_token`, and `user_hash` are per-device
+/// secrets that live in the host application's credential store (e.g.
+/// fold_db_node's `credentials.json` / `credentials.enc`) and are hydrated
+/// into this struct at runtime — typically in the node-creation path
+/// before the sync engine is built. They are marked
+/// `#[serde(skip_serializing)]` so `node_config.json` is safe to back up
+/// or share.
 ///
 /// Existing config files that contain these fields (from before this
 /// change) still deserialize cleanly — serde reads them, and the next
@@ -47,6 +48,49 @@ pub struct CloudSyncConfig {
     /// User hash derived from public key. Runtime-hydrated.
     #[serde(default, skip_serializing)]
     pub user_hash: Option<String>,
+    /// Optional ephemeral peer-to-peer device sync (free; uses R2 with
+    /// 24h lifecycle). When `None`, p2p sync is disabled.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub p2p_sync: Option<P2pSyncConfig>,
+}
+
+/// Configuration for ephemeral peer-to-peer sync between a single user's
+/// devices.
+///
+/// Sled writes from this device are appended to a small encrypted log and
+/// pushed to each peer's `<user_hash>/p2p/<me>__<peer>/<seq>.enc` mailbox.
+/// A background loop also polls each peer's outgoing mailbox
+/// (`<user_hash>/p2p/<peer>__<me>/`) every `poll_interval_ms` and applies
+/// new entries to the local store.
+///
+/// R2 lifecycle (server-side) expires p2p objects after 24h, so this is a
+/// best-effort low-latency channel layered on top of the durable log /
+/// snapshot sync — explicit ACK/delete is intentionally not implemented;
+/// the 24h lifecycle reclaims storage.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct P2pSyncConfig {
+    /// Other device IDs belonging to the same user. The local device pushes
+    /// every Sled write to each of these peers' inbound mailboxes and pulls
+    /// from each peer's outbound mailbox.
+    #[serde(default)]
+    pub peer_device_ids: Vec<String>,
+    /// How often to poll each peer's outbound mailbox, in milliseconds.
+    /// Default: 30_000 (30s).
+    #[serde(default = "default_p2p_poll_interval_ms")]
+    pub poll_interval_ms: u64,
+}
+
+fn default_p2p_poll_interval_ms() -> u64 {
+    30_000
+}
+
+impl Default for P2pSyncConfig {
+    fn default() -> Self {
+        Self {
+            peer_device_ids: Vec::new(),
+            poll_interval_ms: default_p2p_poll_interval_ms(),
+        }
+    }
 }
 
 /// Storage configuration — always local Sled, optionally with cloud sync.
@@ -116,6 +160,7 @@ impl DatabaseConfig {
                     api_key,
                     session_token: env::var("EXEMEM_SESSION_TOKEN").ok(),
                     user_hash: env::var("EXEMEM_USER_HASH").ok(),
+                    p2p_sync: None,
                 })
             }
             _ => {
@@ -202,6 +247,7 @@ impl<'de> Deserialize<'de> for DatabaseConfig {
                             api_key,
                             session_token,
                             user_hash,
+                            p2p_sync: None,
                         }),
                     })
                 }
@@ -283,6 +329,7 @@ mod tests {
                 api_key: "key123".to_string(),
                 session_token: None,
                 user_hash: None,
+                p2p_sync: None,
             },
         );
         let json = serde_json::to_string(&config).unwrap();
@@ -307,6 +354,7 @@ mod tests {
                 api_key: "secret_api_key".to_string(),
                 session_token: Some("secret_token".to_string()),
                 user_hash: Some("user_abc".to_string()),
+                p2p_sync: None,
             },
         );
         let json = serde_json::to_string(&config).unwrap();
@@ -400,5 +448,55 @@ mod tests {
             "error should mention missing api_url: {}",
             err
         );
+    }
+
+    #[test]
+    fn p2p_sync_config_default_poll_interval() {
+        // Files written before the p2p feature don't include `p2p_sync`,
+        // so it must default to `None` rather than failing to parse.
+        let json = r#"{
+            "path": "/data/db",
+            "cloud_sync": { "api_url": "https://api.example.com" }
+        }"#;
+        let config: DatabaseConfig = serde_json::from_str(json).unwrap();
+        let sync = config.cloud_sync.unwrap();
+        assert!(sync.p2p_sync.is_none());
+    }
+
+    #[test]
+    fn p2p_sync_config_round_trips() {
+        let p2p = P2pSyncConfig {
+            peer_device_ids: vec!["device-b".to_string(), "device-c".to_string()],
+            poll_interval_ms: 15_000,
+        };
+        let config = DatabaseConfig::with_cloud_sync(
+            PathBuf::from("/data"),
+            CloudSyncConfig {
+                api_url: "https://api.example.com".to_string(),
+                api_key: "k".to_string(),
+                session_token: None,
+                user_hash: None,
+                p2p_sync: Some(p2p.clone()),
+            },
+        );
+        let json = serde_json::to_string(&config).unwrap();
+        assert!(
+            json.contains("p2p_sync"),
+            "p2p_sync block must be persisted: {}",
+            json
+        );
+        let parsed: DatabaseConfig = serde_json::from_str(&json).unwrap();
+        let parsed_p2p = parsed.cloud_sync.unwrap().p2p_sync.unwrap();
+        assert_eq!(parsed_p2p, p2p);
+    }
+
+    #[test]
+    fn p2p_sync_config_uses_default_poll_interval_when_omitted() {
+        let json = r#"{
+            "peer_device_ids": ["d1"]
+        }"#;
+        let p2p: P2pSyncConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(p2p.peer_device_ids, vec!["d1".to_string()]);
+        assert_eq!(p2p.poll_interval_ms, 30_000);
     }
 }

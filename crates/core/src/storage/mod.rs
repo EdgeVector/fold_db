@@ -17,7 +17,7 @@ pub mod upload_storage;
 mod tests;
 
 // Re-exports for convenience
-pub use config::{CloudSyncConfig, DatabaseConfig};
+pub use config::{CloudSyncConfig, DatabaseConfig, P2pSyncConfig};
 pub use error::StorageError;
 pub use inmemory_backend::InMemoryNamespacedStore;
 

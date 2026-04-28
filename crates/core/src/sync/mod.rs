@@ -65,6 +65,7 @@ pub mod engine;
 pub mod error;
 pub mod log;
 pub mod org_sync;
+pub mod p2p;
 pub mod s3;
 pub mod snapshot;
 
@@ -74,6 +75,7 @@ pub use engine::{
 };
 pub use error::{SyncError, SyncResult};
 pub use org_sync::{SyncDestination, SyncPartitioner};
+pub use p2p::{spawn_polling_loop, P2pConfig, P2pSyncEngine};
 
 /// Configuration needed to enable S3 sync.
 ///

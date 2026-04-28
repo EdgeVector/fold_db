@@ -25,6 +25,7 @@
 
 pub mod access;
 pub mod atom;
+pub mod bulletin;
 pub mod constants;
 pub mod crypto;
 pub mod db_operations;

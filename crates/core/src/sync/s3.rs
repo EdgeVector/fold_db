@@ -8,6 +8,11 @@ use std::sync::Arc;
 /// This client never has AWS credentials — it only uses presigned URLs
 /// obtained from the auth Lambda. Each URL is scoped to a single S3 object
 /// and a single operation (GET or PUT), expiring after a short window.
+///
+/// `Clone` is cheap (bumps the inner `Arc<reqwest::Client>` refcount) so
+/// secondary modules — `p2p::P2pSyncEngine`, `bulletin::BulletinClient` —
+/// can hold their own handles alongside the `SyncEngine`.
+#[derive(Clone)]
 pub struct S3Client {
     http: Arc<Client>,
 }
