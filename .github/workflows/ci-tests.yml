@@ -145,3 +145,25 @@ jobs:
           steps.clippy.outcome == 'failure' ||
           steps.cargo-test.outcome == 'failure'
         run: exit 1
+
+  # Org-wide convention: every EdgeVector repo exposes a check named
+  # `ci-required` so the org ruleset can require a single uniform check
+  # across all repos.
+  ci-required:
+    name: ci-required
+    needs: [lint-redaction, rust-tests]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: All required jobs must succeed
+        env:
+          RESULTS: ${{ join(needs.*.result, ',') }}
+        run: |
+          echo "Required job results: $RESULTS"
+          for r in ${RESULTS//,/ }; do
+            if [ "$r" != "success" ]; then
+              echo "::error::A required job did not succeed (result: $r)"
+              exit 1
+            fi
+          done
+          echo "All required jobs passed."
