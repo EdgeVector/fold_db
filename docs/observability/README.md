@@ -2,13 +2,7 @@
 
 Operator-facing documentation for the `observability` crate
 (`crates/observability`). Designed for someone bringing up a new fold_db
-node, debugging trace propagation, or tuning what reaches Honeycomb.
-
-## Setup
-
-- **[Honeycomb dev setup](honeycomb-setup.md)** — point a node at a
-  Honeycomb environment, choose an `OBS_SAMPLER` setting, and project
-  ingest cost per env. Start here.
+node, debugging trace propagation, or tuning what reaches Sentry.
 
 ## Implementation notes (one per phase / sweep)
 
@@ -16,8 +10,6 @@ These are working notes, not a tutorial. Each documents the decisions
 behind a phase of the observability rollout so future contributors can
 see *why* something was wired the way it is.
 
-- [Sampling config](sampling-config-notes.md) — Phase 4 / T5. `OBS_SAMPLER`
-  parser, default values, follow-ups.
 - [tokio::spawn instrumentation](tokio-spawn-instrument-notes.md) — Phase 3 / T6.
   Where `.instrument(Span::current())` was applied to keep trace context
   across spawn boundaries.
@@ -30,12 +22,21 @@ see *why* something was wired the way it is.
 - [Redaction lint](redaction-lint.md) — Phase 5 / T1. CI guard that fails
   if a `tracing` macro emits a sensitive field as a raw value instead of
   through `redact!()` / `redact_id!()`.
+- [Spawn-instrument lint](spawn-instrument-lint.md) — Phase 5 / T2. CI
+  guard that fails if a `tokio::spawn` site does not pair with
+  `.instrument(Span::current())`.
+- [Structured-fields lint](structured-fields-lint.md) — Phase 5 / T3-T4.
+  CI guard against `tracing` macros that smuggle dynamic data through
+  the message string instead of structured fields.
+- [Tracing-egress lint](tracing-egress-lint.md) — Phase 5 / T3. CI guard
+  pairing every `reqwest` call site with the matching
+  `// trace-egress: <class>` annotation.
 
 ## Source-of-truth pointers
 
 - Crate sources: `crates/observability/src/`
 - Init helpers: `crates/observability/src/init.rs`
   (`init_node` / `init_lambda` / `init_tauri` / `init_cli`)
-- Layers: `crates/observability/src/layers/` (FMT, RELOAD, RING, WEB)
-- Sampling: `crates/observability/src/sampling.rs`
+- Layers: `crates/observability/src/layers/` (FMT, RELOAD, RING, WEB,
+  ERROR/Sentry)
 - W3C propagation: `crates/observability/src/propagation.rs`
