@@ -7,7 +7,10 @@
 //! - [`otlp_traces`] — OTLP HTTP/protobuf span exporter (Phase 4 / T1).
 //! - [`span_metrics`] — pre-registered span-name → latency histogram
 //!   recording for OTLP metrics export (Phase 4 / T2).
+//! - [`error`] — ERROR-only Sentry sink with W3C trace tagging
+//!   (Phase 4 / T4).
 
+pub mod error;
 pub mod fmt;
 pub mod otlp_traces;
 pub mod reload;
@@ -15,6 +18,7 @@ pub mod ring;
 pub mod span_metrics;
 pub mod web;
 
+pub use error::{build_error_layer, ErrorLayer, SentryGuard, OBS_SENTRY_DSN_ENV};
 pub use otlp_traces::{build_otlp_traces_layer, OtlpGuard, OBS_OTLP_ENDPOINT_ENV};
 pub use ring::{build_ring_layer, LogEntry, LogLevel, RingHandle, RingLayer, OBS_RING_CAPACITY};
 pub use span_metrics::{
