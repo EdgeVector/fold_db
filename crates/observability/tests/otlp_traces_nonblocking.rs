@@ -14,6 +14,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use observability::layers::otlp_traces::{build_otlp_traces_layer, OBS_OTLP_ENDPOINT_ENV};
+use opentelemetry_sdk::trace::Sampler;
 use tracing::subscriber::with_default;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::Registry;
@@ -63,8 +64,8 @@ fn emit_5000_spans_does_not_block_caller() {
     // own process.
     std::env::set_var(OBS_OTLP_ENDPOINT_ENV, format!("http://127.0.0.1:{port}"));
 
-    let (layer, guard) =
-        build_otlp_traces_layer::<Registry>("nonblocking-test").expect("layer must build");
+    let (layer, guard) = build_otlp_traces_layer::<Registry>("nonblocking-test", Sampler::AlwaysOn)
+        .expect("layer must build");
     let subscriber = Registry::default().with(layer);
 
     let started = Instant::now();

@@ -49,7 +49,7 @@ use opentelemetry::trace::{TraceResult, TracerProvider as _};
 use opentelemetry::{global, Context, KeyValue};
 use opentelemetry_otlp::{Protocol, SpanExporter, WithExportConfig};
 use opentelemetry_sdk::export::trace::{SpanData, SpanExporter as SpanExporterTrait};
-use opentelemetry_sdk::trace::{Span as SdkSpan, SpanProcessor, Tracer, TracerProvider};
+use opentelemetry_sdk::trace::{Sampler, Span as SdkSpan, SpanProcessor, Tracer, TracerProvider};
 use opentelemetry_sdk::Resource;
 use tracing::Subscriber;
 use tracing_opentelemetry::OpenTelemetryLayer;
@@ -128,8 +128,19 @@ impl Drop for OtlpGuard {
 /// run without remote tracing than crash the binary because a collector URL
 /// was malformed. The error is logged via `tracing::error!` so the operator
 /// has a thread to pull on.
+///
+/// `sampler` is applied to the underlying [`TracerProvider`], so the head-
+/// sampling decision parsed from `OBS_SAMPLER` (see [`crate::sampling`]) flows
+/// into the OTLP exporter pipeline as well as into `tracing-opentelemetry`'s
+/// `is_recording()` gate.
+///
+/// As a side effect this function installs the constructed [`TracerProvider`]
+/// as the [`opentelemetry::global`] tracer provider so any code that creates
+/// spans via `opentelemetry::global::tracer(...)` (rather than the `tracing`
+/// macros) ends up on the same exporter pipeline.
 pub fn build_otlp_traces_layer<S>(
     service_name: &str,
+    sampler: Sampler,
 ) -> Option<(OpenTelemetryLayer<S, Tracer>, OtlpGuard)>
 where
     S: Subscriber + for<'a> LookupSpan<'a>,
@@ -172,6 +183,7 @@ where
     let processor = BoundedDropProcessor::spawn(exporter, dropped.clone(), dropped_counter);
 
     let provider = TracerProvider::builder()
+        .with_sampler(sampler)
         .with_span_processor(processor)
         .with_resource(Resource::new(vec![KeyValue::new(
             "service.name",
@@ -181,6 +193,13 @@ where
 
     let tracer = provider.tracer(service_name.to_string());
     let layer = tracing_opentelemetry::layer().with_tracer(tracer);
+
+    // Install as the process-global TracerProvider so any non-`tracing`
+    // OTel call site (e.g. ad-hoc `global::tracer("scope")` users) joins the
+    // same exporter pipeline. `TracerProvider` is `Clone` (Arc-backed); the
+    // clone we hand to the global is shed when [`OtlpGuard::shutdown`] /
+    // `Drop` runs.
+    let _ = global::set_tracer_provider(provider.clone());
 
     Some((
         layer,
@@ -489,7 +508,7 @@ mod tests {
     fn returns_none_when_endpoint_unset() {
         let _serial = env_lock();
         let _guard = EnvGuard::unset(OBS_OTLP_ENDPOINT_ENV);
-        let layer = build_otlp_traces_layer::<Registry>("svc");
+        let layer = build_otlp_traces_layer::<Registry>("svc", Sampler::AlwaysOn);
         assert!(layer.is_none(), "must be a no-op when env var is missing");
     }
 
@@ -497,7 +516,7 @@ mod tests {
     fn returns_none_when_endpoint_is_empty() {
         let _serial = env_lock();
         let _guard = EnvGuard::set(OBS_OTLP_ENDPOINT_ENV, "   ");
-        let layer = build_otlp_traces_layer::<Registry>("svc");
+        let layer = build_otlp_traces_layer::<Registry>("svc", Sampler::AlwaysOn);
         assert!(layer.is_none(), "whitespace-only endpoint must be no-op");
     }
 
@@ -509,8 +528,8 @@ mod tests {
         let _serial = env_lock();
         let _guard = EnvGuard::set(OBS_OTLP_ENDPOINT_ENV, "http://127.0.0.1:1");
 
-        let (layer, otlp_guard) =
-            build_otlp_traces_layer::<Registry>("svc").expect("layer must build");
+        let (layer, otlp_guard) = build_otlp_traces_layer::<Registry>("svc", Sampler::AlwaysOn)
+            .expect("layer must build");
 
         let subscriber = Registry::default().with(layer);
         with_default(subscriber, || {
