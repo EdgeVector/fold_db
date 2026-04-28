@@ -89,6 +89,8 @@ transitive `log::*` calls coming from `reqwest` / `hyper` / `sled` / etc.
 ## Out of scope (filed as follow-ups)
 
 - CI lint enforcing `tracing::*` over `log::*` (Phase 5).
-- Frontend dashboard rewrite (Phase 6).
-- AWS SDK propagation (Phase 6).
+- Trace context propagation into AWS SDK egress — intentionally out of
+  scope. Those calls are auth/billing/sync metadata, not on the user-facing
+  critical path; a lightweight `#[tracing::instrument]` on Lambda wrapper
+  functions is the fallback if span coverage is needed.
 - `fold_db_node` consumer migration (separate PR in `fold_db_node` repo).

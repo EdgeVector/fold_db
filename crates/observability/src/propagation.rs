@@ -16,8 +16,10 @@
 //! module install one ad-hoc.
 //!
 //! AWS SDK egress is **not** covered — Lambdas talk to AWS services, which
-//! use a different propagation format. Phase 6 closes that gap via
-//! `opentelemetry-aws`.
+//! use a different propagation format. This is intentionally out of scope:
+//! AWS SDK calls are auth/billing/sync metadata, not on the user-facing
+//! critical path. A lightweight `#[tracing::instrument]` on the Lambda
+//! wrapper functions is the fallback if span coverage is needed.
 
 use opentelemetry::global;
 #[cfg(test)]
