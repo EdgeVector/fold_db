@@ -19,7 +19,8 @@ stack**. Concretely, this means:
 
 - The parent's `trace_id` does not propagate. Logs emitted from the
   spawned task get no `trace_id` (or, worse, a fresh one), so they cannot
-  be stitched back to the originating request in Honeycomb / Sentry.
+  be stitched back to the originating request in Sentry or local log
+  queries.
 - Span fields the parent carried (`user.hash`, `schema.name`,
   `request.id`, etc.) vanish.
 - Sampling decisions made at the parent are ignored — a child task may

@@ -1,11 +1,11 @@
 //! Phase 5 / T5 — `service.name` is load-bearing.
 //!
 //! The OTel `service.name` Resource attribute is the primary dimension
-//! Honeycomb / Sentry / Loki group spans and events under. Landing in
-//! production with `service.name=""` (or a whitespace blob) silently fans
-//! every span out under `unknown_service`, which on a busy dashboard masks
-//! whichever service has the bug. We chose to fail loudly at boot rather
-//! than discover the misconfiguration in the morning.
+//! Sentry tags events under. Landing in production with `service.name=""`
+//! (or a whitespace blob) silently fans every error out under
+//! `unknown_service`, which on a busy Sentry view masks whichever service
+//! has the bug. We chose to fail loudly at boot rather than discover the
+//! misconfiguration in the morning.
 //!
 //! These tests pin two things:
 //! 1. `init_node("", _)` panics with a message containing the literal

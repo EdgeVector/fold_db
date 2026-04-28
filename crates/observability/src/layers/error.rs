@@ -5,8 +5,8 @@
 //! events, regardless of how loose the global RELOAD filter is.
 //! Each captured Sentry event is enriched with the W3C `trace_id` and
 //! `span_id` lifted off the parent span's [`OtelData`] extension (set by
-//! `tracing-opentelemetry`) so an alert page can deep-link back to the trace
-//! in Honeycomb (or any other OTLP backend).
+//! `tracing-opentelemetry`) so an alert page can be cross-referenced against
+//! local logs filtered by the same trace id.
 //!
 //! ## When the layer is wired
 //!

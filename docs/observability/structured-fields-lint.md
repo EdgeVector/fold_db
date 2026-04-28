@@ -15,7 +15,7 @@ toward the structured form, not to block PRs.
 2. **Structured fields** — typed key/value pairs attached to the event
    (`target = "edgevector-prod"`, `error = "connection reset"`).
 
-In Honeycomb, Sentry, and our local query tooling, you can pivot, group,
+In Sentry and our local query tooling, you can pivot, group,
 and filter on **fields**. You cannot pivot on the contents of the message
 string. So this:
 
@@ -139,7 +139,7 @@ tracing::warn!(error = %err, "failed to embed face");
   `crates/*/tests/` are out of scope.
 - `println!`, `eprintln!`, `log::*!`, and other non-`tracing` macros are
   not in scope. The lint is specifically about events that flow into
-  Honeycomb / OTel.
+  the local query tooling and Sentry.
 - Sibling repos (`fold_db_node`, `schema_service`, `exemem-infra`) each
   own their own copy of this lint as a follow-up — same as the rest of
   the Phase 5 lint set.

@@ -1,35 +1,31 @@
 //! Initialization helpers for each runtime target (node / Lambda / Tauri / CLI).
 //!
-//! Phase 1 / T6 + Phase 4 / T11. Each helper composes the FMT + RELOAD + RING
-//! layers into a `Registry`, optionally adds the Phase 4 layers (OTLP traces,
-//! OTLP metrics + span metrics, ERROR-only Sentry sink) when the matching env
-//! vars are set, and installs the result as the global tracing subscriber.
-//! The returned [`ObsGuard`] holds the non-blocking writer's worker handle,
-//! the [`RingHandle`] / [`ReloadHandle`] used by the rest of the binary, and
-//! the OTLP / Sentry shutdown handles whose `Drop` flushes any pending
-//! exporter state.
+//! Each helper composes the FMT + RELOAD + RING layers into a `Registry`,
+//! installs a no-op [`opentelemetry_sdk::trace::TracerProvider`] so every
+//! span carries a real W3C `trace_id` / `span_id` (lifted into RING entries
+//! and Sentry tags), optionally adds the ERROR-only Sentry sink when
+//! [`OBS_SENTRY_DSN`](crate::layers::error::OBS_SENTRY_DSN_ENV) is set, and
+//! installs the result as the global tracing subscriber. The returned
+//! [`ObsGuard`] holds the non-blocking writer's worker handle, the
+//! [`RingHandle`] / [`ReloadHandle`] used by the rest of the binary, and the
+//! Sentry shutdown handle whose `Drop` flushes any pending event queue.
 //!
 //! ## Per-target shape
 //!
-//! | helper        | FMT target               | RELOAD | RING | OTLP* | Sentry |
-//! |---------------|--------------------------|--------|------|-------|--------|
-//! | [`init_node`]   | `~/.folddb/observability.jsonl` (or `OBS_FILE_PATH`) | yes | yes | env-gated | env-gated |
-//! | [`init_lambda`] | stdout                   | yes    | no   | env-gated | env-gated |
-//! | [`init_tauri`]  | inherits from embedded server, else delegates to [`init_node`] | conditional | conditional | inherits | inherits |
-//! | [`init_cli`]    | stderr                   | no     | no   | no    | no     |
-//!
-//! `*OTLP` here covers both the traces and metrics pipelines plus the
-//! `SpanMetricsLayer` that depends on a meter provider.
+//! | helper        | FMT target               | RELOAD | RING | Sentry |
+//! |---------------|--------------------------|--------|------|--------|
+//! | [`init_node`]   | `~/.folddb/observability.jsonl` (or `OBS_FILE_PATH`) | yes | yes | env-gated |
+//! | [`init_lambda`] | stdout                   | yes    | no   | env-gated |
+//! | [`init_tauri`]  | inherits from embedded server, else delegates to [`init_node`] | conditional | conditional | inherits |
+//! | [`init_cli`]    | stderr                   | no     | no   | no    |
 //!
 //! ## CLI is intentionally bare
 //!
-//! Long-lived OTLP exporters and the Sentry transport amortize their
-//! per-batch cost over many spans / events. CLI processes are short-lived
-//! one-shots: the exporter setup cost dominates and the periodic reader's
-//! 60s push interval (see [`crate::layers::otlp_metrics::DEFAULT_INTERVAL`])
-//! would not fire even once before the process exits. We deliberately omit
-//! the Phase 4 layers from [`init_cli`] rather than ship metrics that never
-//! flush.
+//! The Sentry transport amortizes its per-batch cost over many events. CLI
+//! processes are short-lived one-shots: setup cost dominates and the
+//! transport's batched flushes would not fire before the process exits. We
+//! deliberately omit the Sentry layer from [`init_cli`] rather than ship
+//! events that never flush.
 //!
 //! ## Single-init invariant
 //!
@@ -50,13 +46,13 @@
 //!   `init_*` helper.
 //! - After `init_*` returns successfully, the global TracerProvider's
 //!   `Resource` is guaranteed to carry a `service.name` attribute equal to
-//!   the input. The post-build verification in [`build_traces_layer_or_noop`]
+//!   the input. The post-build verification in [`build_noop_traces_layer`]
 //!   panics if that invariant is ever violated, and [`installed_service_name`]
 //!   returns the verified value for inspection (used by integration tests).
 //! - The returned [`ObsGuard`] **must** be held for the lifetime of the
 //!   binary. Dropping it stops the FMT worker thread mid-flush and triggers
-//!   OTLP / Sentry shutdown; any log lines or events still in flight after
-//!   that point are lost.
+//!   Sentry shutdown; any log lines or events still in flight after that
+//!   point are lost.
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -64,11 +60,9 @@ use std::{fs, io};
 
 use once_cell::sync::OnceCell;
 use opentelemetry::global;
-use opentelemetry::metrics::MeterProvider as _;
 use opentelemetry::trace::{TraceResult, TracerProvider as _};
 use opentelemetry::{Context, Key, KeyValue};
 use opentelemetry_sdk::export::trace::SpanData;
-use opentelemetry_sdk::metrics::SdkMeterProvider;
 use opentelemetry_sdk::propagation::TraceContextPropagator;
 use opentelemetry_sdk::trace::{
     Sampler, Span as SdkSpan, SpanProcessor, Tracer, TracerProvider as SdkTracerProvider,
@@ -81,11 +75,8 @@ use tracing_subscriber::{EnvFilter, Registry};
 
 use crate::layers::error::{build_error_layer, SentryGuard};
 use crate::layers::fmt::{build_fmt_writer, FmtGuard, FmtTarget, RedactingFormat};
-use crate::layers::otlp_metrics::build_otlp_metrics_meter_provider;
-use crate::layers::otlp_traces::{build_otlp_traces_layer, OtlpGuard, OBS_METER_SCOPE};
 use crate::layers::reload::{build_reload_layer, ReloadHandle};
 use crate::layers::ring::{build_ring_layer, RingHandle, OBS_RING_CAPACITY};
-use crate::layers::span_metrics::build_span_metrics_layer;
 use crate::ObsError;
 
 /// Override for the node log file path. Read once per `init_node` call.
@@ -122,66 +113,35 @@ pub fn installed_service_name() -> Option<&'static str> {
 ///   wired — currently only [`init_node`] / [`init_tauri`] full path),
 /// - the [`ReloadHandle`] for runtime `EnvFilter` updates (when RELOAD is
 ///   wired — every helper except [`init_cli`]),
-/// - the [`OtlpShutdown`] bag holding the OTLP traces guard, the OTLP
-///   metrics meter provider, and the Sentry guard. `Drop` calls shutdown on
-///   each so the binary's exit path drains any in-flight spans / metrics /
-///   events. Always present in shape; the inner fields are `None` when the
-///   matching env var was not set at init time.
+/// - the [`CloudShutdown`] bag holding the Sentry guard. `Drop` runs the
+///   guard's flush so the binary's exit path drains any in-flight events.
+///   Always present in shape; the inner field is `None` when the matching
+///   env var was not set at init time.
 #[must_use = "ObsGuard must be held for the lifetime of the binary or log lines may be dropped"]
 pub struct ObsGuard {
     fmt_guard: Option<FmtGuard>,
     ring: Option<RingHandle>,
     reload: Option<ReloadHandle>,
-    otlp_shutdown: Option<OtlpShutdown>,
+    cloud_shutdown: Option<CloudShutdown>,
 }
 
-/// Bag of Phase 4 shutdown handles. Dropped by [`ObsGuard`]'s `Drop`.
+/// Bag of cloud-side shutdown handles. Dropped by [`ObsGuard`]'s `Drop`.
 ///
-/// Field declaration order is the drop order:
-/// 1. `sentry_guard` — flush queued events first, before the runtimes that
-///    might be hosting their transports go away.
-/// 2. `otlp_guard` — drain pending spans through the exporter; the worker
-///    thread is bounded by [`crate::layers::otlp_traces::SHUTDOWN_BUDGET`].
-/// 3. `metrics_provider` — shut down the periodic reader last so any drop
-///    counters incremented by `otlp_guard`'s shutdown have a chance to be
-///    exported.
-struct OtlpShutdown {
+/// Currently holds only the Sentry guard. Kept as a struct (rather than a
+/// bare `Option<SentryGuard>`) so the existing test surface that asserts
+/// "shape is engaged when env var is set" stays meaningful and so future
+/// distributed-client sinks can attach here without reshaping `ObsGuard`.
+struct CloudShutdown {
     sentry_guard: Option<SentryGuard>,
-    otlp_guard: Option<OtlpGuard>,
-    metrics_provider: Option<SdkMeterProvider>,
 }
 
-impl OtlpShutdown {
+impl CloudShutdown {
     fn empty() -> Self {
-        Self {
-            sentry_guard: None,
-            otlp_guard: None,
-            metrics_provider: None,
-        }
+        Self { sentry_guard: None }
     }
 
     fn is_engaged(&self) -> bool {
-        self.sentry_guard.is_some() || self.otlp_guard.is_some() || self.metrics_provider.is_some()
-    }
-}
-
-impl Drop for OtlpShutdown {
-    fn drop(&mut self) {
-        // The metrics provider is the only handle whose Drop alone is not
-        // sufficient: `global::set_meter_provider` clones the Arc, so our
-        // local copy dropping does not necessarily fire the inner
-        // `SdkMeterProviderInner::Drop`. Call shutdown explicitly to flush
-        // the periodic reader. SentryGuard's inner `ClientInitGuard` and
-        // OtlpGuard's `provider.shutdown()` already run on field drop.
-        if let Some(metrics) = self.metrics_provider.as_ref() {
-            if let Err(err) = metrics.shutdown() {
-                tracing::warn!(
-                    target: "observability::init",
-                    error = %err,
-                    "OTLP metrics provider shutdown returned an error during ObsGuard drop",
-                );
-            }
-        }
+        self.sentry_guard.is_some()
     }
 }
 
@@ -208,8 +168,8 @@ impl std::fmt::Debug for ObsGuard {
             .field("ring", &self.ring.is_some())
             .field("reload", &self.reload.is_some())
             .field(
-                "otlp_shutdown",
-                &self.otlp_shutdown.as_ref().map(|s| s.is_engaged()),
+                "cloud_shutdown",
+                &self.cloud_shutdown.as_ref().map(|s| s.is_engaged()),
             )
             .finish()
     }
@@ -217,10 +177,9 @@ impl std::fmt::Debug for ObsGuard {
 
 impl Drop for ObsGuard {
     fn drop(&mut self) {
-        // Field drops do the rest: OtlpShutdown's Drop calls metrics shutdown
-        // explicitly and lets sentry / traces guards run their inner Drop.
-        // FmtGuard's Drop drains the writer queue.
-        let _ = self.otlp_shutdown.take();
+        // Field drops do the rest: SentryGuard's inner `ClientInitGuard`
+        // flushes on Drop, FmtGuard's Drop drains the writer queue.
+        let _ = self.cloud_shutdown.take();
     }
 }
 
@@ -232,24 +191,13 @@ impl Drop for ObsGuard {
 ///
 /// Layers (always wired): redacting JSON FMT writing to
 /// `~/.folddb/observability.jsonl` (override with `OBS_FILE_PATH`) + RELOAD +
-/// RING + a `tracing-opentelemetry` layer that stamps W3C `trace_id` /
+/// RING + a `tracing-opentelemetry` layer riding a no-op
+/// [`opentelemetry_sdk::trace::TracerProvider`] that stamps W3C `trace_id` /
 /// `span_id` onto every span.
 ///
-/// Phase 4 layers (env-gated, opt-in):
-/// - **OTLP traces** — when `OBS_OTLP_ENDPOINT` is set, the
-///   `tracing-opentelemetry` layer rides on a real
-///   [`opentelemetry_sdk::trace::TracerProvider`] backed by an HTTP/protobuf
-///   span exporter. The provider is also installed as the
-///   [`opentelemetry::global`] tracer provider. When unset, a no-op
-///   `TracerProvider` is used (still honouring the `OBS_SAMPLER` head-
-///   sampling decision) and no exporter is created.
-/// - **OTLP metrics + span metrics** — when either `OBS_OTLP_METRICS_ENDPOINT`
-///   or the shared `OBS_OTLP_ENDPOINT` is set, an [`SdkMeterProvider`] is
-///   built and installed as the global meter provider, and a
-///   [`SpanMetricsLayer`] is attached to record per-span latency histograms.
-/// - **Sentry ERROR sink** — when `OBS_SENTRY_DSN` is set, a per-layer-
-///   filtered Sentry layer captures `tracing::error!` events and tags them
-///   with the originating span's W3C ids.
+/// Optional ERROR sink: when `OBS_SENTRY_DSN` is set, a per-layer-filtered
+/// Sentry layer captures `tracing::error!` events and tags them with the
+/// originating span's W3C ids.
 ///
 /// Also installs the W3C [`TraceContextPropagator`] globally and the
 /// `tracing-log` bridge so third-party `log::*` calls flow through the
@@ -264,26 +212,7 @@ pub fn init_node(service_name: &'static str, _version: &str) -> Result<ObsGuard,
     let (reload_layer, reload) = build_reload_layer::<Registry>(default_env_filter());
     let (ring_layer, ring) = build_ring_layer(OBS_RING_CAPACITY);
 
-    // Parse the head-sampler once. Surfacing a malformed `OBS_SAMPLER` here
-    // (rather than silently falling back) catches operator typos at boot.
-    let sampler = parse_sampler_or_error()?;
-
-    // OTLP metrics first so the OTLP traces builder picks up the global meter
-    // when constructing its `obs.spans.dropped` counter. Layer ordering note
-    // for future maintainers: install metrics *before* traces and call sites
-    // that read `global::meter` will be bound to the real exporter; reverse
-    // the order and the dropped-span counter becomes a no-op forever.
-    let metrics_provider = build_otlp_metrics_meter_provider(service_name);
-    if let Some(provider) = metrics_provider.as_ref() {
-        global::set_meter_provider(provider.clone());
-    }
-
-    let (otel_layer, otlp_guard) = build_traces_layer_or_noop(service_name, sampler.clone());
-
-    let span_metrics_layer = metrics_provider.as_ref().map(|provider| {
-        let meter = provider.meter(OBS_METER_SCOPE);
-        build_span_metrics_layer(&meter)
-    });
+    let otel_layer = build_noop_traces_layer(service_name);
 
     let (error_layer, sentry_guard) = match build_error_layer() {
         Some((layer, guard)) => (Some(layer), Some(guard)),
@@ -304,7 +233,6 @@ pub fn init_node(service_name: &'static str, _version: &str) -> Result<ObsGuard,
     let subscriber = Registry::default()
         .with(reload_layer)
         .with(otel_layer)
-        .with(span_metrics_layer)
         .with(fmt_layer)
         .with(ring_layer)
         .with(error_layer);
@@ -316,21 +244,17 @@ pub fn init_node(service_name: &'static str, _version: &str) -> Result<ObsGuard,
         fmt_guard: Some(fmt_guard),
         ring: Some(ring),
         reload: Some(reload),
-        otlp_shutdown: Some(OtlpShutdown {
-            sentry_guard,
-            otlp_guard,
-            metrics_provider,
-        }),
+        cloud_shutdown: Some(CloudShutdown { sentry_guard }),
     })
 }
 
 /// Initialize observability for an AWS Lambda handler.
 ///
-/// Layers: redacting JSON FMT to stdout + RELOAD + the same env-gated Phase 4
-/// layers as [`init_node`] (OTLP traces, OTLP metrics + span metrics, Sentry).
-/// Lambda's own log capture pipes stdout to CloudWatch, so a file appender
-/// would be wasted IO. RING is omitted — Lambda invocations are too short-
-/// lived for an in-process query buffer to be useful.
+/// Layers: redacting JSON FMT to stdout + RELOAD + the same no-op
+/// TracerProvider as [`init_node`] + the env-gated Sentry layer. Lambda's own
+/// log capture pipes stdout to CloudWatch, so a file appender would be wasted
+/// IO. RING is omitted — Lambda invocations are too short-lived for an
+/// in-process query buffer to be useful.
 pub fn init_lambda(service_name: &'static str, _version: &str) -> Result<ObsGuard, ObsError> {
     assert_service_name(service_name);
     try_claim_init(&INIT_ONCE)?;
@@ -339,19 +263,7 @@ pub fn init_lambda(service_name: &'static str, _version: &str) -> Result<ObsGuar
     let (writer, fmt_guard) = build_fmt_writer(FmtTarget::Stdout)?;
     let (reload_layer, reload) = build_reload_layer::<Registry>(default_env_filter());
 
-    let sampler = parse_sampler_or_error()?;
-
-    let metrics_provider = build_otlp_metrics_meter_provider(service_name);
-    if let Some(provider) = metrics_provider.as_ref() {
-        global::set_meter_provider(provider.clone());
-    }
-
-    let (otel_layer, otlp_guard) = build_traces_layer_or_noop(service_name, sampler.clone());
-
-    let span_metrics_layer = metrics_provider.as_ref().map(|provider| {
-        let meter = provider.meter(OBS_METER_SCOPE);
-        build_span_metrics_layer(&meter)
-    });
+    let otel_layer = build_noop_traces_layer(service_name);
 
     let (error_layer, sentry_guard) = match build_error_layer() {
         Some((layer, guard)) => (Some(layer), Some(guard)),
@@ -365,7 +277,6 @@ pub fn init_lambda(service_name: &'static str, _version: &str) -> Result<ObsGuar
     let subscriber = Registry::default()
         .with(reload_layer)
         .with(otel_layer)
-        .with(span_metrics_layer)
         .with(fmt_layer)
         .with(error_layer);
     install_subscriber(subscriber)?;
@@ -376,11 +287,7 @@ pub fn init_lambda(service_name: &'static str, _version: &str) -> Result<ObsGuar
         fmt_guard: Some(fmt_guard),
         ring: None,
         reload: Some(reload),
-        otlp_shutdown: Some(OtlpShutdown {
-            sentry_guard,
-            otlp_guard,
-            metrics_provider,
-        }),
+        cloud_shutdown: Some(CloudShutdown { sentry_guard }),
     })
 }
 
@@ -392,7 +299,7 @@ pub fn init_lambda(service_name: &'static str, _version: &str) -> Result<ObsGuar
 /// detect that and return a degraded "attached" [`ObsGuard`] rather than
 /// fail. When the embedded server has *not* run (e.g. dev shell pointed at
 /// a remote server), we fall through to a full [`init_node`] install — which
-/// includes all env-gated Phase 4 layers.
+/// includes the env-gated Sentry layer.
 ///
 /// `app_handle` is taken by reference but unused in Phase 1; Phase 3 will
 /// wire `tauri-plugin-log` as an additional sink. The generic parameter
@@ -415,7 +322,7 @@ pub fn init_tauri<H>(
             fmt_guard: None,
             ring: None,
             reload: None,
-            otlp_shutdown: Some(OtlpShutdown::empty()),
+            cloud_shutdown: Some(CloudShutdown::empty()),
         });
     }
 
@@ -430,12 +337,11 @@ pub fn init_tauri<H>(
 /// stderr is chosen so the CLI can keep stdout reserved for its own
 /// program output.
 ///
-/// The Phase 4 OTLP / Sentry layers are intentionally omitted. CLI processes
-/// are short-lived: the periodic OTLP reader's default 60s interval and the
-/// Sentry transport's batched flushes amortize over many events, but a CLI
-/// exits before either pipeline reaches its first flush — shipping them would
+/// The Sentry layer is intentionally omitted. CLI processes are short-lived:
+/// the Sentry transport's batched flushes amortize over many events, but a
+/// CLI exits before the pipeline reaches its first flush — shipping it would
 /// add startup cost with no observable benefit. Long-lived CLIs that need
-/// remote telemetry should use [`init_node`] instead.
+/// remote error capture should use [`init_node`] instead.
 pub fn init_cli(service_name: &'static str, _version: &str) -> Result<ObsGuard, ObsError> {
     assert_service_name(service_name);
     try_claim_init(&INIT_ONCE)?;
@@ -455,7 +361,7 @@ pub fn init_cli(service_name: &'static str, _version: &str) -> Result<ObsGuard, 
         fmt_guard: Some(fmt_guard),
         ring: None,
         reload: None,
-        otlp_shutdown: Some(OtlpShutdown::empty()),
+        cloud_shutdown: Some(CloudShutdown::empty()),
     })
 }
 
@@ -500,97 +406,44 @@ fn default_env_filter() -> EnvFilter {
     EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"))
 }
 
-/// Wraps [`crate::sampling::parse_sampler`] in the crate-level [`ObsError`]
-/// so init helpers can `?`-propagate.
-fn parse_sampler_or_error() -> Result<Sampler, ObsError> {
-    crate::sampling::parse_sampler()
-        .map_err(|e| ObsError::SubscriberInstall(format!("OBS_SAMPLER: {e}")))
-}
-
-/// Build the OTLP traces layer when `OBS_OTLP_ENDPOINT` is set; otherwise
-/// fall back to a `TracerProvider` that still applies the parsed
-/// `OBS_SAMPLER` decision and gives every span a real W3C trace/span id (so
-/// the RING layer can stamp them and so [`crate::propagation::inject_w3c`]
-/// has a real context to propagate). The return type is the same in both
-/// branches so the caller can compose it unconditionally.
+/// Build a `tracing-opentelemetry` layer riding a no-op
+/// [`SdkTracerProvider`] so every span gets a real W3C `trace_id` /
+/// `span_id`. There is no exporter — the spans never leave the process — but
+/// the ids are what the RING layer stamps onto entries and what the Sentry
+/// layer attaches as tags, so they have to be real.
 ///
-/// In **both** branches the constructed [`SdkTracerProvider`] is configured
-/// with a `Resource` that carries `service.name`, attached to a
-/// [`ResourceProbe`] that captures the resource the SDK pushes into its
-/// processors at build time, and (no-op branch only) installed as the global
-/// tracer provider — the OTLP branch already does that inside
-/// [`build_otlp_traces_layer`].
-///
-/// Before returning, the captured resource is read back through the probe
-/// and the `service.name` attribute is asserted to equal `service_name`.
-/// Any mismatch panics — the alternative is shipping spans whose dashboards
-/// silently group under the wrong service, which is far worse than a hard
-/// failure at boot.
-fn build_traces_layer_or_noop<S>(
-    service_name: &'static str,
-    sampler: Sampler,
-) -> (OpenTelemetryLayer<S, Tracer>, Option<OtlpGuard>)
+/// The constructed provider is configured with a `Resource` carrying
+/// `service.name`, attached to a [`ResourceProbe`] that captures the resource
+/// the SDK pushes into its processors at build time, and installed as the
+/// global tracer provider. Before returning, the captured resource is read
+/// back through the probe and the `service.name` attribute is asserted to
+/// equal `service_name`. Any mismatch panics — the alternative is shipping
+/// spans whose Sentry tags silently group under the wrong service, which is
+/// far worse than a hard failure at boot.
+fn build_noop_traces_layer<S>(service_name: &'static str) -> OpenTelemetryLayer<S, Tracer>
 where
     S: tracing::Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a>,
 {
-    if let Some((layer, guard)) = build_otlp_traces_layer::<S>(service_name, sampler.clone()) {
-        // OTLP path: `build_otlp_traces_layer` already calls `with_resource`
-        // with `service.name` and installs the provider as global. The
-        // post-build verification still runs against a probe-attached clone
-        // of that provider's resource so the contract is enforced uniformly
-        // across both branches — see `verify_otlp_resource`.
-        verify_otlp_resource(service_name);
-        return (layer, Some(guard));
-    }
-
-    // No-op fallback — must still stamp `service.name` on the Resource so
-    // operators that ad-hoc query `global::tracer_provider()` see the right
-    // identity. Previously this branch built a bare provider with no
-    // resource, which meant any non-OTLP build would surface as
-    // `service.name=unknown_service` on downstream consumers.
     let probe = ResourceProbe::new();
     let provider = SdkTracerProvider::builder()
-        .with_sampler(sampler)
+        .with_sampler(Sampler::AlwaysOn)
         .with_resource(build_service_resource(service_name))
         .with_span_processor(probe.clone())
         .build();
     assert_service_name_resource(&probe, service_name);
     let _ = global::set_tracer_provider(provider.clone());
     let tracer = provider.tracer(service_name);
-    (tracing_opentelemetry::layer().with_tracer(tracer), None)
+    tracing_opentelemetry::layer().with_tracer(tracer)
 }
 
 /// Build the OTel `Resource` carrying the canonical `service.name`
-/// attribute. Centralised so both branches of [`build_traces_layer_or_noop`]
-/// — and any future expansion to `service.version` / `deployment.environment`
-/// — agree on the exact key.
+/// attribute. Centralised so any future expansion to `service.version` /
+/// `deployment.environment` lands here.
 fn build_service_resource(service_name: &str) -> Resource {
     Resource::new(vec![KeyValue::new(
         "service.name",
         service_name.to_string(),
     )])
-}
-
-/// Verify the OTLP path's global TracerProvider resource carries
-/// `service.name`. The OTLP branch built and installed the provider via
-/// [`build_otlp_traces_layer`]; we cannot read its `Config::resource` from
-/// outside the SDK (the accessor is `pub(crate)`), so the cross-process
-/// verification reuses the same construction helper to build a probe-attached
-/// throwaway provider with the same resource and asserts via the probe.
-///
-/// This is structural: if [`build_otlp_traces_layer`] ever stops calling
-/// `with_resource(... service.name ...)`, the *real* global provider would
-/// still pass this check (because we build a fresh one here) — so the check
-/// is necessarily a paired contract: the OTLP construction site and this
-/// helper must use the same resource shape. The OTLP layer's existing unit
-/// tests pin its `with_resource` call.
-fn verify_otlp_resource(service_name: &str) {
-    let probe = ResourceProbe::new();
-    let _provider = SdkTracerProvider::builder()
-        .with_resource(build_service_resource(service_name))
-        .with_span_processor(probe.clone())
-        .build();
-    assert_service_name_resource(&probe, service_name);
 }
 
 /// Assert that the [`ResourceProbe`] captured a `Resource` whose
@@ -614,12 +467,12 @@ fn assert_service_name_resource(probe: &ResourceProbe, expected: &str) {
 
 /// SpanProcessor whose only job is to record the `Resource` that the SDK
 /// pushes into it via [`SpanProcessor::set_resource`] during
-/// `TracerProvider::build`. Used by [`build_traces_layer_or_noop`] and
-/// [`verify_otlp_resource`] as a probe to confirm that the constructed
-/// provider's resource carries `service.name`.
+/// `TracerProvider::build`. Used by [`build_noop_traces_layer`] as a probe
+/// to confirm that the constructed provider's resource carries
+/// `service.name`.
 ///
 /// `on_start` / `on_end` are intentionally no-ops — the probe MUST NOT
-/// perturb production span flow when it sits alongside real exporters.
+/// perturb production span flow.
 #[derive(Default, Clone)]
 struct ResourceProbe {
     captured: Arc<Mutex<Option<Resource>>>,
@@ -751,7 +604,7 @@ mod tests {
     /// Probe captures the Resource pushed into it by the SDK during
     /// `TracerProvider::build` — so a built provider is enough to populate
     /// the probe and pass the assertion. This pins the wiring used by
-    /// `build_traces_layer_or_noop`.
+    /// `build_noop_traces_layer`.
     #[test]
     fn assert_service_name_resource_passes_when_probe_captured_match() {
         let probe = ResourceProbe::new();
@@ -806,7 +659,7 @@ mod tests {
             fmt_guard: None,
             ring: None,
             reload: None,
-            otlp_shutdown: Some(OtlpShutdown::empty()),
+            cloud_shutdown: Some(CloudShutdown::empty()),
         };
         assert!(guard.ring().is_none());
         assert!(guard.reload().is_none());
@@ -912,211 +765,21 @@ mod tests {
         );
     }
 
-    // -----------------------------------------------------------------
-    // Phase 4 / T11: env-gated Phase 4 layers
-    //
-    // We deliberately do NOT call `init_node` from these tests: it claims
-    // the process-global INIT_ONCE slot, so a single test run could only
-    // exercise the helper once. Instead the tests build the same layers
-    // through the same helper functions `init_node` uses, which is the
-    // contract under test.
-    //
-    // Each test scopes its env-var mutation to a local guard so the
-    // changes don't leak to siblings running in parallel.
-    // -----------------------------------------------------------------
-
-    use crate::layers::error::OBS_SENTRY_DSN_ENV;
-    use crate::layers::otlp_metrics::{
-        OBS_OTLP_METRICS_ENDPOINT_ENV, OBS_OTLP_METRICS_INTERVAL_ENV, OBS_OTLP_METRICS_TIMEOUT_ENV,
-    };
-    use crate::layers::otlp_traces::OBS_OTLP_ENDPOINT_ENV;
-
-    /// Snapshot all OBS_* env vars touched by these tests, clear them, and
-    /// restore on Drop. Composing several `EnvGuard`s in a single test gives
-    /// each test a clean slate even if a sibling left state behind.
-    struct EnvGuard {
-        key: &'static str,
-        prev: Option<String>,
-    }
-
-    impl EnvGuard {
-        fn set(key: &'static str, value: &str) -> Self {
-            let prev = std::env::var(key).ok();
-            std::env::set_var(key, value);
-            Self { key, prev }
-        }
-
-        fn unset(key: &'static str) -> Self {
-            let prev = std::env::var(key).ok();
-            std::env::remove_var(key);
-            Self { key, prev }
-        }
-    }
-
-    impl Drop for EnvGuard {
-        fn drop(&mut self) {
-            match self.prev.take() {
-                Some(v) => std::env::set_var(self.key, v),
-                None => std::env::remove_var(self.key),
-            }
-        }
-    }
-
-    /// Several Phase 4 tests touch the same OBS_* env vars; serialize them
-    /// behind a module-local mutex so set/unset pairs don't race siblings.
-    fn env_lock() -> std::sync::MutexGuard<'static, ()> {
-        use std::sync::{Mutex, OnceLock};
-        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| Mutex::new(()))
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-    }
-
+    /// `CloudShutdown::empty()` is the no-op shape — every inner field is
+    /// `None` — and dropping it does nothing dangerous (no panic, no
+    /// shutdown attempt on absent providers).
     #[test]
-    fn build_traces_layer_or_noop_returns_no_guard_when_endpoint_unset() {
-        let _serial = env_lock();
-        let _g = EnvGuard::unset(OBS_OTLP_ENDPOINT_ENV);
-
-        let (_layer, guard) = build_traces_layer_or_noop::<Registry>("svc", Sampler::AlwaysOn);
-        assert!(
-            guard.is_none(),
-            "OBS_OTLP_ENDPOINT unset must produce a no-op tracer with no OtlpGuard"
-        );
-    }
-
-    /// Building OTLP traces requires a Tokio runtime for the bounded mpsc
-    /// channel created inside `BoundedDropProcessor::spawn` (the worker
-    /// thread runs its own `current_thread` runtime, but the channel itself
-    /// is constructed before that thread starts). Using `multi_thread`
-    /// matches what production binaries provide.
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn build_traces_layer_or_noop_returns_guard_when_endpoint_set() {
-        let _serial = env_lock();
-        let _g = EnvGuard::set(OBS_OTLP_ENDPOINT_ENV, "http://127.0.0.1:1");
-
-        let (_layer, guard) = build_traces_layer_or_noop::<Registry>("svc", Sampler::AlwaysOn);
-        assert!(
-            guard.is_some(),
-            "OBS_OTLP_ENDPOINT set must produce an OtlpGuard"
-        );
-        // Drop here triggers OtlpGuard::Drop -> provider.shutdown(). The
-        // worker is bounded by SHUTDOWN_BUDGET (3s) so even a wedged
-        // collector cannot hang the test indefinitely.
-        drop(guard);
-    }
-
-    /// `OtlpShutdown::Drop` calls `shutdown()` on the metrics provider when
-    /// one is held. Tested by collecting metrics from a manual reader after
-    /// dropping a shutdown bag that owns the provider — once a provider is
-    /// shut down, follow-up `force_flush` calls fail. We don't depend on the
-    /// exact error message; the existence of an error is the signal that
-    /// shutdown ran.
-    #[test]
-    fn obs_shutdown_drop_invokes_metrics_provider_shutdown() {
-        use opentelemetry_sdk::metrics::data::ResourceMetrics;
-        use opentelemetry_sdk::metrics::reader::MetricReader;
-        use opentelemetry_sdk::metrics::ManualReader;
-        use opentelemetry_sdk::Resource;
-        use std::sync::Arc;
-
-        struct SharedManualReader(Arc<ManualReader>);
-        impl std::fmt::Debug for SharedManualReader {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                f.debug_struct("SharedManualReader").finish()
-            }
-        }
-        impl MetricReader for SharedManualReader {
-            fn register_pipeline(
-                &self,
-                pipeline: std::sync::Weak<opentelemetry_sdk::metrics::Pipeline>,
-            ) {
-                self.0.register_pipeline(pipeline)
-            }
-            fn collect(
-                &self,
-                rm: &mut ResourceMetrics,
-            ) -> opentelemetry_sdk::metrics::MetricResult<()> {
-                self.0.collect(rm)
-            }
-            fn force_flush(&self) -> opentelemetry_sdk::metrics::MetricResult<()> {
-                self.0.force_flush()
-            }
-            fn shutdown(&self) -> opentelemetry_sdk::metrics::MetricResult<()> {
-                self.0.shutdown()
-            }
-            fn temporality(
-                &self,
-                kind: opentelemetry_sdk::metrics::InstrumentKind,
-            ) -> opentelemetry_sdk::metrics::Temporality {
-                self.0.temporality(kind)
-            }
-        }
-
-        let reader = Arc::new(ManualReader::builder().build());
-        let provider = SdkMeterProvider::builder()
-            .with_reader(SharedManualReader(reader.clone()))
-            .build();
-
-        // Sanity-check that the reader pre-shutdown can collect (the
-        // pipeline is registered through the provider).
-        let mut rm = ResourceMetrics {
-            resource: Resource::empty(),
-            scope_metrics: Vec::new(),
-        };
-        reader
-            .collect(&mut rm)
-            .expect("manual reader collect before shutdown");
-
-        let shutdown = OtlpShutdown {
-            sentry_guard: None,
-            otlp_guard: None,
-            metrics_provider: Some(provider),
-        };
-        assert!(shutdown.is_engaged());
-        drop(shutdown);
-
-        // After `OtlpShutdown::Drop` runs `metrics.shutdown()`, the manual
-        // reader's pipeline is torn down — subsequent `collect` calls error
-        // with the SDK's "reader is shut down or not registered" message.
-        // That error reaching us *is* the signal that the explicit shutdown
-        // call we want to pin actually fired. A test that asserts shutdown
-        // ran any other way would be fragile (the SDK exposes no public
-        // is_shutdown accessor).
-        let mut rm = ResourceMetrics {
-            resource: Resource::empty(),
-            scope_metrics: Vec::new(),
-        };
-        let err = reader
-            .collect(&mut rm)
-            .expect_err("collect after shutdown must error");
-        assert!(
-            err.to_string().to_lowercase().contains("shut down")
-                || err.to_string().to_lowercase().contains("shutdown"),
-            "unexpected error after shutdown: {err}",
-        );
-    }
-
-    /// Phase 4 / T11: when no env vars are set, `OtlpShutdown` is a no-op
-    /// shape — every inner field is `None` — and dropping it does nothing
-    /// dangerous (no panic, no shutdown attempt on absent providers).
-    #[test]
-    fn obs_shutdown_empty_drops_cleanly() {
-        let shutdown = OtlpShutdown::empty();
+    fn cloud_shutdown_empty_drops_cleanly() {
+        let shutdown = CloudShutdown::empty();
         assert!(!shutdown.is_engaged());
         drop(shutdown);
     }
 
-    /// Resolving the metrics interval / timeout env vars does not poison
-    /// global state; the helper that reads them is internal but its
-    /// constants are public, so we pin them here against accidental
-    /// renames that would silently change which env var binaries listen
-    /// to.
+    /// Pin the Sentry env-var name against accidental renames that would
+    /// silently change which env var binaries listen to.
     #[test]
-    fn obs_phase4_env_constants_are_stable() {
-        assert_eq!(OBS_OTLP_ENDPOINT_ENV, "OBS_OTLP_ENDPOINT");
-        assert_eq!(OBS_OTLP_METRICS_ENDPOINT_ENV, "OBS_OTLP_METRICS_ENDPOINT");
-        assert_eq!(OBS_OTLP_METRICS_INTERVAL_ENV, "OBS_OTLP_METRICS_INTERVAL");
-        assert_eq!(OBS_OTLP_METRICS_TIMEOUT_ENV, "OBS_OTLP_METRICS_TIMEOUT");
+    fn obs_sentry_env_constant_is_stable() {
+        use crate::layers::error::OBS_SENTRY_DSN_ENV;
         assert_eq!(OBS_SENTRY_DSN_ENV, "OBS_SENTRY_DSN");
     }
 }
