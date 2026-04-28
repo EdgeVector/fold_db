@@ -251,6 +251,106 @@ impl AuthClient {
         .await
     }
 
+    /// Presign PUT URLs for ephemeral p2p deltas this device pushes to a peer.
+    ///
+    /// Keys land at `<user_hash>/p2p/<src_device>__<dst_device>/<seq>.enc` on
+    /// R2 and are auto-expired after 24h by the bucket lifecycle rule. The
+    /// caller's `user_hash` scope is enforced server-side; quota checks are
+    /// skipped for this action (free for all plans).
+    pub async fn presign_p2p_upload(
+        &self,
+        src_device: &str,
+        dst_device: &str,
+        seq_numbers: &[u64],
+    ) -> SyncResult<Vec<PresignedUrl>> {
+        self.presign_urls(serde_json::json!({
+            "action": "presign_p2p_upload",
+            "src_device": src_device,
+            "dst_device": dst_device,
+            "seq_numbers": seq_numbers,
+        }))
+        .await
+    }
+
+    /// Presign GET URLs for fetching ephemeral p2p deltas a peer pushed.
+    pub async fn presign_p2p_download(
+        &self,
+        src_device: &str,
+        dst_device: &str,
+        seq_numbers: &[u64],
+    ) -> SyncResult<Vec<PresignedUrl>> {
+        self.presign_urls(serde_json::json!({
+            "action": "presign_p2p_download",
+            "src_device": src_device,
+            "dst_device": dst_device,
+            "seq_numbers": seq_numbers,
+        }))
+        .await
+    }
+
+    /// List ephemeral p2p deltas under a `<src>__<dst>` mailbox.
+    ///
+    /// Returns objects under `<user_hash>/p2p/<src_device>__<dst_device>/`.
+    /// Relative keys come back as `p2p/<src>__<dst>/<seq>.enc` (the user_hash
+    /// scope is stripped server-side).
+    pub async fn list_p2p_objects(
+        &self,
+        src_device: &str,
+        dst_device: &str,
+    ) -> SyncResult<Vec<S3ObjectInfo>> {
+        let body = serde_json::json!({
+            "action": "list_objects",
+            "prefix": format!("p2p/{src_device}__{dst_device}/"),
+        });
+        let resp = self.post("/api/sync/list", body).await?;
+        let parsed: ListObjectsResponse = serde_json::from_value(resp)?;
+        if !parsed.ok {
+            return Err(SyncError::Auth(
+                parsed
+                    .error
+                    .unwrap_or_else(|| "list p2p objects failed".to_string()),
+            ));
+        }
+        Ok(parsed.objects)
+    }
+
+    /// Presign a PUT URL for sending an encrypted bulletin board message.
+    ///
+    /// The path is `bulletin/<recipient_pseudonym>/<message_id>.enc`. The
+    /// caller's account must be on a paid plan; the server enforces the
+    /// gate via `BillingTable.is_paid`. R2 lifecycle expires bulletin
+    /// objects after 7 days.
+    pub async fn presign_bulletin_send(
+        &self,
+        recipient_pseudonym: &str,
+        message_id: &str,
+    ) -> SyncResult<PresignedUrl> {
+        self.presign_single_url(serde_json::json!({
+            "action": "presign_bulletin_send",
+            "recipient_pseudonym": recipient_pseudonym,
+            "message_id": message_id,
+        }))
+        .await
+    }
+
+    /// Presign a GET URL for reading an encrypted bulletin board message.
+    ///
+    /// No server-side ownership check — knowing the pseudonym is the right
+    /// to read it. The recipient-public-key encryption is the actual
+    /// protection (same trust model as `messaging_service`).
+    pub async fn presign_bulletin_read(
+        &self,
+        recipient_pseudonym: &str,
+        message_id: &str,
+    ) -> SyncResult<PresignedUrl> {
+        self.presign_single_url(serde_json::json!({
+            "action": "presign_bulletin_read",
+            "recipient_pseudonym": recipient_pseudonym,
+            "message_id": message_id,
+        }))
+        .await
+    }
+
     /// Presign a DELETE URL for a snapshot object (e.g., `latest.enc` or
     /// `{seq}.enc`). Used by the cloud-aware reset path that purges the
     /// personal sync log along with its snapshots.
