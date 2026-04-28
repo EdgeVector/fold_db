@@ -11,7 +11,6 @@ use tracing::{debug, info};
 
 // Internal crate imports
 use crate::db_operations::{DbOperations, IndexResult};
-use crate::logging::features::{log_feature, LogFeature};
 use crate::schema::{SchemaCore, SchemaError};
 use crate::storage::SledPool;
 use crate::storage::StorageError;
@@ -92,9 +91,8 @@ impl FoldDB {
 
     /// Graceful async shutdown: flush pending sync, stop background timer, then flush storage.
     pub async fn shutdown(&self) -> Result<(), StorageError> {
-        log_feature!(
-            LogFeature::Database,
-            info,
+        tracing::info!(
+            target: "fold_node::database",
             "Shutting down FoldDB: flushing sync and storage"
         );
         if let Err(e) = self.stop_sync().await {
@@ -329,9 +327,8 @@ impl FoldDB {
         pool: Arc<SledPool>,
         db_path: &str,
     ) -> Result<Self, StorageError> {
-        log_feature!(
-            LogFeature::Database,
-            info,
+        tracing::info!(
+            target: "fold_node::database",
             "🔄 Using DbOperations with storage abstraction layer (Sled backend)"
         );
 
@@ -343,9 +340,8 @@ impl FoldDB {
             .await?,
         );
 
-        log_feature!(
-            LogFeature::Database,
-            info,
+        tracing::info!(
+            target: "fold_node::database",
             "✅ Storage abstraction active - using {} backend",
             "Sled"
         );
@@ -542,9 +538,8 @@ impl FoldDB {
 
         // Start the MutationManager event listener
         if let Err(e) = mutation_manager.start_event_listener(user_id.clone()).await {
-            log_feature!(
-                LogFeature::Database,
-                error,
+            tracing::error!(
+                target: "fold_node::database",
                 "Failed to start MutationManager event listener: {}. Mutations via event bus will not be processed.",
                 e
             );

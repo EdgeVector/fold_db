@@ -2,17 +2,15 @@
 //! [`tokio::sync::broadcast`] channel for the dashboard's
 //! `/api/logs/stream` SSE consumer.
 //!
-//! Phase 3 / T4. The pre-existing `WebOutput` in `fold_db::logging::outputs`
-//! already serializes a [`LogEntry`] to JSON and broadcasts it on a
-//! `broadcast::Sender<String>`. This layer is the tracing-native replacement
-//! that Phase 3 / T5 will subscribe `/api/logs/stream` to. Until that
-//! rewiring lands the layer is registered nowhere.
+//! Phase 3 / T4. Replaced the pre-existing `WebOutput` (since retired with
+//! `LoggingSystem` in Phase 3 / T7), which serialized a `LogEntry` to JSON
+//! and broadcast it on a `broadcast::Sender<String>`. This layer is the
+//! tracing-native version that `/api/logs/stream` subscribes to.
 //!
 //! ## Wire shape
 //!
-//! Identical to [`crate::layers::ring::LogEntry`] (which itself mirrors
-//! `fold_db::logging::core::LogEntry`) so the dashboard parser does not
-//! change between RING/poll and WEB/stream:
+//! Identical to [`crate::layers::ring::LogEntry`] so the dashboard parser
+//! does not change between RING/poll and WEB/stream:
 //!
 //! ```json
 //! {

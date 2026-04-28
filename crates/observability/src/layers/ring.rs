@@ -7,9 +7,9 @@
 //!
 //! ## LogEntry shape
 //!
-//! The on-the-wire JSON shape is identical to the existing
-//! `fold_db::logging::core::LogEntry` so the dashboard parser does not have
-//! to change when Phase 3 rewires the endpoint:
+//! The on-the-wire JSON shape preserves the legacy `LoggingSystem::LogEntry`
+//! contract (retired in Phase 3 / T7) so the dashboard parser did not change
+//! when the endpoint was rewired:
 //!
 //! ```json
 //! {
@@ -59,7 +59,8 @@ use tracing_subscriber::registry::LookupSpan;
 /// Default capacity for the RING buffer when `init_*` does not specify one.
 pub const OBS_RING_CAPACITY: usize = 5000;
 
-/// In-memory log entry. Wire-compatible with `fold_db::logging::core::LogEntry`.
+/// In-memory log entry. JSON shape preserves the legacy
+/// `LoggingSystem::LogEntry` contract (retired in Phase 3 / T7).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct LogEntry {
     pub id: String,
@@ -71,8 +72,8 @@ pub struct LogEntry {
     pub metadata: Option<HashMap<String, String>>,
 }
 
-/// Log level. Wire-compatible with `fold_db::logging::core::LogLevel` —
-/// serializes to UPPERCASE strings (`"TRACE"`, `"DEBUG"`, ...).
+/// Log level. Serializes to UPPERCASE strings (`"TRACE"`, `"DEBUG"`, ...) —
+/// the same shape the legacy `LoggingSystem::LogLevel` used.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum LogLevel {

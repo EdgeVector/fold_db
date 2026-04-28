@@ -1,7 +1,5 @@
 //! Message signing and verification functionality
 
-use crate::log_feature;
-use crate::logging::features::LogFeature;
 use crate::{
     constants::SINGLE_PUBLIC_KEY_ID,
     db_operations::DbOperations,
@@ -142,23 +140,20 @@ impl MessageVerifier {
                         SecurityError::KeyNotFound("Failed to acquire write lock".to_string())
                     })?;
                     *key_lock = Some(persisted_key);
-                    log_feature!(
-                        LogFeature::Permissions,
-                        info,
+                    tracing::info!(
+                        target: "fold_node::permissions",
                         "Loaded system public key from database"
                     );
                 }
                 Ok(None) => {
-                    log_feature!(
-                        LogFeature::Permissions,
-                        info,
+                    tracing::info!(
+                        target: "fold_node::permissions",
                         "No system public key found in database."
                     );
                 }
                 Err(e) => {
-                    log_feature!(
-                        LogFeature::Permissions,
-                        warn,
+                    tracing::warn!(
+                        target: "fold_node::permissions",
                         "Failed to load persisted public key: {}",
                         e
                     );
@@ -174,17 +169,15 @@ impl MessageVerifier {
         if let Some(db_ops) = &self.db_ops {
             match db_ops.store_system_public_key(key_info).await {
                 Ok(()) => {
-                    log_feature!(
-                        LogFeature::Permissions,
-                        debug,
+                    tracing::debug!(
+                        target: "fold_node::permissions",
                         "Persisted system public key"
                     );
                     Ok(())
                 }
                 Err(e) => {
-                    log_feature!(
-                        LogFeature::Permissions,
-                        error,
+                    tracing::error!(
+                        target: "fold_node::permissions",
                         "Failed to persist system public key: {}",
                         e
                     );
@@ -213,9 +206,8 @@ impl MessageVerifier {
         // Then persist to database
         self.persist_public_key(&key_to_store).await?;
 
-        log_feature!(
-            LogFeature::Permissions,
-            info,
+        tracing::info!(
+            target: "fold_node::permissions",
             "Registered system public key"
         );
         Ok(())
@@ -234,14 +226,12 @@ impl MessageVerifier {
         // Remove from database
         if let Some(db_ops) = &self.db_ops {
             match db_ops.delete_system_public_key().await {
-                Ok(_) => log_feature!(
-                    LogFeature::Permissions,
-                    debug,
+                Ok(_) => tracing::debug!(
+                    target: "fold_node::permissions",
                     "Removed system public key from database"
                 ),
-                Err(e) => log_feature!(
-                    LogFeature::Permissions,
-                    error,
+                Err(e) => tracing::error!(
+                    target: "fold_node::permissions",
                     "Failed to remove system public key from database: {}",
                     e
                 ),

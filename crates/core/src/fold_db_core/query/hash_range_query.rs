@@ -43,7 +43,7 @@ impl HashRangeQueryProcessor {
         filter: Option<HashRangeFilter>,
         as_of: Option<DateTime<Utc>>,
     ) -> Result<HashMap<String, HashMap<KeyValue, FieldValue>>, SchemaError> {
-        let current_user = crate::logging::core::get_current_user_id();
+        let current_user = crate::user_context::get_current_user_id();
         tracing::info!(
             "🔍 HashRangeQueryProcessor: schema={}, filter={:?}, user_context={:?}",
             schema.name,

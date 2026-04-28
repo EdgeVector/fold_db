@@ -896,7 +896,7 @@ impl MutationManager {
                 fields_affected: data.keys().cloned().collect(),
                 mutation_context,
                 data: Some(vec![data]), // Single data row for this mutation
-                user_id: crate::logging::core::get_current_user_id(),
+                user_id: crate::user_context::get_current_user_id(),
                 molecule_versions: mol_versions_opt,
                 metadata,
             };
@@ -1001,7 +1001,7 @@ impl MutationManager {
 
         // Use tokio::spawn for async background task
         tokio::spawn(async move {
-            crate::logging::core::run_with_user(&user_id, async move {
+            crate::user_context::run_with_user(&user_id, async move {
                 // Subscribe to MutationRequest events
                 let mut consumer = message_bus.subscribe("MutationRequest").await;
 
