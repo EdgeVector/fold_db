@@ -33,6 +33,7 @@ impl EventMonitor {
         // FieldValueSet
         let stats = statistics.clone();
         let mut rx = message_bus.subscribe("FieldValueSet").await;
+        // lint:spawn-bare-ok boot-time event subscriber loop — perpetual worker, no per-request parent.
         tokio::spawn(async move {
             while let Some(event) = rx.recv().await {
                 if let Event::FieldValueSet(_) = event {
@@ -47,6 +48,7 @@ impl EventMonitor {
         // AtomCreated
         let stats = statistics.clone();
         let mut rx = message_bus.subscribe("AtomCreated").await;
+        // lint:spawn-bare-ok boot-time event subscriber loop — perpetual worker, no per-request parent.
         tokio::spawn(async move {
             while let Some(event) = rx.recv().await {
                 if let Event::AtomCreated(_) = event {
@@ -61,6 +63,7 @@ impl EventMonitor {
         // MoleculeCreated
         let stats = statistics.clone();
         let mut rx = message_bus.subscribe("MoleculeCreated").await;
+        // lint:spawn-bare-ok boot-time event subscriber loop — perpetual worker, no per-request parent.
         tokio::spawn(async move {
             while let Some(event) = rx.recv().await {
                 if let Event::MoleculeCreated(_) = event {
@@ -75,6 +78,7 @@ impl EventMonitor {
         // QueryExecuted
         let stats = statistics.clone();
         let mut rx = message_bus.subscribe("QueryExecuted").await;
+        // lint:spawn-bare-ok boot-time event subscriber loop — perpetual worker, no per-request parent.
         tokio::spawn(async move {
             while let Some(event) = rx.recv().await {
                 if let Event::QueryExecuted(e) = event {
@@ -94,6 +98,7 @@ impl EventMonitor {
         // MutationExecuted
         let stats = statistics.clone();
         let mut rx = message_bus.subscribe("MutationExecuted").await;
+        // lint:spawn-bare-ok boot-time event subscriber loop — perpetual worker, no per-request parent.
         tokio::spawn(async move {
             while let Some(event) = rx.recv().await {
                 if let Event::MutationExecuted(e) = event {

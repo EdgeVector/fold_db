@@ -1000,6 +1000,7 @@ impl MutationManager {
         is_listening.store(true, std::sync::atomic::Ordering::Release);
 
         // Use tokio::spawn for async background task
+        // lint:spawn-bare-ok boot-time MutationRequest listener — perpetual worker; per-event spans created downstream.
         tokio::spawn(async move {
             crate::user_context::run_with_user(&user_id, async move {
                 // Subscribe to MutationRequest events

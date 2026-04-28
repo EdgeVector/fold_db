@@ -136,6 +136,7 @@ impl SledPool {
     /// Call this once after creating the pool.
     pub fn start_idle_reaper(self: &Arc<Self>, idle_timeout: Duration) {
         let pool = Arc::clone(self);
+        // lint:spawn-bare-ok boot-time idle reaper — perpetual worker, no per-request parent span.
         tokio::spawn(async move {
             loop {
                 tokio::time::sleep(Duration::from_secs(1)).await;

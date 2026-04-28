@@ -1928,6 +1928,7 @@ mod tests {
         // sleep between attempts.
         let runner2 = Arc::clone(&runner);
         let clock2 = Arc::clone(&clock);
+        // lint:spawn-bare-ok cfg(test) scaffolding — quarantine test driver, no parent request span.
         let handle = tokio::spawn(async move {
             for _ in 0..20 {
                 clock2.advance(1_000);
@@ -2017,6 +2018,7 @@ mod tests {
         // a task (it blocks on the gate) and issue the second mutation
         // from the main task while the first fire is held.
         let r1 = Arc::clone(&runner);
+        // lint:spawn-bare-ok cfg(test) scaffolding — coalesce-refire test driver, no parent request span.
         let first = tokio::spawn(async move {
             r1.on_mutation_notified("S1").await.unwrap();
         });
@@ -3054,6 +3056,7 @@ mod tests {
             // Driver task: advance the mock clock past each exp_backoff
             // so the spawned retry loop's `clock.sleep(...)` wakes up.
             let clock_drive = Arc::clone(&clock);
+            // lint:spawn-bare-ok cfg(test) scaffolding — backoff/quarantine restart test driver.
             let driver = tokio::spawn(async move {
                 for _ in 0..50 {
                     clock_drive.advance(1_000);

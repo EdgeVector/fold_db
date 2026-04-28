@@ -85,6 +85,7 @@ impl SyncCoordinator {
 
         let wake = engine.wake_handle();
 
+        // lint:spawn-bare-ok boot-time sync poll loop — perpetual worker, no per-request parent span.
         let handle = tokio::spawn(async move {
             let base_interval = tokio::time::Duration::from_millis(interval_ms);
             let max_delay = MAX_OFFLINE_BACKOFF;
