@@ -88,7 +88,7 @@ jobs:
       - name: Lint tracing egress classifiers
         id: trace-egress
         continue-on-error: true
-        run: bash scripts/lint-tracing-egress.sh
+        run: bash scripts/lint-tracing-egress.sh --strict
 
       - name: Lint tokio::spawn instrumentation
         id: spawn-instrument
