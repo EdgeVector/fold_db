@@ -36,7 +36,7 @@ impl ProcessResultsSubscriber {
         let mut consumer = message_bus.subscribe("MutationExecuted").await;
 
         tokio::spawn(async move {
-            crate::logging::core::run_with_user(&user_id, async move {
+            crate::user_context::run_with_user(&user_id, async move {
                 while let Some(event) = consumer.recv().await {
                     if let Event::MutationExecuted(e) = event {
                         Self::handle_event(&e, &db_ops).await;

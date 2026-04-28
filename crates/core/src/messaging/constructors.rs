@@ -94,7 +94,7 @@ impl MutationExecuted {
             fields_affected,
             mutation_context: None,
             data: None,
-            user_id: crate::logging::core::get_current_user_id(),
+            user_id: crate::user_context::get_current_user_id(),
             molecule_versions: None,
             metadata: None,
         }
@@ -115,7 +115,7 @@ impl MutationExecuted {
             fields_affected,
             mutation_context,
             data: None,
-            user_id: crate::logging::core::get_current_user_id(),
+            user_id: crate::user_context::get_current_user_id(),
             molecule_versions: None,
             metadata: None,
         }

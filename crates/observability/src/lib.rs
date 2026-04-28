@@ -22,8 +22,10 @@ pub mod attrs;
 pub mod init;
 pub mod layers;
 pub mod propagation;
+pub mod sampling;
 
 pub use init::{init_cli, init_lambda, init_node, init_tauri, ObsGuard};
+pub use sampling::{parse_sampler, parse_sampler_spec, SamplerParseError, OBS_SAMPLER_ENV};
 
 /// Errors raised by `init_*` helpers and other crate-level operations.
 #[derive(Debug, thiserror::Error)]

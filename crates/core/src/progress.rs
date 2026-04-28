@@ -241,7 +241,7 @@ impl ProgressStore for SledProgressStore {
 
     async fn load(&self, id: &str) -> Result<Option<Job>, String> {
         // Need user context to load
-        let user_id = crate::logging::core::get_current_user_id()
+        let user_id = crate::user_context::get_current_user_id()
             .ok_or_else(|| "User context required to load jobs".to_string())?;
 
         let key = Self::make_key(&user_id, id);

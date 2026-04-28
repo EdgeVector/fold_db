@@ -7,9 +7,9 @@
 //!
 //! ## LogEntry shape
 //!
-//! The on-the-wire JSON shape is identical to the existing
-//! `fold_db::logging::core::LogEntry` so the dashboard parser does not have
-//! to change when Phase 3 rewires the endpoint:
+//! The on-the-wire JSON shape preserves the legacy `LoggingSystem::LogEntry`
+//! contract (retired in Phase 3 / T7) so the dashboard parser did not change
+//! when the endpoint was rewired:
 //!
 //! ```json
 //! {
@@ -59,7 +59,8 @@ use tracing_subscriber::registry::LookupSpan;
 /// Default capacity for the RING buffer when `init_*` does not specify one.
 pub const OBS_RING_CAPACITY: usize = 5000;
 
-/// In-memory log entry. Wire-compatible with `fold_db::logging::core::LogEntry`.
+/// In-memory log entry. JSON shape preserves the legacy
+/// `LoggingSystem::LogEntry` contract (retired in Phase 3 / T7).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct LogEntry {
     pub id: String,
@@ -71,8 +72,8 @@ pub struct LogEntry {
     pub metadata: Option<HashMap<String, String>>,
 }
 
-/// Log level. Wire-compatible with `fold_db::logging::core::LogLevel` —
-/// serializes to UPPERCASE strings (`"TRACE"`, `"DEBUG"`, ...).
+/// Log level. Serializes to UPPERCASE strings (`"TRACE"`, `"DEBUG"`, ...) —
+/// the same shape the legacy `LoggingSystem::LogLevel` used.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum LogLevel {
@@ -451,64 +452,61 @@ mod tests {
         );
     }
 
-    /// Phase 3 / T6 — pattern test for `tokio::spawn(... .instrument(Span::current()))`.
-    /// A future polled inside a spawned task must observe the *parent* span's
-    /// trace_id, not a fresh root context. Drives a `current_thread` runtime so
-    /// the thread-local subscriber set by `with_default` is also live when the
-    /// runtime polls the spawned task.
+    /// INVARIANT: a future spawned with `tokio::spawn(fut.instrument(Span::current()))`
+    /// runs under the parent span's context, so events emitted inside the
+    /// spawned task carry the parent's `trace_id` in the RING `LogEntry`.
+    ///
+    /// Without `.instrument(...)` the spawned task starts with no current span
+    /// and the event's `trace_id` would be missing — that's the regression
+    /// guard. We use a `current_thread` runtime so the thread-local default
+    /// subscriber is visible to spawned tasks.
     #[test]
-    fn instrument_propagates_parent_trace_id_across_tokio_spawn() {
+    fn instrument_propagates_trace_id_across_tokio_spawn() {
         use tracing::Instrument;
 
         let provider = SdkTracerProvider::builder().build();
-        let tracer = provider.tracer("spawn-instrument-test");
+        let tracer = provider.tracer("spawn-test");
         let otel_layer = tracing_opentelemetry::layer().with_tracer(tracer);
-
         let (ring_layer, handle) = build_ring_layer(16);
         let subscriber = Registry::default().with(otel_layer).with(ring_layer);
 
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .expect("current_thread runtime");
+
         let parent_trace_id = with_default(subscriber, || {
-            let rt = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .expect("build current_thread runtime");
+            runtime.block_on(async {
+                let parent = tracing::info_span!("parent.request");
+                let trace_id_hex =
+                    format!("{:032x}", parent.context().span().span_context().trace_id());
 
-            rt.block_on(async {
-                let parent = tracing::info_span!("parent_request");
-                let trace_id = {
-                    let _enter = parent.enter();
-                    let ctx = parent.context().span().span_context().clone();
-                    assert!(ctx.is_valid(), "OtelLayer must seed a valid span context");
-                    format!("{:032x}", ctx.trace_id())
-                };
+                let join = parent.in_scope(|| {
+                    tokio::spawn(
+                        async {
+                            tracing::info!("from-spawned-task");
+                        }
+                        .instrument(tracing::Span::current()),
+                    )
+                });
+                join.await.expect("spawned task joins cleanly");
 
-                tokio::spawn(
-                    async {
-                        tracing::info!("from spawned task");
-                    }
-                    .instrument(parent),
-                )
-                .await
-                .expect("spawned task panicked");
-
-                trace_id
+                trace_id_hex
             })
         });
 
         let logs = handle.query(None, None);
-        let entry = logs
+        let spawned = logs
             .iter()
-            .find(|e| e.message == "from spawned task")
-            .expect("spawned task event must reach RING");
-        let meta = entry
+            .find(|e| e.message == "from-spawned-task")
+            .expect("spawned event must be captured");
+        let meta = spawned
             .metadata
             .as_ref()
-            .expect("spawned task event must carry metadata");
+            .expect("spawned event must carry metadata with trace_id");
         assert_eq!(
-            meta.get("trace_id").map(String::as_str),
-            Some(parent_trace_id.as_str()),
-            "spawned task event must inherit parent trace_id; saw {:?}",
             meta.get("trace_id"),
+            Some(&parent_trace_id),
+            "spawned task must inherit parent's trace_id via .instrument(Span::current())"
         );
     }
 }

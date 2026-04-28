@@ -67,7 +67,7 @@ impl IndexStatusTracker {
 
     /// Get the user_id from task-local context - returns error if not available
     fn get_user_id(&self) -> Result<String, String> {
-        crate::logging::core::get_current_user_id()
+        crate::user_context::get_current_user_id()
             .ok_or_else(|| "User context required for index status tracking".to_string())
     }
 

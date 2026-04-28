@@ -13,8 +13,22 @@ tracing-opentelemetry = "0.28"
 tracing-log = "0.2"
 
 opentelemetry = "0.27"
-opentelemetry_sdk = { version = "0.27", features = ["rt-tokio"] }
+opentelemetry_sdk = { version = "0.27", features = ["rt-tokio", "metrics"] }
 opentelemetry-http = "0.27"
+# default features pull in grpc-tonic — the OTLP layers (T1 traces, T3
+# metrics) only use the HTTP/protobuf path via reqwest, so opt-out of the
+# tonic stack to keep build times sane. `metrics` enables the
+# `MetricExporter` builder consumed by `layers::otlp_metrics`.
+opentelemetry-otlp = { version = "0.27", default-features = false, features = ["http-proto", "reqwest-client", "trace", "metrics"] }
+
+# Sentry integration. Phase 4 / T4: ERROR-only Sentry sink driven by
+# `OBS_SENTRY_DSN`. `default-features = false` opts out of the panic
+# integration (binaries register their own panic handlers) and the heavy
+# `debug-images` feature; we keep `transport` (reqwest + native-tls) and
+# `contexts` so events carry runtime metadata. `sentry-tracing` is the
+# tracing-subscriber bridge and stays compatible with `tracing-subscriber 0.3`.
+sentry = { version = "0.47", default-features = false, features = ["backtrace", "contexts", "release-health", "transport"] }
+sentry-tracing = "0.47"
 
 thiserror = "1"
 once_cell = "1"
@@ -25,8 +39,20 @@ xxhash-rust = { version = "0.8", features = ["xxh64"] }
 
 http = "1"
 reqwest = { version = "0.11", default-features = false }
-tokio = { version = "1.0", features = ["sync"] }
+# `macros` + `time` + `rt` power the OTLP traces worker thread; the rest of
+# the crate only needs `sync` (broadcast channel for the WEB layer).
+tokio = { version = "1.0", features = ["sync", "macros", "time", "rt"] }
 
 [dev-dependencies]
 tempfile = "3"
+
+# `rt-multi-thread` is needed by the OTLP metrics layer tests (T3): the
+# `PeriodicReader` shutdown path uses `futures_executor::block_on` which
+# would deadlock a single-thread test runtime.
 tokio = { version = "1.0", features = ["sync", "macros", "rt", "rt-multi-thread"] }
+log = "0.4"
+# `test` enables `sentry::test::with_captured_events`, used to assert that
+# the Phase 4 / T4 ERROR layer captures events with the right tags without
+# hitting a real Sentry server.
+sentry = { version = "0.47", default-features = false, features = ["test"] }
+

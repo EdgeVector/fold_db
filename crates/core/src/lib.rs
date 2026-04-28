@@ -31,7 +31,6 @@ pub mod db_operations;
 pub mod error;
 pub mod fold_db_core;
 pub mod llm_registry;
-pub mod logging;
 pub mod messaging;
 pub mod org;
 pub mod progress;
@@ -41,6 +40,7 @@ pub mod sharing;
 pub mod storage;
 pub mod sync;
 pub mod testing_utils;
+pub mod user_context;
 
 /// Test utilities for building schemas with proper classifications.
 /// Always compiled (zero runtime cost when unused). Downstream crates

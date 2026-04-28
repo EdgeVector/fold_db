@@ -73,29 +73,31 @@ log line with whichever boot-time span happened to be current when
 | `crates/core/src/triggers/clock.rs:192` | `mock_clock_advance_wakes_sleeper` test driver. |
 | `crates/core/src/fold_db_core/trigger_runner.rs:1925` | Quarantine test driver. |
 | `crates/core/src/fold_db_core/trigger_runner.rs:2014` | Coalesce-refire test driver. |
-| `crates/core/src/fold_db_core/trigger_runner.rs:3025` | Backoff/quarantine restart test driver. |
+| `crates/core/src/fold_db_core/trigger_runner.rs:3051` | Backoff/quarantine restart test driver. |
 
 Tests are out of scope for the lint — the Phase 5 enforcement should
 exclude `cfg(test)` and `tests/` paths.
 
 ## Out of scope (covered elsewhere)
 
-- `tokio::task::spawn_blocking(...)` calls in `crates/core/src/storage/sled_backend.rs`,
-  `storage/upload_storage.rs`, and `sync/snapshot.rs`. `spawn_blocking` takes a
-  synchronous closure, not a future, so `.instrument()` does not apply. If
-  Phase 5 wants context propagation across blocking work it needs a separate
-  helper (capture `Span::current()`, `let _e = span.enter()` inside the
-  closure).
+- `tokio::task::spawn_blocking(...)` calls in `crates/core/src/storage/sled_backend.rs`
+  and other storage paths. `spawn_blocking` takes a synchronous closure,
+  not a future, so `.instrument()` does not apply. If Phase 5 wants context
+  propagation across blocking work it needs a separate helper (capture
+  `Span::current()`, `let _e = span.enter()` inside the closure).
 - Spawns inside `fold_db_node` or `schema_service` — these live in sibling
   workspaces and will be swept independently per the brief.
 
 ## Verification
 
 A new unit test —
-`crates/observability/src/layers/ring.rs::tests::instrument_propagates_parent_trace_id_across_tokio_spawn`
+`crates/observability/src/layers/ring.rs::tests::instrument_propagates_trace_id_across_tokio_spawn`
 — drives a `current_thread` runtime under a registry with an OTel layer +
 RING layer, opens a parent span to seed a real W3C trace_id, then
 `tokio::spawn(... .instrument(parent))` and asserts the spawned task's
 event lands in the RING with the parent's trace_id (32 hex chars, exact
-match). This is the pattern test the Phase 5 lint should treat as the
-canonical "correct" shape for context-bearing spawns.
+match). The test was confirmed to fail when the `.instrument(...)` call
+is removed (the spawned event's metadata lacks `trace_id` because the
+spawned task has no current span). This is the pattern test the Phase 5
+lint should treat as the canonical "correct" shape for context-bearing
+spawns.
