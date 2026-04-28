@@ -1252,7 +1252,6 @@ dependencies = [
  "hkdf",
  "hmac",
  "image",
- "log",
  "observability",
  "once_cell",
  "ort",
@@ -2551,6 +2550,7 @@ name = "observability"
 version = "0.1.0"
 dependencies = [
  "http 1.4.0",
+ "log",
  "once_cell",
  "opentelemetry",
  "opentelemetry-http",

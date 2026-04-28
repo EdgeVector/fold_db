@@ -135,6 +135,7 @@ impl Drop for ObsGuard {
 pub fn init_node(service_name: &'static str, _version: &str) -> Result<ObsGuard, ObsError> {
     assert_service_name(service_name);
     try_claim_init(&INIT_ONCE)?;
+    install_log_tracer();
 
     let path = default_node_log_path()?;
     let (writer, fmt_guard) = build_fmt_writer(FmtTarget::File(path))?;
@@ -185,6 +186,7 @@ pub fn init_node(service_name: &'static str, _version: &str) -> Result<ObsGuard,
 pub fn init_lambda(service_name: &'static str, _version: &str) -> Result<ObsGuard, ObsError> {
     assert_service_name(service_name);
     try_claim_init(&INIT_ONCE)?;
+    install_log_tracer();
 
     let (writer, fmt_guard) = build_fmt_writer(FmtTarget::Stdout)?;
     let (reload_layer, reload) = build_reload_layer::<Registry>(default_env_filter());
@@ -223,6 +225,7 @@ pub fn init_tauri<H>(
     _app_handle: &H,
 ) -> Result<ObsGuard, ObsError> {
     assert_service_name(service_name);
+    install_log_tracer();
 
     if INIT_ONCE.get().is_some() {
         // Embedded server already initialized. We can't compose new layers
@@ -250,6 +253,7 @@ pub fn init_tauri<H>(
 pub fn init_cli(service_name: &'static str, _version: &str) -> Result<ObsGuard, ObsError> {
     assert_service_name(service_name);
     try_claim_init(&INIT_ONCE)?;
+    install_log_tracer();
 
     let (writer, fmt_guard) = build_fmt_writer(FmtTarget::Stderr)?;
     let fmt_layer = tracing_subscriber::fmt::layer()
@@ -318,16 +322,21 @@ where
         .map_err(|e| ObsError::SubscriberInstall(e.to_string()))
 }
 
-/// Install process-global telemetry plumbing that lives outside the
-/// subscriber: the W3C text-map propagator and the `log` → `tracing` bridge.
-///
-/// Both are idempotent in practice — the propagator setter overwrites,
-/// `LogTracer::init` returns `Err` on the second call which we deliberately
-/// swallow. Called only after `install_subscriber` succeeds.
+/// Install the W3C text-map propagator. Idempotent — setting twice
+/// overwrites. Called after `install_subscriber` succeeds.
 fn install_globals() {
     global::set_text_map_propagator(TraceContextPropagator::new());
-    // `LogTracer::init` errors only when called twice in the same process;
-    // that's expected for retries / multiple test cases and not actionable.
+}
+
+/// Wire the `log` → `tracing` bridge. Called BEFORE `set_global_default` so
+/// any third-party `log::*` call between subscriber install and process exit
+/// flows through tracing. Doing it first also means a `log::*!` emitted by
+/// init code itself is captured rather than dropped.
+///
+/// `LogTracer::init` errors only when called twice in the same process;
+/// that's expected for retries / multiple test cases and not actionable, so
+/// we swallow the error.
+fn install_log_tracer() {
     let _ = LogTracer::init();
 }
 
@@ -411,5 +420,92 @@ mod tests {
         let _: fn(&'static str, &str) -> Result<ObsGuard, ObsError> = init_cli;
         // init_tauri is generic over H; bind it to () for the type-check.
         let _: fn(&'static str, &str, &()) -> Result<ObsGuard, ObsError> = init_tauri::<()>;
+    }
+
+    /// Phase 3 / T7: `LogTracer::init` is wired so third-party `log::*` calls
+    /// reach the active tracing subscriber. The fold_db crate has no log-crate
+    /// dependency anymore, but transitive deps (reqwest, hyper, sled, …) still
+    /// emit via `log::*`. This test pins the bridge in place: if anyone removes
+    /// the LogTracer install, the captured event count drops to zero and the
+    /// assertion fires.
+    #[test]
+    fn log_macros_route_through_tracing_via_log_tracer() {
+        use std::sync::{Arc, Mutex};
+        use tracing::field::{Field, Visit};
+        use tracing::{Event, Subscriber};
+        use tracing_subscriber::layer::{Context, Layer, SubscriberExt};
+        use tracing_subscriber::registry::{LookupSpan, Registry};
+
+        #[derive(Default)]
+        struct MessageVisitor {
+            message: String,
+        }
+        impl Visit for MessageVisitor {
+            fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
+                if field.name() == "message" {
+                    self.message = format!("{:?}", value);
+                }
+            }
+        }
+        #[derive(Clone, Default)]
+        struct CaptureLayer {
+            captured: Arc<Mutex<Vec<(String, String, String)>>>,
+        }
+        impl<S> Layer<S> for CaptureLayer
+        where
+            S: Subscriber + for<'a> LookupSpan<'a>,
+        {
+            fn on_event(&self, event: &Event<'_>, _ctx: Context<'_, S>) {
+                let meta = event.metadata();
+                let mut visitor = MessageVisitor::default();
+                event.record(&mut visitor);
+                self.captured.lock().unwrap().push((
+                    meta.target().to_string(),
+                    meta.level().to_string(),
+                    visitor.message,
+                ));
+            }
+        }
+
+        // Install the bridge — `init_log_tracer` is what every `init_*`
+        // helper calls. It is idempotent across tests in the same process,
+        // so calling it directly here is safe.
+        install_log_tracer();
+
+        let layer = CaptureLayer::default();
+        let captured = layer.captured.clone();
+        let subscriber = Registry::default().with(layer);
+
+        tracing::subscriber::with_default(subscriber, || {
+            log::info!("bridged_log_tracer_marker info {}", 42);
+            log::warn!("bridged_log_tracer_marker warn");
+        });
+
+        // LogTracer normalizes every bridged record to target=`"log"` and
+        // stashes the original target in a field; assert by message content
+        // so the test does not couple to that internal mapping.
+        let entries = captured.lock().unwrap();
+        let test_entries: Vec<_> = entries
+            .iter()
+            .filter(|(_, _, msg)| msg.contains("bridged_log_tracer_marker"))
+            .collect();
+
+        assert_eq!(
+            test_entries.len(),
+            2,
+            "log::* calls did not reach the tracing subscriber — LogTracer bridge missing? captured={entries:?}",
+        );
+        assert_eq!(test_entries[0].1, "INFO");
+        assert!(
+            test_entries[0].2.contains("info 42"),
+            "info message body wrong: {:?}",
+            test_entries[0].2,
+        );
+        assert_eq!(test_entries[1].1, "WARN");
+        assert!(
+            test_entries[1].2.contains("warn"),
+            "warn message body wrong: {:?}",
+            test_entries[1].2,
+        );
     }
 }
