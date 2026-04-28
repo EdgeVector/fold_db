@@ -112,12 +112,14 @@ impl BulletinClient {
             .auth
             .presign_bulletin_read(recipient_pseudonym, message_id)
             .await?;
-        let bytes = self.s3.download(&url).await?.ok_or_else(|| {
-            BulletinError::NotFound {
+        let bytes = self
+            .s3
+            .download(&url)
+            .await?
+            .ok_or_else(|| BulletinError::NotFound {
                 pseudonym: recipient_pseudonym.to_string(),
                 message_id: message_id.to_string(),
-            }
-        })?;
+            })?;
         let plaintext = open_box_base64(my_ed25519_secret_base64, &bytes)?;
         Ok(plaintext)
     }
@@ -137,11 +139,8 @@ mod tests {
         // would silently break bulletin send/read.
         let recipient = Ed25519KeyPair::generate().unwrap();
         let sealed = seal_box_base64(&recipient.public_key_base64(), b"hello bulletin").unwrap();
-        let opened = crate::crypto::inbox::open_box_base64(
-            &recipient.secret_key_base64(),
-            &sealed,
-        )
-        .unwrap();
+        let opened =
+            crate::crypto::inbox::open_box_base64(&recipient.secret_key_base64(), &sealed).unwrap();
         assert_eq!(&opened[..], b"hello bulletin");
     }
 

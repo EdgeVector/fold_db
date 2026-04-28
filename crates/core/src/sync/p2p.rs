@@ -469,8 +469,7 @@ pub fn spawn_polling_loop(engine: Arc<P2pSyncEngine>) -> tokio::task::JoinHandle
             let interval = first.config.lock().await.poll_interval_ms.max(1);
             drop(first);
 
-            let mut ticker =
-                tokio::time::interval(std::time::Duration::from_millis(interval));
+            let mut ticker = tokio::time::interval(std::time::Duration::from_millis(interval));
             // First tick fires immediately; skip it so we don't thrash on
             // startup.
             ticker.tick().await;
@@ -503,10 +502,7 @@ mod tests {
     /// only exercise local state (cursor persistence, seq counter, apply).
     /// HTTP-bound paths (`flush_pending`, `poll_peer`) need a live mock
     /// server; those live in the integration tests file.
-    fn local_engine(
-        device_id: &str,
-        store: Arc<dyn NamespacedStore>,
-    ) -> P2pSyncEngine {
+    fn local_engine(device_id: &str, store: Arc<dyn NamespacedStore>) -> P2pSyncEngine {
         use crate::sync::auth::SyncAuth;
         use reqwest::Client;
         // trace-egress: skip-3p (test stub, never sends)
@@ -723,7 +719,9 @@ mod tests {
         let sealed = entry.seal(&engine.crypto).await.unwrap();
 
         // Consumer side: unseal and apply exactly the way `poll_peer` does.
-        let opened = LogEntry::unseal(&sealed.bytes, &engine.crypto).await.unwrap();
+        let opened = LogEntry::unseal(&sealed.bytes, &engine.crypto)
+            .await
+            .unwrap();
         assert_eq!(opened.seq, 99);
         assert_eq!(opened.device_id, "peer-b");
         engine.apply_entry(&opened).await.unwrap();
