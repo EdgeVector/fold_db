@@ -530,6 +530,7 @@ impl FoldDB {
         {
             let runner = Arc::clone(&trigger_runner);
             let shutdown = Arc::clone(&trigger_shutdown);
+            // lint:spawn-bare-ok boot-time scheduler loop — perpetual worker, no per-request parent span.
             tokio::spawn(async move {
                 runner.run_scheduler_loop(shutdown).await;
             });

@@ -189,6 +189,7 @@ mod tests {
     async fn mock_clock_advance_wakes_sleeper() {
         let clock = Arc::new(MockClock::new(0));
         let c = Arc::clone(&clock);
+        // lint:spawn-bare-ok cfg(test) scaffolding — no parent request span to propagate.
         let handle = tokio::spawn(async move {
             c.sleep(100).await;
             c.now_ms()

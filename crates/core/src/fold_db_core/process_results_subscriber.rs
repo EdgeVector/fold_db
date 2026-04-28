@@ -35,6 +35,7 @@ impl ProcessResultsSubscriber {
         let db_ops = Arc::clone(&self.db_ops);
         let mut consumer = message_bus.subscribe("MutationExecuted").await;
 
+        // lint:spawn-bare-ok boot-time MutationExecuted listener — perpetual worker; per-event spans created downstream.
         tokio::spawn(async move {
             crate::user_context::run_with_user(&user_id, async move {
                 while let Some(event) = consumer.recv().await {
