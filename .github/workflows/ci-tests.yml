@@ -11,6 +11,24 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  lint-redaction:
+    name: Redaction Lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install ripgrep
+        run: |
+          if ! command -v rg >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y --no-install-recommends ripgrep
+          fi
+
+      - name: Run redaction lint
+        run: sh scripts/lint-redaction.sh
+
   rust-tests:
     name: Rust Tests
     runs-on: ubuntu-latest

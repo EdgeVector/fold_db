@@ -407,6 +407,7 @@ mod tests {
     #[test]
     fn password_field_is_redacted() {
         let lines = capture(RedactingFormat::with_extras(&[]), || {
+            // lint:redaction-ok FMT-layer test must emit raw value to verify deny-list redaction
             tracing::info!(user_id = "alice", password = "hunter2", "login attempt");
         });
         assert_eq!(lines.len(), 1);
@@ -509,6 +510,7 @@ mod tests {
         }
 
         let lines = capture(format, || {
+            // lint:redaction-ok FMT-layer test must emit raw value to verify deny-list redaction
             tracing::info!(email = "user@example.com", "signup");
         });
         let attrs = lines[0]["attributes"]
@@ -555,6 +557,7 @@ mod tests {
             build_fmt_layer::<Registry>(FmtTarget::File(path.clone())).expect("build layer");
         let subscriber = Registry::default().with(layer);
         with_default(subscriber, || {
+            // lint:redaction-ok FMT-layer test must emit raw value to verify deny-list redaction
             tracing::info!(password = "hunter2", user = "alice", "login");
         });
         // Drop the guard so the worker thread drains its queue to the file.
