@@ -144,8 +144,13 @@ pub fn init_node(service_name: &'static str, _version: &str) -> Result<ObsGuard,
     // No-op TracerProvider: gives every span a real W3C trace/span id so the
     // RING layer can stamp `trace_id` / `span_id` onto each entry and so
     // `propagation::inject_w3c` (Phase 2) has a real context to propagate.
-    // No exporter is wired in Phase 1 — Phase 4 swaps this for OTLP.
-    let tracer_provider = SdkTracerProvider::builder().build();
+    // No OTLP exporter is wired yet — Phase 4 / T7 will plumb that in. The
+    // sampler is configured here so that head-sampling decisions are made
+    // consistently from the moment any exporter is added; until then the
+    // sampler still gates `is_recording()` for downstream layers.
+    let sampler = crate::sampling::parse_sampler()
+        .map_err(|e| ObsError::SubscriberInstall(format!("OBS_SAMPLER: {e}")))?;
+    let tracer_provider = SdkTracerProvider::builder().with_sampler(sampler).build();
     let tracer = tracer_provider.tracer(service_name);
     let otel_layer = tracing_opentelemetry::layer().with_tracer(tracer);
     // The fmt layer is constructed inline so the compiler infers its
