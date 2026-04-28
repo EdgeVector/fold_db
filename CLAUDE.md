@@ -128,6 +128,17 @@ Poll CI status (`gh pr view <PR_URL> --json state,statusCheckRollup,mergeStateSt
 - Use `TODO` format for incomplete implementations
 - Assume all tests were passing before changes
 
+## Observability conventions
+
+When you touch any `tracing::*!`, `tokio::spawn`, `reqwest::Client::new()`, or sensitive-field log site, the conventions live at `gbrain get concepts/observability-conventions`. Long-form: `exemem-workspace/docs/observability/migration-guide.md`. CI-enforced rules:
+
+- **Structured fields** — `tracing::info!(field = %value, "msg")`. Positional-arg interpolation gets a warn-only nudge.
+- **Redaction** — `password / token / api_key / secret / auth_token / email / phone / ssn` MUST go through `redact!()` or `redact_id!()`. Override per-line: `// lint:redaction-ok <reason>`.
+- **`tokio::spawn`** — chain `.instrument(Span::current())` or `.in_current_span()`. Bare spawn fails CI. Override: `// lint:spawn-bare-ok <reason>`.
+- **Outbound `reqwest`** — every `Client::new() / ::builder() / ::default()` site needs a comment within 3 preceding lines: `propagate / loopback / skip-s3 / skip-3p`. Wrap propagating requests with `observability::propagation::inject_w3c`.
+
+The cloud-stack cleanup (2026-04-28) removed OTLP / Honeycomb / SpanMetrics. Do NOT add `opentelemetry-otlp` / `opentelemetry-proto` deps or set `OBS_OTLP_ENDPOINT`. Sentry stays (off-by-default; activates if `OBS_SENTRY_DSN` is set).
+
 ## Key Patterns
 
 ### Error Handling
