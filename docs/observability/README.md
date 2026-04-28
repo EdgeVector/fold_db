@@ -27,6 +27,9 @@ see *why* something was wired the way it is.
 - [Egress classification](egress-classification-notes.md) — Phase 2 / T4.
   `// trace-egress: <class>` comments at HTTP call sites and which calls
   do or don't get `inject_w3c` wrapping.
+- [Redaction lint](redaction-lint.md) — Phase 5 / T1. CI guard that fails
+  if a `tracing` macro emits a sensitive field as a raw value instead of
+  through `redact!()` / `redact_id!()`.
 
 ## Source-of-truth pointers
 
