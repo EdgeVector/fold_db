@@ -29,12 +29,11 @@ npm run lint                             # ESLint
 npm run generate:api                     # Generate TypeScript types from OpenAPI spec
 ```
 
-## Environment Variables
+## AI Provider Configuration
 
-Required for AI-powered ingestion:
-```bash
-export FOLD_OPENROUTER_API_KEY=your_key  # Or OPENROUTER_API_KEY
-```
+AI ingestion runs against either **Ollama** (local, default — auto-detected at `http://127.0.0.1:11434`) or **Anthropic** (cloud, direct calls to `https://api.anthropic.com` per [`llm_registry/models.rs`](crates/core/src/llm_registry/models.rs)).
+
+The provider choice and Anthropic API key live in the node config store (`crates/core/src/storage/node_config_store.rs`) and are configured via the **Settings → AI Provider** tab in the web UI — **not** via environment variables. There is no `FOLD_*_API_KEY` env var for AI providers.
 
 ## Key Architecture Concepts
 

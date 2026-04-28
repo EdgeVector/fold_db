@@ -83,7 +83,7 @@ Visit [http://localhost:5173](http://localhost:5173) — that's it. No API key r
                     |
                     v
           +------------------+
-          |   AI Ingestion   |  ← Ollama (local) or OpenRouter (cloud)
+          |   AI Ingestion   |  ← Ollama (local) or Anthropic (cloud)
           +------------------+
                     |
         +-----------+-----------+
@@ -121,7 +121,7 @@ FoldDB works with two AI backends. Pick one (or both):
 | Provider | Cost | Runs Where | Setup |
 |----------|------|-----------|-------|
 | **[Ollama](https://ollama.com)** | Free | Your machine | Install Ollama, pull a model, done |
-| **[OpenRouter](https://openrouter.ai)** | Pay-per-use | Cloud API | `export FOLD_OPENROUTER_API_KEY="sk-..."` |
+| **[Anthropic](https://www.anthropic.com)** | Pay-per-use | Cloud API | Paste your API key in **Settings → AI Provider** |
 
 Ollama is the default — no API key needed. FoldDB will use it automatically if it's running.
 
@@ -209,10 +209,11 @@ cargo install --git https://github.com/EdgeVector/fold_db.git --bin folddb
 
 | Variable | Purpose |
 |----------|---------|
-| `FOLD_OPENROUTER_API_KEY` | API key for OpenRouter AI (or `OPENROUTER_API_KEY`). Not needed with Ollama. |
 | `FOLD_SCHEMA_SERVICE_URL` | Schema service URL (default: `https://schema.folddb.com`) |
 | `FOLD_CONFIG` | Path to configuration file |
 | `FOLD_LOG_LEVEL` | Logging level (`trace`, `debug`, `info`, `warn`, `error`) |
+
+> AI provider credentials (Anthropic API key, Ollama host) are configured in **Settings → AI Provider** in the web UI, not via environment variables.
 
 <details>
 <summary><h2>Advanced: AWS Deployment</h2></summary>
@@ -284,13 +285,13 @@ FoldDB auto-detects Ollama at `http://127.0.0.1:11434`. If it's not found:
 </details>
 
 <details>
-<summary><strong>OpenRouter API key errors</strong></summary>
+<summary><strong>Anthropic API key errors</strong></summary>
 
-- **"API key invalid or expired"** — Check your key at [openrouter.ai/keys](https://openrouter.ai/keys)
-- **"insufficient credits"** — Add funds at [openrouter.ai/credits](https://openrouter.ai/credits)
-- **"model not found"** — The configured model may have been removed; switch to a different one in Settings
+- **"API key invalid or expired"** — Check or rotate your key at [console.anthropic.com/settings/keys](https://console.anthropic.com/settings/keys)
+- **"insufficient credit"** / 429 rate limits — Top up or raise limits at [console.anthropic.com/settings/billing](https://console.anthropic.com/settings/billing)
+- **"model not found"** — The configured model may have been deprecated; pick a different one in Settings
 
-Set your key: `export FOLD_OPENROUTER_API_KEY="sk-or-v1-..."` or configure in the Settings tab.
+Configure your key in the **Settings → AI Provider** tab. FoldDB stores it locally in the node config; it never leaves your machine except to authenticate calls to Anthropic.
 
 </details>
 
