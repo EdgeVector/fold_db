@@ -32,7 +32,7 @@ When reporting, please include:
 
 ### Security Best Practices for Users
 
-1. **API Keys**: Never commit API keys (e.g., `FOLD_OPENROUTER_API_KEY`) to version control
+1. **API Keys**: Never commit API keys (Anthropic, AWS, etc.) to version control. AI provider keys are stored in the local node config and should never appear in git history.
 2. **AWS Credentials**: Use IAM roles or environment variables, never hardcode credentials
 3. **Network**: Use TLS in production environments
 4. **Updates**: Keep your FoldDB installation up to date

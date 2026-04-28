@@ -120,8 +120,8 @@ src/
 │   └── ingestion.rs     # Ingestion-specific handlers
 ├── ingestion/           # AI-powered data ingestion pipeline
 │   ├── ingestion_service/  # Main service (schema recommendation, mutation generation)
-│   ├── openrouter_service.rs
-│   ├── ollama_service.rs
+│   ├── anthropic_service.rs # Cloud LLM client (https://api.anthropic.com)
+│   ├── ollama_service.rs    # Local LLM client (http://127.0.0.1:11434)
 │   ├── error.rs         # IngestionError with LLM error classifiers
 │   └── routes.rs        # HTTP routes (Actix-web)
 ├── server/
@@ -199,7 +199,7 @@ FOLD_LOG_LEVEL=debug ./run.sh --local 2>&1 | grep '\[Ingestion\]'
 | Symptom | Likely cause | Fix |
 |---------|-------------|-----|
 | "Schema not found" on mutation | Schema not approved | Call `schema_manager.approve("name")` |
-| "OpenRouter service not initialized" | Missing API key | Set `FOLD_OPENROUTER_API_KEY` or configure in Settings |
+| "Anthropic service not initialized" | Missing API key | Configure your Anthropic API key in **Settings → AI Provider** (or switch the provider to Ollama) |
 | Frontend embed error at build | Missing `dist/` | `cd src/server/static-react && npm ci && npm run build` |
 | Test fixture is 130 bytes | Git LFS pointer | `git lfs pull` |
 
