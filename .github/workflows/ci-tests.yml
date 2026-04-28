@@ -29,6 +29,44 @@ jobs:
       - name: Run redaction lint
         run: sh scripts/lint-redaction.sh
 
+  lint-structured-fields:
+    name: Structured Fields Lint (warn-only)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install ripgrep
+        run: |
+          if ! command -v rg >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y --no-install-recommends ripgrep
+          fi
+
+      - name: Run structured-fields lint
+        id: structured-fields
+        run: |
+          # The script always exits 0. Tee output to a file so we can
+          # surface it as a job summary regardless of hit count.
+          sh scripts/lint-structured-fields.sh | tee structured-fields-lint.log
+
+      - name: Publish suggestions to job summary
+        if: always()
+        run: |
+          {
+            echo "## Structured fields lint (warn-only, educational)"
+            echo
+            echo "This lint never blocks a PR. It surfaces \`tracing\` call sites that"
+            echo "use positional message args instead of structured fields, so reviewers"
+            echo "can prefer the structured form on new code. See"
+            echo "\`docs/observability/structured-fields-lint.md\`."
+            echo
+            echo '```'
+            cat structured-fields-lint.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
   rust-tests:
     name: Rust Tests
     runs-on: ubuntu-latest
