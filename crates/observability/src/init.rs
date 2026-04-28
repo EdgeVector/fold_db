@@ -563,7 +563,7 @@ where
 /// Build the OTel `Resource` carrying the canonical `service.name`
 /// attribute. Centralised so both branches of [`build_traces_layer_or_noop`]
 /// — and any future expansion to `service.version` / `deployment.environment`
-/// (Phase 6) — agree on the exact key.
+/// — agree on the exact key.
 fn build_service_resource(service_name: &str) -> Resource {
     Resource::new(vec![KeyValue::new(
         "service.name",
