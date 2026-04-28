@@ -15,10 +15,11 @@ tracing-log = "0.2"
 opentelemetry = "0.27"
 opentelemetry_sdk = { version = "0.27", features = ["rt-tokio", "metrics"] }
 opentelemetry-http = "0.27"
-# default features pull in grpc-tonic — the OTLP traces layer (Phase 4 / T1)
-# only uses the HTTP/protobuf path via reqwest, so opt-out of the tonic stack
-# to keep build times sane.
-opentelemetry-otlp = { version = "0.27", default-features = false, features = ["http-proto", "reqwest-client", "trace"] }
+# default features pull in grpc-tonic — the OTLP layers (T1 traces, T3
+# metrics) only use the HTTP/protobuf path via reqwest, so opt-out of the
+# tonic stack to keep build times sane. `metrics` enables the
+# `MetricExporter` builder consumed by `layers::otlp_metrics`.
+opentelemetry-otlp = { version = "0.27", default-features = false, features = ["http-proto", "reqwest-client", "trace", "metrics"] }
 
 # Sentry integration. Phase 4 / T4: ERROR-only Sentry sink driven by
 # `OBS_SENTRY_DSN`. `default-features = false` opts out of the panic
