@@ -12,13 +12,16 @@ jobs:
       pull-requests: write
       contents: write
     steps:
-      # The merge-queue ruleset enforces SQUASH. `gh pr merge --auto` with
-      # no strategy flag stores `autoMergeRequest.mergeMethod = MERGE`
-      # (the repo's UI default merge button), which the queue silently
-      # refuses — stranding the PR until someone re-enables auto-merge
-      # with `--squash`. Passing `--squash` here just produces a benign
-      # "merge strategy is set by the merge queue" warning from gh while
-      # correctly aligning the auto-merge request with the queue.
+      # The merge-queue ruleset enforces SQUASH at land time. GitHub's
+      # API silently overrides `autoMergeRequest.mergeMethod = MERGE` on
+      # merge-queue branches regardless of what the client requests
+      # (verified: even `enablePullRequestAutoMerge(mergeMethod: SQUASH)`
+      # via GraphQL returns MERGE). So passing `--squash` here triggers
+      # a benign "merge strategy is set by the merge queue" warning but
+      # has no effect — the queue uses its own SQUASH method when it
+      # lands the PR (commits land as 1-parent squash). Note: there is
+      # a `min_entries_to_merge_wait_minutes: 5` delay between CI green
+      # and queue admission; that wait is normal, not a strand.
       - name: Enable auto-merge on PR
         if: github.event_name == 'pull_request'
         run: gh pr merge ${{ github.event.pull_request.number }} --auto --squash --repo ${{ github.repository }}

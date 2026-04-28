@@ -105,10 +105,12 @@ cargo test --workspace --all-targets
 
 After creating the PR, enable auto-merge:
 ```bash
-gh pr merge --auto --squash <PR_URL>
+gh pr merge --auto <PR_URL>
 ```
 
-Pass `--squash` explicitly. The org-wide merge queue ruleset enforces SQUASH; without `--squash`, `gh` stores `autoMergeRequest.mergeMethod = MERGE` (the repo's UI default merge button), and the queue silently refuses the mismatched method — stranding the PR until someone re-enables auto-merge with the right flag. The benign "merge strategy is set by the merge queue" warning gh prints is fine; what matters is that the auto-merge request and queue agree on SQUASH. The merge queue rebases the PR onto current main inside its merge group, so "Update branch" never needs to be clicked manually.
+Don't bother passing a strategy flag. The org-wide merge queue ruleset enforces SQUASH at land time, but GitHub's API silently overrides `autoMergeRequest.mergeMethod = MERGE` on any merge-queue branch — verified that even `enablePullRequestAutoMerge(mergeMethod: SQUASH)` via GraphQL returns `MERGE`. There's no client-side way to set anything else. The queue still squashes when it actually lands the PR (commits arrive as 1-parent squash), so this discrepancy is cosmetic. The "merge strategy is set by the merge queue" warning gh prints if you do pass a flag is honest — gh is telling you it ignored your flag.
+
+After CI goes green there's a `min_entries_to_merge_wait_minutes: 5` delay before the queue admits the PR — that wait is normal, not a strand. The queue also rebases the PR onto current main inside its merge group, so "Update branch" never needs to be clicked manually.
 
 **Monitor the PR until it merges — your task is NOT done until the PR is merged.**
 Poll CI status (`gh pr view <PR_URL> --json state,statusCheckRollup,mergeStateStatus`) every 30-60 seconds.
