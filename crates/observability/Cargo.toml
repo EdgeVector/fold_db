@@ -45,7 +45,10 @@ tokio = { version = "1.0", features = ["sync", "macros", "time", "rt"] }
 
 [dev-dependencies]
 tempfile = "3"
-tokio = { version = "1.0", features = ["sync", "macros", "rt"] }
+# `rt-multi-thread` is needed by the OTLP metrics layer tests (T3): the
+# `PeriodicReader` shutdown path uses `futures_executor::block_on` which
+# would deadlock a single-thread test runtime.
+tokio = { version = "1.0", features = ["sync", "macros", "rt", "rt-multi-thread"] }
 log = "0.4"
 # `test` enables `sentry::test::with_captured_events`, used to assert that
 # the Phase 4 / T4 ERROR layer captures events with the right tags without

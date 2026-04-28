@@ -151,7 +151,10 @@ fn resolve_endpoint() -> Option<String> {
 ///
 /// [`PeriodicReaderBuilder`]: opentelemetry_sdk::metrics::PeriodicReaderBuilder
 fn resolve_duration_ms(env_key: &str, default: Duration) -> Duration {
-    match std::env::var(env_key).ok().and_then(|v| v.parse::<u64>().ok()) {
+    match std::env::var(env_key)
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+    {
         Some(0) | None => default,
         Some(ms) => Duration::from_millis(ms),
     }
@@ -227,25 +230,38 @@ mod tests {
         );
     }
 
-    #[tokio::test]
+    /// `SdkMeterProvider`'s Drop calls `shutdown` which uses
+    /// [`futures_executor::block_on`] internally, waiting up to the
+    /// configured timeout (default 30s) for the worker to ack. Against an
+    /// unreachable test endpoint that means a 30s test, and on a single-
+    /// thread tokio runtime it's an outright deadlock (the block_on holds
+    /// the only worker thread → the worker future can't run → the ack
+    /// never lands). For build-path tests we don't care about clean
+    /// shutdown — `mem::forget` skips Drop, the worker task gets aborted
+    /// when the test runtime tears down. The full shutdown path is the
+    /// integration tests' job (out of scope here).
+    fn forget_provider(p: SdkMeterProvider) {
+        std::mem::forget(p);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn returns_some_with_metrics_specific_endpoint() {
         // PeriodicReader::build spawns onto opentelemetry_sdk::runtime::Tokio,
-        // which requires an ambient runtime. The exporter constructs lazily
-        // — a failed connect later is the worker's problem, not the build
-        // path's. Point at an unused TCP port.
+        // which requires an ambient multi-thread runtime (see
+        // `forget_provider` for why single-thread deadlocks). The exporter
+        // constructs lazily — a failed connect later is the worker's
+        // problem, not the build path's. Point at an unused TCP port.
         let _serial = env_lock();
         let _g1 = EnvGuard::unset(OBS_OTLP_ENDPOINT_ENV);
         let _g2 = EnvGuard::set(OBS_OTLP_METRICS_ENDPOINT_ENV, "http://127.0.0.1:1");
         let provider = build_otlp_metrics_meter_provider("svc");
         assert!(provider.is_some(), "metrics-specific endpoint must build");
-        // Shutdown is best-effort: drop ordering is what matters for the
-        // bin's lifecycle, not the result of this call.
         if let Some(p) = provider {
-            let _ = p.shutdown();
+            forget_provider(p);
         }
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn metrics_endpoint_overrides_shared_endpoint() {
         // When both are set, the metrics-specific value wins. The visible
         // signal is just "did it build" — but combined with the shared-only
@@ -259,11 +275,11 @@ mod tests {
             "metrics endpoint must override empty shared endpoint",
         );
         if let Some(p) = provider {
-            let _ = p.shutdown();
+            forget_provider(p);
         }
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn falls_back_to_shared_endpoint_when_metrics_unset() {
         let _serial = env_lock();
         let _g1 = EnvGuard::set(OBS_OTLP_ENDPOINT_ENV, "http://127.0.0.1:1");
@@ -274,7 +290,7 @@ mod tests {
             "shared endpoint must be the fallback when metrics-specific is unset",
         );
         if let Some(p) = provider {
-            let _ = p.shutdown();
+            forget_provider(p);
         }
     }
 
