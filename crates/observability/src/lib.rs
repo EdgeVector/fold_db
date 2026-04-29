@@ -15,16 +15,20 @@
 //! - [`layers`] — FMT (redacting JSON formatter), RELOAD (runtime
 //!   `EnvFilter` swap), RING (bounded in-memory log buffer), WEB (SSE
 //!   broadcast), and the ERROR-only Sentry sink.
-//! - [`init`] — `init_node` / `init_lambda` / `init_tauri` / `init_cli`
-//!   helpers that compose the layers per binary type and return an
-//!   [`ObsGuard`] for the lifetime of the process.
+//! - [`init`] — `init_node` / `init_node_with_web` / `init_lambda` /
+//!   `init_tauri` / `init_cli` helpers that compose the layers per binary
+//!   type and return an [`ObsGuard`] (or [`NodeObsGuardWithWeb`] for the
+//!   web-streaming variant) for the lifetime of the process.
 
 pub mod attrs;
 pub mod init;
 pub mod layers;
 pub mod propagation;
 
-pub use init::{init_cli, init_lambda, init_node, init_tauri, installed_service_name, ObsGuard};
+pub use init::{
+    init_cli, init_lambda, init_node, init_node_with_web, init_tauri, installed_service_name,
+    NodeObsGuardWithWeb, ObsGuard, ObsHandles,
+};
 
 /// Errors raised by `init_*` helpers and other crate-level operations.
 #[derive(Debug, thiserror::Error)]

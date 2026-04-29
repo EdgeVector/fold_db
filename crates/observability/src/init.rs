@@ -12,12 +12,13 @@
 //!
 //! ## Per-target shape
 //!
-//! | helper        | FMT target               | RELOAD | RING | Sentry |
-//! |---------------|--------------------------|--------|------|--------|
-//! | [`init_node`]   | `OBS_FILE_PATH` ▸ `$FOLDDB_HOME/observability.jsonl` ▸ `~/.folddb/observability.jsonl` | yes | yes | env-gated |
-//! | [`init_lambda`] | stdout                   | yes    | no   | env-gated |
-//! | [`init_tauri`]  | inherits from embedded server, else delegates to [`init_node`] | conditional | conditional | inherits |
-//! | [`init_cli`]    | stderr                   | no     | no   | no    |
+//! | helper                  | FMT target               | RELOAD | RING | WEB | Sentry |
+//! |-------------------------|--------------------------|--------|------|-----|--------|
+//! | [`init_node`]           | `OBS_FILE_PATH` ▸ `$FOLDDB_HOME/observability.jsonl` ▸ `~/.folddb/observability.jsonl` | yes | yes | no  | env-gated |
+//! | [`init_node_with_web`]  | same as [`init_node`]    | yes    | yes  | yes | env-gated |
+//! | [`init_lambda`]         | stdout                   | yes    | no   | no  | env-gated |
+//! | [`init_tauri`]          | inherits from embedded server, else delegates to [`init_node`] | conditional | conditional | no | inherits |
+//! | [`init_cli`]            | stderr                   | no     | no   | no  | no     |
 //!
 //! ## CLI is intentionally bare
 //!
@@ -77,6 +78,7 @@ use crate::layers::error::{build_error_layer, SentryGuard};
 use crate::layers::fmt::{build_fmt_writer, FmtGuard, FmtTarget, RedactingFormat};
 use crate::layers::reload::{build_reload_layer, ReloadHandle};
 use crate::layers::ring::{build_ring_layer, RingHandle, OBS_RING_CAPACITY};
+use crate::layers::web::{build_web_layer, WebHandle, OBS_WEB_CAPACITY};
 use crate::ObsError;
 
 /// Override for the node log file path. Read once per `init_node` call.
@@ -252,6 +254,150 @@ pub fn init_node(service_name: &'static str, _version: &str) -> Result<ObsGuard,
         fmt_guard: Some(fmt_guard),
         ring: Some(ring),
         reload: Some(reload),
+        cloud_shutdown: Some(CloudShutdown { sentry_guard }),
+    })
+}
+
+/// RAII guard returned by [`init_node_with_web`].
+///
+/// Same lifetime contract as [`ObsGuard`] — must be held for the lifetime of
+/// the binary. Differs in two ways:
+/// - Every handle is non-optional. Node binaries always wire FMT + RING +
+///   RELOAD + WEB, so `Option<…>` accessors only push the unwrap onto every
+///   caller.
+/// - Adds a [`WebHandle`] for the dashboard's `/api/logs/stream` SSE
+///   endpoint. `ReloadHandle` is wrapped in [`Arc`] because it is not
+///   `Clone` upstream and `/api/logs/level` needs to share it across Actix
+///   workers via `web::Data`.
+#[must_use = "NodeObsGuardWithWeb must be held for the lifetime of the binary or log lines may be dropped"]
+pub struct NodeObsGuardWithWeb {
+    fmt_guard: Option<FmtGuard>,
+    ring: RingHandle,
+    reload: Arc<ReloadHandle>,
+    web: WebHandle,
+    cloud_shutdown: Option<CloudShutdown>,
+}
+
+impl NodeObsGuardWithWeb {
+    /// Handle for in-process `/api/logs` queries.
+    pub fn ring(&self) -> &RingHandle {
+        &self.ring
+    }
+
+    /// Shared handle for runtime `EnvFilter` swaps via `/api/logs/level`.
+    pub fn reload(&self) -> Arc<ReloadHandle> {
+        Arc::clone(&self.reload)
+    }
+
+    /// Handle that the dashboard's `/api/logs/stream` SSE endpoint subscribes
+    /// to for live event fan-out.
+    pub fn web(&self) -> &WebHandle {
+        &self.web
+    }
+
+    /// Cheap clones of every handle, ready to wrap in Actix `web::Data`.
+    pub fn handles(&self) -> ObsHandles {
+        ObsHandles {
+            ring: self.ring.clone(),
+            web: self.web.clone(),
+            reload: Arc::clone(&self.reload),
+        }
+    }
+}
+
+impl std::fmt::Debug for NodeObsGuardWithWeb {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NodeObsGuardWithWeb")
+            .field("fmt_guard", &self.fmt_guard.is_some())
+            .field("ring_capacity", &self.ring.capacity())
+            .field(
+                "cloud_shutdown",
+                &self.cloud_shutdown.as_ref().map(|s| s.is_engaged()),
+            )
+            .finish()
+    }
+}
+
+impl Drop for NodeObsGuardWithWeb {
+    fn drop(&mut self) {
+        let _ = self.cloud_shutdown.take();
+    }
+}
+
+/// Bundle of handles consumed by the HTTP server's `/api/logs*` endpoints.
+///
+/// Cheap to clone: [`RingHandle`] and [`WebHandle`] are `Arc`-backed,
+/// [`ReloadHandle`] is shared through [`Arc`] because it is not `Clone`
+/// upstream.
+#[derive(Clone)]
+pub struct ObsHandles {
+    pub ring: RingHandle,
+    pub web: WebHandle,
+    pub reload: Arc<ReloadHandle>,
+}
+
+/// Initialize observability for a node binary that ALSO needs a WEB
+/// broadcast layer (i.e. anything serving `/api/logs/stream` SSE).
+///
+/// Composition matches [`init_node`] exactly — redacting JSON FMT to the
+/// resolved node log file + RELOAD + RING + a no-op-traces OTel layer
+/// stamping W3C `trace_id` / `span_id` + the env-gated Sentry sink — and
+/// adds a [`crate::layers::web::WebLayer`] whose [`WebHandle`] the returned
+/// guard exposes via [`NodeObsGuardWithWeb::web`].
+///
+/// The `service_name` validation, `INIT_ONCE` claim, log-file path
+/// resolution, and `LogTracer` / W3C-propagator install are identical to
+/// [`init_node`] — both helpers route through the same private plumbing so
+/// they cannot drift.
+///
+/// OTLP / Sentry defaults are unchanged from [`init_node`]: no OTLP
+/// exporter is wired, and the Sentry layer is composed only when
+/// `OBS_SENTRY_DSN` is set at startup.
+pub fn init_node_with_web(service_name: &'static str) -> Result<NodeObsGuardWithWeb, ObsError> {
+    assert_service_name(service_name);
+    try_claim_init(&INIT_ONCE)?;
+    install_log_tracer();
+
+    let path = default_node_log_path()?;
+    let (writer, fmt_guard) = build_fmt_writer(FmtTarget::File(path))?;
+    let (reload_layer, reload) = build_reload_layer::<Registry>(default_env_filter());
+    let (ring_layer, ring) = build_ring_layer(OBS_RING_CAPACITY);
+    let (web_layer, web) = build_web_layer(OBS_WEB_CAPACITY);
+
+    let otel_layer = build_noop_traces_layer(service_name);
+
+    let (error_layer, sentry_guard) = match build_error_layer() {
+        Some((layer, guard)) => (Some(layer), Some(guard)),
+        None => (None, None),
+    };
+
+    let fmt_layer = tracing_subscriber::fmt::layer()
+        .event_format(RedactingFormat::from_env_with_service(service_name))
+        .with_writer(writer);
+
+    // Layer order mirrors `init_node` — RELOAD innermost so its `S = Registry`
+    // binding pins the type; OTel before FMT/RING/WEB so its `on_new_span`
+    // attaches `OtelData` before the downstream layers' `on_event` runs and
+    // their lookups for trace/span ids succeed; WEB after RING because both
+    // independently lift trace/span ids off the same `OtelData` extension and
+    // their relative order is irrelevant for correctness; ERROR last so its
+    // `event_span` lookup sees `OtelData` already attached.
+    let subscriber = Registry::default()
+        .with(reload_layer)
+        .with(otel_layer)
+        .with(fmt_layer)
+        .with(ring_layer)
+        .with(web_layer)
+        .with(error_layer);
+    install_subscriber(subscriber)?;
+    install_globals();
+    record_service_name(service_name);
+
+    Ok(NodeObsGuardWithWeb {
+        fmt_guard: Some(fmt_guard),
+        ring,
+        reload: Arc::new(reload),
+        web,
         cloud_shutdown: Some(CloudShutdown { sentry_guard }),
     })
 }
@@ -789,10 +935,86 @@ mod tests {
     #[test]
     fn public_exports_resolve() {
         let _: fn(&'static str, &str) -> Result<ObsGuard, ObsError> = init_node;
+        let _: fn(&'static str) -> Result<NodeObsGuardWithWeb, ObsError> = init_node_with_web;
         let _: fn(&'static str, &str) -> Result<ObsGuard, ObsError> = init_lambda;
         let _: fn(&'static str, &str) -> Result<ObsGuard, ObsError> = init_cli;
         // init_tauri is generic over H; bind it to () for the type-check.
         let _: fn(&'static str, &str, &()) -> Result<ObsGuard, ObsError> = init_tauri::<()>;
+    }
+
+    /// `NodeObsGuardWithWeb`'s public accessors return the inner handles.
+    /// Constructed directly (rather than via `init_node_with_web`) so the
+    /// test does not contend with the process-global subscriber slot.
+    #[test]
+    fn node_obs_guard_with_web_accessors_match_inner_state() {
+        use crate::layers::ring::build_ring_layer;
+        use crate::layers::web::build_web_layer;
+
+        let (_reload_layer, reload_handle) = build_reload_layer::<Registry>(EnvFilter::new("info"));
+        let (_ring_layer, ring) = build_ring_layer(8);
+        let (_web_layer, web) = build_web_layer(8);
+
+        let guard = NodeObsGuardWithWeb {
+            fmt_guard: None,
+            ring: ring.clone(),
+            reload: Arc::new(reload_handle),
+            web: web.clone(),
+            cloud_shutdown: Some(CloudShutdown::empty()),
+        };
+
+        assert_eq!(guard.ring().capacity(), ring.capacity());
+        // `Arc::clone` on the reload handle yields a second strong ref.
+        let _r = guard.reload();
+        // Subscribing through the guard's WebHandle increments the count
+        // observed by the originally-built handle.
+        let _rx = guard.web().subscribe();
+        assert_eq!(web.receiver_count(), 1);
+
+        let handles = guard.handles();
+        assert_eq!(handles.ring.capacity(), ring.capacity());
+        assert_eq!(handles.web.receiver_count(), 1);
+
+        let _ = format!("{guard:?}");
+    }
+
+    /// The composition `init_node_with_web` performs must drive
+    /// `tracing::info!` events through the WEB broadcast channel. We
+    /// rebuild the same layer stack the function does (minus globals /
+    /// subscriber install, which are process-shared) and verify the
+    /// `WebHandle` sees the event.
+    #[test]
+    fn init_node_with_web_composition_emits_to_web_handle() {
+        use crate::layers::ring::build_ring_layer;
+        use crate::layers::web::build_web_layer;
+        use serde_json::Value;
+        use tracing::subscriber::with_default;
+        use tracing_subscriber::layer::SubscriberExt;
+
+        let (reload_layer, _reload) = build_reload_layer::<Registry>(EnvFilter::new("info"));
+        let (ring_layer, _ring) = build_ring_layer(OBS_RING_CAPACITY);
+        let (web_layer, web_handle) = build_web_layer(OBS_WEB_CAPACITY);
+        let otel_layer = build_noop_traces_layer("init-node-with-web-test");
+
+        let mut rx = web_handle.subscribe();
+        assert_eq!(web_handle.receiver_count(), 1);
+
+        let subscriber = Registry::default()
+            .with(reload_layer)
+            .with(otel_layer)
+            .with(ring_layer)
+            .with(web_layer);
+
+        with_default(subscriber, || {
+            tracing::info!(target: "init_node_with_web_test", "broadcast probe");
+        });
+
+        let json = rx
+            .try_recv()
+            .expect("event must reach the broadcast channel");
+        let value: Value = serde_json::from_str(&json).expect("valid JSON");
+        assert_eq!(value["level"], "INFO");
+        assert_eq!(value["event_type"], "init_node_with_web_test");
+        assert_eq!(value["message"], "broadcast probe");
     }
 
     /// Phase 3 / T7: `LogTracer::init` is wired so third-party `log::*` calls
