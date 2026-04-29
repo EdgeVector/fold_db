@@ -363,5 +363,5 @@ Dual-licensed under [MIT](LICENSE-MIT) or [Apache 2.0](LICENSE-APACHE), at your 
 
 ## Community
 
-- **[GitHub Issues](https://github.com/EdgeVector/fold_db/issues)** — Report bugs and request features
-- **[GitHub Discussions](https://github.com/EdgeVector/fold_db/discussions)** — Questions and community discussion
+- **[GitHub Issues](https://github.com/EdgeVector/fold_db/issues)** — Report bugs and request features.
+- **[GitHub Discussions](https://github.com/EdgeVector/fold_db/discussions)** — Questions and community discussion.
