@@ -29,6 +29,12 @@ npm run lint                             # ESLint
 npm run generate:api                     # Generate TypeScript types from OpenAPI spec
 ```
 
+## Bump cascade (downstream)
+
+When a PR merges to `main`, `.github/workflows/notify-downstream.yml` fires a `repository_dispatch` to `EdgeVector/schema_service`, which auto-bumps its `fold_db` rev pin and merges. That cascades further into `EdgeVector/fold_db_node`. End-to-end ~10–15 min from a merge here to fold_db_node landing.
+
+If you're shipping a breaking fold_db change that requires consumer Rust updates alongside the rev bump, disable the relevant `bump-*.yml` workflow in `EdgeVector/schema_service` and `EdgeVector/fold_db_node` Actions before merging here, do the manual consumer PRs, re-enable.
+
 ## AI Provider Configuration
 
 AI ingestion runs against either **Ollama** (local, default — auto-detected at `http://127.0.0.1:11434`) or **Anthropic** (cloud, direct calls to `https://api.anthropic.com` per [`llm_registry/models.rs`](crates/core/src/llm_registry/models.rs)).
