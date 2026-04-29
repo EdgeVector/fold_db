@@ -14,7 +14,7 @@
 //!
 //! | helper        | FMT target               | RELOAD | RING | Sentry |
 //! |---------------|--------------------------|--------|------|--------|
-//! | [`init_node`]   | `~/.folddb/observability.jsonl` (or `OBS_FILE_PATH`) | yes | yes | env-gated |
+//! | [`init_node`]   | `OBS_FILE_PATH` ▸ `$FOLDDB_HOME/observability.jsonl` ▸ `~/.folddb/observability.jsonl` | yes | yes | env-gated |
 //! | [`init_lambda`] | stdout                   | yes    | no   | env-gated |
 //! | [`init_tauri`]  | inherits from embedded server, else delegates to [`init_node`] | conditional | conditional | inherits |
 //! | [`init_cli`]    | stderr                   | no     | no   | no    |
@@ -81,6 +81,13 @@ use crate::ObsError;
 
 /// Override for the node log file path. Read once per `init_node` call.
 const OBS_FILE_PATH_ENV: &str = "OBS_FILE_PATH";
+
+/// Per-node root directory. When set, every fold_db subsystem (Sled DB,
+/// config dir, identity store, upload path) roots its state under this
+/// directory; the observability log file follows suit so dev nodes
+/// auto-slotted into `/tmp/folddb-slot-<port>` by `run.sh` don't race the
+/// prod Tauri app's `~/.folddb/observability.jsonl`.
+const FOLDDB_HOME_ENV: &str = "FOLDDB_HOME";
 
 /// Process-global guard against double init. Set on the first successful
 /// `init_*` call; remains set for the lifetime of the process.
@@ -189,9 +196,10 @@ impl Drop for ObsGuard {
 
 /// Initialize observability for a long-running node binary.
 ///
-/// Layers (always wired): redacting JSON FMT writing to
-/// `~/.folddb/observability.jsonl` (override with `OBS_FILE_PATH`) + RELOAD +
-/// RING + a `tracing-opentelemetry` layer riding a no-op
+/// Layers (always wired): redacting JSON FMT writing to the node log file
+/// resolved by [`default_node_log_path`] (`OBS_FILE_PATH` ▸
+/// `$FOLDDB_HOME/observability.jsonl` ▸ `~/.folddb/observability.jsonl`) +
+/// RELOAD + RING + a `tracing-opentelemetry` layer riding a no-op
 /// [`opentelemetry_sdk::trace::TracerProvider`] that stamps W3C `trace_id` /
 /// `span_id` onto every span.
 ///
@@ -518,15 +526,24 @@ impl SpanProcessor for ResourceProbe {
 /// Order of resolution:
 /// 1. `$OBS_FILE_PATH` if set — used as-is, with no parent-directory
 ///    creation. The caller chose the path; the caller is responsible.
-/// 2. `~/.folddb/observability.jsonl` — `~/.folddb` is created if absent.
+/// 2. `$FOLDDB_HOME/observability.jsonl` if `FOLDDB_HOME` is set — the
+///    directory is created if absent. Keeps dev nodes auto-slotted under
+///    `/tmp/folddb-slot-<port>` by `run.sh` from racing the prod Tauri
+///    app's `~/.folddb/observability.jsonl`.
+/// 3. `~/.folddb/observability.jsonl` — `~/.folddb` is created if absent.
 fn default_node_log_path() -> Result<PathBuf, ObsError> {
     if let Ok(p) = std::env::var(OBS_FILE_PATH_ENV) {
         return Ok(PathBuf::from(p));
     }
+    if let Ok(folddb_home) = std::env::var(FOLDDB_HOME_ENV) {
+        let dir = PathBuf::from(folddb_home);
+        fs::create_dir_all(&dir)?;
+        return Ok(dir.join("observability.jsonl"));
+    }
     let home = std::env::var("HOME").map_err(|_| {
         ObsError::Io(io::Error::new(
             io::ErrorKind::NotFound,
-            "HOME not set; set OBS_FILE_PATH to choose a log path explicitly",
+            "HOME not set; set OBS_FILE_PATH or FOLDDB_HOME to choose a log path explicitly",
         ))
     })?;
     let mut dir = PathBuf::from(home);
@@ -569,6 +586,41 @@ fn install_log_tracer() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Serialize every test that mutates `OBS_FILE_PATH`, `FOLDDB_HOME`, or
+    /// `HOME`. `cargo test` runs unit tests in parallel within a process, so
+    /// two tests touching the same env var can race and observe each other's
+    /// state. Lock ordering is irrelevant — there's exactly one lock — but
+    /// `unwrap_or_else(PoisonError::into_inner)` keeps a panicking test from
+    /// poisoning the rest of the suite.
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    /// RAII helper that snapshots an env var on construction and restores it
+    /// (or removes it) on drop, so a test panic still leaves the parent
+    /// process env clean. Pair with `ENV_LOCK` — the lock serialises access,
+    /// the guard restores state.
+    struct EnvVarGuard {
+        key: &'static str,
+        prev: Option<String>,
+    }
+
+    impl EnvVarGuard {
+        fn capture(key: &'static str) -> Self {
+            Self {
+                key,
+                prev: std::env::var(key).ok(),
+            }
+        }
+    }
+
+    impl Drop for EnvVarGuard {
+        fn drop(&mut self) {
+            match &self.prev {
+                Some(v) => std::env::set_var(self.key, v),
+                None => std::env::remove_var(self.key),
+            }
+        }
+    }
 
     #[test]
     #[should_panic(expected = "service.name")]
@@ -625,21 +677,86 @@ mod tests {
 
     #[test]
     fn obs_file_path_env_overrides_default() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let _obs = EnvVarGuard::capture(OBS_FILE_PATH_ENV);
+
         // Use a path with no $HOME dependency so the test is hermetic
         // regardless of the parent process environment.
         let dir = tempfile::tempdir().expect("tempdir");
         let target = dir.path().join("custom.jsonl");
-        let prev = std::env::var(OBS_FILE_PATH_ENV).ok();
         std::env::set_var(OBS_FILE_PATH_ENV, &target);
 
         let resolved = default_node_log_path().expect("path resolves");
 
-        match prev {
-            Some(v) => std::env::set_var(OBS_FILE_PATH_ENV, v),
-            None => std::env::remove_var(OBS_FILE_PATH_ENV),
-        }
-
         assert_eq!(resolved, target);
+    }
+
+    /// `FOLDDB_HOME` becomes the log root when `OBS_FILE_PATH` is unset.
+    /// This is the dogfood papercut fix from 2026-04-29: `run.sh --local`
+    /// auto-slots `FOLDDB_HOME=/tmp/folddb-slot-<port>` but never set
+    /// `OBS_FILE_PATH`, so the resolver fell through to the prod-shared
+    /// `~/.folddb/observability.jsonl` and dev events landed in the prod
+    /// log file alongside the Tauri app.
+    #[test]
+    fn folddb_home_resolves_log_path_when_obs_file_path_unset() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let _obs = EnvVarGuard::capture(OBS_FILE_PATH_ENV);
+        let _home = EnvVarGuard::capture(FOLDDB_HOME_ENV);
+
+        std::env::remove_var(OBS_FILE_PATH_ENV);
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::env::set_var(FOLDDB_HOME_ENV, dir.path());
+
+        let resolved = default_node_log_path().expect("path resolves");
+
+        assert_eq!(resolved, dir.path().join("observability.jsonl"));
+    }
+
+    /// With both overrides unset, the resolver falls back to
+    /// `$HOME/.folddb/observability.jsonl`. Pin the prod-Tauri default so a
+    /// future refactor that reorders the resolution branches doesn't break
+    /// the path the desktop app already writes to.
+    #[test]
+    fn home_fallback_resolves_under_dot_folddb_when_overrides_unset() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let _obs = EnvVarGuard::capture(OBS_FILE_PATH_ENV);
+        let _folddb = EnvVarGuard::capture(FOLDDB_HOME_ENV);
+        let _home = EnvVarGuard::capture("HOME");
+
+        std::env::remove_var(OBS_FILE_PATH_ENV);
+        std::env::remove_var(FOLDDB_HOME_ENV);
+        // Pin HOME to a tempdir so the assertion compares against a known
+        // path rather than the operator's real `~`.
+        let home_dir = tempfile::tempdir().expect("tempdir");
+        std::env::set_var("HOME", home_dir.path());
+
+        let resolved = default_node_log_path().expect("path resolves");
+
+        assert_eq!(
+            resolved,
+            home_dir.path().join(".folddb").join("observability.jsonl"),
+        );
+        assert!(home_dir.path().join(".folddb").is_dir());
+    }
+
+    /// `OBS_FILE_PATH` wins over `FOLDDB_HOME` when both are set. Caller-
+    /// chosen explicit path beats per-node default — same precedence the
+    /// docstring promises.
+    #[test]
+    fn obs_file_path_wins_over_folddb_home() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let _obs = EnvVarGuard::capture(OBS_FILE_PATH_ENV);
+        let _folddb = EnvVarGuard::capture(FOLDDB_HOME_ENV);
+
+        let explicit = tempfile::tempdir().expect("tempdir");
+        let explicit_path = explicit.path().join("explicit.jsonl");
+        let folddb_home = tempfile::tempdir().expect("tempdir");
+        std::env::set_var(OBS_FILE_PATH_ENV, &explicit_path);
+        std::env::set_var(FOLDDB_HOME_ENV, folddb_home.path());
+
+        let resolved = default_node_log_path().expect("path resolves");
+
+        assert_eq!(resolved, explicit_path);
     }
 
     #[test]
