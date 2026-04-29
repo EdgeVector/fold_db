@@ -1,0 +1,37 @@
+name: Notify downstream of fold_db main bump
+
+# Fires once per merge to main. Sends a repository_dispatch to
+# schema_service so its bump-fold-db.yml listener opens (or force-
+# updates) a PR pinning this fold_db sha. After that PR lands,
+# schema_service's notify-downstream.yml cascades the bump into
+# fold_db_node.
+#
+# Replaces the manual 3-PR lockstep (fold_db -> schema_service ->
+# fold_db_node) that gbrain shows as a recurring pattern. End-to-end
+# bot run is ~10-15 min from this dispatch to fold_db_node merge.
+
+on:
+  push:
+    branches: [main]
+
+# A merge burst (rare but possible) will queue multiple notifications.
+# We only need the latest sha to land downstream — coalesce.
+concurrency:
+  group: notify-downstream
+  cancel-in-progress: true
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Send repository_dispatch to schema_service
+        env:
+          # GH_PAT (admin PAT) is required for cross-repo dispatch:
+          # GITHUB_TOKEN is scoped to this repo only. Same token the
+          # auto-merge / release workflows use across the org.
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          gh api -X POST /repos/EdgeVector/schema_service/dispatches \
+            -f event_type=fold_db-main-bump \
+            -F client_payload[fold_db_sha]=${{ github.sha }}
