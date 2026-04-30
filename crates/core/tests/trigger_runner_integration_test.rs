@@ -24,6 +24,13 @@ use serde_json::json;
 async fn setup_db() -> (tempfile::TempDir, FoldDB) {
     let dir = tempfile::tempdir().unwrap();
     let db = FoldDB::new(dir.path().to_str().unwrap()).await.unwrap();
+    // Production fold_db no longer registers TriggerFiring directly —
+    // the canonical definition lives in schema_service and is loaded
+    // by fold_db_node at startup. Tests that boot a bare FoldDB must
+    // seed it themselves so the audit-row writer has a target schema.
+    fold_db::triggers::register_trigger_firing_schema(&db.schema_manager())
+        .await
+        .unwrap();
     (dir, db)
 }
 
