@@ -179,6 +179,8 @@ log_feature!(LogFeature::HttpServer, info, "Server started on {}", addr);
 
 The schema service is a separate cloud service deployed at `schema.folddb.com`. Source code lives in [EdgeVector/schema_service](https://github.com/EdgeVector/schema_service); deploy spec in [EdgeVector/schema-infra](https://github.com/EdgeVector/schema-infra). fold_db consumes it as a client.
 
-- **Prod**: `https://axo709qs11.execute-api.us-east-1.amazonaws.com/v1/*` (default)
-- **Dev**: `https://y0q3m6vk75.execute-api.us-west-2.amazonaws.com/v1/*` (use `--dev` flag)
-- **Local**: `http://127.0.0.1:9102` (use `--local-schema` flag; runs the actix dev binary from the `schema_service` submodule)
+The canonical URL registry lives in [EdgeVector/fold_db_node](https://github.com/EdgeVector/fold_db_node) at `environments.json` (single source of truth across the workspace; `scripts/lint-no-hardcoded-urls.sh` enforces it). Resolve current URLs with `~/code/edgevector/fold_db_node/scripts/get-env-url.sh <dev|prod> schema_service` — do not hardcode them in this repo.
+
+- **Prod**: us-east-1 API Gateway (release builds default to this)
+- **Dev**: us-west-2 API Gateway (`--dev` flag, or debug builds)
+- **Local**: `http://127.0.0.1:9102` (`--local-schema` flag; runs the actix dev binary from the `schema_service` submodule)
