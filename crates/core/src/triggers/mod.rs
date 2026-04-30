@@ -4,9 +4,12 @@
 //! lose. Rows are keyed by (trigger_id, fired_at) so callers can list a
 //! trigger's history in time order without scanning the whole log.
 //!
-//! Registered at FoldDB startup via [`register_trigger_firing_schema`].
-//! Idempotent: if the schema already exists in the store, load_schema
-//! refreshes the in-memory cache without clobbering on-disk state.
+//! The schema definition lives in `schema_service`'s `builtin_schemas`
+//! (SystemSeed). `fold_db_node` fetches it at startup like every other
+//! system schema, so production fold_db does not register it directly.
+//! The builder + registration helpers below are preserved as test-only
+//! glue for integration tests that boot a bare `FoldDB` without the
+//! external schema-fetch path.
 
 pub mod clock;
 pub mod simulate;
@@ -88,6 +91,10 @@ pub mod skip_reason {
 ///
 /// Shape: HashRange keyed by (trigger_id, fired_at) so a trigger's
 /// firing history is naturally clustered and range-scannable.
+///
+/// Test-only helper. The canonical definition lives in `schema_service`
+/// and reaches running nodes via `fold_db_node`'s schema-fetch path.
+#[doc(hidden)]
 pub fn trigger_firing_schema() -> Schema {
     let all_fields = [
         (
@@ -195,9 +202,16 @@ pub fn trigger_firing_schema() -> Schema {
 /// Register the TriggerFiring schema with the local SchemaCore and
 /// auto-approve it so the runner can write rows immediately.
 ///
-/// Idempotent — safe to call on every boot. If the schema is already
+/// Test-only helper. Production fold_db does not call this — the schema
+/// is seeded by `schema_service` and loaded into `SchemaCore` via
+/// `fold_db_node`'s schema-fetch path. Integration tests that boot a
+/// bare `FoldDB` (no external fetch) use this to make the audit-row
+/// writer's schema target available.
+///
+/// Idempotent — safe to call repeatedly. If the schema is already
 /// present in persistent storage, `load_schema_internal` refreshes the
 /// in-memory cache and `set_schema_state(Approved)` is a no-op.
+#[doc(hidden)]
 pub async fn register_trigger_firing_schema(
     schema_manager: &Arc<SchemaCore>,
 ) -> Result<(), SchemaError> {
