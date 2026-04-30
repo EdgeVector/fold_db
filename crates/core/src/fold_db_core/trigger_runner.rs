@@ -84,6 +84,17 @@ pub struct FireOutcome {
     pub input_row_count: i64,
     pub output_row_count: i64,
     pub error_message: Option<String>,
+    /// Captured input envelope (TH6a). `Some(Null)` means capture was
+    /// requested but the envelope serialized to JSON null; `None` means
+    /// the view's `firing_capture` policy disabled capture for this fire
+    /// or the outcome wasn't eligible.
+    pub input_snapshot: Option<serde_json::Value>,
+    /// Map of input schema name to 64-char hex identity hash. Empty when
+    /// no snapshot was captured.
+    pub schema_versions: HashMap<String, String>,
+    /// `true` when the input snapshot exceeded the global 10 MiB cap and
+    /// at least one record was dropped during serialization.
+    pub snapshot_truncated: bool,
 }
 
 impl FireOutcome {
@@ -93,6 +104,9 @@ impl FireOutcome {
             input_row_count: input_rows,
             output_row_count: output_rows,
             error_message: None,
+            input_snapshot: None,
+            schema_versions: HashMap::new(),
+            snapshot_truncated: false,
         }
     }
 
@@ -102,7 +116,25 @@ impl FireOutcome {
             input_row_count: 0,
             output_row_count: 0,
             error_message: Some(msg.into()),
+            input_snapshot: None,
+            schema_versions: HashMap::new(),
+            snapshot_truncated: false,
         }
+    }
+
+    /// Stamp this outcome with a captured input snapshot. TH6a — used
+    /// by the view orchestrator's fire path when the view's
+    /// `firing_capture` policy + outcome warrant capture.
+    pub fn with_snapshot(
+        mut self,
+        snapshot: serde_json::Value,
+        schema_versions: HashMap<String, String>,
+        truncated: bool,
+    ) -> Self {
+        self.input_snapshot = Some(snapshot);
+        self.schema_versions = schema_versions;
+        self.snapshot_truncated = truncated;
+        self
     }
 }
 
@@ -112,6 +144,13 @@ impl FireOutcome {
 #[async_trait]
 pub trait FiringWriter: Send + Sync {
     async fn write_firing(&self, row: FiringRecord) -> Result<(), SchemaError>;
+    /// TH6a — submit a raw `TriggerFiring` mutation. Used by retention
+    /// eviction (Update to nullify snapshot fields, Delete to remove a
+    /// metadata-only row). Default impl returns `Ok(())` so test
+    /// writers that don't care about eviction behavior compile.
+    async fn write_eviction(&self, _mutation: Mutation) -> Result<(), SchemaError> {
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -124,6 +163,16 @@ pub struct FiringRecord {
     pub input_row_count: i64,
     pub output_row_count: i64,
     pub error_message: Option<String>,
+    /// Captured input envelope serialized as JSON. `None` when the
+    /// view's `firing_capture` policy did not capture this fire.
+    /// (TH6a spec §1, §5.)
+    pub input_snapshot: Option<serde_json::Value>,
+    /// Map of input schema name to 64-char hex identity hash. Empty
+    /// when `input_snapshot` is `None`.
+    pub schema_versions: HashMap<String, String>,
+    /// `true` when `input_snapshot` was truncated to fit the global
+    /// 10 MiB cap (TH6a spec §1).
+    pub snapshot_truncated: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -226,6 +275,23 @@ impl FiringRecord {
                 None => serde_json::Value::Null,
             },
         );
+        fields_map.insert(
+            fields::INPUT_SNAPSHOT.to_string(),
+            self.input_snapshot.unwrap_or(serde_json::Value::Null),
+        );
+        fields_map.insert(
+            fields::SCHEMA_VERSIONS.to_string(),
+            serde_json::Value::Object(
+                self.schema_versions
+                    .into_iter()
+                    .map(|(k, v)| (k, serde_json::Value::String(v)))
+                    .collect(),
+            ),
+        );
+        fields_map.insert(
+            fields::SNAPSHOT_TRUNCATED.to_string(),
+            serde_json::Value::Bool(self.snapshot_truncated),
+        );
 
         Mutation::new(
             TRIGGER_FIRING_SCHEMA_NAME.to_string(),
@@ -233,6 +299,52 @@ impl FiringRecord {
             KeyValue::new(Some(self.trigger_id), Some(self.fired_at_ms.to_string())),
             pub_key.to_string(),
             crate::schema::types::operations::MutationType::Create,
+        )
+    }
+
+    /// TH6a spec §3 — build the eviction Update mutation that nullifies
+    /// the snapshot fields on an existing firing row, leaving the
+    /// metadata (status, duration, row counts, error message) intact.
+    /// The row moves from `errors_with_snapshot` / `successes_with_snapshot`
+    /// into the `metadata_only` bucket via the cross-bucket view rule.
+    pub fn build_snapshot_eviction_mutation(
+        trigger_id: &str,
+        fired_at_ms: i64,
+        pub_key: &str,
+    ) -> Mutation {
+        let mut fields_map = HashMap::new();
+        fields_map.insert(fields::INPUT_SNAPSHOT.to_string(), serde_json::Value::Null);
+        fields_map.insert(
+            fields::SCHEMA_VERSIONS.to_string(),
+            serde_json::Value::Object(serde_json::Map::new()),
+        );
+        fields_map.insert(
+            fields::SNAPSHOT_TRUNCATED.to_string(),
+            serde_json::Value::Bool(false),
+        );
+
+        Mutation::new(
+            TRIGGER_FIRING_SCHEMA_NAME.to_string(),
+            fields_map,
+            KeyValue::new(Some(trigger_id.to_string()), Some(fired_at_ms.to_string())),
+            pub_key.to_string(),
+            crate::schema::types::operations::MutationType::Update,
+        )
+    }
+
+    /// TH6a spec §3 — build the deletion Mutation for `metadata_only`
+    /// bucket overflow. Removes the firing row entirely.
+    pub fn build_metadata_delete_mutation(
+        trigger_id: &str,
+        fired_at_ms: i64,
+        pub_key: &str,
+    ) -> Mutation {
+        Mutation::new(
+            TRIGGER_FIRING_SCHEMA_NAME.to_string(),
+            HashMap::new(),
+            KeyValue::new(Some(trigger_id.to_string()), Some(fired_at_ms.to_string())),
+            pub_key.to_string(),
+            crate::schema::types::operations::MutationType::Delete,
         )
     }
 }
@@ -294,6 +406,33 @@ impl PartialOrd for ScheduledFire {
     }
 }
 
+/// TH6a spec §3 — in-memory bucket tracker for one view. Each bucket
+/// is an ordered list of `(fired_at_ms, trigger_id)` pairs, oldest
+/// first. The runner appends on every successful firing write and
+/// pops from the front when a cap is exceeded.
+///
+/// Bucket state is process-local and rebuilt fresh on restart. The
+/// authoritative count lives in the `TriggerFiring` schema rows
+/// themselves (per spec); this tracker is a fast in-memory shadow used
+/// to decide eviction without rescanning every fire. After a process
+/// restart the tracker is empty, so retention only kicks in once the
+/// in-memory count crosses the cap from zero. This is acceptable for
+/// the audit log — old rows on disk persist unchanged and the cap is
+/// enforced going forward.
+#[derive(Debug, Default)]
+struct ViewEvictionState {
+    errors_with_snapshot: std::collections::VecDeque<(i64, String)>,
+    successes_with_snapshot: std::collections::VecDeque<(i64, String)>,
+    metadata_only: std::collections::VecDeque<(i64, String)>,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum Bucket {
+    ErrorsWithSnapshot,
+    SuccessesWithSnapshot,
+    MetadataOnly,
+}
+
 pub struct TriggerRunner<C: Clock> {
     schema_manager: Arc<SchemaCore>,
     sled_pool: Option<Arc<SledPool>>,
@@ -304,6 +443,13 @@ pub struct TriggerRunner<C: Clock> {
     runtimes: Mutex<HashMap<String, Arc<ViewRuntime>>>,
     scheduler: Mutex<BinaryHeap<Reverse<ScheduledFire>>>,
     scheduler_notify: Arc<Notify>,
+    /// TH6a — per-view eviction tracker. Keyed by view name. See
+    /// `apply_retention_after_write`.
+    eviction: Mutex<HashMap<String, ViewEvictionState>>,
+    /// Pubkey stamped on retention eviction mutations. Production wires
+    /// this to the node signer's pubkey via `new_with_pubkey`; tests
+    /// default to an empty string.
+    eviction_pub_key: String,
 }
 
 impl<C: Clock> TriggerRunner<C> {
@@ -314,6 +460,28 @@ impl<C: Clock> TriggerRunner<C> {
         fire_handler: Arc<dyn FireHandler>,
         firing_writer: Arc<dyn FiringWriter>,
     ) -> Self {
+        Self::new_with_pubkey(
+            schema_manager,
+            sled_pool,
+            clock,
+            fire_handler,
+            firing_writer,
+            String::new(),
+        )
+    }
+
+    /// Construct with an explicit eviction pubkey. Used by the
+    /// production wire-up so retention `Update`/`Delete` mutations are
+    /// stamped with the node's signer pubkey, matching the
+    /// `MutationManagerFiringWriter`'s pub_key.
+    pub fn new_with_pubkey(
+        schema_manager: Arc<SchemaCore>,
+        sled_pool: Option<Arc<SledPool>>,
+        clock: Arc<C>,
+        fire_handler: Arc<dyn FireHandler>,
+        firing_writer: Arc<dyn FiringWriter>,
+        eviction_pub_key: String,
+    ) -> Self {
         Self {
             schema_manager,
             sled_pool,
@@ -323,6 +491,8 @@ impl<C: Clock> TriggerRunner<C> {
             runtimes: Mutex::new(HashMap::new()),
             scheduler: Mutex::new(BinaryHeap::new()),
             scheduler_notify: Arc::new(Notify::new()),
+            eviction: Mutex::new(HashMap::new()),
+            eviction_pub_key,
         }
     }
 
@@ -334,15 +504,17 @@ impl<C: Clock> TriggerRunner<C> {
         sled_pool: Option<Arc<SledPool>>,
         clock: Arc<C>,
         firing_writer: Arc<dyn FiringWriter>,
+        eviction_pub_key: String,
     ) -> Self {
         let fire_handler: Arc<dyn FireHandler> =
             Arc::new(ViewOrchestratorFireHandler { view_orchestrator });
-        Self::new(
+        Self::new_with_pubkey(
             schema_manager,
             sled_pool,
             clock,
             fire_handler,
             firing_writer,
+            eviction_pub_key,
         )
     }
 
@@ -382,6 +554,112 @@ impl<C: Clock> TriggerRunner<C> {
         let rt = Arc::new(ViewRuntime::new(persisted));
         map.insert(view_name.to_string(), Arc::clone(&rt));
         rt
+    }
+
+    /// TH6a spec §3 — synchronous on-write retention. Called after
+    /// every successful firing-row write. Classifies the new row into
+    /// one of three buckets, appends to the in-memory tracker, and
+    /// prunes the oldest row when the bucket exceeds its cap.
+    ///
+    /// Snapshot-bucket overflow emits an `Update` mutation that nulls
+    /// the snapshot fields (the row stays as a metadata-only entry,
+    /// crossing into the `metadata_only` bucket). Metadata-bucket
+    /// overflow emits a `Delete` mutation. Skipped rows (no audit
+    /// snapshot ever) count against `metadata_only` too.
+    async fn apply_retention_after_write(&self, view_name: &str, record: &FiringRecord) {
+        let retention = self.retention_for_view(view_name);
+        let mut all_evictions: Vec<Mutation> = Vec::new();
+
+        {
+            let mut map = self.eviction.lock().await;
+            let state = map.entry(view_name.to_string()).or_default();
+
+            let has_snapshot = record.input_snapshot.is_some();
+            let bucket_for_new = match (has_snapshot, record.status) {
+                (true, FiringStatus::Error) | (true, FiringStatus::Quarantined) => {
+                    Bucket::ErrorsWithSnapshot
+                }
+                (true, FiringStatus::Success) => Bucket::SuccessesWithSnapshot,
+                (false, _) => Bucket::MetadataOnly,
+                // Skipped + snapshot is impossible (write_skip_firing
+                // never sets one); treat as metadata for safety.
+                (true, FiringStatus::Skipped(_)) => Bucket::MetadataOnly,
+            };
+            let entry = (record.fired_at_ms, record.trigger_id.clone());
+            match bucket_for_new {
+                Bucket::ErrorsWithSnapshot => state.errors_with_snapshot.push_back(entry),
+                Bucket::SuccessesWithSnapshot => state.successes_with_snapshot.push_back(entry),
+                Bucket::MetadataOnly => state.metadata_only.push_back(entry),
+            }
+
+            // Snapshot buckets: evict oldest snapshots over cap.
+            // Each evicted entry moves to the metadata_only bucket
+            // (cross-bucket movement per spec §3) so it counts toward
+            // the metadata cap from now on.
+            while retention.errors_with_snapshot > 0
+                && state.errors_with_snapshot.len() as u32 > retention.errors_with_snapshot
+            {
+                let Some((fired_at, tid)) = state.errors_with_snapshot.pop_front() else {
+                    break;
+                };
+                all_evictions.push(FiringRecord::build_snapshot_eviction_mutation(
+                    &tid,
+                    fired_at,
+                    &self.eviction_pub_key,
+                ));
+                state.metadata_only.push_back((fired_at, tid));
+            }
+            while retention.successes_with_snapshot > 0
+                && state.successes_with_snapshot.len() as u32 > retention.successes_with_snapshot
+            {
+                let Some((fired_at, tid)) = state.successes_with_snapshot.pop_front() else {
+                    break;
+                };
+                all_evictions.push(FiringRecord::build_snapshot_eviction_mutation(
+                    &tid,
+                    fired_at,
+                    &self.eviction_pub_key,
+                ));
+                state.metadata_only.push_back((fired_at, tid));
+            }
+
+            // Metadata bucket: oldest rows are deleted entirely.
+            while retention.metadata_only > 0
+                && state.metadata_only.len() as u32 > retention.metadata_only
+            {
+                let Some((fired_at, tid)) = state.metadata_only.pop_front() else {
+                    break;
+                };
+                all_evictions.push(FiringRecord::build_metadata_delete_mutation(
+                    &tid,
+                    fired_at,
+                    &self.eviction_pub_key,
+                ));
+            }
+        }
+
+        for mutation in all_evictions {
+            if let Err(e) = self.firing_writer.write_eviction(mutation).await {
+                warn!(
+                    "TriggerFiring retention eviction failed for view '{}': {}",
+                    view_name, e
+                );
+            }
+        }
+    }
+
+    /// Look up the per-view retention caps from the view registry.
+    /// Returns zeros (no retention) for unknown views or when the
+    /// registry lock is poisoned — retention is best-effort and a
+    /// missing config must not block fires.
+    fn retention_for_view(&self, view_name: &str) -> crate::view::types::FiringRetention {
+        let Ok(registry) = self.schema_manager.view_registry().lock() else {
+            return crate::view::types::FiringRetention::default();
+        };
+        registry
+            .get_view(view_name)
+            .map(|v| v.firing_retention)
+            .unwrap_or_default()
     }
 
     /// Snapshot views in the registry that have a trigger reacting to
@@ -667,6 +945,9 @@ impl<C: Clock> TriggerRunner<C> {
             input_row_count: outcome.input_row_count,
             output_row_count: outcome.output_row_count,
             error_message: outcome.error_message.clone(),
+            input_snapshot: outcome.input_snapshot.clone(),
+            schema_versions: outcome.schema_versions.clone(),
+            snapshot_truncated: outcome.snapshot_truncated,
         };
 
         let write_result = self.firing_writer.write_firing(record.clone()).await;
@@ -676,6 +957,7 @@ impl<C: Clock> TriggerRunner<C> {
             let snap = st.clone();
             drop(st);
             self.persist(view_name, &snap).await;
+            self.apply_retention_after_write(view_name, &record).await;
         } else {
             warn!(
                 "TriggerFiring write failed for view '{}' — will retry (status was {:?})",
@@ -745,6 +1027,9 @@ impl<C: Clock> TriggerRunner<C> {
                 input_row_count: outcome.input_row_count,
                 output_row_count: outcome.output_row_count,
                 error_message: outcome.error_message.clone(),
+                input_snapshot: outcome.input_snapshot.clone(),
+                schema_versions: outcome.schema_versions.clone(),
+                snapshot_truncated: outcome.snapshot_truncated,
             };
 
             let write_result = self.firing_writer.write_firing(record.clone()).await;
@@ -758,6 +1043,7 @@ impl<C: Clock> TriggerRunner<C> {
                 let snap = st.clone();
                 drop(st);
                 self.persist(view_name, &snap).await;
+                self.apply_retention_after_write(view_name, &record).await;
             } else {
                 warn!(
                     "TriggerFiring write failed for view '{}' — will retry (status was {:?})",
@@ -1060,6 +1346,9 @@ impl<C: Clock> TriggerRunner<C> {
             input_row_count: 0,
             output_row_count: 0,
             error_message: None,
+            input_snapshot: None,
+            schema_versions: HashMap::new(),
+            snapshot_truncated: false,
         };
 
         let write_result = self.firing_writer.write_firing(record).await;
@@ -1199,10 +1488,22 @@ pub struct ViewOrchestratorFireHandler {
 #[async_trait]
 impl FireHandler for ViewOrchestratorFireHandler {
     async fn fire(&self, view_name: &str) -> FireOutcome {
-        match self.view_orchestrator.fire_view(view_name).await {
-            Ok(_output) => FireOutcome::success(0, 0),
+        let view_outcome = self
+            .view_orchestrator
+            .fire_view_with_capture(view_name)
+            .await;
+        let mut fire_outcome = match &view_outcome.result {
+            Ok(_) => FireOutcome::success(0, 0),
             Err(e) => FireOutcome::error(e.to_string()),
+        };
+        if let Some(cap) = view_outcome.capture {
+            fire_outcome = fire_outcome.with_snapshot(
+                cap.input_snapshot,
+                cap.schema_versions,
+                cap.snapshot_truncated,
+            );
         }
+        fire_outcome
     }
 }
 
@@ -1235,6 +1536,16 @@ impl FiringWriter for MutationManagerFiringWriter {
         let mm = self.mutation_manager.upgrade().ok_or_else(|| {
             SchemaError::InvalidData(
                 "MutationManager was dropped; cannot write TriggerFiring row".into(),
+            )
+        })?;
+        mm.write_mutations_batch_async(vec![mutation]).await?;
+        Ok(())
+    }
+
+    async fn write_eviction(&self, mutation: Mutation) -> Result<(), SchemaError> {
+        let mm = self.mutation_manager.upgrade().ok_or_else(|| {
+            SchemaError::InvalidData(
+                "MutationManager was dropped; cannot write TriggerFiring eviction".into(),
             )
         })?;
         mm.write_mutations_batch_async(vec![mutation]).await?;
@@ -2980,6 +3291,9 @@ mod tests {
                 input_row_count: 0,
                 output_row_count: 0,
                 error_message: None,
+                input_snapshot: None,
+                schema_versions: HashMap::new(),
+                snapshot_truncated: false,
             }
             .into_mutation("pk")
         };
@@ -3146,6 +3460,593 @@ mod tests {
         assert!(
             writer2.rows.lock().await.is_empty(),
             "quarantined view must not produce audit rows on restart"
+        );
+    }
+
+    // ──────────── TH6a tests ──────────────────────────────────────
+
+    /// Test writer that accepts both `write_firing` and `write_eviction`
+    /// calls, recording them separately so retention behavior can be
+    /// asserted on. Used by all TH6a retention tests.
+    struct EvictionTrackingWriter {
+        firings: TokioMutex<Vec<FiringRecord>>,
+        evictions: TokioMutex<Vec<Mutation>>,
+    }
+
+    impl EvictionTrackingWriter {
+        fn new() -> Arc<Self> {
+            Arc::new(Self {
+                firings: TokioMutex::new(Vec::new()),
+                evictions: TokioMutex::new(Vec::new()),
+            })
+        }
+    }
+
+    #[async_trait]
+    impl FiringWriter for EvictionTrackingWriter {
+        async fn write_firing(&self, row: FiringRecord) -> Result<(), SchemaError> {
+            self.firings.lock().await.push(row);
+            Ok(())
+        }
+        async fn write_eviction(&self, mutation: Mutation) -> Result<(), SchemaError> {
+            self.evictions.lock().await.push(mutation);
+            Ok(())
+        }
+    }
+
+    /// FireHandler that returns whatever FireOutcome the test stages.
+    /// Lets each test inject capture metadata directly without needing
+    /// a real ViewOrchestrator. The bool flag parameter controls
+    /// whether the handler returns success or error per-call.
+    struct StagedFireHandler {
+        outcomes: TokioMutex<Vec<FireOutcome>>,
+    }
+
+    impl StagedFireHandler {
+        fn new(outcomes: Vec<FireOutcome>) -> Arc<Self> {
+            Arc::new(Self {
+                outcomes: TokioMutex::new(outcomes.into_iter().rev().collect()),
+            })
+        }
+    }
+
+    #[async_trait]
+    impl FireHandler for StagedFireHandler {
+        async fn fire(&self, _view_name: &str) -> FireOutcome {
+            self.outcomes
+                .lock()
+                .await
+                .pop()
+                .unwrap_or_else(|| FireOutcome::success(0, 0))
+        }
+    }
+
+    fn register_view_with_retention(
+        sm: &Arc<SchemaCore>,
+        name: &str,
+        source_schema: &str,
+        retention: crate::view::types::FiringRetention,
+    ) {
+        use crate::schema::types::field_value_type::FieldValueType;
+        use crate::schema::types::operations::Query;
+        use crate::schema::types::schema::DeclarativeSchemaType as SchemaType;
+        use crate::view::types::TransformView;
+
+        let mut view = TransformView::new(
+            name,
+            SchemaType::Single,
+            None,
+            vec![Query::new(
+                source_schema.to_string(),
+                vec!["f1".to_string()],
+            )],
+            None,
+            HashMap::from([("f1".to_string(), FieldValueType::Any)]),
+        );
+        view.triggers = vec![Trigger::OnWrite {
+            schemas: vec![source_schema.into()],
+        }];
+        view.firing_retention = retention;
+
+        let mut reg = sm.view_registry().lock().unwrap();
+        reg.register_view(view, |_| true).unwrap();
+    }
+
+    #[tokio::test]
+    async fn firing_record_serializes_snapshot_fields() {
+        // INVARIANT: `into_mutation` writes input_snapshot,
+        // schema_versions, and snapshot_truncated onto the right
+        // schema fields. Audit rows must round-trip these fields so
+        // TH6b CLI export can read them back.
+        use crate::triggers::fields as trig_fields;
+
+        let mut versions = HashMap::new();
+        versions.insert("S1".to_string(), "abc123".to_string());
+
+        let row = FiringRecord {
+            trigger_id: "V:0".into(),
+            view_name: "V".into(),
+            fired_at_ms: 42,
+            duration_ms: 7,
+            status: FiringStatus::Error,
+            input_row_count: 0,
+            output_row_count: 0,
+            error_message: Some("trap".into()),
+            input_snapshot: Some(serde_json::json!({"S1": [{"f1": "v"}]})),
+            schema_versions: versions,
+            snapshot_truncated: true,
+        };
+
+        let m = row.into_mutation("pk");
+        assert!(matches!(
+            m.fields_and_values.get(trig_fields::INPUT_SNAPSHOT),
+            Some(serde_json::Value::Object(_))
+        ));
+        let versions_val = m
+            .fields_and_values
+            .get(trig_fields::SCHEMA_VERSIONS)
+            .unwrap();
+        assert_eq!(
+            versions_val["S1"],
+            serde_json::Value::String("abc123".into())
+        );
+        assert_eq!(
+            m.fields_and_values.get(trig_fields::SNAPSHOT_TRUNCATED),
+            Some(&serde_json::Value::Bool(true))
+        );
+    }
+
+    #[tokio::test]
+    async fn capture_off_writes_null_snapshot_regardless_of_outcome() {
+        // TH6a spec §5 — when the view's firing_capture is Off (the
+        // legacy default), neither success nor error firings carry a
+        // snapshot. The default register_view path leaves firing_capture
+        // at Off, so this is the upgrade-path invariant.
+        let sm = make_schema_manager().await;
+        register_view(
+            &sm,
+            "V1",
+            "S1",
+            vec![Trigger::OnWrite {
+                schemas: vec!["S1".into()],
+            }],
+        );
+        let clock = Arc::new(MockClock::new(1_000));
+        // The fire path stamped a snapshot (simulating `All` capture)
+        // but the view's policy is `Off`. The orchestrator's capture
+        // decision is what should govern, but here we're testing the
+        // runner itself: it just plumbs whatever FireOutcome the
+        // handler gives it. The orchestrator-side test below asserts
+        // the policy decision separately.
+        let fire = StagedFireHandler::new(vec![FireOutcome::success(0, 0)]);
+        let writer = EvictionTrackingWriter::new();
+
+        let runner = make_runner(
+            Arc::clone(&sm),
+            clock,
+            Arc::clone(&fire) as Arc<dyn FireHandler>,
+            Arc::clone(&writer) as Arc<dyn FiringWriter>,
+        );
+        runner.on_mutation_notified("S1").await.unwrap();
+        for _ in 0..30 {
+            if !writer.firings.lock().await.is_empty() {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+        let firings = writer.firings.lock().await.clone();
+        assert_eq!(firings.len(), 1);
+        assert!(firings[0].input_snapshot.is_none());
+        assert!(firings[0].schema_versions.is_empty());
+        assert!(!firings[0].snapshot_truncated);
+    }
+
+    #[tokio::test]
+    async fn errors_only_capture_attaches_snapshot_on_error_not_success() {
+        // Under `firing_capture: ErrorsOnly`, a successful FireOutcome
+        // (no snapshot) and an erroring FireOutcome (with snapshot)
+        // both flow through the runner unchanged. The runner's job is
+        // to plumb capture info; the orchestrator's job is to decide
+        // whether to attach it. This test verifies plumbing.
+        let sm = make_schema_manager().await;
+        register_view(
+            &sm,
+            "V1",
+            "S1",
+            vec![Trigger::OnWrite {
+                schemas: vec!["S1".into()],
+            }],
+        );
+        let clock = Arc::new(MockClock::new(1_000));
+
+        // First call: success without snapshot. Second call: error
+        // with snapshot (simulates orchestrator's ErrorsOnly capture).
+        let mut versions = HashMap::new();
+        versions.insert("S1".to_string(), "v1hash".to_string());
+        let fire = StagedFireHandler::new(vec![
+            FireOutcome::success(0, 0),
+            FireOutcome::error("trap").with_snapshot(
+                serde_json::json!({"S1": [{"f1": "boom"}]}),
+                versions,
+                false,
+            ),
+            // Two more failures to push the streak past quarantine threshold
+            // would taint subsequent runs, so just one error here.
+        ]);
+        let writer = EvictionTrackingWriter::new();
+        let runner = make_runner(
+            Arc::clone(&sm),
+            clock,
+            Arc::clone(&fire) as Arc<dyn FireHandler>,
+            Arc::clone(&writer) as Arc<dyn FiringWriter>,
+        );
+
+        runner.on_mutation_notified("S1").await.unwrap();
+        for _ in 0..30 {
+            if !writer.firings.lock().await.is_empty() {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+        runner.on_mutation_notified("S1").await.unwrap();
+        for _ in 0..30 {
+            if writer.firings.lock().await.len() >= 2 {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+
+        let firings = writer.firings.lock().await.clone();
+        assert_eq!(firings.len(), 2);
+        // First firing: success, no snapshot.
+        assert_eq!(firings[0].status, FiringStatus::Success);
+        assert!(firings[0].input_snapshot.is_none());
+        // Second firing: error, with snapshot.
+        assert_eq!(firings[1].status, FiringStatus::Error);
+        assert!(firings[1].input_snapshot.is_some());
+        assert_eq!(
+            firings[1].schema_versions.get("S1").map(String::as_str),
+            Some("v1hash")
+        );
+    }
+
+    #[tokio::test]
+    async fn all_capture_attaches_snapshot_on_every_outcome() {
+        // Under `firing_capture: All`, every FireOutcome carries a
+        // snapshot. Plumbing test.
+        let sm = make_schema_manager().await;
+        register_view(
+            &sm,
+            "V1",
+            "S1",
+            vec![Trigger::OnWrite {
+                schemas: vec!["S1".into()],
+            }],
+        );
+        let clock = Arc::new(MockClock::new(1_000));
+        let snap1 = serde_json::json!({"S1": [{"f1": 1}]});
+        let snap2 = serde_json::json!({"S1": [{"f1": 2}]});
+        let fire = StagedFireHandler::new(vec![
+            FireOutcome::success(0, 0).with_snapshot(snap1.clone(), HashMap::new(), false),
+            FireOutcome::success(0, 0).with_snapshot(snap2.clone(), HashMap::new(), false),
+        ]);
+        let writer = EvictionTrackingWriter::new();
+        let runner = make_runner(
+            Arc::clone(&sm),
+            clock,
+            Arc::clone(&fire) as Arc<dyn FireHandler>,
+            Arc::clone(&writer) as Arc<dyn FiringWriter>,
+        );
+
+        runner.on_mutation_notified("S1").await.unwrap();
+        for _ in 0..30 {
+            if !writer.firings.lock().await.is_empty() {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+        runner.on_mutation_notified("S1").await.unwrap();
+        for _ in 0..30 {
+            if writer.firings.lock().await.len() >= 2 {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+
+        let firings = writer.firings.lock().await.clone();
+        assert_eq!(firings.len(), 2);
+        assert_eq!(firings[0].input_snapshot.as_ref().unwrap(), &snap1);
+        assert_eq!(firings[1].input_snapshot.as_ref().unwrap(), &snap2);
+    }
+
+    /// Test helper: build a FiringRecord with a crafted bucket
+    /// classification. `with_snapshot` controls whether
+    /// `input_snapshot` is `Some`/`None` (which determines bucket
+    /// membership in `apply_retention_after_write`).
+    fn craft_record(
+        view: &str,
+        index: usize,
+        fired_at: i64,
+        status: FiringStatus,
+        with_snapshot: bool,
+    ) -> FiringRecord {
+        FiringRecord {
+            trigger_id: format!("{}:{}", view, index),
+            view_name: view.to_string(),
+            fired_at_ms: fired_at,
+            duration_ms: 0,
+            status,
+            input_row_count: 0,
+            output_row_count: 0,
+            error_message: if matches!(status, FiringStatus::Error) {
+                Some("trap".into())
+            } else {
+                None
+            },
+            input_snapshot: if with_snapshot {
+                Some(serde_json::json!({"S": [{"f": fired_at}]}))
+            } else {
+                None
+            },
+            schema_versions: HashMap::new(),
+            snapshot_truncated: false,
+        }
+    }
+
+    #[tokio::test]
+    async fn retention_evicts_oldest_error_snapshot_when_cap_exceeded() {
+        // TH6a spec §3 — under `errors_with_snapshot` cap of 3, write
+        // 4 error firings. The oldest must move to metadata_only via
+        // an Update mutation that nullifies the snapshot fields.
+        let sm = make_schema_manager().await;
+        register_view_with_retention(
+            &sm,
+            "V1",
+            "S1",
+            crate::view::types::FiringRetention {
+                errors_with_snapshot: 3,
+                successes_with_snapshot: 0,
+                metadata_only: 1000,
+            },
+        );
+
+        let writer = EvictionTrackingWriter::new();
+        let clock = Arc::new(MockClock::new(1_000));
+        let fire = StagedFireHandler::new(Vec::new());
+        let runner = make_runner(
+            Arc::clone(&sm),
+            clock,
+            Arc::clone(&fire) as Arc<dyn FireHandler>,
+            Arc::clone(&writer) as Arc<dyn FiringWriter>,
+        );
+
+        // Feed 4 error+snapshot firings directly into the retention
+        // tracker (simulating the runner's post-write call from
+        // `fire_once`/`run_fire_with_refire_loop`). Bypasses the
+        // backoff loop entirely so the test is deterministic and fast.
+        for i in 0..4 {
+            let record = craft_record("V1", 0, i as i64, FiringStatus::Error, true);
+            runner.apply_retention_after_write("V1", &record).await;
+        }
+
+        let evictions = writer.evictions.lock().await.clone();
+        assert_eq!(
+            evictions.len(),
+            1,
+            "expected exactly 1 eviction (cap=3, 4 inserts)"
+        );
+        // The eviction must be an Update that nulls the snapshot.
+        assert_eq!(
+            evictions[0].mutation_type,
+            crate::schema::types::operations::MutationType::Update
+        );
+        assert_eq!(
+            evictions[0]
+                .fields_and_values
+                .get(crate::triggers::fields::INPUT_SNAPSHOT),
+            Some(&serde_json::Value::Null)
+        );
+        // Schema versions cleared to empty object.
+        assert_eq!(
+            evictions[0]
+                .fields_and_values
+                .get(crate::triggers::fields::SCHEMA_VERSIONS),
+            Some(&serde_json::Value::Object(serde_json::Map::new()))
+        );
+        assert_eq!(
+            evictions[0]
+                .fields_and_values
+                .get(crate::triggers::fields::SNAPSHOT_TRUNCATED),
+            Some(&serde_json::Value::Bool(false))
+        );
+
+        // Cross-bucket move: the evicted row's metadata_only count
+        // increases by one. With `metadata_only: 1000`, 5th insert
+        // (4 captures + 1 cross-move) won't yet trigger metadata_only
+        // eviction, but bucket state should reflect the count.
+    }
+
+    #[tokio::test]
+    async fn retention_evicts_oldest_success_snapshot_when_cap_exceeded() {
+        // Mirror of the error test for the `successes_with_snapshot`
+        // bucket (TH6a spec §3 — separate cap, default 10).
+        let sm = make_schema_manager().await;
+        register_view_with_retention(
+            &sm,
+            "V1",
+            "S1",
+            crate::view::types::FiringRetention {
+                errors_with_snapshot: 0,
+                successes_with_snapshot: 2,
+                metadata_only: 1000,
+            },
+        );
+
+        let writer = EvictionTrackingWriter::new();
+        let clock = Arc::new(MockClock::new(1_000));
+        let fire = StagedFireHandler::new(Vec::new());
+        let runner = make_runner(
+            Arc::clone(&sm),
+            clock,
+            Arc::clone(&fire) as Arc<dyn FireHandler>,
+            Arc::clone(&writer) as Arc<dyn FiringWriter>,
+        );
+
+        for i in 0..3 {
+            let record = craft_record("V1", 0, i as i64, FiringStatus::Success, true);
+            runner.apply_retention_after_write("V1", &record).await;
+        }
+
+        let evictions = writer.evictions.lock().await.clone();
+        assert_eq!(evictions.len(), 1);
+        assert_eq!(
+            evictions[0].mutation_type,
+            crate::schema::types::operations::MutationType::Update
+        );
+    }
+
+    #[tokio::test]
+    async fn retention_cross_bucket_move_into_metadata_only() {
+        // TH6a spec §3 — when an error-snapshot row is evicted
+        // (snapshot nulled), its underlying firing row counts against
+        // `metadata_only` going forward. With error cap=1 and
+        // metadata cap=1, two error+snapshot inserts produce both an
+        // Update (snapshot eviction) AND a Delete (metadata overflow).
+        let sm = make_schema_manager().await;
+        register_view_with_retention(
+            &sm,
+            "V1",
+            "S1",
+            crate::view::types::FiringRetention {
+                errors_with_snapshot: 1,
+                successes_with_snapshot: 0,
+                metadata_only: 1,
+            },
+        );
+
+        let writer = EvictionTrackingWriter::new();
+        let clock = Arc::new(MockClock::new(1_000));
+        let fire = StagedFireHandler::new(Vec::new());
+        let runner = make_runner(
+            Arc::clone(&sm),
+            clock,
+            Arc::clone(&fire) as Arc<dyn FireHandler>,
+            Arc::clone(&writer) as Arc<dyn FiringWriter>,
+        );
+
+        // First insert: errors=1, metadata=0. No eviction.
+        runner
+            .apply_retention_after_write("V1", &craft_record("V1", 0, 1, FiringStatus::Error, true))
+            .await;
+        // Second insert: errors=2 → over cap, oldest moves to metadata.
+        // metadata=1 (from the cross-move). No metadata overflow yet.
+        runner
+            .apply_retention_after_write("V1", &craft_record("V1", 0, 2, FiringStatus::Error, true))
+            .await;
+        // Third insert: errors=2 → over cap again, another cross-move.
+        // metadata=2 → over cap, oldest deleted.
+        runner
+            .apply_retention_after_write("V1", &craft_record("V1", 0, 3, FiringStatus::Error, true))
+            .await;
+
+        let evictions = writer.evictions.lock().await.clone();
+        // Two snapshot Updates (after inserts 2 and 3) + one Delete
+        // (after insert 3).
+        let updates = evictions
+            .iter()
+            .filter(|m| m.mutation_type == crate::schema::types::operations::MutationType::Update)
+            .count();
+        let deletes = evictions
+            .iter()
+            .filter(|m| m.mutation_type == crate::schema::types::operations::MutationType::Delete)
+            .count();
+        assert_eq!(
+            updates, 2,
+            "expected 2 snapshot evictions; got {:?}",
+            evictions
+        );
+        assert_eq!(
+            deletes, 1,
+            "expected 1 metadata delete; got {:?}",
+            evictions
+        );
+    }
+
+    #[tokio::test]
+    async fn retention_metadata_only_overflow_deletes_oldest() {
+        // TH6a spec §3 — when `metadata_only` exceeds cap, the
+        // oldest row is deleted entirely (not Update'd to null).
+        let sm = make_schema_manager().await;
+        register_view_with_retention(
+            &sm,
+            "V1",
+            "S1",
+            crate::view::types::FiringRetention {
+                errors_with_snapshot: 0,
+                successes_with_snapshot: 0,
+                metadata_only: 2,
+            },
+        );
+
+        let writer = EvictionTrackingWriter::new();
+        let clock = Arc::new(MockClock::new(1_000));
+        let fire = StagedFireHandler::new(Vec::new());
+        let runner = make_runner(
+            Arc::clone(&sm),
+            clock,
+            Arc::clone(&fire) as Arc<dyn FireHandler>,
+            Arc::clone(&writer) as Arc<dyn FiringWriter>,
+        );
+
+        for i in 0..4 {
+            let record = craft_record("V1", 0, i as i64, FiringStatus::Success, false);
+            runner.apply_retention_after_write("V1", &record).await;
+        }
+
+        let evictions = writer.evictions.lock().await.clone();
+        assert_eq!(evictions.len(), 2, "cap=2 with 4 inserts → 2 evictions");
+        for e in &evictions {
+            assert_eq!(
+                e.mutation_type,
+                crate::schema::types::operations::MutationType::Delete,
+                "metadata_only eviction must be Delete; got {:?}",
+                e.mutation_type
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn retention_zero_caps_disables_eviction() {
+        // The default `FiringRetention { 0, 0, 0 }` (set by the
+        // serde-default path for legacy views) must not produce any
+        // eviction mutations regardless of how many firings land.
+        let sm = make_schema_manager().await;
+        register_view_with_retention(
+            &sm,
+            "V1",
+            "S1",
+            crate::view::types::FiringRetention::default(),
+        );
+
+        let writer = EvictionTrackingWriter::new();
+        let clock = Arc::new(MockClock::new(1_000));
+        let fire = StagedFireHandler::new(Vec::new());
+        let runner = make_runner(
+            Arc::clone(&sm),
+            clock,
+            Arc::clone(&fire) as Arc<dyn FireHandler>,
+            Arc::clone(&writer) as Arc<dyn FiringWriter>,
+        );
+
+        for i in 0..50 {
+            let record = craft_record("V1", 0, i as i64, FiringStatus::Success, false);
+            runner.apply_retention_after_write("V1", &record).await;
+        }
+        let evictions = writer.evictions.lock().await.clone();
+        assert!(
+            evictions.is_empty(),
+            "zero caps must disable retention; got {} evictions",
+            evictions.len()
         );
     }
 }

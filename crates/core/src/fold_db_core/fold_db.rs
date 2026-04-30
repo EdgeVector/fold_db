@@ -501,6 +501,7 @@ impl FoldDB {
             sled_pool.clone(),
             Arc::new(SystemClock::new()),
             firing_writer,
+            signer.public_key_base64(),
         ));
         mutation_manager.set_trigger_dispatcher(Arc::new(ArcTriggerDispatcher::new(Arc::clone(
             &trigger_runner,

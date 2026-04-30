@@ -91,6 +91,62 @@ pub struct WasmTransformSpec {
     pub gas_model: Option<GasModel>,
 }
 
+/// What inputs to capture into the `TriggerFiring` audit row's
+/// `input_snapshot` field. TH6a spec §5–6.
+///
+/// Default for existing serialized views is `Off` (preserves prior
+/// behavior — no snapshot capture). New views constructed via the
+/// schema_service client builder default to `ErrorsOnly`; raw API
+/// consumers who omit the field also get `Off`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum FiringCaptureMode {
+    /// Never capture an input snapshot.
+    #[default]
+    Off,
+    /// Capture only when the firing's outcome is `Error`.
+    ErrorsOnly,
+    /// Capture for every firing regardless of outcome.
+    All,
+}
+
+/// Per-bucket retention caps for `TriggerFiring` rows belonging to a
+/// single view. TH6a spec §3.
+///
+/// Buckets are defined as views over the firing-row state:
+/// * `errors_with_snapshot` — `outcome=Error AND input_snapshot IS NOT NULL`
+/// * `successes_with_snapshot` — `outcome=Success AND input_snapshot IS NOT NULL`
+/// * `metadata_only` — `input_snapshot IS NULL` (regardless of outcome)
+///
+/// When a snapshot bucket exceeds its cap, the oldest row's snapshot
+/// fields are nulled (the row stays as a metadata-only entry); when the
+/// metadata bucket exceeds its cap, the oldest row is deleted entirely.
+/// All zeros (the deserialize default) disables retention — appropriate
+/// for `firing_capture: Off` where nothing accumulates anyway.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct FiringRetention {
+    #[serde(default)]
+    pub errors_with_snapshot: u32,
+    #[serde(default)]
+    pub successes_with_snapshot: u32,
+    #[serde(default)]
+    pub metadata_only: u32,
+}
+
+impl FiringRetention {
+    /// Default retention caps applied by the schema_service client
+    /// builder when the caller didn't specify (TH6a spec §6). Mirrored
+    /// here so fold_db tests can construct the same defaults without
+    /// pulling in the client crate.
+    pub const fn client_defaults() -> Self {
+        Self {
+            errors_with_snapshot: 100,
+            successes_with_snapshot: 10,
+            metadata_only: 1000,
+        }
+    }
+}
+
 /// The view definition — a multi-query typed view.
 /// Declares input queries (potentially across multiple schemas),
 /// an optional WASM transform, and a typed output schema.
@@ -118,6 +174,17 @@ pub struct TransformView {
     /// every source mutation.
     #[serde(default)]
     pub triggers: Vec<Trigger>,
+    /// Per-firing input-snapshot capture policy. TH6a spec §5–6.
+    /// `#[serde(default)]` ensures existing serialized views (which
+    /// don't carry this field) deserialize as `Off`, preserving
+    /// pre-TH6a behavior.
+    #[serde(default)]
+    pub firing_capture: FiringCaptureMode,
+    /// Per-view retention caps for `TriggerFiring` rows. TH6a spec §3.
+    /// Zero caps (the deserialize default) effectively disable
+    /// retention since nothing is captured under `firing_capture: Off`.
+    #[serde(default)]
+    pub firing_retention: FiringRetention,
 }
 
 impl TransformView {
@@ -137,6 +204,8 @@ impl TransformView {
             wasm_transform,
             output_fields,
             triggers: Vec::new(),
+            firing_capture: FiringCaptureMode::default(),
+            firing_retention: FiringRetention::default(),
         }
     }
 
@@ -344,6 +413,69 @@ mod tests {
         assert!(deps.contains(&("BlogPost".to_string(), "title".to_string())));
         assert!(deps.contains(&("BlogPost".to_string(), "content".to_string())));
         assert!(deps.contains(&("Author".to_string(), "name".to_string())));
+    }
+
+    #[test]
+    fn firing_capture_default_is_off_for_existing_views() {
+        // TH6a spec §6 — existing serialized views (which don't carry
+        // `firing_capture`) must deserialize as `Off` so pre-TH6a
+        // behavior (no snapshot capture) is preserved on upgrade.
+        let legacy_json = serde_json::json!({
+            "name": "Legacy",
+            "schema_type": "Single",
+            "input_queries": [],
+            "output_fields": {}
+        });
+        let view: TransformView = serde_json::from_value(legacy_json).expect("deserialize");
+        assert_eq!(view.firing_capture, FiringCaptureMode::Off);
+        assert_eq!(view.firing_retention, FiringRetention::default());
+        // All retention caps are zero on a legacy view — nothing to evict
+        // since nothing's being captured.
+        assert_eq!(view.firing_retention.errors_with_snapshot, 0);
+        assert_eq!(view.firing_retention.successes_with_snapshot, 0);
+        assert_eq!(view.firing_retention.metadata_only, 0);
+    }
+
+    #[test]
+    fn firing_capture_round_trips_explicit_values() {
+        // When a caller sets the new fields explicitly, they round-trip
+        // through serde. Confirms the schema_service builder wire-shape
+        // pass-through (TH6a spec §5).
+        let view = TransformView {
+            name: "V".to_string(),
+            schema_type: SchemaType::Single,
+            key_config: None,
+            input_queries: vec![],
+            wasm_transform: None,
+            output_fields: HashMap::new(),
+            triggers: vec![],
+            firing_capture: FiringCaptureMode::ErrorsOnly,
+            firing_retention: FiringRetention::client_defaults(),
+        };
+        let bytes = serde_json::to_vec(&view).expect("serialize");
+        let decoded: TransformView = serde_json::from_slice(&bytes).expect("deserialize");
+        assert_eq!(decoded.firing_capture, FiringCaptureMode::ErrorsOnly);
+        assert_eq!(decoded.firing_retention.errors_with_snapshot, 100);
+        assert_eq!(decoded.firing_retention.successes_with_snapshot, 10);
+        assert_eq!(decoded.firing_retention.metadata_only, 1000);
+    }
+
+    #[test]
+    fn firing_capture_serializes_snake_case() {
+        // Wire format is stable snake_case so cross-language consumers
+        // (TH6b CLI, schema_service) can match against fixed strings.
+        assert_eq!(
+            serde_json::to_string(&FiringCaptureMode::ErrorsOnly).unwrap(),
+            "\"errors_only\""
+        );
+        assert_eq!(
+            serde_json::to_string(&FiringCaptureMode::All).unwrap(),
+            "\"all\""
+        );
+        assert_eq!(
+            serde_json::to_string(&FiringCaptureMode::Off).unwrap(),
+            "\"off\""
+        );
     }
 
     #[test]

@@ -39,6 +39,19 @@ pub mod fields {
     pub const OUTPUT_ROW_COUNT: &str = "output_row_count";
     pub const ERROR_MESSAGE: &str = "error_message";
     pub const SKIP_REASON: &str = "skip_reason";
+    /// JSON-serialized snapshot of the input envelope the view saw at
+    /// firing time. `Null` when capture was disabled or the row's
+    /// snapshot was retention-evicted (TH6a spec §3 cross-bucket move).
+    pub const INPUT_SNAPSHOT: &str = "input_snapshot";
+    /// Object mapping each input schema name to its 64-char hex identity
+    /// hash (`Schema::compute_identity_hash`), captured at firing time.
+    /// Empty `{}` when no snapshot was captured.
+    pub const SCHEMA_VERSIONS: &str = "schema_versions";
+    /// `true` when the input envelope exceeded the global 10 MiB cap
+    /// (TH6a spec §1) and one or more whole records were dropped from
+    /// the snapshot. `false` otherwise (including when no snapshot
+    /// captured).
+    pub const SNAPSHOT_TRUNCATED: &str = "snapshot_truncated";
 }
 
 /// Status values written to the `status` field.
@@ -121,6 +134,24 @@ pub fn trigger_firing_schema() -> Schema {
             fields::SKIP_REASON,
             FieldValueType::OneOf(vec![FieldValueType::String, FieldValueType::Null]),
             "Reason when status == \"skipped\": \"skip_if_idle\" | \"dirty_clean\" | \"catch_up_budget\"; Null otherwise",
+        ),
+        (
+            fields::INPUT_SNAPSHOT,
+            // `Any` here is the closest fit for an opaque JSON envelope —
+            // there is no `Json` variant in `FieldValueType`. `Any`
+            // already accepts `Null`, so we don't wrap it in `OneOf`.
+            FieldValueType::Any,
+            "Captured input envelope (JSON) or Null when no snapshot was taken (TH6a)",
+        ),
+        (
+            fields::SCHEMA_VERSIONS,
+            FieldValueType::Any,
+            "Map of input schema name to 64-char hex identity hash, captured at firing time (TH6a)",
+        ),
+        (
+            fields::SNAPSHOT_TRUNCATED,
+            FieldValueType::Boolean,
+            "True when the input envelope was truncated to fit the 10 MiB cap (TH6a)",
         ),
     ];
 
@@ -212,6 +243,9 @@ mod tests {
             fields::OUTPUT_ROW_COUNT,
             fields::ERROR_MESSAGE,
             fields::SKIP_REASON,
+            fields::INPUT_SNAPSHOT,
+            fields::SCHEMA_VERSIONS,
+            fields::SNAPSHOT_TRUNCATED,
         ];
         expected.sort();
         assert_eq!(declared, expected);

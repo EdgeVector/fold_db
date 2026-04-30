@@ -26,9 +26,11 @@ use crate::schema::types::operations::MutationType;
 use crate::schema::types::{KeyValue, Mutation};
 use crate::schema::{SchemaCore, SchemaError};
 use crate::view::derived_metadata::DerivedMetadata;
-use crate::view::resolver::ViewResolver;
+use crate::view::resolver::{
+    build_snapshot_envelope, CapturedEnvelope, ViewResolver, SNAPSHOT_MAX_INPUT_BYTES,
+};
 use crate::view::transform_field_override::TransformFieldOverride;
-use crate::view::types::TransformView;
+use crate::view::types::{FiringCaptureMode, TransformView};
 
 use super::query::StandardSourceQuery;
 
@@ -52,6 +54,37 @@ pub trait DerivedMutationWriter: Send + Sync {
         &self,
         mutations: Vec<Mutation>,
     ) -> Result<Vec<String>, SchemaError>;
+}
+
+/// TH6a — outcome of [`ViewOrchestrator::fire_view_with_capture`].
+///
+/// Always carries optional capture info (so the trigger runner can
+/// stamp the snapshot fields on the audit row regardless of whether
+/// the WASM succeeded or failed) plus an inner `Result` mirroring
+/// what the original `fire_view` would have returned.
+pub struct FireViewOutcome {
+    /// Captured input/schema_versions/truncated, when the view's
+    /// `firing_capture` policy + outcome warranted capture. `None`
+    /// when capture was disabled or skipped.
+    pub capture: Option<FireCapture>,
+    /// `Ok(output)` on a successful fire; `Err(_)` when WASM/identity
+    /// failed (gas, trap, type validation, calibrated envelope). The
+    /// trigger runner records the failure in the firing row's
+    /// `error_message` field; the capture (if any) lands in the
+    /// snapshot fields alongside.
+    pub result: Result<
+        HashMap<String, HashMap<KeyValue, crate::schema::types::field::FieldValue>>,
+        SchemaError,
+    >,
+}
+
+/// Per-firing snapshot info captured by the orchestrator's fire path
+/// when the view's `firing_capture` policy matches the outcome.
+#[derive(Debug, Clone)]
+pub struct FireCapture {
+    pub input_snapshot: serde_json::Value,
+    pub schema_versions: HashMap<String, String>,
+    pub snapshot_truncated: bool,
 }
 
 /// Orchestrates view-write redirection and trigger-driven WASM fires.
@@ -244,7 +277,29 @@ impl ViewOrchestrator {
         HashMap<String, HashMap<KeyValue, crate::schema::types::field::FieldValue>>,
         SchemaError,
     > {
-        let (view, wasm_engine) = {
+        self.fire_view_with_capture(view_name).await.result
+    }
+
+    /// TH6a — same as [`fire_view`] but additionally returns capture
+    /// info (input snapshot, schema versions, truncation flag) when
+    /// the view's `firing_capture` policy + the fire's outcome warrant
+    /// capture. The trigger runner uses this entry point so the
+    /// resulting `TriggerFiring` row can stamp the snapshot fields.
+    ///
+    /// Capture decision (TH6a spec §5):
+    /// * `firing_capture: Off` — never capture.
+    /// * `firing_capture: ErrorsOnly` — capture only on `Err` outcome.
+    /// * `firing_capture: All` — always capture.
+    ///
+    /// On capture, the input envelope is serialized via
+    /// [`build_snapshot_envelope`] applying the §1 truncation algorithm
+    /// at the global 10 MiB cap. `schema_versions` is populated from
+    /// `SchemaCore::get_identity_hash` for each input schema.
+    pub async fn fire_view_with_capture(&self, view_name: &str) -> FireViewOutcome {
+        // Fail-fast lookup. View not found / lock poisoned both
+        // surface as an `Err` result with no capture — there's nothing
+        // to capture if we never got far enough to build an envelope.
+        let view_lookup = (|| -> Result<_, SchemaError> {
             let registry = self
                 .schema_manager
                 .view_registry()
@@ -255,7 +310,16 @@ impl ViewOrchestrator {
                 .cloned()
                 .ok_or_else(|| SchemaError::NotFound(format!("View '{}' not found", view_name)))?;
             let engine = Arc::clone(registry.wasm_engine());
-            (view, engine)
+            Ok((view, engine))
+        })();
+        let (view, wasm_engine) = match view_lookup {
+            Ok(pair) => pair,
+            Err(e) => {
+                return FireViewOutcome {
+                    capture: None,
+                    result: Err(e),
+                };
+            }
         };
 
         let resolver = ViewResolver::new(Arc::clone(&wasm_engine));
@@ -265,26 +329,89 @@ impl ViewOrchestrator {
             ViewResolver::new(Arc::clone(&wasm_engine)),
         );
 
-        let overrides = self
+        let overrides = match self
             .db_ops
             .views()
             .scan_transform_field_overrides(view_name)
-            .await?;
+            .await
+        {
+            Ok(o) => o,
+            Err(e) => {
+                return FireViewOutcome {
+                    capture: None,
+                    result: Err(e),
+                };
+            }
+        };
 
-        let (output, derived) = resolver
-            .resolve_with_overrides_and_derived(&view, &[], &source_query, &overrides)
-            .await?;
+        let outcome = resolver
+            .resolve_with_snapshot(&view, &[], &source_query, &overrides)
+            .await;
 
-        // Dual-write derived mutations when the resolver produced metadata
-        // (i.e., a WASM fire — identity views skip this branch). Best-effort
-        // per-view: errors here propagate so the trigger runner records
-        // them in the audit log.
-        if let (Some(metadata), Some(writer)) = (derived, self.snapshot_derived_writer().await) {
-            Self::write_derived_mutations(writer.as_ref(), &self.db_ops, &view, &output, metadata)
-                .await?;
+        let envelope = outcome.envelope;
+        match outcome.result {
+            Ok((output, derived)) => {
+                // Dual-write derived mutations when the resolver produced metadata
+                // (i.e., a WASM fire — identity views skip this branch).
+                if let (Some(metadata), Some(writer)) =
+                    (derived, self.snapshot_derived_writer().await)
+                {
+                    if let Err(e) = Self::write_derived_mutations(
+                        writer.as_ref(),
+                        &self.db_ops,
+                        &view,
+                        &output,
+                        metadata,
+                    )
+                    .await
+                    {
+                        return FireViewOutcome {
+                            capture: self.maybe_build_capture(&view, &envelope, true),
+                            result: Err(e),
+                        };
+                    }
+                }
+
+                let capture = self.maybe_build_capture(&view, &envelope, false);
+                FireViewOutcome {
+                    capture,
+                    result: Ok(output),
+                }
+            }
+            Err(err) => {
+                let capture = self.maybe_build_capture(&view, &envelope, true);
+                FireViewOutcome {
+                    capture,
+                    result: Err(err),
+                }
+            }
+        }
+    }
+
+    /// Decide whether the view's `firing_capture` policy + the fire's
+    /// outcome warrant capturing a snapshot, and (if so) build it.
+    fn maybe_build_capture(
+        &self,
+        view: &TransformView,
+        envelope: &CapturedEnvelope,
+        errored: bool,
+    ) -> Option<FireCapture> {
+        if !should_capture(view.firing_capture, errored) {
+            return None;
         }
 
-        Ok(output)
+        let (snapshot, truncated) = build_snapshot_envelope(envelope, SNAPSHOT_MAX_INPUT_BYTES);
+        let mut schema_versions: HashMap<String, String> = HashMap::new();
+        for schema_name in envelope.keys() {
+            if let Some(hash) = self.schema_manager.get_identity_hash(schema_name) {
+                schema_versions.insert(schema_name.clone(), hash);
+            }
+        }
+        Some(FireCapture {
+            input_snapshot: snapshot,
+            schema_versions,
+            snapshot_truncated: truncated,
+        })
     }
 
     /// Turn a successful WASM fire's output into a batch of derived-provenance
@@ -334,6 +461,18 @@ impl ViewOrchestrator {
         }
 
         Ok(())
+    }
+}
+
+/// TH6a — pure capture decision: given a view's policy and whether the
+/// fire errored, return `true` iff a snapshot should be captured.
+/// Free function so it's exercised by unit tests without a full
+/// orchestrator stack.
+fn should_capture(mode: FiringCaptureMode, errored: bool) -> bool {
+    match mode {
+        FiringCaptureMode::Off => false,
+        FiringCaptureMode::ErrorsOnly => errored,
+        FiringCaptureMode::All => true,
     }
 }
 
@@ -544,5 +683,31 @@ mod derived_mutation_tests {
         assert_eq!(input_snapshot_hash, "def");
         assert_eq!(sources_merkle_root, "ghi");
         assert_eq!(encoding_version, 1);
+    }
+}
+
+#[cfg(test)]
+mod capture_decision_tests {
+    //! TH6a spec §5 — pure capture-decision unit tests. The decision is
+    //! independent of the orchestrator's IO so it lives in a free
+    //! function that this mod exercises directly.
+    use super::*;
+
+    #[test]
+    fn off_never_captures() {
+        assert!(!should_capture(FiringCaptureMode::Off, false));
+        assert!(!should_capture(FiringCaptureMode::Off, true));
+    }
+
+    #[test]
+    fn errors_only_captures_only_on_error() {
+        assert!(!should_capture(FiringCaptureMode::ErrorsOnly, false));
+        assert!(should_capture(FiringCaptureMode::ErrorsOnly, true));
+    }
+
+    #[test]
+    fn all_always_captures() {
+        assert!(should_capture(FiringCaptureMode::All, false));
+        assert!(should_capture(FiringCaptureMode::All, true));
     }
 }

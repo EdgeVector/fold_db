@@ -406,6 +406,13 @@ impl SchemaCore {
             schema.populate_runtime_fields()?;
         }
 
+        // TH6a — cache the schema's identity hash (`get_identity_hash`) so
+        // the firing-snapshot writer can stamp `schema_versions` on every
+        // capture without a per-fire recompute. Recomputed unconditionally:
+        // the input may have come from the schema service (no hash set) or
+        // from a re-registration with changed fields.
+        schema.compute_identity_hash();
+
         let name = schema.name.clone();
 
         // Check if schema exists in database
@@ -651,6 +658,18 @@ impl SchemaCore {
         Ok(())
     }
 
+    /// TH6a — return the cached identity hash for a registered schema,
+    /// computed at registration time by `Schema::compute_identity_hash`.
+    /// `None` for unknown schemas. Used by the firing-snapshot capture
+    /// path to stamp the `schema_versions` audit-row field without
+    /// recomputing the hash on every fire (TH6a spec §7).
+    pub fn get_identity_hash(&self, schema_name: &str) -> Option<String> {
+        lock_map(&self.schemas, "schemas")
+            .ok()?
+            .get(schema_name)
+            .and_then(|s| s.get_identity_hash().cloned())
+    }
+
     /// Check if a name is used by either a schema or a view.
     pub fn name_exists(&self, name: &str) -> Result<bool, SchemaError> {
         let schemas = lock_map(&self.schemas, "schemas")?;
@@ -712,6 +731,35 @@ mod tests {
         let core = SchemaCore::new_for_testing().await.expect("init core");
         let schemas = core.get_schemas().expect("get_schemas");
         assert!(schemas.is_empty(), "expected no schemas at start");
+    }
+
+    #[tokio::test]
+    async fn get_identity_hash_returns_cached_hash_after_registration() {
+        // TH6a spec §7 — `SchemaCore` caches the identity hash at
+        // registration time so the firing-snapshot writer can stamp
+        // `schema_versions` without recomputing.
+        let core = SchemaCore::new_for_testing().await.expect("init core");
+        core.load_schema_from_json(&blogpost_schema_json())
+            .await
+            .expect("load blogpost");
+
+        let hash = core
+            .get_identity_hash("BlogPost")
+            .expect("identity hash populated at registration time");
+        assert_eq!(hash.len(), 64, "sha256 hex string is 64 chars");
+        assert!(
+            hash.chars().all(|c| c.is_ascii_hexdigit()),
+            "hash must be hex; got '{}'",
+            hash
+        );
+        // Idempotent — repeated calls return the same hash.
+        assert_eq!(core.get_identity_hash("BlogPost"), Some(hash));
+    }
+
+    #[tokio::test]
+    async fn get_identity_hash_unknown_schema_returns_none() {
+        let core = SchemaCore::new_for_testing().await.expect("init core");
+        assert_eq!(core.get_identity_hash("DoesNotExist"), None);
     }
 
     #[tokio::test]

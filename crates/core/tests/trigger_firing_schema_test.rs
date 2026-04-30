@@ -51,6 +51,9 @@ async fn trigger_firing_schema_is_registered_at_startup() {
         fields::OUTPUT_ROW_COUNT,
         fields::ERROR_MESSAGE,
         fields::SKIP_REASON,
+        fields::INPUT_SNAPSHOT,
+        fields::SCHEMA_VERSIONS,
+        fields::SNAPSHOT_TRUNCATED,
     ];
     expected.sort();
     assert_eq!(declared, expected);
