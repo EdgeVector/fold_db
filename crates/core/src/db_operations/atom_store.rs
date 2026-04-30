@@ -275,6 +275,48 @@ impl AtomStore {
         })
     }
 
+    /// Enumerate every atom whose `source_schema_name` matches `schema_name`.
+    ///
+    /// Scans the entire `atom:` namespace, deserializes each value, and filters
+    /// by schema in memory. Output is sorted by atom UUID for deterministic
+    /// ordering — required for snapshot reproducibility (e.g. fold_dev_node's
+    /// snapshot enumeration).
+    ///
+    /// When `org_hash` is `Some`, the scan prefix is `{org_hash}:atom:`. If the
+    /// org-prefixed scan returns nothing, falls back to the unprefixed
+    /// (personal) prefix so atoms written before a schema was tagged remain
+    /// readable. Same dual-read pattern as `get_atom_by_uuid` and
+    /// `get_mutation_events`.
+    pub async fn list_atoms_by_schema(
+        &self,
+        schema_name: &str,
+        org_hash: Option<&str>,
+    ) -> Result<Vec<Atom>, SchemaError> {
+        let base_prefix = "atom:";
+        let prefix = build_storage_key(org_hash, base_prefix);
+        let items: Vec<(String, Atom)> = self
+            .main_store
+            .scan_items_with_prefix(&prefix)
+            .await
+            .map_err(|e| SchemaError::InvalidData(format!("Failed to scan atoms: {}", e)))?;
+
+        let items = if items.is_empty() && org_hash.is_some() {
+            self.main_store
+                .scan_items_with_prefix(base_prefix)
+                .await
+                .map_err(|e| SchemaError::InvalidData(format!("Failed to scan atoms: {}", e)))?
+        } else {
+            items
+        };
+
+        let mut atoms: Vec<Atom> = items
+            .into_iter()
+            .filter_map(|(_, atom)| (atom.source_schema_name() == schema_name).then_some(atom))
+            .collect();
+        atoms.sort_by(|a, b| a.uuid().cmp(b.uuid()));
+        Ok(atoms)
+    }
+
     /// Load all mutation events for a molecule, sorted chronologically.
     ///
     /// When `org_hash` is `Some`, the scan prefix is `{org_hash}:history:{mol}:`.
