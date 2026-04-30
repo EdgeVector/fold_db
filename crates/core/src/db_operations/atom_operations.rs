@@ -87,4 +87,14 @@ impl DbOperations {
             .get_mutation_events(molecule_uuid, org_hash)
             .await
     }
+
+    pub async fn list_atoms_by_schema(
+        &self,
+        schema_name: &str,
+        org_hash: Option<&str>,
+    ) -> Result<Vec<Atom>, SchemaError> {
+        self.atoms()
+            .list_atoms_by_schema(schema_name, org_hash)
+            .await
+    }
 }
