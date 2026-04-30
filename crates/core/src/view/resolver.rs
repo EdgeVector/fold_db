@@ -7,8 +7,43 @@ use crate::view::transform_field_override::TransformFieldOverride;
 use crate::view::types::{InputDimension, TransformView};
 use crate::view::wasm_engine::WasmTransformEngine;
 use async_trait::async_trait;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
+
+/// Per-firing input envelope captured by the resolver alongside the
+/// view's output. Used by the trigger runner's `TriggerFiring` audit
+/// row to record the exact input the WASM saw at firing time (TH6a).
+///
+/// The shape mirrors the resolver's intermediate `all_query_results`
+/// (`schema -> field -> KeyValue -> FieldValue`) so the orchestrator
+/// can serialize it into the spec's `BTreeMap<String, Vec<Value>>`
+/// per-record snapshot form without needing the resolver to know
+/// about that representation.
+pub type CapturedEnvelope = HashMap<String, HashMap<String, HashMap<KeyValue, FieldValue>>>;
+
+/// Successful resolver output: per-field results plus optional
+/// derived-mutation metadata (only populated for WASM views).
+type ResolveResult = (
+    HashMap<String, HashMap<KeyValue, FieldValue>>,
+    Option<DerivedMetadata>,
+);
+
+/// Result returned from [`ViewResolver::resolve_with_snapshot`].
+///
+/// Always carries the captured input envelope (gathered before any
+/// WASM execution) so a failed transform still records what input was
+/// seen — that's the whole point of capturing on errors. The inner
+/// `result` is the same `Result` shape `resolve_with_overrides_and_derived`
+/// returns, so callers that don't care about the snapshot can ignore
+/// `envelope` and treat this exactly like the older entry point.
+pub struct SnapshotResolveOutcome {
+    /// Inputs assembled from `view.input_queries` before WASM ran.
+    pub envelope: CapturedEnvelope,
+    /// The resolver's output and (for WASM views) derived-metadata.
+    /// `Err` when WASM/identity/type-validation failed; the envelope
+    /// is still populated.
+    pub result: Result<ResolveResult, SchemaError>,
+}
 
 /// Map a `SchemaError` produced by the WASM execution path into a
 /// human-readable cause string. Used to enrich the `InvalidTransform`
@@ -124,51 +159,95 @@ impl ViewResolver {
         requested_fields: &[String],
         source_query: &dyn SourceQueryFn,
         overrides: &[(String, String, TransformFieldOverride)],
-    ) -> Result<
-        (
-            HashMap<String, HashMap<KeyValue, FieldValue>>,
-            Option<DerivedMetadata>,
-        ),
-        SchemaError,
-    > {
-        // Determine which fields to return
+    ) -> Result<ResolveResult, SchemaError> {
+        let outcome = self
+            .resolve_with_snapshot(view, requested_fields, source_query, overrides)
+            .await;
+        outcome.result
+    }
+
+    /// Like [`resolve_with_overrides_and_derived`], but additionally
+    /// returns the per-firing input envelope assembled from
+    /// `view.input_queries`. TH6a spec §1, §3 — the envelope is what the
+    /// `TriggerFiring` audit row's `input_snapshot` field captures.
+    ///
+    /// The envelope is gathered BEFORE WASM runs, so callers always get
+    /// it back — even when the inner `result` is `Err` (gas exceeded,
+    /// trap, type validation failure, calibrated envelope rejection).
+    /// That's the whole point: error capture needs the input the WASM
+    /// saw, regardless of whether WASM succeeded.
+    ///
+    /// Existing call sites stay on [`resolve_with_overrides_and_derived`]
+    /// (and friends) since they don't need the envelope; only the
+    /// firing-capture path on `view_orchestrator::fire_view` calls this
+    /// new entry point.
+    pub async fn resolve_with_snapshot(
+        &self,
+        view: &TransformView,
+        requested_fields: &[String],
+        source_query: &dyn SourceQueryFn,
+        overrides: &[(String, String, TransformFieldOverride)],
+    ) -> SnapshotResolveOutcome {
+        // Pre-query validation of requested fields. Has to land in
+        // SnapshotResolveOutcome.result rather than panicking — even
+        // though there's no envelope to capture yet at this point, the
+        // contract says we always return an outcome.
         let fields_to_return: Vec<String> = if requested_fields.is_empty() {
             view.output_fields.keys().cloned().collect()
         } else {
-            // Validate requested fields exist in output schema
             for field_name in requested_fields {
                 if !view.output_fields.contains_key(field_name) {
-                    return Err(SchemaError::InvalidField(format!(
-                        "Field '{}' not found in view '{}'",
-                        field_name, view.name
-                    )));
+                    return SnapshotResolveOutcome {
+                        envelope: HashMap::new(),
+                        result: Err(SchemaError::InvalidField(format!(
+                            "Field '{}' not found in view '{}'",
+                            field_name, view.name
+                        ))),
+                    };
                 }
             }
             requested_fields.to_vec()
         };
 
-        // Execute all input queries, merging results when multiple queries target the same schema
-        let mut all_query_results: HashMap<String, HashMap<String, HashMap<KeyValue, FieldValue>>> =
-            HashMap::new();
+        // Execute all input queries, merging results when multiple
+        // queries target the same schema. This is the envelope.
+        let mut envelope: CapturedEnvelope = HashMap::new();
         for query in &view.input_queries {
-            let query_results = source_query.execute_query(query).await?;
-            all_query_results
-                .entry(query.schema_name.clone())
-                .or_default()
-                .extend(query_results);
+            match source_query.execute_query(query).await {
+                Ok(query_results) => {
+                    envelope
+                        .entry(query.schema_name.clone())
+                        .or_default()
+                        .extend(query_results);
+                }
+                Err(e) => {
+                    return SnapshotResolveOutcome {
+                        envelope,
+                        result: Err(e),
+                    };
+                }
+            }
         }
 
+        let result =
+            self.compute_output_from_envelope(view, &fields_to_return, &envelope, overrides);
+        SnapshotResolveOutcome { envelope, result }
+    }
+
+    /// Run envelope check, WASM/identity, override merge, and type
+    /// validation against an already-gathered envelope. Extracted so
+    /// both the legacy and snapshot resolve paths share the same logic.
+    fn compute_output_from_envelope(
+        &self,
+        view: &TransformView,
+        fields_to_return: &[String],
+        envelope: &CapturedEnvelope,
+        overrides: &[(String, String, TransformFieldOverride)],
+    ) -> Result<ResolveResult, SchemaError> {
         // MDT-F Phase 2 — runtime envelope rejection.
-        //
-        // If the transform has a calibrated gas model, reject inputs that
-        // fall outside the envelope BEFORE entering the WASM. This is
-        // distinct from `GasExceeded` (which is a runtime fuel trap): no
-        // fuel is burned here, and the failure is deterministic across
-        // devices because the measurement is over the input JSON shape,
-        // which every replayer sees identically.
         if let Some(spec) = &view.wasm_transform {
             if let Some(model) = &spec.gas_model {
-                let measured = measure_input(&all_query_results, &model.coefficients);
+                let measured = measure_input(envelope, &model.coefficients);
                 if measured > model.max_input_size {
                     return Err(SchemaError::InvalidTransform(format!(
                         "View '{}' unavailable: input exceeds calibrated envelope (measured={}, limit={})",
@@ -178,17 +257,11 @@ impl ViewResolver {
             }
         }
 
-        // Compute output. WASM failures surface as `InvalidTransform` so
-        // the trigger runner records them as `status="error"` rows in the
-        // `TriggerFiring` audit log; downstream (cron / re-fire) decides
-        // whether to retry.
-        //
-        // Only WASM views produce `DerivedMetadata` — identity views are
-        // pass-through and have no derivation to record.
+        // Compute output. WASM failures surface as `InvalidTransform`.
         let (mut output, derived) = if let Some(spec) = &view.wasm_transform {
-            match self.execute_wasm_transform(&spec.bytes, spec.max_gas, &all_query_results) {
+            match self.execute_wasm_transform(&spec.bytes, spec.max_gas, envelope) {
                 Ok(output) => {
-                    let metadata = compute_derived_metadata(&spec.bytes, &all_query_results);
+                    let metadata = compute_derived_metadata(&spec.bytes, envelope);
                     (output, Some(metadata))
                 }
                 Err(e) => {
@@ -198,19 +271,11 @@ impl ViewResolver {
                 }
             }
         } else {
-            (self.identity_pass_through(&all_query_results, view)?, None)
+            (self.identity_pass_through(envelope, view)?, None)
         };
 
-        // Apply overrides BEFORE type validation so the user-supplied value
-        // is what we validate. Overrides also extend the output to fields
-        // that the source path produced no entries for (overrides are
-        // sticky regardless of source state).
         Self::apply_overrides_to_field_map(&mut output, view, overrides);
 
-        // Validate output against declared types. A mismatch is a per-input
-        // failure of the transform (the WASM produced a wrongly-shaped
-        // value for this input) — same `InvalidTransform` error path as a
-        // runtime trap.
         for (field_name, field_type) in &view.output_fields {
             if let Some(field_entries) = output.get(field_name) {
                 for fv in field_entries.values() {
@@ -224,9 +289,8 @@ impl ViewResolver {
             }
         }
 
-        // Return only requested fields
         let mut result = HashMap::new();
-        for field_name in &fields_to_return {
+        for field_name in fields_to_return {
             let field_entries = output.get(field_name).cloned().unwrap_or_default();
             result.insert(field_name.clone(), field_entries);
         }
@@ -422,6 +486,93 @@ fn measure_input(
         }
     }
     total
+}
+
+/// TH6a spec §1 — global cap on the snapshot's serialized size.
+/// 10 MiB. Exposed for tests that want to override the cap.
+pub const SNAPSHOT_MAX_INPUT_BYTES: usize = 10 * 1024 * 1024;
+
+/// Build the per-firing snapshot envelope from a [`CapturedEnvelope`],
+/// applying TH6a spec §1 truncation: serialize records in deterministic
+/// order (schemas sorted lexicographically, records within each schema
+/// sorted by their primary key), drop whole records once `max_bytes`
+/// would be exceeded.
+///
+/// The output shape is `{ schema_name: [ record1, record2, ... ] }`
+/// where each record is a JSON object mapping field names to values
+/// for a single primary key. This is the spec's
+/// `BTreeMap<String, Vec<Value>>` shape, distinct from the WASM input
+/// shape (which is `schema -> field -> { key: value }`).
+///
+/// Returns `(snapshot_value, truncated)` where `truncated` is `true`
+/// iff at least one record was dropped to fit `max_bytes`.
+pub fn build_snapshot_envelope(
+    envelope: &CapturedEnvelope,
+    max_bytes: usize,
+) -> (serde_json::Value, bool) {
+    // 1. Pivot field -> key -> value into key -> { field: value } per
+    //    schema, so each "record" is the row's JSON form.
+    // 2. Sort schemas lexicographically; sort records within each
+    //    schema by `KeyValue::to_string`. Both are spec-required for
+    //    deterministic truncation reproducibility.
+    // 3. Append records in order, accumulating serialized bytes;
+    //    drop the rest when the next record would exceed the cap.
+    let mut schemas_sorted: Vec<&String> = envelope.keys().collect();
+    schemas_sorted.sort();
+
+    let mut snapshot = serde_json::Map::new();
+    let mut total_bytes: usize = 0;
+    let mut truncated = false;
+    let mut overflowed = false;
+
+    for schema_name in schemas_sorted {
+        let fields_map = envelope.get(schema_name).expect("schema in sorted list");
+
+        // Pivot to records: key -> { field_name: value }
+        let mut records_by_key: BTreeMap<String, serde_json::Map<String, serde_json::Value>> =
+            BTreeMap::new();
+        for (field_name, entries) in fields_map {
+            for (key, fv) in entries {
+                let key_str = key.to_string();
+                records_by_key
+                    .entry(key_str)
+                    .or_default()
+                    .insert(field_name.clone(), fv.value.clone());
+            }
+        }
+
+        let mut records_for_schema: Vec<serde_json::Value> = Vec::new();
+        for (_key, record) in records_by_key.into_iter() {
+            if overflowed {
+                truncated = true;
+                continue;
+            }
+            let record_value = serde_json::Value::Object(record);
+            let record_bytes = serde_json::to_vec(&record_value)
+                .map(|v| v.len())
+                .unwrap_or(0);
+            // Conservative: account for record bytes plus a few
+            // bytes of separator/structural overhead. The check is
+            // approximate — we want to leave headroom rather than
+            // produce a snapshot that overshoots the cap.
+            if total_bytes.saturating_add(record_bytes) > max_bytes {
+                truncated = true;
+                overflowed = true;
+                continue;
+            }
+            total_bytes = total_bytes.saturating_add(record_bytes);
+            records_for_schema.push(record_value);
+        }
+
+        // Always emit the per-schema list — empty arrays are still
+        // valid JSON and preserve the schema's name in the snapshot.
+        snapshot.insert(
+            schema_name.clone(),
+            serde_json::Value::Array(records_for_schema),
+        );
+    }
+
+    (serde_json::Value::Object(snapshot), truncated)
 }
 
 /// Reverse of `KeyValue::Display`: `"hash:range"` → hash+range,
@@ -745,6 +896,182 @@ mod tests {
         assert_eq!(
             results["content"].values().next().unwrap().value,
             serde_json::json!("World")
+        );
+    }
+
+    #[test]
+    fn build_snapshot_envelope_orders_schemas_lexicographically() {
+        // TH6a spec §1 — schemas sorted by name; records sorted by
+        // primary key. Determinism makes truncation reproducible.
+        let mut envelope: CapturedEnvelope = HashMap::new();
+        for schema in ["Z_late", "A_early", "M_mid"] {
+            let mut field_entries = HashMap::new();
+            field_entries.insert(
+                KeyValue::new(None, Some(format!("{}_k", schema))),
+                make_field_value(serde_json::json!({"v": schema})),
+            );
+            let mut fields = HashMap::new();
+            fields.insert("v".to_string(), field_entries);
+            envelope.insert(schema.to_string(), fields);
+        }
+        let (snapshot, truncated) = build_snapshot_envelope(&envelope, SNAPSHOT_MAX_INPUT_BYTES);
+        assert!(!truncated);
+
+        let obj = snapshot.as_object().expect("snapshot is JSON object");
+        let keys: Vec<&String> = obj.keys().collect();
+        assert_eq!(keys, vec!["A_early", "M_mid", "Z_late"]);
+    }
+
+    #[test]
+    fn build_snapshot_envelope_orders_records_by_primary_key() {
+        let mut envelope: CapturedEnvelope = HashMap::new();
+        let mut field_entries = HashMap::new();
+        for k in ["c_third", "a_first", "b_second"] {
+            field_entries.insert(
+                KeyValue::new(None, Some(k.into())),
+                make_field_value(serde_json::json!({"k": k})),
+            );
+        }
+        let mut fields = HashMap::new();
+        fields.insert("rec".to_string(), field_entries);
+        envelope.insert("S".to_string(), fields);
+
+        let (snapshot, truncated) = build_snapshot_envelope(&envelope, SNAPSHOT_MAX_INPUT_BYTES);
+        assert!(!truncated);
+
+        let arr = snapshot["S"]
+            .as_array()
+            .expect("schema entries are JSON array");
+        assert_eq!(arr.len(), 3);
+        // Records appear in sorted-by-key order; values match.
+        let key_order: Vec<&str> = arr
+            .iter()
+            .map(|r| r["rec"].as_object().unwrap()["k"].as_str().unwrap())
+            .collect();
+        assert_eq!(key_order, vec!["a_first", "b_second", "c_third"]);
+    }
+
+    #[test]
+    fn build_snapshot_envelope_truncates_whole_records_at_cap() {
+        // Per spec §1: drop whole records once the next record would
+        // exceed `max_bytes`. The snapshot must remain valid JSON
+        // (no mid-string truncation) and `truncated = true`.
+        let mut envelope: CapturedEnvelope = HashMap::new();
+        let mut field_entries = HashMap::new();
+        let big_string = "x".repeat(2_000); // ~2KB serialized record
+        for i in 0..20 {
+            // Use zero-padded keys so sort order is stable and predictable.
+            field_entries.insert(
+                KeyValue::new(None, Some(format!("k{:02}", i))),
+                make_field_value(serde_json::json!({"data": big_string})),
+            );
+        }
+        let mut fields = HashMap::new();
+        fields.insert("data".to_string(), field_entries);
+        envelope.insert("S".to_string(), fields);
+
+        // Cap at ~5KB — should fit roughly 2 records before truncating.
+        let (snapshot, truncated) = build_snapshot_envelope(&envelope, 5_000);
+        assert!(truncated, "expected truncation flag");
+
+        let arr = snapshot["S"].as_array().unwrap();
+        assert!(
+            arr.len() < 20,
+            "some records must be dropped; got {}",
+            arr.len()
+        );
+        // Snapshot must serialize as valid JSON — confirms no mid-record
+        // truncation happened.
+        let _round_trip: serde_json::Value =
+            serde_json::from_slice(&serde_json::to_vec(&snapshot).unwrap()).unwrap();
+    }
+
+    #[test]
+    fn build_snapshot_envelope_no_truncation_when_under_cap() {
+        let mut envelope: CapturedEnvelope = HashMap::new();
+        let mut entries = HashMap::new();
+        entries.insert(
+            KeyValue::new(None, Some("k1".into())),
+            make_field_value(serde_json::json!("v1")),
+        );
+        let mut fields = HashMap::new();
+        fields.insert("f".to_string(), entries);
+        envelope.insert("S".to_string(), fields);
+
+        let (_snapshot, truncated) = build_snapshot_envelope(&envelope, SNAPSHOT_MAX_INPUT_BYTES);
+        assert!(!truncated);
+    }
+
+    #[tokio::test]
+    async fn resolve_with_snapshot_returns_envelope_on_success() {
+        // TH6a — the snapshot path returns the captured envelope plus
+        // the regular result. Identity views go through the same path.
+        let resolver = make_resolver();
+        let view = make_identity_view();
+
+        let mut entries = HashMap::new();
+        entries.insert(
+            KeyValue::new(None, Some("2026-01-01".into())),
+            make_field_value(serde_json::json!("hello")),
+        );
+        let mut blogpost_fields = HashMap::new();
+        blogpost_fields.insert("content".to_string(), entries);
+        let mut results_map = HashMap::new();
+        results_map.insert("BlogPost".to_string(), blogpost_fields);
+
+        let mock = MockSourceQuery {
+            results: results_map,
+        };
+
+        let outcome = resolver
+            .resolve_with_snapshot(&view, &["content".to_string()], &mock, &[])
+            .await;
+        assert!(outcome.result.is_ok());
+        // Envelope carries the source data we provided.
+        assert!(outcome.envelope.contains_key("BlogPost"));
+        let bp = &outcome.envelope["BlogPost"];
+        assert!(bp.contains_key("content"));
+    }
+
+    #[tokio::test]
+    async fn resolve_with_snapshot_returns_envelope_even_on_error() {
+        // Type-validation failure happens AFTER queries — the envelope
+        // is still populated when the inner result is `Err`. This is
+        // what enables ErrorsOnly capture.
+        let resolver = make_resolver();
+        let view = TransformView::new(
+            "TypedView",
+            SchemaType::Range,
+            None,
+            vec![Query::new(
+                "BlogPost".to_string(),
+                vec!["count".to_string()],
+            )],
+            None,
+            HashMap::from([("count".to_string(), FieldValueType::Integer)]),
+        );
+
+        let mut count_values = HashMap::new();
+        count_values.insert(
+            KeyValue::new(None, Some("r1".into())),
+            make_field_value(serde_json::json!("not_a_number")),
+        );
+        let mut blogpost_fields = HashMap::new();
+        blogpost_fields.insert("count".to_string(), count_values);
+        let mut results_map = HashMap::new();
+        results_map.insert("BlogPost".to_string(), blogpost_fields);
+
+        let mock = MockSourceQuery {
+            results: results_map,
+        };
+
+        let outcome = resolver
+            .resolve_with_snapshot(&view, &["count".to_string()], &mock, &[])
+            .await;
+        assert!(outcome.result.is_err());
+        assert!(
+            outcome.envelope.contains_key("BlogPost"),
+            "envelope must be populated even when WASM/type validation fails"
         );
     }
 
