@@ -10,7 +10,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 
-use super::{deterministic_molecule_uuid, now_nanos, AtomEntry, MergeConflict};
+use super::{deterministic_molecule_uuid, now_nanos, AtomEntry, KeyMetadata, MergeConflict};
 
 /// A hash-range-based collection of atom references stored in a nested HashMap<BTreeMap> structure.
 ///
@@ -38,7 +38,7 @@ pub struct MoleculeHashRange {
     /// Per-key metadata organized by hash and range values
     /// Structure: HashMap<hash_value, BTreeMap<range_value, KeyMetadata>>
     #[serde(default)]
-    key_metadata: HashMap<String, BTreeMap<String, crate::atom::KeyMetadata>>,
+    key_metadata: HashMap<String, BTreeMap<String, KeyMetadata>>,
 }
 
 impl MoleculeHashRange {

@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use super::{deterministic_molecule_uuid, now_nanos, AtomEntry, MergeConflict};
+use super::{deterministic_molecule_uuid, now_nanos, AtomEntry, KeyMetadata, MergeConflict};
 use crate::security::Ed25519KeyPair;
 
 /// A hash-based collection of atom references stored in a HashMap.
@@ -16,7 +16,7 @@ pub struct MoleculeHash {
     #[serde(default)]
     version: u64,
     #[serde(default)]
-    key_metadata: HashMap<String, super::KeyMetadata>,
+    key_metadata: HashMap<String, KeyMetadata>,
 }
 
 impl MoleculeHash {
