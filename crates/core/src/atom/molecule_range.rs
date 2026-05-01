@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-use super::{deterministic_molecule_uuid, now_nanos, AtomEntry, MergeConflict};
+use super::{deterministic_molecule_uuid, now_nanos, AtomEntry, KeyMetadata, MergeConflict};
 use crate::security::Ed25519KeyPair;
 
 /// A range-based collection of atom references stored in a BTreeMap.
@@ -15,7 +15,7 @@ pub struct MoleculeRange {
     #[serde(default)]
     version: u64,
     #[serde(default)]
-    key_metadata: BTreeMap<String, super::KeyMetadata>,
+    key_metadata: BTreeMap<String, KeyMetadata>,
 }
 
 impl MoleculeRange {

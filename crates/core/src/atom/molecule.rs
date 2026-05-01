@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use super::{deterministic_molecule_uuid, now_nanos, MergeConflict};
+use super::{deterministic_molecule_uuid, now_nanos, KeyMetadata, MergeConflict};
 use crate::atom::provenance::Provenance;
 use crate::security::Ed25519KeyPair;
 
@@ -20,7 +20,7 @@ pub struct Molecule {
     #[serde(default)]
     version: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    key_metadata: Option<super::KeyMetadata>,
+    key_metadata: Option<KeyMetadata>,
     /// Base64-encoded public key of the writer who last signed this molecule.
     #[serde(default)]
     writer_pubkey: String,
@@ -117,13 +117,13 @@ impl Molecule {
     }
 
     /// Sets per-key metadata on the molecule.
-    pub fn set_key_metadata(&mut self, meta: super::KeyMetadata) {
+    pub fn set_key_metadata(&mut self, meta: KeyMetadata) {
         self.key_metadata = Some(meta);
     }
 
     /// Returns the per-key metadata, if any.
     #[must_use]
-    pub fn get_key_metadata(&self) -> Option<&super::KeyMetadata> {
+    pub fn get_key_metadata(&self) -> Option<&KeyMetadata> {
         self.key_metadata.as_ref()
     }
 
