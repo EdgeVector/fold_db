@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 /// `Derived` — produced by a deterministic WASM transform; unsigned.
 /// Authority is by recomputation: given `wasm_hash` + `input_snapshot_hash`,
 /// any node can re-run the transform and check the output matches.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Provenance {
     /// User-originated write. Signed by the user's Ed25519 keypair.
@@ -82,7 +82,7 @@ impl Provenance {
 /// as the payload for the forward/reverse lineage indexes (PR 6). The
 /// `written_at` pins recomputation to the exact source version even if the
 /// molecule has moved on.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct MoleculeRef {
     pub molecule_uuid: String,
     pub atom_uuid: String,
