@@ -71,7 +71,9 @@ pub struct MergeConflict {
 /// Write-time metadata stored per-key on the molecule.
 /// Survives atom deduplication because it lives on the key-to-atom
 /// association, not on the content-addressed atom itself.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq, utoipa::ToSchema)]
+#[derive(
+    Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq, utoipa::ToSchema,
+)]
 pub struct KeyMetadata {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_file_name: Option<String>,
