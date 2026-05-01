@@ -18,7 +18,7 @@ pub use mutation_event::{FieldKey, MutationEvent};
 pub use provenance::{MoleculeRef, Provenance};
 
 /// An atom reference with per-key write timestamp for merge resolution.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, utoipa::ToSchema)]
 pub struct AtomEntry {
     pub atom_uuid: String,
     #[serde(default)]
@@ -71,7 +71,7 @@ pub struct MergeConflict {
 /// Write-time metadata stored per-key on the molecule.
 /// Survives atom deduplication because it lives on the key-to-atom
 /// association, not on the content-addressed atom itself.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq, utoipa::ToSchema)]
 pub struct KeyMetadata {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_file_name: Option<String>,
