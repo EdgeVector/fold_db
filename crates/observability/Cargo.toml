@@ -24,10 +24,13 @@ opentelemetry-http = "0.27"
 # Sentry integration — ERROR-only sink driven by `OBS_SENTRY_DSN`.
 # `default-features = false` opts out of the panic integration (binaries
 # register their own panic handlers) and the heavy `debug-images` feature;
-# we keep `transport` (reqwest + native-tls) and `contexts` so events carry
-# runtime metadata. `sentry-tracing` is the tracing-subscriber bridge and
-# stays compatible with `tracing-subscriber 0.3`.
-sentry = { version = "0.47", default-features = false, features = ["backtrace", "contexts", "release-health", "transport"] }
+# we keep `transport` (reqwest) and `contexts` so events carry runtime
+# metadata. The `rustls` feature swaps Sentry's reqwest TLS backend from
+# native-tls (libssl) to pure-Rust rustls, matching the rest of the
+# workspace and unbreaking Lambda cross-compiles where openssl-sys headers
+# aren't available in the build sysroot. `sentry-tracing` is the
+# tracing-subscriber bridge and stays compatible with `tracing-subscriber 0.3`.
+sentry = { version = "0.47", default-features = false, features = ["backtrace", "contexts", "release-health", "reqwest", "rustls"] }
 sentry-tracing = "0.47"
 
 thiserror = "1"
