@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 /// enforced at mutation time. Every field in every schema has a concrete
 /// type — `Any` is reserved for backward compatibility only.
 #[cfg_attr(feature = "ts-bindings", derive(ts_rs::TS))]
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, utoipa::ToSchema)]
 pub enum FieldValueType {
     // ── Primitives ──────────────────────────────────────
     String,

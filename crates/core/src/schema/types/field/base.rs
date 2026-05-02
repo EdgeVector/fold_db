@@ -9,7 +9,13 @@ use std::collections::HashMap;
 /// Encapsulates common state and logic:
 /// - `inner`: FieldCommon metadata
 /// - `molecule`: Optional type-specific molecule (state)
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
+#[aliases(
+    FieldBaseSingle = FieldBase<crate::atom::Molecule>,
+    FieldBaseHash = FieldBase<crate::atom::MoleculeHash>,
+    FieldBaseRange = FieldBase<crate::atom::MoleculeRange>,
+    FieldBaseHashRange = FieldBase<crate::atom::MoleculeHashRange>,
+)]
 pub struct FieldBase<M> {
     pub inner: FieldCommon,
     pub molecule: Option<M>,
