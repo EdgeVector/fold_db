@@ -127,26 +127,22 @@ impl Field for FieldVariant {
             .map(|(kv, atom_uuid)| {
                 let key_meta = match self {
                     FieldVariant::Single(f) => f
-                        .base
                         .molecule
                         .as_ref()
                         .and_then(|m| m.get_key_metadata().cloned()),
                     FieldVariant::Hash(f) => kv.hash.as_ref().and_then(|h| {
-                        f.base
-                            .molecule
+                        f.molecule
                             .as_ref()
                             .and_then(|m| m.get_key_metadata(h).cloned())
                     }),
                     FieldVariant::Range(f) => kv.range.as_ref().and_then(|r| {
-                        f.base
-                            .molecule
+                        f.molecule
                             .as_ref()
                             .and_then(|m| m.get_key_metadata(r).cloned())
                     }),
                     FieldVariant::HashRange(f) => {
                         kv.hash.as_ref().zip(kv.range.as_ref()).and_then(|(h, r)| {
-                            f.base
-                                .molecule
+                            f.molecule
                                 .as_ref()
                                 .and_then(|m| m.get_key_metadata(h, r).cloned())
                         })
@@ -181,10 +177,10 @@ impl FieldVariant {
     #[must_use]
     pub fn has_molecule(&self) -> bool {
         match self {
-            Self::Single(f) => f.base.molecule.is_some(),
-            Self::Hash(f) => f.base.molecule.is_some(),
-            Self::Range(f) => f.base.molecule.is_some(),
-            Self::HashRange(f) => f.base.molecule.is_some(),
+            Self::Single(f) => f.molecule.is_some(),
+            Self::Hash(f) => f.molecule.is_some(),
+            Self::Range(f) => f.molecule.is_some(),
+            Self::HashRange(f) => f.molecule.is_some(),
         }
     }
 
@@ -193,10 +189,10 @@ impl FieldVariant {
     pub fn clone_molecule_data(&self) -> Option<crate::db_operations::MoleculeData> {
         use crate::db_operations::MoleculeData;
         match self {
-            Self::Single(f) => f.base.molecule.clone().map(MoleculeData::Single),
-            Self::Hash(f) => f.base.molecule.clone().map(MoleculeData::Hash),
-            Self::Range(f) => f.base.molecule.clone().map(MoleculeData::Range),
-            Self::HashRange(f) => f.base.molecule.clone().map(MoleculeData::HashRange),
+            Self::Single(f) => f.molecule.clone().map(MoleculeData::Single),
+            Self::Hash(f) => f.molecule.clone().map(MoleculeData::Hash),
+            Self::Range(f) => f.molecule.clone().map(MoleculeData::Range),
+            Self::HashRange(f) => f.molecule.clone().map(MoleculeData::HashRange),
         }
     }
 
@@ -222,10 +218,10 @@ impl FieldVariant {
     #[must_use]
     pub fn molecule_version(&self) -> Option<u64> {
         match self {
-            Self::Single(f) => f.base.molecule.as_ref().map(|m| m.version()),
-            Self::Hash(f) => f.base.molecule.as_ref().map(|m| m.version()),
-            Self::Range(f) => f.base.molecule.as_ref().map(|m| m.version()),
-            Self::HashRange(f) => f.base.molecule.as_ref().map(|m| m.version()),
+            Self::Single(f) => f.molecule.as_ref().map(|m| m.version()),
+            Self::Hash(f) => f.molecule.as_ref().map(|m| m.version()),
+            Self::Range(f) => f.molecule.as_ref().map(|m| m.version()),
+            Self::HashRange(f) => f.molecule.as_ref().map(|m| m.version()),
         }
     }
 
@@ -235,11 +231,7 @@ impl FieldVariant {
     #[must_use]
     pub fn molecule_writer_pubkey(&self) -> Option<String> {
         let pk: Option<String> = match self {
-            Self::Single(f) => f
-                .base
-                .molecule
-                .as_ref()
-                .map(|m| m.writer_pubkey().to_string()),
+            Self::Single(f) => f.molecule.as_ref().map(|m| m.writer_pubkey().to_string()),
             // Hash/Range/HashRange molecules have per-entry writer pubkeys
             // in their AtomEntry structs, not a single molecule-level key.
             Self::Hash(_) | Self::Range(_) | Self::HashRange(_) => None,
@@ -275,19 +267,19 @@ impl FieldVariant {
                 (FieldKey::Single, FieldVariant::Single(f)) => {
                     match &event.old_atom_uuid {
                         Some(old) => {
-                            if let Some(mol) = &mut f.base.molecule {
+                            if let Some(mol) = &mut f.molecule {
                                 // Rewind is ephemeral in-memory — unsigned is correct
                                 mol.set_atom_uuid_unsigned(old.clone());
                             }
                         }
                         None => {
                             // Field didn't exist before this mutation — clear molecule
-                            f.base.molecule = None;
+                            f.molecule = None;
                         }
                     }
                 }
                 (FieldKey::Hash { hash }, FieldVariant::Hash(f)) => {
-                    if let Some(mol) = &mut f.base.molecule {
+                    if let Some(mol) = &mut f.molecule {
                         match &event.old_atom_uuid {
                             Some(old) => {
                                 mol.set_atom_uuid_unsigned(hash.clone(), old.clone());
@@ -299,7 +291,7 @@ impl FieldVariant {
                     }
                 }
                 (FieldKey::Range { range }, FieldVariant::Range(f)) => {
-                    if let Some(mol) = &mut f.base.molecule {
+                    if let Some(mol) = &mut f.molecule {
                         match &event.old_atom_uuid {
                             Some(old) => {
                                 mol.set_atom_uuid_unsigned(range.clone(), old.clone());
@@ -311,7 +303,7 @@ impl FieldVariant {
                     }
                 }
                 (FieldKey::HashRange { hash, range }, FieldVariant::HashRange(f)) => {
-                    if let Some(mol) = &mut f.base.molecule {
+                    if let Some(mol) = &mut f.molecule {
                         match &event.old_atom_uuid {
                             Some(old) => {
                                 mol.set_atom_uuid_from_values_unsigned(
@@ -348,7 +340,7 @@ mod tests {
         // Override the molecule UUID to a known value for event matching
         // We can't set it directly, so we use FieldCommon to track it
         let mut field = SingleField::new(HashMap::<String, FieldMapper>::new(), Some(mol));
-        field.base.inner.set_molecule_uuid(mol_uuid.to_string());
+        field.inner.set_molecule_uuid(mol_uuid.to_string());
         FieldVariant::Single(field)
     }
 
@@ -359,7 +351,7 @@ mod tests {
             mol.set_atom_uuid_unsigned(range_key.to_string(), atom_uuid.to_string());
         }
         let mut field = RangeField::new(HashMap::<String, FieldMapper>::new(), Some(mol));
-        field.base.inner.set_molecule_uuid(mol_uuid.to_string());
+        field.inner.set_molecule_uuid(mol_uuid.to_string());
         FieldVariant::Range(field)
     }
 
@@ -374,7 +366,7 @@ mod tests {
             );
         }
         let mut field = HashRangeField::new(HashMap::<String, FieldMapper>::new(), Some(mol));
-        field.base.inner.set_molecule_uuid(mol_uuid.to_string());
+        field.inner.set_molecule_uuid(mol_uuid.to_string());
         FieldVariant::HashRange(field)
     }
 
@@ -437,7 +429,7 @@ mod tests {
 
         match &field {
             FieldVariant::Single(f) => {
-                let mol = f.base.molecule.as_ref().unwrap();
+                let mol = f.molecule.as_ref().unwrap();
                 assert_eq!(mol.get_atom_uuid(), "atom-v1");
             }
             _ => panic!("Expected Single"),
@@ -483,7 +475,7 @@ mod tests {
 
         match &field {
             FieldVariant::Single(f) => {
-                assert!(f.base.molecule.is_none());
+                assert!(f.molecule.is_none());
             }
             _ => panic!("Expected Single"),
         }
@@ -551,7 +543,7 @@ mod tests {
 
         match &field {
             FieldVariant::Range(f) => {
-                let mol = f.base.molecule.as_ref().unwrap();
+                let mol = f.molecule.as_ref().unwrap();
                 assert_eq!(mol.get_atom_uuid("key1"), Some(&"atom-k1".to_string()));
                 assert_eq!(mol.get_atom_uuid("key2"), None);
             }
@@ -622,7 +614,7 @@ mod tests {
 
         match &field {
             FieldVariant::HashRange(f) => {
-                let mol = f.base.molecule.as_ref().unwrap();
+                let mol = f.molecule.as_ref().unwrap();
                 assert_eq!(mol.get_atom_uuid("h1", "r1"), Some(&"atom-v1".to_string()));
             }
             _ => panic!("Expected HashRange"),
@@ -703,7 +695,7 @@ mod tests {
 
         match &field {
             FieldVariant::Single(f) => {
-                let mol = f.base.molecule.as_ref().unwrap();
+                let mol = f.molecule.as_ref().unwrap();
                 assert_eq!(mol.get_atom_uuid(), "atom-world");
             }
             _ => panic!("Expected Single"),
@@ -728,7 +720,7 @@ mod tests {
 
         match &field {
             FieldVariant::Single(f) => {
-                let mol = f.base.molecule.as_ref().unwrap();
+                let mol = f.molecule.as_ref().unwrap();
                 assert_eq!(mol.get_atom_uuid(), "atom-current");
             }
             _ => panic!("Expected Single"),

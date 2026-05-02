@@ -676,20 +676,16 @@ impl MutationManager {
 
             // Capture old atom UUID before write_mutation
             let old_atom_uuid: Option<String> = match schema_field {
-                FieldVariant::Single(f) => f
-                    .base
-                    .molecule
-                    .as_ref()
-                    .map(|m| m.get_atom_uuid().to_string()),
+                FieldVariant::Single(f) => {
+                    f.molecule.as_ref().map(|m| m.get_atom_uuid().to_string())
+                }
                 FieldVariant::Hash(f) => key_value.hash.as_ref().and_then(|h| {
-                    f.base
-                        .molecule
+                    f.molecule
                         .as_ref()
                         .and_then(|m| m.get_atom_uuid(h).cloned())
                 }),
                 FieldVariant::Range(f) => key_value.range.as_ref().and_then(|r| {
-                    f.base
-                        .molecule
+                    f.molecule
                         .as_ref()
                         .and_then(|m| m.get_atom_uuid(r).cloned())
                 }),
@@ -698,8 +694,7 @@ impl MutationManager {
                     .as_ref()
                     .zip(key_value.range.as_ref())
                     .and_then(|(h, r)| {
-                        f.base
-                            .molecule
+                        f.molecule
                             .as_ref()
                             .and_then(|m| m.get_atom_uuid(h, r).cloned())
                     }),
