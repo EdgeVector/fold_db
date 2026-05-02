@@ -56,7 +56,7 @@ pub trait Field: Send + Sync {
     ) -> Result<HashMap<KeyValue, FieldValue>, SchemaError>;
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 pub enum FieldType {
     Single,
     Range,

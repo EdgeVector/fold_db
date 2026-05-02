@@ -24,7 +24,19 @@ use std::fmt;
 /// trust-invite + org membership mechanisms, which are distinct from this).
 /// See `docs/designs/platform_manifesto.md` for the full naming rationale.
 #[cfg_attr(feature = "ts-bindings", derive(ts_rs::TS))]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    utoipa::ToSchema,
+)]
 #[repr(u8)]
 pub enum AccessTier {
     Public = 0,
@@ -228,7 +240,7 @@ impl fmt::Display for AccessDenialReason {
 /// Per-field access policy combining trust tier and capability checks.
 /// Attached to `FieldCommon`. If `None`, field uses default (owner-only).
 #[cfg_attr(feature = "ts-bindings", derive(ts_rs::TS))]
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct FieldAccessPolicy {
     /// Which trust domain governs this field's access.
     /// Default: "personal".

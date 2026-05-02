@@ -4,7 +4,7 @@ use super::types::{AccessContext, AccessDecision, AccessDenialReason};
 
 /// The kind of access a capability token grants.
 #[cfg_attr(feature = "ts-bindings", derive(ts_rs::TS))]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 pub enum CapabilityKind {
     /// RX_k(pk): grants read access; counter decrements with each read
     Read,
@@ -15,7 +15,7 @@ pub enum CapabilityKind {
 /// A cryptographic capability constraint on a field.
 /// Binds a public key to a quota-limited access grant.
 #[cfg_attr(feature = "ts-bindings", derive(ts_rs::TS))]
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct CapabilityConstraint {
     /// Base64-encoded public key of the capability holder
     pub public_key: String,

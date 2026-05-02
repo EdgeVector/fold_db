@@ -37,7 +37,7 @@ pub const MAX_SENSITIVITY_LEVEL: u8 = 4;
 /// └───────┴───────────────────┴──────────────────────────────────────────────┘
 /// ```
 #[cfg_attr(feature = "ts-bindings", derive(ts_rs::TS))]
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq, utoipa::ToSchema)]
 pub struct DataClassification {
     /// Sensitivity level: 0 (Public) through 4 (Highly Restricted).
     pub sensitivity_level: u8,

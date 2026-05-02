@@ -1,7 +1,7 @@
 use crate::schema::types::data_classification::DataClassification;
 use crate::schema::types::field::Field;
 use crate::schema::types::key_config::KeyConfig;
-use crate::schema::types::schema::DeclarativeSchemaType as SchemaType;
+use crate::schema::types::schema::DeclarativeSchemaType;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
@@ -108,7 +108,7 @@ impl<'de> serde::Deserialize<'de> for DeclarativeSchemaDefinition {
             #[serde(skip_serializing_if = "Option::is_none")]
             descriptive_name: Option<String>,
             // Allow schema_type to be omitted; we will derive from key if missing
-            schema_type: Option<SchemaType>,
+            schema_type: Option<DeclarativeSchemaType>,
             #[serde(skip_serializing_if = "Option::is_none")]
             key: Option<KeyConfig>,
             // Accept either an array of strings or an object map and normalize later
@@ -184,16 +184,16 @@ impl<'de> serde::Deserialize<'de> for DeclarativeSchemaDefinition {
                 let has_hash = k.hash_field.is_some();
                 let has_range = k.range_field.is_some();
                 if has_hash && has_range {
-                    SchemaType::HashRange
+                    DeclarativeSchemaType::HashRange
                 } else if has_hash {
-                    SchemaType::Hash
+                    DeclarativeSchemaType::Hash
                 } else if has_range {
-                    SchemaType::Range
+                    DeclarativeSchemaType::Range
                 } else {
-                    SchemaType::Single
+                    DeclarativeSchemaType::Single
                 }
             }
-            (None, None) => SchemaType::Single,
+            (None, None) => DeclarativeSchemaType::Single,
         };
 
         // Use the constructor to create the actual struct with generated mappings
@@ -285,7 +285,7 @@ pub struct DeclarativeSchemaDefinition {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub descriptive_name: Option<String>,
     /// Schema type ("Single" | "Hash" | "Range" | "HashRange")
-    pub schema_type: SchemaType,
+    pub schema_type: DeclarativeSchemaType,
     /// Key configuration (required when schema_type == "Hash", "Range", or "HashRange")
     #[serde(skip_serializing_if = "Option::is_none")]
     pub key: Option<KeyConfig>,
@@ -430,19 +430,19 @@ impl DeclarativeSchemaDefinition {
         let mut add_field = |field_name: String| {
             let schema_type = self.schema_type.clone();
             match &schema_type {
-                SchemaType::HashRange => {
+                DeclarativeSchemaType::HashRange => {
                     let hashrange_field = HashRangeField::new(default_field_mappers.clone(), None);
                     runtime_fields.insert(field_name, FieldVariant::HashRange(hashrange_field));
                 }
-                SchemaType::Hash => {
+                DeclarativeSchemaType::Hash => {
                     let hash_field = HashField::new(default_field_mappers.clone(), None);
                     runtime_fields.insert(field_name, FieldVariant::Hash(hash_field));
                 }
-                SchemaType::Range => {
+                DeclarativeSchemaType::Range => {
                     let range_field = RangeField::new(default_field_mappers.clone(), None);
                     runtime_fields.insert(field_name, FieldVariant::Range(range_field));
                 }
-                SchemaType::Single => {
+                DeclarativeSchemaType::Single => {
                     let single_field = SingleField::new(default_field_mappers.clone(), None);
                     runtime_fields.insert(field_name, FieldVariant::Single(single_field));
                 }
@@ -549,7 +549,7 @@ impl DeclarativeSchemaDefinition {
     /// A new DeclarativeSchemaDefinition with all hash mappings populated
     pub fn new(
         name: String,
-        schema_type: SchemaType,
+        schema_type: DeclarativeSchemaType,
         key: Option<KeyConfig>,
         fields: Option<Vec<String>>,
         transform_fields: Option<HashMap<String, String>>,
@@ -767,8 +767,6 @@ mod tests {
 
     #[test]
     fn test_schema_metadata_after_serialize_deserialize() {
-        use crate::schema::types::schema::DeclarativeSchemaType as SchemaType;
-
         // Create a transform schema like BlogPostWordIndex
         let mut transform_fields = HashMap::new();
         transform_fields.insert(
@@ -782,7 +780,7 @@ mod tests {
 
         let schema = DeclarativeSchemaDefinition::new(
             "BlogPostWordIndex".to_string(),
-            SchemaType::Single,
+            DeclarativeSchemaType::Single,
             None,
             None,
             Some(transform_fields),
@@ -846,12 +844,10 @@ mod tests {
 
     #[test]
     fn test_descriptive_name_serialization() {
-        use crate::schema::types::schema::DeclarativeSchemaType as SchemaType;
-
         // Create a schema with descriptive_name
         let mut schema = DeclarativeSchemaDefinition::new(
             "UserProfile".to_string(),
-            SchemaType::Single,
+            DeclarativeSchemaType::Single,
             None,
             Some(vec!["name".to_string(), "email".to_string()]),
             None,
@@ -885,11 +881,10 @@ mod tests {
         // so tagging a schema with `set-org-hash` sent `trust_domain=None`
         // to peers even though the serialized form carried it. Regression
         // guard for alpha papercut d2f07.
-        use crate::schema::types::schema::DeclarativeSchemaType as SchemaType;
 
         let mut schema = DeclarativeSchemaDefinition::new(
             "OrgNotes".to_string(),
-            SchemaType::Single,
+            DeclarativeSchemaType::Single,
             None,
             Some(vec!["body".to_string()]),
             None,
@@ -915,12 +910,10 @@ mod tests {
 
     #[test]
     fn test_descriptive_name_optional() {
-        use crate::schema::types::schema::DeclarativeSchemaType as SchemaType;
-
         // Create a schema without descriptive_name
         let schema = DeclarativeSchemaDefinition::new(
             "UserProfile".to_string(),
-            SchemaType::Single,
+            DeclarativeSchemaType::Single,
             None,
             Some(vec!["name".to_string(), "email".to_string()]),
             None,
@@ -1016,7 +1009,7 @@ mod tests {
     fn test_partial_eq_includes_field_descriptions() {
         let mut s1 = DeclarativeSchemaDefinition::new(
             "Test".to_string(),
-            SchemaType::Single,
+            DeclarativeSchemaType::Single,
             None,
             Some(vec!["name".to_string()]),
             None,
@@ -1096,7 +1089,7 @@ mod tests {
     fn schema_preserves_source_through_round_trip() {
         let mut schema = DeclarativeSchemaDefinition::new(
             "test".to_string(),
-            SchemaType::Single,
+            DeclarativeSchemaType::Single,
             None,
             Some(vec![]),
             None,
@@ -1113,7 +1106,7 @@ mod tests {
     fn schema_partial_eq_considers_source() {
         let mut s1 = DeclarativeSchemaDefinition::new(
             "test".to_string(),
-            SchemaType::Single,
+            DeclarativeSchemaType::Single,
             None,
             Some(vec![]),
             None,
