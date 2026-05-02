@@ -219,16 +219,16 @@ impl HashRangeQueryProcessor {
         // metadata that belonged to the previous namespace's molecule.
         match &mut cloned {
             FieldVariant::Single(f) => {
-                f.base.molecule = None;
+                f.molecule = None;
             }
             FieldVariant::Hash(f) => {
-                f.base.molecule = None;
+                f.molecule = None;
             }
             FieldVariant::Range(f) => {
-                f.base.molecule = None;
+                f.molecule = None;
             }
             FieldVariant::HashRange(f) => {
-                f.base.molecule = None;
+                f.molecule = None;
             }
         }
         cloned

@@ -4,8 +4,9 @@
 
 use crate::db_operations::DbOperations;
 use crate::schema::types::declarative_schemas::FieldMapper;
-use crate::schema::types::field::base::FieldBase;
+use crate::schema::types::field::base::refresh_field_from_db;
 use crate::schema::types::field::hash_range_filter::{HashRangeFilter, HashRangeFilterResult};
+use crate::schema::types::field::FieldCommon;
 use crate::schema::types::field::FieldValue;
 use crate::schema::types::field::WriteContext;
 use crate::schema::types::field::{apply_hash_filter, FilterApplicator};
@@ -21,8 +22,8 @@ use std::sync::Arc;
 #[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct HashField {
     #[serde(flatten)]
-    #[schema(inline)]
-    pub base: FieldBase<MoleculeHash>,
+    pub inner: FieldCommon,
+    pub molecule: Option<MoleculeHash>,
 }
 
 impl HashField {
@@ -33,7 +34,8 @@ impl HashField {
         molecule: Option<MoleculeHash>,
     ) -> Self {
         Self {
-            base: FieldBase::new(field_mappers, molecule),
+            inner: FieldCommon::new(field_mappers),
+            molecule,
         }
     }
 }
@@ -41,15 +43,15 @@ impl HashField {
 #[async_trait::async_trait]
 impl crate::schema::types::field::Field for HashField {
     fn common(&self) -> &crate::schema::types::field::FieldCommon {
-        &self.base.inner
+        &self.inner
     }
 
     fn common_mut(&mut self) -> &mut crate::schema::types::field::FieldCommon {
-        &mut self.base.inner
+        &mut self.inner
     }
 
     async fn refresh_from_db(&mut self, db_ops: &crate::db_operations::DbOperations) {
-        self.base.refresh_from_db(db_ops).await;
+        refresh_field_from_db(&mut self.inner, &mut self.molecule, db_ops).await;
     }
 
     fn write_mutation(
@@ -58,17 +60,16 @@ impl crate::schema::types::field::Field for HashField {
         ctx: WriteContext,
     ) {
         // Initialize molecule if needed and set molecule_uuid in FieldCommon
-        if self.base.molecule.is_none() {
+        if self.molecule.is_none() {
             let new_molecule = crate::atom::MoleculeHash::new(&ctx.schema_name, &ctx.field_name);
-            self.base
-                .inner
+            self.inner
                 .set_molecule_uuid(new_molecule.uuid().to_string());
-            self.base.molecule = Some(new_molecule);
+            self.molecule = Some(new_molecule);
         }
 
         // For HashField, we use the hash key to store the atom
         if let Some(hash_key) = &key_value.hash {
-            if let Some(molecule) = &mut self.base.molecule {
+            if let Some(molecule) = &mut self.molecule {
                 molecule.set_atom_uuid(hash_key.clone(), ctx.atom.uuid().to_string(), &ctx.signer);
                 // Store per-key metadata on the molecule
                 molecule.set_key_metadata(
@@ -96,8 +97,7 @@ impl crate::schema::types::field::Field for HashField {
             .into_iter()
             .map(|(kv, atom_uuid)| {
                 let key_meta = kv.hash.as_ref().and_then(|h| {
-                    self.base
-                        .molecule
+                    self.molecule
                         .as_ref()
                         .and_then(|m| m.get_key_metadata(h).cloned())
                 });
@@ -107,7 +107,7 @@ impl crate::schema::types::field::Field for HashField {
         super::fetch_atoms_with_key_metadata_async_with_org(
             db_ops,
             matches_with_meta,
-            self.base.inner.org_hash(),
+            self.inner.org_hash(),
         )
         .await
     }
@@ -116,8 +116,7 @@ impl crate::schema::types::field::Field for HashField {
 impl HashField {
     /// Gets all keys in the hash (useful for pagination or listing)
     pub fn get_all_keys(&self) -> Vec<String> {
-        self.base
-            .molecule
+        self.molecule
             .as_ref()
             .map(|molecule| molecule.keys().cloned().collect())
             .unwrap_or_default()
@@ -126,7 +125,7 @@ impl HashField {
 
 impl FilterApplicator for HashField {
     fn apply_filter(&self, filter: Option<HashRangeFilter>) -> HashRangeFilterResult {
-        let Some(molecule) = &self.base.molecule else {
+        let Some(molecule) = &self.molecule else {
             return HashRangeFilterResult::empty();
         };
 

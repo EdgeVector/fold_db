@@ -6,7 +6,8 @@ use crate::atom::MoleculeRange;
 // Removed unused impl_field import
 use crate::db_operations::DbOperations;
 use crate::schema::types::declarative_schemas::FieldMapper;
-use crate::schema::types::field::base::FieldBase;
+use crate::schema::types::field::base::refresh_field_from_db;
+use crate::schema::types::field::FieldCommon;
 use crate::schema::types::field::FieldValue;
 use crate::schema::types::field::WriteContext;
 use crate::schema::types::field::{
@@ -20,8 +21,8 @@ use crate::schema::types::SchemaError;
 #[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct RangeField {
     #[serde(flatten)]
-    #[schema(inline)]
-    pub base: FieldBase<MoleculeRange>,
+    pub inner: FieldCommon,
+    pub molecule: Option<MoleculeRange>,
 }
 
 impl RangeField {
@@ -31,22 +32,22 @@ impl RangeField {
         molecule: Option<MoleculeRange>,
     ) -> Self {
         Self {
-            base: FieldBase::new(field_mappers, molecule),
+            inner: FieldCommon::new(field_mappers),
+            molecule,
         }
     }
 
     /// Initializes the MoleculeRange if it doesn't exist
     pub fn ensure_molecule(&mut self, schema_name: &str, field_name: &str) -> &mut MoleculeRange {
-        if self.base.molecule.is_none() {
-            self.base.molecule = Some(MoleculeRange::new(schema_name, field_name));
+        if self.molecule.is_none() {
+            self.molecule = Some(MoleculeRange::new(schema_name, field_name));
         }
-        self.base.molecule.as_mut().unwrap()
+        self.molecule.as_mut().unwrap()
     }
 
     /// Gets all keys in the range (useful for pagination or listing)
     pub fn get_all_keys(&self) -> Vec<String> {
-        self.base
-            .molecule
+        self.molecule
             .as_ref()
             .map(|range| range.atom_uuids.keys().cloned().collect())
             .unwrap_or_default()
@@ -55,7 +56,7 @@ impl RangeField {
 
 impl FilterApplicator for RangeField {
     fn apply_filter(&self, filter: Option<HashRangeFilter>) -> HashRangeFilterResult {
-        let Some(molecule) = &self.base.molecule else {
+        let Some(molecule) = &self.molecule else {
             return HashRangeFilterResult::empty();
         };
 
@@ -66,15 +67,15 @@ impl FilterApplicator for RangeField {
 #[async_trait::async_trait]
 impl crate::schema::types::field::Field for RangeField {
     fn common(&self) -> &crate::schema::types::field::FieldCommon {
-        &self.base.inner
+        &self.inner
     }
 
     fn common_mut(&mut self) -> &mut crate::schema::types::field::FieldCommon {
-        &mut self.base.inner
+        &mut self.inner
     }
 
     async fn refresh_from_db(&mut self, db_ops: &crate::db_operations::DbOperations) {
-        self.base.refresh_from_db(db_ops).await;
+        refresh_field_from_db(&mut self.inner, &mut self.molecule, db_ops).await;
     }
 
     fn write_mutation(
@@ -83,17 +84,17 @@ impl crate::schema::types::field::Field for RangeField {
         ctx: WriteContext,
     ) {
         // Initialize molecule if needed and set molecule_uuid in FieldCommon
-        if self.base.molecule.is_none() {
+        if self.molecule.is_none() {
             self.ensure_molecule(&ctx.schema_name, &ctx.field_name);
             // After creating the molecule, get its UUID and set it in FieldCommon
-            if let Some(mol) = &self.base.molecule {
-                self.base.inner.set_molecule_uuid(mol.uuid().to_string());
+            if let Some(mol) = &self.molecule {
+                self.inner.set_molecule_uuid(mol.uuid().to_string());
             }
         }
 
         // For RangeField, we use the range key to store the atom
         if let Some(range_key) = &key_value.range {
-            if let Some(molecule) = &mut self.base.molecule {
+            if let Some(molecule) = &mut self.molecule {
                 molecule.set_atom_uuid(range_key.clone(), ctx.atom.uuid().to_string(), &ctx.signer);
                 // Store per-key metadata on the molecule
                 molecule.set_key_metadata(
@@ -123,8 +124,7 @@ impl crate::schema::types::field::Field for RangeField {
             .into_iter()
             .map(|(kv, atom_uuid)| {
                 let key_meta = kv.range.as_ref().and_then(|r| {
-                    self.base
-                        .molecule
+                    self.molecule
                         .as_ref()
                         .and_then(|m| m.get_key_metadata(r).cloned())
                 });
@@ -134,7 +134,7 @@ impl crate::schema::types::field::Field for RangeField {
         super::fetch_atoms_with_key_metadata_async_with_org(
             db_ops,
             matches_with_meta,
-            self.base.inner.org_hash(),
+            self.inner.org_hash(),
         )
         .await
     }

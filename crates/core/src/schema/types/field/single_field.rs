@@ -2,31 +2,31 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 
-// Removed unused impl_field import
 use crate::atom::Molecule;
 use crate::db_operations::DbOperations;
 use crate::schema::types::declarative_schemas::FieldMapper;
-use crate::schema::types::field::base::FieldBase;
+use crate::schema::types::field::base::refresh_field_from_db;
+use crate::schema::types::field::FieldCommon;
 use crate::schema::types::field::FieldValue;
 use crate::schema::types::field::WriteContext;
 use crate::schema::types::field::{FilterApplicator, HashRangeFilter, HashRangeFilterResult};
 use crate::schema::types::key_value::KeyValue;
 use crate::schema::types::SchemaError;
-// Removed unused JsonValue import
-// Removed unused log imports
+
 /// Field storing a single value.
 #[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct SingleField {
     #[serde(flatten)]
-    #[schema(inline)]
-    pub base: FieldBase<Molecule>,
+    pub inner: FieldCommon,
+    pub molecule: Option<Molecule>,
 }
 
 impl SingleField {
     #[must_use]
     pub fn new(field_mappers: HashMap<String, FieldMapper>, molecule: Option<Molecule>) -> Self {
         Self {
-            base: FieldBase::new(field_mappers, molecule),
+            inner: FieldCommon::new(field_mappers),
+            molecule,
         }
     }
 }
@@ -34,15 +34,15 @@ impl SingleField {
 #[async_trait::async_trait]
 impl crate::schema::types::field::Field for SingleField {
     fn common(&self) -> &crate::schema::types::field::FieldCommon {
-        &self.base.inner
+        &self.inner
     }
 
     fn common_mut(&mut self) -> &mut crate::schema::types::field::FieldCommon {
-        &mut self.base.inner
+        &mut self.inner
     }
 
     async fn refresh_from_db(&mut self, db_ops: &crate::db_operations::DbOperations) {
-        self.base.refresh_from_db(db_ops).await;
+        refresh_field_from_db(&mut self.inner, &mut self.molecule, db_ops).await;
     }
 
     fn write_mutation(
@@ -51,21 +51,20 @@ impl crate::schema::types::field::Field for SingleField {
         ctx: WriteContext,
     ) {
         // Initialize molecule if needed and set molecule_uuid in FieldCommon
-        if self.base.molecule.is_none() {
+        if self.molecule.is_none() {
             let new_molecule = crate::atom::Molecule::new(
                 ctx.atom.uuid().to_string(),
                 &ctx.schema_name,
                 &ctx.field_name,
             );
             // Get the molecule's UUID and set it in FieldCommon for persistence lookup
-            self.base
-                .inner
+            self.inner
                 .set_molecule_uuid(new_molecule.uuid().to_string());
-            self.base.molecule = Some(new_molecule);
+            self.molecule = Some(new_molecule);
         }
 
         // For SingleField, we store the atom and sign
-        if let Some(molecule) = &mut self.base.molecule {
+        if let Some(molecule) = &mut self.molecule {
             molecule.set_atom_uuid(ctx.atom.uuid().to_string(), &ctx.signer);
             // Store per-key metadata on the molecule
             molecule.set_key_metadata(crate::atom::KeyMetadata {
@@ -82,13 +81,13 @@ impl crate::schema::types::field::Field for SingleField {
         _as_of: Option<chrono::DateTime<chrono::Utc>>,
     ) -> Result<HashMap<KeyValue, FieldValue>, SchemaError> {
         self.refresh_from_db(db_ops).await;
-        if let Some(molecule) = &self.base.molecule {
+        if let Some(molecule) = &self.molecule {
             let uuid = molecule.get_atom_uuid().clone();
             let key_meta = molecule.get_key_metadata().cloned();
             let result = super::fetch_atoms_with_key_metadata_async_with_org(
                 db_ops,
                 vec![(KeyValue::new(None, None), uuid, key_meta)],
-                self.base.inner.org_hash(),
+                self.inner.org_hash(),
             )
             .await?;
             Ok(result)
@@ -100,7 +99,7 @@ impl crate::schema::types::field::Field for SingleField {
 
 impl FilterApplicator for SingleField {
     fn apply_filter(&self, filter: Option<HashRangeFilter>) -> HashRangeFilterResult {
-        let Some(molecule) = &self.base.molecule else {
+        let Some(molecule) = &self.molecule else {
             return HashRangeFilterResult::empty();
         };
 
