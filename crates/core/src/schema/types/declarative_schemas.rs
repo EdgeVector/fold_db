@@ -1,5 +1,7 @@
+use crate::access::types::FieldAccessPolicy;
 use crate::schema::types::data_classification::DataClassification;
 use crate::schema::types::field::Field;
+use crate::schema::types::field_value_type::FieldValueType;
 use crate::schema::types::key_config::KeyConfig;
 use crate::schema::types::schema::DeclarativeSchemaType;
 use serde::{Deserialize, Serialize};
@@ -131,7 +133,7 @@ impl<'de> serde::Deserialize<'de> for DeclarativeSchemaDefinition {
             #[serde(default)]
             ref_fields: HashMap<String, String>,
             #[serde(default)]
-            field_types: HashMap<String, crate::schema::types::field_value_type::FieldValueType>,
+            field_types: HashMap<String, FieldValueType>,
             #[serde(skip_serializing_if = "Option::is_none")]
             identity_hash: Option<String>,
             #[serde(skip_serializing_if = "Option::is_none", default)]
@@ -139,7 +141,7 @@ impl<'de> serde::Deserialize<'de> for DeclarativeSchemaDefinition {
             #[serde(skip_serializing_if = "Option::is_none", default)]
             trust_domain: Option<String>,
             #[serde(default)]
-            field_access_policies: HashMap<String, crate::access::types::FieldAccessPolicy>,
+            field_access_policies: HashMap<String, FieldAccessPolicy>,
             #[serde(default)]
             source: SchemaSource,
         }
@@ -328,7 +330,7 @@ pub struct DeclarativeSchemaDefinition {
     /// Strongly typed field value types from the canonical field registry.
     /// Maps field_name -> FieldValueType. Fields not in this map default to Any.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
-    pub field_types: HashMap<String, crate::schema::types::field_value_type::FieldValueType>,
+    pub field_types: HashMap<String, FieldValueType>,
     /// SHA256 hash of sorted field names — unique fingerprint of schema structure
     #[serde(skip_serializing_if = "Option::is_none")]
     pub identity_hash: Option<String>,
@@ -351,7 +353,7 @@ pub struct DeclarativeSchemaDefinition {
     /// Persisted per-field access policies. Survives serialization (unlike runtime_fields).
     /// When set, these are copied onto runtime fields during populate_runtime_fields().
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
-    pub field_access_policies: HashMap<String, crate::access::types::FieldAccessPolicy>,
+    pub field_access_policies: HashMap<String, FieldAccessPolicy>,
 
     /// Origin of this schema in the service. See [`SchemaSource`] for variants.
     /// Existing stored schemas without this field deserialize as `User`.
@@ -589,12 +591,8 @@ impl DeclarativeSchemaDefinition {
     }
 
     /// Get the declared type for a field. Returns `Any` if no type is declared.
-    pub fn get_field_type(
-        &self,
-        field_name: &str,
-    ) -> &crate::schema::types::field_value_type::FieldValueType {
-        static ANY: crate::schema::types::field_value_type::FieldValueType =
-            crate::schema::types::field_value_type::FieldValueType::Any;
+    pub fn get_field_type(&self, field_name: &str) -> &FieldValueType {
+        static ANY: FieldValueType = FieldValueType::Any;
         self.field_types.get(field_name).unwrap_or(&ANY)
     }
 
@@ -942,8 +940,6 @@ mod tests {
 
     #[test]
     fn test_field_access_policies_deserialization() {
-        use crate::access::types::FieldAccessPolicy;
-
         // Build JSON with field_access_policies
         let json = serde_json::json!({
             "name": "SecureNotes",

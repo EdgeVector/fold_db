@@ -1,4 +1,5 @@
 use super::common::FieldCommon;
+use crate::atom::{Molecule, MoleculeHash, MoleculeHashRange, MoleculeRange};
 use crate::db_operations::DbOperations;
 use crate::schema::types::declarative_schemas::FieldMapper;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
@@ -11,10 +12,10 @@ use std::collections::HashMap;
 /// - `molecule`: Optional type-specific molecule (state)
 #[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 #[aliases(
-    FieldBaseSingle = FieldBase<crate::atom::Molecule>,
-    FieldBaseHash = FieldBase<crate::atom::MoleculeHash>,
-    FieldBaseRange = FieldBase<crate::atom::MoleculeRange>,
-    FieldBaseHashRange = FieldBase<crate::atom::MoleculeHashRange>,
+    FieldBaseSingle = FieldBase<Molecule>,
+    FieldBaseHash = FieldBase<MoleculeHash>,
+    FieldBaseRange = FieldBase<MoleculeRange>,
+    FieldBaseHashRange = FieldBase<MoleculeHashRange>,
 )]
 pub struct FieldBase<M> {
     pub inner: FieldCommon,

@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::schema::types::schema::Schema;
+use crate::schema::types::declarative_schemas::DeclarativeSchemaDefinition;
 
 /// State of a schema within the system
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, utoipa::ToSchema)]
@@ -19,14 +19,14 @@ pub enum SchemaState {
 pub struct SchemaWithState {
     /// All schema fields serialized at the top level
     #[serde(flatten)]
-    pub schema: Schema,
+    pub schema: DeclarativeSchemaDefinition,
     /// Current state of the schema
     pub state: SchemaState,
 }
 
 impl SchemaWithState {
     /// Create a new [`SchemaWithState`] from components
-    pub fn new(schema: Schema, state: SchemaState) -> Self {
+    pub fn new(schema: DeclarativeSchemaDefinition, state: SchemaState) -> Self {
         Self { schema, state }
     }
 

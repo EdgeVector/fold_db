@@ -1,3 +1,4 @@
+use super::capability::{CapabilityConstraint, CapabilityKind};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fmt;
@@ -193,10 +194,10 @@ pub enum AccessDenialReason {
         domain: String,
     },
     CapabilityMissing {
-        kind: super::capability::CapabilityKind,
+        kind: CapabilityKind,
     },
     CapabilityExhausted {
-        kind: super::capability::CapabilityKind,
+        kind: CapabilityKind,
     },
     PaymentRequired {
         cost: f64,
@@ -255,7 +256,7 @@ pub struct FieldAccessPolicy {
     #[serde(default = "default_tier")]
     pub min_write_tier: AccessTier,
     /// Capability tokens required for access
-    pub capabilities: Vec<super::capability::CapabilityConstraint>,
+    pub capabilities: Vec<CapabilityConstraint>,
 }
 
 fn default_trust_domain() -> String {
