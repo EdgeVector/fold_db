@@ -31,9 +31,9 @@ npm run generate:api                     # Generate TypeScript types from OpenAP
 
 ## Bump cascade (downstream)
 
-When a PR merges to `main`, `.github/workflows/notify-downstream.yml` fires a `repository_dispatch` to `EdgeVector/schema_service`, which auto-bumps its `fold_db` rev pin and merges. That cascades further into `EdgeVector/fold_db_node`. End-to-end ~10–15 min from a merge here to fold_db_node landing.
+Downstream consumers pull this repo's main HEAD on a **2-hour schedule**: `EdgeVector/schema_service`'s `bump-fold-db.yml` (cron) bumps its fold_db rev pin, then `EdgeVector/fold_db_node`'s `bump-schema-service.yml` (cron) picks up schema_service's tip plus the matching fold_db rev. End-to-end cascade lag: up to 2h schema_service hop + up to 2h fold_db_node hop. The cascade used to be dispatch-driven from this repo via `notify-downstream.yml`, but per-merge bumps superseded each other in downstream merge queues — switched to scheduled polling 2026-05-01.
 
-If you're shipping a breaking fold_db change that requires consumer Rust updates alongside the rev bump, disable the relevant `bump-*.yml` workflow in `EdgeVector/schema_service` and `EdgeVector/fold_db_node` Actions before merging here, do the manual consumer PRs, re-enable.
+If you're shipping a breaking fold_db change that requires consumer Rust updates alongside the rev bump, disable the relevant `bump-*.yml` workflow in `EdgeVector/schema_service` and `EdgeVector/fold_db_node` Actions before merging here, do the manual consumer PRs, re-enable. Force-flush an immediate bump cycle (rather than waiting up to 2h) via `gh workflow run bump-fold-db.yml -R EdgeVector/schema_service` and `gh workflow run bump-schema-service.yml -R EdgeVector/fold_db_node` after this lands.
 
 ## AI Provider Configuration
 
