@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use crate::schema::types::schema::Schema;
 
 /// State of a schema within the system
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, utoipa::ToSchema)]
 pub enum SchemaState {
     /// Schema discovered from files but not yet approved by user
     #[default]
@@ -15,7 +15,7 @@ pub enum SchemaState {
 }
 
 /// Schema definition bundled with its current state for UI/API responses
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct SchemaWithState {
     /// All schema fields serialized at the top level
     #[serde(flatten)]
