@@ -18,6 +18,7 @@ use crate::schema::types::SchemaError;
 #[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct SingleField {
     #[serde(flatten)]
+    #[schema(inline)]
     pub base: FieldBase<Molecule>,
 }
 
