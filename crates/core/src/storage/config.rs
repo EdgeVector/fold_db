@@ -236,6 +236,13 @@ impl<'de> Deserialize<'de> for DatabaseConfig {
                         .and_then(|v| v.as_str())
                         .map(|s| s.to_string());
 
+                    // TODO(storage-path): the legacy `{"type":"exemem"}` JSON has no
+                    // `path` field, so the path is recovered from FOLD_STORAGE_PATH.
+                    // Downstream consumers (fold_db_node's run.sh, org-test.sh,
+                    // smoke-test-dmg.sh, src/bin/folddb/main.rs, and
+                    // src-tauri/src/lib.rs) still emit this shape; once they are
+                    // migrated to the new `{path, cloud_sync}` format, drop this
+                    // legacy branch entirely.
                     let path = std::env::var("FOLD_STORAGE_PATH")
                         .map(PathBuf::from)
                         .unwrap_or_else(|_| PathBuf::from("data"));
