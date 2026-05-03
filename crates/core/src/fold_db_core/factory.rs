@@ -58,8 +58,11 @@ pub async fn create_fold_db_with_pool_and_auth_refresh(
     pool: Option<Arc<SledPool>>,
 ) -> FoldDbResult<Arc<FoldDB>> {
     let sync_setup = if let Some(cloud) = &config.cloud_sync {
-        let path = std::env::var("FOLD_STORAGE_PATH").unwrap_or_else(|_| "data".to_string());
-        let mut setup = SyncSetup::from_exemem(&cloud.api_url, &cloud.api_key, &path);
+        let path_str = config
+            .path
+            .to_str()
+            .ok_or_else(|| FoldDbError::Config("Invalid storage path".to_string()))?;
+        let mut setup = SyncSetup::from_exemem(&cloud.api_url, &cloud.api_key, path_str);
         setup.auth_refresh = auth_refresh;
         Some(setup)
     } else {
