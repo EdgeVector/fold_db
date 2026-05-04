@@ -63,9 +63,27 @@ impl crate::schema::types::field::Field for SingleField {
             self.molecule = Some(new_molecule);
         }
 
-        // For SingleField, we store the atom and sign
+        // For SingleField, we store the atom and sign — unless the caller
+        // provided a `writer_override` (replay/import path), in which case
+        // we stamp the supplied identity onto the molecule directly.
         if let Some(molecule) = &mut self.molecule {
-            molecule.set_atom_uuid(ctx.atom.uuid().to_string(), &ctx.signer);
+            match ctx.writer_override {
+                Some(crate::atom::provenance::Provenance::User {
+                    pubkey,
+                    signature,
+                    signature_version,
+                }) => {
+                    molecule.set_atom_uuid_imported(
+                        ctx.atom.uuid().to_string(),
+                        pubkey,
+                        signature,
+                        signature_version,
+                    );
+                }
+                _ => {
+                    molecule.set_atom_uuid(ctx.atom.uuid().to_string(), &ctx.signer);
+                }
+            }
             // Store per-key metadata on the molecule
             molecule.set_key_metadata(crate::atom::KeyMetadata {
                 source_file_name: ctx.source_file_name,
@@ -84,9 +102,17 @@ impl crate::schema::types::field::Field for SingleField {
         if let Some(molecule) = &self.molecule {
             let uuid = molecule.get_atom_uuid().clone();
             let key_meta = molecule.get_key_metadata().cloned();
+            let writer_pubkey = {
+                let pk = molecule.writer_pubkey();
+                if pk.is_empty() {
+                    None
+                } else {
+                    Some(pk.to_string())
+                }
+            };
             let result = super::fetch_atoms_with_key_metadata_async_with_org(
                 db_ops,
-                vec![(KeyValue::new(None, None), uuid, key_meta)],
+                vec![(KeyValue::new(None, None), uuid, key_meta, writer_pubkey)],
                 self.inner.org_hash(),
             )
             .await?;

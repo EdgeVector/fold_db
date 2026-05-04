@@ -316,6 +316,57 @@ impl MoleculeHashRange {
             .and_then(|range_map| range_map.get(range))
     }
 
+    /// Inserts an entry whose writer identity was supplied by the caller
+    /// rather than produced by a local keypair. Used by the replay/import
+    /// path (e.g. inbound `data_share` from another node): the original
+    /// author's `writer_pubkey` is preserved on the AtomEntry so downstream
+    /// queries can attribute the record to its sender.
+    ///
+    /// The caller is responsible for the meaning of `signature` /
+    /// `signature_version`. Pass `signature_version = 0` and an empty
+    /// `signature` when no verifiable signature is available — `verify_key`
+    /// will then return false for this entry, which is the correct semantics
+    /// for an imported record whose canonical bytes (built from the local
+    /// `written_at`) differ from whatever the original author signed.
+    pub fn set_atom_uuid_from_values_imported(
+        &mut self,
+        hash_value: String,
+        range_value: String,
+        atom_uuid: String,
+        writer_pubkey: String,
+        signature: String,
+        signature_version: u8,
+    ) {
+        let changed = self.get_atom_uuid(&hash_value, &range_value) != Some(&atom_uuid);
+        if changed {
+            self.version += 1;
+            let key_value = KeyValue::new(Some(hash_value.clone()), Some(range_value.clone()));
+            self.update_order.push(key_value);
+        }
+        let written_at = now_nanos();
+        let provenance = if signature_version > 0 {
+            Some(super::Provenance::User {
+                pubkey: writer_pubkey.clone(),
+                signature: signature.clone(),
+                signature_version,
+            })
+        } else {
+            None
+        };
+        self.atom_uuids.entry(hash_value).or_default().insert(
+            range_value,
+            AtomEntry {
+                atom_uuid,
+                written_at,
+                writer_pubkey,
+                signature,
+                signature_version,
+                provenance,
+            },
+        );
+        self.updated_at = Utc::now();
+    }
+
     /// Updates a key WITHOUT signing. Only for ephemeral in-memory operations (rewind).
     pub(crate) fn set_atom_uuid_from_values_unsigned(
         &mut self,
@@ -559,6 +610,62 @@ mod tests {
         assert!(conflicts.is_empty());
         assert_eq!(mol1.get_atom_uuid("h1", "r1"), Some(&"atom-1".to_string()));
         assert_eq!(mol1.get_atom_uuid("h2", "r2"), Some(&"atom-2".to_string()));
+    }
+
+    /// Imported entries preserve the supplied `writer_pubkey` verbatim
+    /// rather than overwriting it with a locally-derived signer pubkey.
+    /// This is the load-bearing property for cross-node share replay
+    /// (face-discovery-3node `bob.shared_record_count[Photography]`).
+    #[test]
+    fn test_set_atom_uuid_from_values_imported_preserves_external_pubkey() {
+        let mut mol = MoleculeHashRange::new("schema", "field");
+        mol.set_atom_uuid_from_values_imported(
+            "h1".to_string(),
+            "r1".to_string(),
+            "atom-1".to_string(),
+            "alice-pubkey-base64".to_string(),
+            String::new(),
+            0,
+        );
+        let entry = mol.get_atom_entry("h1", "r1").expect("entry present");
+        assert_eq!(entry.writer_pubkey, "alice-pubkey-base64");
+        assert_eq!(entry.signature_version, 0);
+        // signature_version=0 means "unverifiable replay"; verify_key
+        // must therefore return false rather than claiming verification.
+        assert!(!mol.verify_key("h1", "r1"));
+        // No User provenance is attached when there's no verifiable
+        // signature — anything else would lie about authenticity.
+        assert!(entry.provenance.is_none());
+    }
+
+    /// Sibling test: when `signature_version > 0`, the imported entry
+    /// stamps a `Provenance::User` whose pubkey/signature mirror the
+    /// supplied values. This is the path a future "replay with original
+    /// signature" feature would take.
+    #[test]
+    fn test_set_atom_uuid_from_values_imported_with_signature_records_provenance() {
+        let mut mol = MoleculeHashRange::new("schema", "field");
+        mol.set_atom_uuid_from_values_imported(
+            "h1".to_string(),
+            "r1".to_string(),
+            "atom-1".to_string(),
+            "pk".to_string(),
+            "sig".to_string(),
+            1,
+        );
+        let entry = mol.get_atom_entry("h1", "r1").expect("entry present");
+        match entry.provenance.as_ref() {
+            Some(crate::atom::Provenance::User {
+                pubkey,
+                signature,
+                signature_version,
+            }) => {
+                assert_eq!(pubkey, "pk");
+                assert_eq!(signature, "sig");
+                assert_eq!(*signature_version, 1);
+            }
+            other => panic!("expected User variant, got {:?}", other),
+        }
     }
 
     #[test]

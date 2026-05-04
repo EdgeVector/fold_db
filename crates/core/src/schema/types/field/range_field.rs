@@ -92,10 +92,34 @@ impl crate::schema::types::field::Field for RangeField {
             }
         }
 
-        // For RangeField, we use the range key to store the atom
+        // For RangeField, we use the range key to store the atom. If the
+        // caller supplied a `writer_override` (replay/import path), stamp
+        // the supplied identity onto the AtomEntry directly instead of
+        // signing with the local keypair.
         if let Some(range_key) = &key_value.range {
             if let Some(molecule) = &mut self.molecule {
-                molecule.set_atom_uuid(range_key.clone(), ctx.atom.uuid().to_string(), &ctx.signer);
+                match ctx.writer_override {
+                    Some(crate::atom::provenance::Provenance::User {
+                        pubkey,
+                        signature,
+                        signature_version,
+                    }) => {
+                        molecule.set_atom_uuid_imported(
+                            range_key.clone(),
+                            ctx.atom.uuid().to_string(),
+                            pubkey,
+                            signature,
+                            signature_version,
+                        );
+                    }
+                    _ => {
+                        molecule.set_atom_uuid(
+                            range_key.clone(),
+                            ctx.atom.uuid().to_string(),
+                            &ctx.signer,
+                        );
+                    }
+                }
                 // Store per-key metadata on the molecule
                 molecule.set_key_metadata(
                     range_key.clone(),
@@ -116,19 +140,31 @@ impl crate::schema::types::field::Field for RangeField {
     ) -> Result<HashMap<KeyValue, FieldValue>, SchemaError> {
         self.refresh_from_db(db_ops).await;
 
-        // Fetch actual atom content from database using shared helper
+        // Fetch actual atom content from database using shared helper.
+        // Attach per-key metadata + per-AtomEntry writer_pubkey from the
+        // molecule to each match (see HashField::resolve_value for why
+        // writer_pubkey lives on the entry, not the molecule).
         let result = self.apply_filter(filter);
-        // Attach per-key metadata from molecule to each match
-        let matches_with_meta: Vec<(KeyValue, String, Option<crate::atom::KeyMetadata>)> = result
+        let matches_with_meta: Vec<(
+            KeyValue,
+            String,
+            Option<crate::atom::KeyMetadata>,
+            Option<String>,
+        )> = result
             .matches
             .into_iter()
             .map(|(kv, atom_uuid)| {
-                let key_meta = kv.range.as_ref().and_then(|r| {
-                    self.molecule
-                        .as_ref()
-                        .and_then(|m| m.get_key_metadata(r).cloned())
-                });
-                (kv, atom_uuid, key_meta)
+                let (key_meta, writer_pubkey) = match kv.range.as_ref() {
+                    Some(r) => match self.molecule.as_ref() {
+                        Some(m) => (
+                            m.get_key_metadata(r).cloned(),
+                            m.get_atom_entry(r).map(|e| e.writer_pubkey.clone()),
+                        ),
+                        None => (None, None),
+                    },
+                    None => (None, None),
+                };
+                (kv, atom_uuid, key_meta, writer_pubkey)
             })
             .collect();
         super::fetch_atoms_with_key_metadata_async_with_org(

@@ -3,9 +3,15 @@
 //!
 //! PR 4 added the field on `Mutation`. PR 5 wires it through the write
 //! path so that `MutationEvent` records propagate the originating
-//! mutation's provenance. The underlying `Molecule` / `AtomEntry` also
-//! carry `Some(Provenance::User{..})` after signing (populated from the
-//! local signer, not the submitter's claimed provenance).
+//! mutation's provenance.
+//!
+//! As of the cross-node share-replay fix (face-discovery-3node), a
+//! mutation that arrives with `Some(Provenance::User { pubkey, .. })`
+//! also propagates that pubkey onto the `AtomEntry.writer_pubkey` of the
+//! per-key molecule entry — so a query response on the receiving node can
+//! attribute the record to its original author rather than to the local
+//! signer. See `mutation_provenance_user_propagates_to_atom_entry_writer_pubkey`
+//! below for the load-bearing assertion.
 
 use fold_db::atom::deterministic_molecule_uuid;
 use fold_db::atom::provenance::Provenance;
@@ -166,5 +172,133 @@ async fn mutation_provenance_propagates_to_mutation_event() {
         "every MutationEvent for Person.name must carry the submitter's \
          provenance; got {:?}",
         events.iter().map(|e| &e.provenance).collect::<Vec<_>>()
+    );
+}
+
+/// Cross-node share replay: a mutation submitted with
+/// `Provenance::User { pubkey, .. }` MUST land on the per-key AtomEntry
+/// with `writer_pubkey == pubkey` (the original author), not with the
+/// receiving node's local signer pubkey. The query response surfaces this
+/// via `FieldValue.writer_pubkey`. This is the load-bearing property for
+/// `bob.shared_record_count[Photography] >= 1` in the e2e
+/// face-discovery-3node scenario.
+#[tokio::test]
+async fn mutation_provenance_user_propagates_to_atom_entry_writer_pubkey() {
+    let db = setup_db().await;
+    db.load_schema_from_json(&person_schema_json())
+        .await
+        .unwrap();
+    db.schema_manager()
+        .set_schema_state("Person", SchemaState::Approved)
+        .await
+        .unwrap();
+
+    let alice_pubkey = "alice-pubkey-base64".to_string();
+    let mut fields = HashMap::new();
+    fields.insert("name".to_string(), json!("Dave"));
+    fields.insert("created_at".to_string(), json!("2026-01-04"));
+
+    // signature_version=0 means "imported without a verifiable signature"
+    // — the path inbound `data_share` takes when the receiving node has
+    // the sender's pubkey but not a signature over the receiver's local
+    // canonical bytes.
+    let provenance = Provenance::User {
+        pubkey: alice_pubkey.clone(),
+        signature: String::new(),
+        signature_version: 0,
+    };
+    let mutation = Mutation::new(
+        "Person".to_string(),
+        fields,
+        KeyValue::new(None, Some("2026-01-04".to_string())),
+        alice_pubkey.clone(),
+        MutationType::Create,
+    )
+    .with_provenance(provenance);
+
+    db.mutation_manager()
+        .write_mutations_batch_async(vec![mutation])
+        .await
+        .expect("write should succeed");
+
+    let results = db
+        .query_executor()
+        .query(Query::new("Person".to_string(), vec!["name".to_string()]))
+        .await
+        .unwrap();
+    let name_values = results
+        .get("name")
+        .expect("Person.name should be queryable");
+    let dave = name_values
+        .iter()
+        .find(|(_, fv)| fv.value == json!("Dave"))
+        .expect("Dave should appear in result set");
+    assert_eq!(
+        dave.1.writer_pubkey.as_deref(),
+        Some(alice_pubkey.as_str()),
+        "FieldValue.writer_pubkey must be Alice's pubkey (the submitter), \
+         not the local signer; got {:?}",
+        dave.1.writer_pubkey
+    );
+}
+
+/// Sibling negative control: a mutation with `provenance = None` (the
+/// normal first-party write path) must NOT pick up the local signer's
+/// pubkey as `writer_pubkey` for Range fields. The local signer is
+/// recorded on the AtomEntry, but it bubbles up to `FieldValue.writer_pubkey`
+/// on Hash/Range/HashRange variants — confirming Gap 2 wiring works for
+/// the locally-signed path too.
+#[tokio::test]
+async fn local_mutation_surfaces_local_signer_writer_pubkey_on_range_field() {
+    let db = setup_db().await;
+    db.load_schema_from_json(&person_schema_json())
+        .await
+        .unwrap();
+    db.schema_manager()
+        .set_schema_state("Person", SchemaState::Approved)
+        .await
+        .unwrap();
+
+    let mut fields = HashMap::new();
+    fields.insert("name".to_string(), json!("Eve"));
+    fields.insert("created_at".to_string(), json!("2026-01-05"));
+
+    // No provenance — local sign path.
+    let mutation = Mutation::new(
+        "Person".to_string(),
+        fields,
+        KeyValue::new(None, Some("2026-01-05".to_string())),
+        "ignored-pub-key".to_string(),
+        MutationType::Create,
+    );
+
+    db.mutation_manager()
+        .write_mutations_batch_async(vec![mutation])
+        .await
+        .expect("write should succeed");
+
+    let results = db
+        .query_executor()
+        .query(Query::new("Person".to_string(), vec!["name".to_string()]))
+        .await
+        .unwrap();
+    let name_values = results
+        .get("name")
+        .expect("Person.name should be queryable");
+    let eve = name_values
+        .iter()
+        .find(|(_, fv)| fv.value == json!("Eve"))
+        .expect("Eve should appear in result set");
+    let pk = eve
+        .1
+        .writer_pubkey
+        .as_deref()
+        .expect("locally-signed Range entry must surface a writer_pubkey");
+    assert!(!pk.is_empty(), "local signer pubkey must be non-empty");
+    // Must NOT be the unrelated `mutation.pub_key` — that's just an
+    // identity hint, not the signer.
+    assert_ne!(
+        pk, "ignored-pub-key",
+        "writer_pubkey must reflect the local signing keypair, not mutation.pub_key"
     );
 }

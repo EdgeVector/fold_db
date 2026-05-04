@@ -72,16 +72,37 @@ impl crate::schema::types::field::Field for HashRangeField {
             self.molecule = Some(new_molecule);
         }
 
-        // For HashRangeField, we use both hash and range keys to store the atom
+        // For HashRangeField, we use both hash and range keys to store the
+        // atom. If the caller supplied a `writer_override` (replay/import
+        // path), stamp the supplied identity onto the AtomEntry directly
+        // instead of signing with the local keypair.
         match (&key_value.hash, &key_value.range) {
             (Some(hash_key), Some(range_key)) => {
                 if let Some(molecule) = &mut self.molecule {
-                    molecule.set_atom_uuid_from_values(
-                        hash_key.clone(),
-                        range_key.clone(),
-                        ctx.atom.uuid().to_string(),
-                        &ctx.signer,
-                    );
+                    match ctx.writer_override {
+                        Some(crate::atom::provenance::Provenance::User {
+                            pubkey,
+                            signature,
+                            signature_version,
+                        }) => {
+                            molecule.set_atom_uuid_from_values_imported(
+                                hash_key.clone(),
+                                range_key.clone(),
+                                ctx.atom.uuid().to_string(),
+                                pubkey,
+                                signature,
+                                signature_version,
+                            );
+                        }
+                        _ => {
+                            molecule.set_atom_uuid_from_values(
+                                hash_key.clone(),
+                                range_key.clone(),
+                                ctx.atom.uuid().to_string(),
+                                &ctx.signer,
+                            );
+                        }
+                    }
                     // Store per-key metadata on the molecule
                     molecule.set_key_metadata(
                         hash_key.clone(),
@@ -116,19 +137,30 @@ impl crate::schema::types::field::Field for HashRangeField {
         if result.matches.is_empty() {
             // No matches found
         }
-        // Attach per-key metadata from molecule to each match
-        let matches_with_meta: Vec<(KeyValue, String, Option<crate::atom::KeyMetadata>)> = result
+        // Attach per-key metadata + per-AtomEntry writer_pubkey from the
+        // molecule to each match. HashRange has no molecule-level signing
+        // key, so the per-AtomEntry pubkey is the only way authorship
+        // (e.g. a shared record's original author) reaches the response.
+        let matches_with_meta: Vec<(
+            KeyValue,
+            String,
+            Option<crate::atom::KeyMetadata>,
+            Option<String>,
+        )> = result
             .matches
             .into_iter()
             .map(|(kv, atom_uuid)| {
-                let key_meta = match (&kv.hash, &kv.range) {
-                    (Some(h), Some(r)) => self
-                        .molecule
-                        .as_ref()
-                        .and_then(|m| m.get_key_metadata(h, r).cloned()),
-                    _ => None,
+                let (key_meta, writer_pubkey) = match (&kv.hash, &kv.range) {
+                    (Some(h), Some(r)) => match self.molecule.as_ref() {
+                        Some(m) => (
+                            m.get_key_metadata(h, r).cloned(),
+                            m.get_atom_entry(h, r).map(|e| e.writer_pubkey.clone()),
+                        ),
+                        None => (None, None),
+                    },
+                    _ => (None, None),
                 };
-                (kv, atom_uuid, key_meta)
+                (kv, atom_uuid, key_meta, writer_pubkey)
             })
             .collect();
         super::fetch_atoms_with_key_metadata_async_with_org(

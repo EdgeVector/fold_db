@@ -127,6 +127,38 @@ impl Molecule {
         self.key_metadata.as_ref()
     }
 
+    /// Updates the atom reference using a writer identity supplied by the
+    /// caller rather than produced by a local keypair. Used by the
+    /// replay/import path (e.g. inbound `data_share` from another node).
+    /// See `MoleculeHashRange::set_atom_uuid_from_values_imported` for full
+    /// rationale on `signature_version` / `verify` semantics.
+    pub fn set_atom_uuid_imported(
+        &mut self,
+        atom_uuid: String,
+        writer_pubkey: String,
+        signature: String,
+        signature_version: u8,
+    ) {
+        if self.atom_uuid != atom_uuid {
+            self.version += 1;
+        }
+        self.atom_uuid = atom_uuid;
+        self.written_at = now_nanos();
+        self.updated_at = Utc::now();
+        self.writer_pubkey = writer_pubkey.clone();
+        self.signature = signature.clone();
+        self.signature_version = signature_version;
+        self.provenance = if signature_version > 0 {
+            Some(Provenance::User {
+                pubkey: writer_pubkey,
+                signature,
+                signature_version,
+            })
+        } else {
+            None
+        };
+    }
+
     /// Updates the atom reference WITHOUT signing.
     /// Only for ephemeral in-memory operations (e.g., rewind for time-travel queries).
     /// The resulting molecule will not pass `verify()`.

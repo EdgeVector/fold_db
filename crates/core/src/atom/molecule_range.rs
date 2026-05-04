@@ -117,6 +117,50 @@ impl MoleculeRange {
         self.key_metadata.get(key)
     }
 
+    /// Inserts an entry whose writer identity was supplied by the caller
+    /// rather than produced by a local keypair. Used by the replay/import
+    /// path (e.g. inbound `data_share` from another node). See
+    /// `MoleculeHashRange::set_atom_uuid_from_values_imported` for full
+    /// rationale on `signature_version` / `verify_key` semantics.
+    pub fn set_atom_uuid_imported(
+        &mut self,
+        key: String,
+        atom_uuid: String,
+        writer_pubkey: String,
+        signature: String,
+        signature_version: u8,
+    ) {
+        let changed = self
+            .atom_uuids
+            .get(&key)
+            .is_none_or(|e| e.atom_uuid != atom_uuid);
+        if changed {
+            self.version += 1;
+        }
+        let written_at = now_nanos();
+        let provenance = if signature_version > 0 {
+            Some(super::Provenance::User {
+                pubkey: writer_pubkey.clone(),
+                signature: signature.clone(),
+                signature_version,
+            })
+        } else {
+            None
+        };
+        self.atom_uuids.insert(
+            key,
+            AtomEntry {
+                atom_uuid,
+                written_at,
+                writer_pubkey,
+                signature,
+                signature_version,
+                provenance,
+            },
+        );
+        self.updated_at = Utc::now();
+    }
+
     /// Updates a key WITHOUT signing. Only for ephemeral in-memory operations (rewind).
     pub(crate) fn set_atom_uuid_unsigned(&mut self, key: String, atom_uuid: String) {
         let changed = self
