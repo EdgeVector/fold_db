@@ -121,34 +121,64 @@ impl Field for FieldVariant {
             FieldVariant::Range(f) => f.apply_filter(filter),
             FieldVariant::HashRange(f) => f.apply_filter(filter),
         };
-        let matches_with_meta: Vec<(KeyValue, String, Option<crate::atom::KeyMetadata>)> = results
+        let matches_with_meta: Vec<(
+            KeyValue,
+            String,
+            Option<crate::atom::KeyMetadata>,
+            Option<String>,
+        )> = results
             .matches
             .into_iter()
             .map(|(kv, atom_uuid)| {
-                let key_meta = match self {
-                    FieldVariant::Single(f) => f
-                        .molecule
-                        .as_ref()
-                        .and_then(|m| m.get_key_metadata().cloned()),
-                    FieldVariant::Hash(f) => kv.hash.as_ref().and_then(|h| {
-                        f.molecule
-                            .as_ref()
-                            .and_then(|m| m.get_key_metadata(h).cloned())
-                    }),
-                    FieldVariant::Range(f) => kv.range.as_ref().and_then(|r| {
-                        f.molecule
-                            .as_ref()
-                            .and_then(|m| m.get_key_metadata(r).cloned())
-                    }),
-                    FieldVariant::HashRange(f) => {
-                        kv.hash.as_ref().zip(kv.range.as_ref()).and_then(|(h, r)| {
+                // Extract per-key metadata AND per-AtomEntry writer_pubkey
+                // from the molecule. Hash/Range/HashRange molecules carry
+                // writer identity per-entry rather than per-molecule, so
+                // this is the only place the original author's pubkey
+                // reaches the query response for those variants. Single
+                // molecules don't expose a per-key writer_pubkey at the
+                // entry level (only the molecule-level field), so
+                // `writer_pubkey` is `None` here for Single — the
+                // molecule-level value is stamped on below.
+                let (key_meta, writer_pubkey): (Option<crate::atom::KeyMetadata>, Option<String>) =
+                    match self {
+                        FieldVariant::Single(f) => (
                             f.molecule
                                 .as_ref()
-                                .and_then(|m| m.get_key_metadata(h, r).cloned())
-                        })
-                    }
-                };
-                (kv, atom_uuid, key_meta)
+                                .and_then(|m| m.get_key_metadata().cloned()),
+                            None,
+                        ),
+                        FieldVariant::Hash(f) => match kv.hash.as_ref() {
+                            Some(h) => match f.molecule.as_ref() {
+                                Some(m) => (
+                                    m.get_key_metadata(h).cloned(),
+                                    m.get_atom_entry(h).map(|e| e.writer_pubkey.clone()),
+                                ),
+                                None => (None, None),
+                            },
+                            None => (None, None),
+                        },
+                        FieldVariant::Range(f) => match kv.range.as_ref() {
+                            Some(r) => match f.molecule.as_ref() {
+                                Some(m) => (
+                                    m.get_key_metadata(r).cloned(),
+                                    m.get_atom_entry(r).map(|e| e.writer_pubkey.clone()),
+                                ),
+                                None => (None, None),
+                            },
+                            None => (None, None),
+                        },
+                        FieldVariant::HashRange(f) => match (&kv.hash, &kv.range) {
+                            (Some(h), Some(r)) => match f.molecule.as_ref() {
+                                Some(m) => (
+                                    m.get_key_metadata(h, r).cloned(),
+                                    m.get_atom_entry(h, r).map(|e| e.writer_pubkey.clone()),
+                                ),
+                                None => (None, None),
+                            },
+                            _ => (None, None),
+                        },
+                    };
+                (kv, atom_uuid, key_meta, writer_pubkey)
             })
             .collect();
         let mut resolved = fetch_atoms_with_key_metadata_async_with_org(
@@ -158,14 +188,21 @@ impl Field for FieldVariant {
         )
         .await?;
 
-        // Stamp molecule info on each resolved FieldValue
+        // Stamp molecule info on each resolved FieldValue. molecule_uuid /
+        // version always apply. `molecule_writer_pubkey` only returns
+        // `Some` for Single variants — when it does, it's authoritative;
+        // when it's `None` we leave the per-AtomEntry `writer_pubkey`
+        // already set by `fetch_atoms_with_key_metadata_async_with_org`
+        // alone (Hash/Range/HashRange).
         let mol_uuid = self.common().molecule_uuid().cloned();
         let mol_version = self.molecule_version();
         let mol_writer_pubkey = self.molecule_writer_pubkey();
         for fv in resolved.values_mut() {
             fv.molecule_uuid = mol_uuid.clone();
             fv.molecule_version = mol_version;
-            fv.writer_pubkey = mol_writer_pubkey.clone();
+            if let Some(pk) = mol_writer_pubkey.clone() {
+                fv.writer_pubkey = Some(pk);
+            }
         }
 
         Ok(resolved)

@@ -23,8 +23,19 @@ pub struct WriteContext {
     pub metadata: Option<std::collections::HashMap<String, String>>,
     pub schema_name: String,
     pub field_name: String,
-    /// The signing keypair for molecule signatures.
+    /// The signing keypair for molecule signatures. Used when
+    /// `writer_override` is `None`.
     pub signer: std::sync::Arc<crate::security::Ed25519KeyPair>,
+    /// Replay/import override. When `Some(Provenance::User { .. })`, the
+    /// molecule's per-key write path stamps the caller-supplied
+    /// `(pubkey, signature, signature_version)` directly onto the
+    /// `AtomEntry` instead of re-signing locally with `signer`. This is
+    /// how an inbound `data_share` from another node preserves the
+    /// original sender's `writer_pubkey` on the receiver's AtomEntry,
+    /// so the assertion `record.author_pub_key == sender.pub_key` can
+    /// pass on HashRange schemas. `None` (the default) keeps the local
+    /// signing path used by every first-party mutation.
+    pub writer_override: Option<crate::atom::provenance::Provenance>,
 }
 
 /// Common interface for all schema fields.

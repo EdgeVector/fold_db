@@ -52,7 +52,7 @@ pub async fn fetch_atoms_for_matches_async_with_org(
 ) -> Result<HashMap<KeyValue, FieldValue>, SchemaError> {
     fetch_atoms_with_key_metadata_async_with_org(
         db_ops,
-        matches.into_iter().map(|(kv, uuid)| (kv, uuid, None)),
+        matches.into_iter().map(|(kv, uuid)| (kv, uuid, None, None)),
         org_hash,
     )
     .await
@@ -63,7 +63,14 @@ pub async fn fetch_atoms_for_matches_async_with_org(
 /// Falls back to atom metadata for backward compatibility with pre-existing data.
 pub async fn fetch_atoms_with_key_metadata_async(
     db_ops: &Arc<DbOperations>,
-    matches: impl IntoIterator<Item = (KeyValue, String, Option<crate::atom::KeyMetadata>)>,
+    matches: impl IntoIterator<
+        Item = (
+            KeyValue,
+            String,
+            Option<crate::atom::KeyMetadata>,
+            Option<String>,
+        ),
+    >,
 ) -> Result<HashMap<KeyValue, FieldValue>, SchemaError> {
     fetch_atoms_with_key_metadata_async_with_org(db_ops, matches, None).await
 }
@@ -84,13 +91,20 @@ pub async fn fetch_atoms_with_key_metadata_async(
 /// strict error so genuine data integrity bugs still surface.
 pub async fn fetch_atoms_with_key_metadata_async_with_org(
     db_ops: &Arc<DbOperations>,
-    matches: impl IntoIterator<Item = (KeyValue, String, Option<crate::atom::KeyMetadata>)>,
+    matches: impl IntoIterator<
+        Item = (
+            KeyValue,
+            String,
+            Option<crate::atom::KeyMetadata>,
+            Option<String>,
+        ),
+    >,
     org_hash: Option<&str>,
 ) -> Result<HashMap<KeyValue, FieldValue>, SchemaError> {
     let mut resolved_values: HashMap<KeyValue, FieldValue> = HashMap::new();
 
     use crate::storage::traits::TypedStore;
-    for (key, atom_uuid, key_meta) in matches.into_iter() {
+    for (key, atom_uuid, key_meta, writer_pubkey) in matches.into_iter() {
         let base_key = format!("atom:{}", atom_uuid);
         let storage_key = super::build_storage_key(org_hash, &base_key);
         let store = db_ops.atoms().raw();
@@ -131,7 +145,14 @@ pub async fn fetch_atoms_with_key_metadata_async_with_org(
                         metadata,
                         molecule_uuid: None,
                         molecule_version: None,
-                        writer_pubkey: None,
+                        // Per-key writer_pubkey looked up from the molecule's
+                        // AtomEntry. For Hash/Range/HashRange variants this is
+                        // the only place writer_pubkey gets surfaced (the
+                        // molecule has no molecule-level signing key); for
+                        // Single this path will be `None` here and overwritten
+                        // by `FieldVariant::resolve_value` with the
+                        // molecule-level pubkey.
+                        writer_pubkey: writer_pubkey.filter(|s| !s.is_empty()),
                         written_at,
                     },
                 );

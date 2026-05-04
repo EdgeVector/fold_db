@@ -67,10 +67,34 @@ impl crate::schema::types::field::Field for HashField {
             self.molecule = Some(new_molecule);
         }
 
-        // For HashField, we use the hash key to store the atom
+        // For HashField, we use the hash key to store the atom. If the
+        // caller supplied a `writer_override` (replay/import path), stamp
+        // the supplied identity onto the AtomEntry directly instead of
+        // signing with the local keypair.
         if let Some(hash_key) = &key_value.hash {
             if let Some(molecule) = &mut self.molecule {
-                molecule.set_atom_uuid(hash_key.clone(), ctx.atom.uuid().to_string(), &ctx.signer);
+                match ctx.writer_override {
+                    Some(crate::atom::provenance::Provenance::User {
+                        pubkey,
+                        signature,
+                        signature_version,
+                    }) => {
+                        molecule.set_atom_uuid_imported(
+                            hash_key.clone(),
+                            ctx.atom.uuid().to_string(),
+                            pubkey,
+                            signature,
+                            signature_version,
+                        );
+                    }
+                    _ => {
+                        molecule.set_atom_uuid(
+                            hash_key.clone(),
+                            ctx.atom.uuid().to_string(),
+                            &ctx.signer,
+                        );
+                    }
+                }
                 // Store per-key metadata on the molecule
                 molecule.set_key_metadata(
                     hash_key.clone(),
@@ -91,17 +115,30 @@ impl crate::schema::types::field::Field for HashField {
     ) -> Result<HashMap<KeyValue, FieldValue>, SchemaError> {
         self.refresh_from_db(db_ops).await;
         let result = self.apply_filter(filter);
-        // Attach per-key metadata from molecule to each match
-        let matches_with_meta: Vec<(KeyValue, String, Option<crate::atom::KeyMetadata>)> = result
+        // Attach per-key metadata + per-AtomEntry writer_pubkey from the
+        // molecule to each match. The writer_pubkey is the only way Hash
+        // variants surface authorship into the query response — there is
+        // no molecule-level signing key for Hash molecules.
+        let matches_with_meta: Vec<(
+            KeyValue,
+            String,
+            Option<crate::atom::KeyMetadata>,
+            Option<String>,
+        )> = result
             .matches
             .into_iter()
             .map(|(kv, atom_uuid)| {
-                let key_meta = kv.hash.as_ref().and_then(|h| {
-                    self.molecule
-                        .as_ref()
-                        .and_then(|m| m.get_key_metadata(h).cloned())
-                });
-                (kv, atom_uuid, key_meta)
+                let (key_meta, writer_pubkey) = match kv.hash.as_ref() {
+                    Some(h) => match self.molecule.as_ref() {
+                        Some(m) => (
+                            m.get_key_metadata(h).cloned(),
+                            m.get_atom_entry(h).map(|e| e.writer_pubkey.clone()),
+                        ),
+                        None => (None, None),
+                    },
+                    None => (None, None),
+                };
+                (kv, atom_uuid, key_meta, writer_pubkey)
             })
             .collect();
         super::fetch_atoms_with_key_metadata_async_with_org(

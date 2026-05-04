@@ -700,7 +700,11 @@ impl MutationManager {
                     }),
             };
 
-            // Write mutation to memory
+            // Write mutation to memory. When the mutation carries a
+            // `Provenance::User` (e.g. inbound `data_share` replay), pass it
+            // through as `writer_override` so the per-key signing layer
+            // preserves the original author's `writer_pubkey` on the
+            // `AtomEntry` instead of overwriting via the local signer.
             schema_field.write_mutation(
                 key_value,
                 crate::schema::types::field::WriteContext {
@@ -711,6 +715,7 @@ impl MutationManager {
                     schema_name: mutation.schema_name.clone(),
                     field_name: field_name.clone(),
                     signer: Arc::clone(&self.signer),
+                    writer_override: mutation.provenance.clone(),
                 },
             );
 
