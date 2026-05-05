@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use std::env;
 use std::path::PathBuf;
 
 /// Error type for configuration parsing
@@ -135,43 +134,6 @@ impl DatabaseConfig {
     /// Check if cloud sync is enabled
     pub fn has_cloud_sync(&self) -> bool {
         self.cloud_sync.is_some()
-    }
-
-    /// Creates DatabaseConfig from environment variables:
-    /// - FOLD_STORAGE_PATH: path for local storage (default: "data")
-    /// - FOLD_STORAGE_MODE: "local" (default) or "exemem"
-    /// - For exemem mode: EXEMEM_API_URL, EXEMEM_API_KEY
-    pub fn from_env() -> Result<Self, ConfigError> {
-        let path = env::var("FOLD_STORAGE_PATH")
-            .map(PathBuf::from)
-            .unwrap_or_else(|_| PathBuf::from("data"));
-
-        let mode = env::var("FOLD_STORAGE_MODE").unwrap_or_else(|_| "local".to_string());
-
-        let cloud_sync = match mode.to_lowercase().as_str() {
-            "local" => None,
-            "exemem" => {
-                let api_url = env::var("EXEMEM_API_URL")
-                    .map_err(|_| ConfigError::MissingVariable("EXEMEM_API_URL".to_string()))?;
-                let api_key = env::var("EXEMEM_API_KEY")
-                    .map_err(|_| ConfigError::MissingVariable("EXEMEM_API_KEY".to_string()))?;
-                Some(CloudSyncConfig {
-                    api_url,
-                    api_key,
-                    session_token: env::var("EXEMEM_SESSION_TOKEN").ok(),
-                    user_hash: env::var("EXEMEM_USER_HASH").ok(),
-                    p2p_sync: None,
-                })
-            }
-            _ => {
-                return Err(ConfigError::InvalidValue(format!(
-                    "Invalid FOLD_STORAGE_MODE: '{}'. Must be 'local' or 'exemem'",
-                    mode
-                )))
-            }
-        };
-
-        Ok(DatabaseConfig { path, cloud_sync })
     }
 }
 
