@@ -1,24 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-/// Error type for configuration parsing
-#[derive(Debug)]
-pub enum ConfigError {
-    MissingVariable(String),
-    InvalidValue(String),
-}
-
-impl std::fmt::Display for ConfigError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ConfigError::MissingVariable(var) => write!(f, "Missing environment variable: {}", var),
-            ConfigError::InvalidValue(msg) => write!(f, "Invalid configuration value: {}", msg),
-        }
-    }
-}
-
-impl std::error::Error for ConfigError {}
-
 /// Configuration for cloud sync (Exemem encrypted S3 backup).
 ///
 /// **Field persistence model:** only `api_url` and `p2p_sync` are serialized
