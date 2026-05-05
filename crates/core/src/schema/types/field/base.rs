@@ -32,7 +32,7 @@ pub async fn refresh_field_from_db<M>(
                 // Non-fatal: molecule ref may be in an old serialization format.
                 // The field still works — data is read from atoms directly.
                 tracing::warn!(
-                    "FieldBase: skipping molecule ref for {}: {}",
+                    "refresh_field_from_db: skipping molecule ref for {}: {}",
                     molecule_uuid,
                     e
                 );
@@ -43,12 +43,17 @@ pub async fn refresh_field_from_db<M>(
         if inner.org_hash().is_some() {
             match store.get_item::<M>(&base_key).await {
                 Ok(Some(molecule)) => {
-                    tracing::debug!("FieldBase: resolved molecule via pre-tag (unprefixed) key");
+                    tracing::debug!(
+                        "refresh_field_from_db: resolved molecule via pre-tag (unprefixed) key"
+                    );
                     *molecule_slot = Some(molecule);
                 }
                 Ok(None) => {}
                 Err(e) => {
-                    tracing::warn!("FieldBase: pre-tag fallback for molecule ref failed: {}", e);
+                    tracing::warn!(
+                        "refresh_field_from_db: pre-tag fallback for molecule ref failed: {}",
+                        e
+                    );
                 }
             }
         }
