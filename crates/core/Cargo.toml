@@ -10,7 +10,7 @@ ts-bindings = ["ts-rs"]  # Generate TypeScript bindings when enabled
 cli = ["dep:clap", "dep:clap_complete"]  # CLI tooling (clap derives)
 transform-wasm = ["dep:wasmtime"]  # Enable WASM transform execution for views
 test-utils = []  # Expose test helpers (MockEmbeddingModel, etc.) for integration tests
-face-detection = ["dep:ort", "dep:image", "dep:zip"]  # Face detection and embedding via ONNX Runtime
+face-detection = ["dep:ort", "dep:image"]  # Face detection and embedding via ONNX Runtime
 
 [dependencies]
 # Cryptography
@@ -72,7 +72,6 @@ wasmtime = { version = "29", optional = true }
 # Face detection (ONNX runtime + image processing)
 ort = { version = "2.0.0-rc.9", optional = true, default-features = false }
 image = { version = "0.25", optional = true, default-features = false, features = ["png", "jpeg"] }
-zip = { version = "2", optional = true, default-features = false, features = ["deflate"] }
 
 ed25519-compact = "2.2.0"
 
