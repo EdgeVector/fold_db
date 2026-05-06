@@ -7,7 +7,7 @@ publish = false
 [features]
 default = []
 ts-bindings = ["ts-rs"]  # Generate TypeScript bindings when enabled
-cli = ["dep:clap", "dep:clap_complete"]  # CLI tooling (clap derives)
+cli = ["dep:clap"]  # CLI tooling (clap derives)
 transform-wasm = ["dep:wasmtime"]  # Enable WASM transform execution for views
 test-utils = []  # Expose test helpers (MockEmbeddingModel, etc.) for integration tests
 face-detection = ["dep:ort", "dep:image"]  # Face detection and embedding via ONNX Runtime
@@ -50,7 +50,6 @@ thiserror = "1.0"
 
 # Optional CLI support
 clap = { version = "4.4", features = ["derive", "string"], optional = true }
-clap_complete = { version = "4.4", optional = true }
 
 # OpenAPI schema derives (used by core types)
 utoipa = { version = "4", features = ["actix_extras"] }
@@ -63,8 +62,6 @@ observability = { path = "../observability" }
 
 # Vector embedding model for semantic search
 fastembed = "4"
-# Pin ureq to 2.x — fastembed uses ureq internally and ureq 3.x broke the TLS API
-ureq = "2"
 
 # WASM runtime for transform views
 wasmtime = { version = "29", optional = true }
