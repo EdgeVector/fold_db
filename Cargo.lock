@@ -687,15 +687,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "clap_complete"
-version = "4.5.66"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c757a3b7e39161a4e56f9365141ada2a6c915a8622c408ab6bb4b5d047371031"
-dependencies = [
- "clap",
-]
-
-[[package]]
 name = "clap_derive"
 version = "4.5.55"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1518,7 +1509,6 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "clap",
- "clap_complete",
  "croner",
  "ed25519-compact",
  "ed25519-dalek",
