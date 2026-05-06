@@ -45,12 +45,16 @@ pub(super) struct StoredEmbedding {
 }
 
 /// Entry held in the in-memory index.
-#[allow(dead_code)] // fragment_text read by discovery publisher
 pub(super) struct EmbeddingEntry {
     pub schema: String,
     pub key: KeyValue,
     pub field_name: String,
     pub fragment_idx: usize,
+    /// Mirrors `StoredEmbedding::fragment_text`. The Sled-persisted copy is
+    /// consumed by `fold_db_node::discovery::publisher` (which deserializes
+    /// its own `StoredEmbedding`); the in-memory copy is read only by
+    /// `native_index::tests` (cfg(test)), hence the allow on non-test builds.
+    #[allow(dead_code)]
     pub fragment_text: Option<String>,
     pub embedding: Vec<f32>,
     /// Legacy field names from old-format entries (for backward-compat search expansion).
