@@ -8,9 +8,6 @@ use crate::schema::SchemaError;
 pub struct FaceDetection {
     pub bbox: [f32; 4], // x1, y1, x2, y2 in original image pixels
     pub confidence: f32,
-    /// 5 facial landmarks (used for face alignment).
-    #[allow(dead_code)]
-    pub landmarks: Option<[[f32; 2]; 5]>,
 }
 
 pub struct ScrfdDetector {
@@ -114,10 +111,12 @@ impl ScrfdDetector {
             .run(inputs)
             .map_err(|e| SchemaError::InvalidData(format!("SCRFD inference failed: {e}")))?;
 
-        // SCRFD det_500m outputs 9 tensors (3 strides × 3 types):
-        //   [0] scores_8  [N8, 1]    [3] bboxes_8  [N8, 4]    [6] kps_8  [N8, 10]
-        //   [1] scores_16 [N16, 1]   [4] bboxes_16 [N16, 4]   [7] kps_16 [N16, 10]
-        //   [2] scores_32 [N32, 1]   [5] bboxes_32 [N32, 4]   [8] kps_32 [N32, 10]
+        // SCRFD det_500m outputs 9 tensors (3 strides × 3 types). We consume
+        // scores and bboxes; the kps tensors (indices 6, 7, 8) carry facial
+        // landmarks but no downstream consumer reads them, so we skip extraction.
+        //   [0] scores_8  [N8, 1]    [3] bboxes_8  [N8, 4]
+        //   [1] scores_16 [N16, 1]   [4] bboxes_16 [N16, 4]
+        //   [2] scores_32 [N32, 1]   [5] bboxes_32 [N32, 4]
         // where N_s = (640/s)^2 * 2 anchors
         let mut detections = Vec::new();
         let strides = [8u32, 16, 32];
@@ -125,7 +124,6 @@ impl ScrfdDetector {
         for (stride_idx, &stride) in strides.iter().enumerate() {
             let score_idx = stride_idx; // 0, 1, 2
             let bbox_idx = stride_idx + 3; // 3, 4, 5
-            let kps_idx = stride_idx + 6; // 6, 7, 8
 
             if bbox_idx >= outputs.len() {
                 continue;
@@ -170,32 +168,9 @@ impl ScrfdDetector {
                         let x2 = (cx + r).min(input_w as f32) / input_w as f32 * orig_w as f32;
                         let y2 = (cy + b).min(input_h as f32) / input_h as f32 * orig_h as f32;
 
-                        let landmarks = if kps_idx < outputs.len() {
-                            outputs[kps_idx].try_extract_tensor::<f32>().ok().map(|k| {
-                                let k_view = k.view();
-                                let mut pts = [[0.0f32; 2]; 5];
-                                for (i, pt) in pts.iter_mut().enumerate() {
-                                    let kx = i * 2;
-                                    let ky = i * 2 + 1;
-                                    if ky < k_view.shape()[1] {
-                                        pt[0] = (cx + k_view[[idx, kx]] * stride as f32)
-                                            / input_w as f32
-                                            * orig_w as f32;
-                                        pt[1] = (cy + k_view[[idx, ky]] * stride as f32)
-                                            / input_h as f32
-                                            * orig_h as f32;
-                                    }
-                                }
-                                pts
-                            })
-                        } else {
-                            None
-                        };
-
                         detections.push(FaceDetection {
                             bbox: [x1, y1, x2, y2],
                             confidence: score,
-                            landmarks,
                         });
                     }
                 }
