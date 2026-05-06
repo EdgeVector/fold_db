@@ -80,13 +80,6 @@ impl EmbeddingEntry {
         )
     }
 
-    /// Legacy storage key: emb:{schema}:{key_hash}
-    #[allow(dead_code)] // Used when migrating old-format entries
-    pub(super) fn legacy_storage_key(schema: &str, key: &KeyValue) -> String {
-        let key_hash = Self::key_hash(key);
-        format!("{}{}:{}", EMB_PREFIX, schema, key_hash)
-    }
-
     fn key_hash(key: &KeyValue) -> String {
         match (&key.hash, &key.range) {
             (Some(h), Some(r)) => format!("{}_{}", h, r),
