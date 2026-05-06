@@ -67,10 +67,10 @@ pub struct FoldDB {
     /// Optional Sled-backed configuration store for runtime node config.
     /// Uses RwLock for interior mutability so FoldDB doesn't need &mut self.
     config_store: std::sync::RwLock<Option<crate::storage::NodeConfigStore>>,
-    /// Signing keypair for molecule signatures. Plumbed to MutationManager.
-    /// Kept on FoldDB so the node layer can access it for future use cases
-    /// (e.g., signing sync uploads, signing query responses).
-    #[allow(dead_code)]
+    /// Signing keypair for molecule signatures. Cloned at construction into
+    /// `MutationManager` (for atom signatures) and `TriggerRunner` (for
+    /// TriggerFiring audit rows). Held on `FoldDB` so `start_sync_engine_runtime`
+    /// can pass it to `SyncEngine::new` when sync activates after boot.
     pub(crate) signer: Arc<crate::security::Ed25519KeyPair>,
 }
 

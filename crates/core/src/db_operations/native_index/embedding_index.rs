@@ -45,12 +45,16 @@ pub(super) struct StoredEmbedding {
 }
 
 /// Entry held in the in-memory index.
-#[allow(dead_code)] // fragment_text read by discovery publisher
 pub(super) struct EmbeddingEntry {
     pub schema: String,
     pub key: KeyValue,
     pub field_name: String,
     pub fragment_idx: usize,
+    /// Mirrors `StoredEmbedding::fragment_text`. The Sled-persisted copy is
+    /// consumed by `fold_db_node::discovery::publisher` (which deserializes
+    /// its own `StoredEmbedding`); the in-memory copy is read only by
+    /// `native_index::tests` (cfg(test)), hence the allow on non-test builds.
+    #[allow(dead_code)]
     pub fragment_text: Option<String>,
     pub embedding: Vec<f32>,
     /// Legacy field names from old-format entries (for backward-compat search expansion).
@@ -74,13 +78,6 @@ impl EmbeddingEntry {
             "{}{}:{}:{}:{}",
             EMB_PREFIX, schema, key_hash, field_name, fragment_idx
         )
-    }
-
-    /// Legacy storage key: emb:{schema}:{key_hash}
-    #[allow(dead_code)] // Used when migrating old-format entries
-    pub(super) fn legacy_storage_key(schema: &str, key: &KeyValue) -> String {
-        let key_hash = Self::key_hash(key);
-        format!("{}{}:{}", EMB_PREFIX, schema, key_hash)
     }
 
     fn key_hash(key: &KeyValue) -> String {

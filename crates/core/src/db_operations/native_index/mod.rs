@@ -55,8 +55,7 @@ impl NativeIndexManager {
         *self.embedding_index.entries.write().unwrap() = entries;
     }
 
-    #[allow(dead_code)]
-    #[cfg(any(test, feature = "test-utils"))]
+    #[cfg(test)]
     pub(crate) fn with_model(store: Arc<dyn KvStore>, model: Arc<dyn Embedder>) -> Self {
         Self {
             store,
