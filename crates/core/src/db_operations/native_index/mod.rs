@@ -50,9 +50,15 @@ impl NativeIndexManager {
     }
 
     /// Load persisted embeddings from the store. Call this once after `new()` during node startup.
-    pub async fn restore_from_store(&self) {
-        let entries = EmbeddingIndex::load_from_store(&*self.store).await;
+    ///
+    /// Returns `Err` when the store scan fails. Startup must surface the
+    /// failure rather than booting with a silently-empty index — every
+    /// subsequent semantic search would otherwise return zero results
+    /// indistinguishable from "no embeddings indexed".
+    pub async fn restore_from_store(&self) -> Result<(), SchemaError> {
+        let entries = EmbeddingIndex::load_from_store(&*self.store).await?;
         *self.embedding_index.entries.write().unwrap() = entries;
+        Ok(())
     }
 
     #[cfg(test)]
@@ -115,7 +121,7 @@ impl NativeIndexManager {
     /// Reload embeddings from the persistent store into the in-memory index.
     /// Called after sync replays new native_index entries. Returns the count of
     /// newly added embeddings.
-    pub async fn reload_embeddings(&self) -> usize {
+    pub async fn reload_embeddings(&self) -> Result<usize, SchemaError> {
         self.embedding_index.reload_from_store(&*self.store).await
     }
 

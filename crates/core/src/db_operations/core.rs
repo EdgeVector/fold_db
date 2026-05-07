@@ -124,7 +124,11 @@ impl DbOperations {
             None
         } else {
             let mgr = NativeIndexManager::new(native_index_kv);
-            mgr.restore_from_store().await;
+            mgr.restore_from_store().await.map_err(|e| {
+                crate::storage::StorageError::BackendError(format!(
+                    "Failed to restore embedding index from store: {e}"
+                ))
+            })?;
             Some(mgr)
         };
 

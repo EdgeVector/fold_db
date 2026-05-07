@@ -42,7 +42,7 @@ use std::cmp::Reverse;
 use std::collections::{BinaryHeap, HashMap};
 use std::sync::Arc;
 use tokio::sync::{Mutex, Notify};
-use tracing::{debug, info, warn, Instrument};
+use tracing::{debug, error, info, warn, Instrument};
 
 use super::view_orchestrator::ViewOrchestrator;
 use crate::schema::types::{KeyValue, Mutation};
@@ -1144,8 +1144,17 @@ impl<C: Clock> TriggerRunner<C> {
                 _ => continue,
             };
             let Some(next_at) = next_fire_from_cron(cron_expr, tz_str, now_ms) else {
-                warn!(
-                    "trigger '{}:{}': failed to compute next fire from cron='{}' tz='{}'",
+                // TODO(kanban c95c5): graduate this to a permanent
+                // FiringStatus::Skipped(SkipReason::InvalidCron) audit row
+                // so the user sees in their trigger UI that the schedule is
+                // broken, plus tighten upstream validation in
+                // schema_service::validate_cron at PUT /v1/views register
+                // time. Until then this `error!` is the only signal that a
+                // trigger is silently un-scheduled — a `warn!` was too quiet
+                // for an "your trigger never fires again" failure mode.
+                error!(
+                    "trigger '{}:{}': failed to compute next fire from cron='{}' tz='{}' \
+                     — trigger will not fire until cron/timezone is fixed (kanban c95c5)",
                     view_name, idx, cron_expr, tz_str
                 );
                 continue;

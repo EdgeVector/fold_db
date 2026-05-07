@@ -166,7 +166,7 @@ async fn test_restore_from_store_loads_existing_embeddings() {
 
     // Create manager 2 with same store, restore from store
     let mgr2 = NativeIndexManager::with_model(kv, Arc::new(MockEmbeddingModel));
-    mgr2.restore_from_store().await;
+    mgr2.restore_from_store().await.unwrap();
 
     let entries = mgr2.embedding_index.entries.read().unwrap();
     assert_eq!(entries.len(), 1);
@@ -228,6 +228,98 @@ async fn test_detect_faces_errors_without_processor() {
     let msg = format!("{:?}", result.unwrap_err());
     assert!(
         msg.contains("No face processor configured"),
+        "unexpected error: {}",
+        msg
+    );
+}
+
+/// KvStore that always fails on `scan_prefix`. Used to exercise the
+/// fail-loud path in `EmbeddingIndex::load_from_store`: the previous
+/// behavior silently returned an empty Vec, leaving every subsequent
+/// semantic search returning zero results indistinguishable from
+/// "no embeddings indexed".
+struct FailingScanKvStore;
+
+#[async_trait::async_trait]
+impl crate::storage::traits::KvStore for FailingScanKvStore {
+    async fn get(&self, _key: &[u8]) -> crate::storage::error::StorageResult<Option<Vec<u8>>> {
+        Ok(None)
+    }
+    async fn put(&self, _key: &[u8], _value: Vec<u8>) -> crate::storage::error::StorageResult<()> {
+        Ok(())
+    }
+    async fn delete(&self, _key: &[u8]) -> crate::storage::error::StorageResult<bool> {
+        Ok(false)
+    }
+    async fn exists(&self, _key: &[u8]) -> crate::storage::error::StorageResult<bool> {
+        Ok(false)
+    }
+    async fn scan_prefix(
+        &self,
+        _prefix: &[u8],
+    ) -> crate::storage::error::StorageResult<Vec<(Vec<u8>, Vec<u8>)>> {
+        Err(crate::storage::error::StorageError::BackendError(
+            "simulated scan failure".to_string(),
+        ))
+    }
+    async fn batch_put(
+        &self,
+        _items: Vec<(Vec<u8>, Vec<u8>)>,
+    ) -> crate::storage::error::StorageResult<()> {
+        Ok(())
+    }
+    async fn batch_delete(&self, _keys: Vec<Vec<u8>>) -> crate::storage::error::StorageResult<()> {
+        Ok(())
+    }
+    async fn flush(&self) -> crate::storage::error::StorageResult<()> {
+        Ok(())
+    }
+    fn backend_name(&self) -> &'static str {
+        "FailingScanKvStore"
+    }
+    fn execution_model(&self) -> crate::storage::traits::ExecutionModel {
+        crate::storage::traits::ExecutionModel::SyncWrapped
+    }
+    fn flush_behavior(&self) -> crate::storage::traits::FlushBehavior {
+        crate::storage::traits::FlushBehavior::NoOp
+    }
+}
+
+#[tokio::test]
+async fn test_restore_from_store_propagates_scan_failure() {
+    // When the underlying KvStore fails to scan the embedding prefix,
+    // `restore_from_store` must surface the error so node startup can
+    // refuse to boot with a silently-empty in-memory index. Previously
+    // this site logged a warn and returned an empty Vec, which made
+    // every subsequent semantic search silently return zero results.
+    let store: Arc<dyn crate::storage::traits::KvStore> = Arc::new(FailingScanKvStore);
+    let mgr = NativeIndexManager::with_model(store, Arc::new(MockEmbeddingModel));
+    let err = mgr
+        .restore_from_store()
+        .await
+        .expect_err("scan failure must propagate");
+    let msg = format!("{:?}", err);
+    assert!(
+        msg.contains("Failed to scan embedding index from store")
+            && msg.contains("simulated scan failure"),
+        "unexpected error: {}",
+        msg
+    );
+}
+
+#[tokio::test]
+async fn test_reload_embeddings_propagates_scan_failure() {
+    // `reload_embeddings` is called after sync replays — it too must
+    // surface scan failures rather than silently returning 0.
+    let store: Arc<dyn crate::storage::traits::KvStore> = Arc::new(FailingScanKvStore);
+    let mgr = NativeIndexManager::with_model(store, Arc::new(MockEmbeddingModel));
+    let err = mgr
+        .reload_embeddings()
+        .await
+        .expect_err("reload scan failure must propagate");
+    let msg = format!("{:?}", err);
+    assert!(
+        msg.contains("Failed to scan embedding index from store"),
         "unexpected error: {}",
         msg
     );

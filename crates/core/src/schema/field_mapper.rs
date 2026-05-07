@@ -87,21 +87,19 @@ impl FieldMapperService {
         for (target_field, mapper) in field_mappers {
             let source_schema_name = mapper.source_schema().to_string();
 
-            let source_schema = match self
+            let source_schema = self
                 .resolve_source_schema(&source_schema_name, &mut source_cache)
-                .await
-            {
-                Some(s) => s,
-                None => continue,
-            };
+                .await?;
 
             let Some(source_field) = source_schema.runtime_fields.get(mapper.source_field()) else {
-                tracing::warn!(
-                    "apply_field_mappers: source field '{}.{}' not in runtime_fields, skipping",
+                return Err(SchemaError::InvalidData(format!(
+                    "apply_field_mappers: source field '{}.{}' missing from runtime_fields \
+                     for schema '{}' (mapper points at a field that doesn't exist in the \
+                     source schema — this is a malformed FieldMapper)",
                     source_schema_name,
-                    mapper.source_field()
-                );
-                continue;
+                    mapper.source_field(),
+                    schema_name,
+                )));
             };
 
             // If the source field doesn't have a molecule UUID yet (no data written),
@@ -111,11 +109,12 @@ impl FieldMapperService {
             };
 
             let Some(target_runtime_field) = schema.runtime_fields.get_mut(&target_field) else {
-                tracing::warn!(
-                    "apply_field_mappers: target field '{}' not in runtime_fields, skipping",
-                    target_field
-                );
-                continue;
+                return Err(SchemaError::InvalidData(format!(
+                    "apply_field_mappers: target field '{}' missing from runtime_fields \
+                     for schema '{}' (the schema's own field_mappers reference a field \
+                     that isn't in runtime_fields — schema is internally inconsistent)",
+                    target_field, schema_name,
+                )));
             };
 
             target_runtime_field
@@ -149,34 +148,43 @@ impl FieldMapperService {
     /// Following that redirect would produce a circular lookup. We need the raw
     /// source schema with its original molecule UUIDs.
     ///
-    /// Returns `None` (with a warning log) if the source schema can't be loaded;
-    /// the caller should skip that mapper entry.
+    /// Returns `Err(SchemaError::InvalidData)` if the source schema is missing
+    /// (dangling mapper) or cannot be loaded — silently skipping a missing
+    /// source would leave the target schema's runtime fields without their
+    /// molecule UUIDs, making every read against the new schema return nothing
+    /// (data corruption surfaced as empty results).
     async fn resolve_source_schema<'a>(
         &self,
         source_schema_name: &str,
         source_cache: &'a mut HashMap<String, Schema>,
-    ) -> Option<&'a Schema> {
+    ) -> Result<&'a Schema, SchemaError> {
         if !source_cache.contains_key(source_schema_name) {
-            let fetched = match self.db_ops.get_schema(source_schema_name).await {
-                Ok(Some(s)) => s,
-                Ok(None) => {
-                    tracing::warn!(
-                        "apply_field_mappers: source schema '{}' not found, skipping its mappers",
-                        source_schema_name
-                    );
-                    return None;
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        "apply_field_mappers: error loading source schema '{}': {}, skipping",
+            let fetched = self
+                .db_ops
+                .get_schema(source_schema_name)
+                .await
+                .map_err(|e| {
+                    SchemaError::InvalidData(format!(
+                        "apply_field_mappers: failed to load source schema '{}': {}",
+                        source_schema_name, e,
+                    ))
+                })?
+                .ok_or_else(|| {
+                    SchemaError::InvalidData(format!(
+                        "apply_field_mappers: source schema '{}' referenced by a FieldMapper \
+                     does not exist (dangling mapper — the source schema was deleted or \
+                     never installed)",
                         source_schema_name,
-                        e
-                    );
-                    return None;
-                }
-            };
+                    ))
+                })?;
             source_cache.insert(source_schema_name.to_string(), fetched);
         }
-        source_cache.get(source_schema_name)
+        source_cache.get(source_schema_name).ok_or_else(|| {
+            SchemaError::InvalidData(format!(
+                "apply_field_mappers: source schema '{}' missing from cache after insert \
+                 (unreachable)",
+                source_schema_name,
+            ))
+        })
     }
 }

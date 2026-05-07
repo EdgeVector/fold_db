@@ -145,7 +145,7 @@ mod tests {
             .unwrap();
 
         // Reload in-memory index so it picks up the entries we just wrote
-        nim.reload_embeddings().await;
+        nim.reload_embeddings().await.unwrap();
 
         // Verify both exist
         let val_p: Option<String> = atoms_store.get_item(personal_key).await.unwrap();
