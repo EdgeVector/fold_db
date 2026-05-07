@@ -7,6 +7,7 @@ use crate::storage::config::DatabaseConfig;
 use crate::storage::node_config_store::NodeConfigStore;
 use crate::storage::SledPool;
 use crate::sync::SyncSetup;
+use crate::triggers::clock::{Clock, SystemClock};
 use std::sync::Arc;
 
 /// Creates a fully initialized FoldDB instance based on the database configuration.
@@ -24,6 +25,35 @@ pub async fn create_fold_db(
     signer: Arc<Ed25519KeyPair>,
 ) -> FoldDbResult<Arc<FoldDB>> {
     create_fold_db_with_auth_refresh(config, e2e_keys, signer, None).await
+}
+
+/// Creates a `FoldDB` instance whose embedded `TriggerRunner` is driven by
+/// the supplied [`Clock`].
+///
+/// This is the test-injection seam for fold_db consumers (notably
+/// fold_dev_node) that want to drive `Scheduled` / `ScheduledIfDirty`
+/// triggers deterministically with `MockClock::advance` — no real
+/// `tokio::time::sleep`, no flaky timing-based assertions.
+///
+/// Cloud-sync paths are intentionally excluded here: the test factory
+/// configures only the local Sled stack so callers can wire a `MockClock`
+/// without spinning up the sync engine. Production wiring with cloud sync
+/// stays on [`create_fold_db`] / [`create_fold_db_with_auth_refresh`],
+/// which inject `SystemClock`.
+pub async fn create_fold_db_with_clock<C: Clock>(
+    config: &DatabaseConfig,
+    e2e_keys: &E2eKeys,
+    signer: Arc<Ed25519KeyPair>,
+    clock: Arc<C>,
+) -> FoldDbResult<Arc<FoldDB<C>>> {
+    if config.cloud_sync.is_some() {
+        return Err(FoldDbError::Config(
+            "create_fold_db_with_clock does not support cloud_sync; \
+             cloud-sync paths use SystemClock through create_fold_db"
+                .to_string(),
+        ));
+    }
+    create_local_fold_db(&config.path, e2e_keys, signer, None, None, clock).await
 }
 
 /// Creates a FoldDB instance with an optional auth-refresh callback for the sync engine.
@@ -69,7 +99,15 @@ pub async fn create_fold_db_with_pool_and_auth_refresh(
         None
     };
 
-    let db = create_local_fold_db(&config.path, e2e_keys, signer, sync_setup, pool).await?;
+    let db = create_local_fold_db(
+        &config.path,
+        e2e_keys,
+        signer,
+        sync_setup,
+        pool,
+        Arc::new(SystemClock::new()),
+    )
+    .await?;
 
     // If cloud sync is configured, persist ONLY api_url and user_hash to Sled.
     // API keys and session tokens are per-device secrets stored in credentials.json
@@ -103,13 +141,14 @@ pub async fn create_fold_db_with_pool_and_auth_refresh(
 ///       |
 /// SledNamespacedStore        (local persistence)
 /// ```
-async fn create_local_fold_db(
+async fn create_local_fold_db<C: Clock>(
     path: &std::path::Path,
     e2e_keys: &E2eKeys,
     signer: Arc<Ed25519KeyPair>,
     sync_setup: Option<SyncSetup>,
     injected_pool: Option<Arc<SledPool>>,
-) -> FoldDbResult<Arc<FoldDB>> {
+    clock: Arc<C>,
+) -> FoldDbResult<Arc<FoldDB<C>>> {
     let path_str = path
         .to_str()
         .ok_or_else(|| FoldDbError::Config("Invalid storage path".to_string()))?;
@@ -252,7 +291,7 @@ async fn create_local_fold_db(
 
     let job_store = crate::progress::create_tracker_with_sled(Arc::clone(&pool));
 
-    let fold_db = FoldDB::initialize_from_db_ops_with_sled(
+    let fold_db = FoldDB::<C>::initialize_from_db_ops_with_sled_and_clock(
         Arc::new(db_ops),
         path_str,
         Some(job_store),
@@ -260,6 +299,7 @@ async fn create_local_fold_db(
         Some(pool),
         enc_store_ref,
         signer,
+        clock,
     )
     .await
     .map_err(|e| FoldDbError::Config(e.to_string()))?;
