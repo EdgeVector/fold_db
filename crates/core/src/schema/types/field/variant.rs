@@ -79,7 +79,7 @@ impl Field for FieldVariant {
         delegate_field_method!(self, common_mut)
     }
 
-    async fn refresh_from_db(&mut self, db_ops: &DbOperations) {
+    async fn refresh_from_db(&mut self, db_ops: &DbOperations) -> Result<(), SchemaError> {
         match self {
             Self::Single(f) => f.refresh_from_db(db_ops).await,
             Self::Hash(f) => f.refresh_from_db(db_ops).await,
@@ -103,7 +103,7 @@ impl Field for FieldVariant {
         as_of: Option<DateTime<Utc>>,
     ) -> Result<HashMap<KeyValue, FieldValue>, SchemaError> {
         // Refresh field data from database first
-        self.refresh_from_db(db_ops).await;
+        self.refresh_from_db(db_ops).await?;
 
         // If as_of is requested, rewind molecule to that point in time
         if let Some(as_of) = as_of {
