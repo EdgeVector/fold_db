@@ -123,14 +123,25 @@ impl EmbeddingIndex {
 
     /// Load all persisted embeddings from the KV store into memory.
     /// Handles both old (per-record) and new (per-fragment) formats.
-    pub(super) async fn load_from_store(store: &dyn KvStore) -> Vec<EmbeddingEntry> {
-        let raw = match store.scan_prefix(EMB_PREFIX.as_bytes()).await {
-            Ok(r) => r,
-            Err(e) => {
-                tracing::warn!("Failed to scan embedding index from store: {}", e);
-                return Vec::new();
-            }
-        };
+    ///
+    /// Returns `Err` when the underlying store scan fails. Previously this
+    /// silently returned an empty vec on scan failure, which left the
+    /// in-memory index empty and made every subsequent semantic search
+    /// silently return zero results — indistinguishable from "no
+    /// embeddings indexed". Per-entry deserialize failures are still
+    /// tolerated (forward-compat for old StoredEmbedding shapes).
+    pub(super) async fn load_from_store(
+        store: &dyn KvStore,
+    ) -> Result<Vec<EmbeddingEntry>, SchemaError> {
+        let raw = store
+            .scan_prefix(EMB_PREFIX.as_bytes())
+            .await
+            .map_err(|e| {
+                SchemaError::InvalidData(format!(
+                    "Failed to scan embedding index from store: {}",
+                    e
+                ))
+            })?;
 
         let mut entries = Vec::with_capacity(raw.len());
         for (_key, value) in raw {
@@ -153,7 +164,7 @@ impl EmbeddingIndex {
         }
 
         tracing::info!("Loaded {} embeddings from store", entries.len());
-        entries
+        Ok(entries)
     }
 
     /// Persist and upsert a single fragment embedding.
@@ -223,8 +234,11 @@ impl EmbeddingIndex {
 
     /// Reload embeddings from the store, adding any entries not already in the in-memory index.
     /// Returns the number of newly added entries.
-    pub(super) async fn reload_from_store(&self, store: &dyn KvStore) -> usize {
-        let new_entries = Self::load_from_store(store).await;
+    pub(super) async fn reload_from_store(
+        &self,
+        store: &dyn KvStore,
+    ) -> Result<usize, SchemaError> {
+        let new_entries = Self::load_from_store(store).await?;
         let mut current = self.entries.write().unwrap();
         let before = current.len();
 
@@ -257,7 +271,7 @@ impl EmbeddingIndex {
         if added > 0 {
             tracing::info!("reload_from_store: added {} new embeddings to index", added);
         }
-        added
+        Ok(added)
     }
 
     /// Remove all entries belonging to a specific org from the in-memory index.

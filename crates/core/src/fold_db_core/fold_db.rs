@@ -141,8 +141,9 @@ impl<C: Clock> FoldDB<C> {
                 .set_embedding_reloader(Arc::new(move || {
                     let idx = embedding_index.clone();
                     Box::pin(async move {
-                        let count = idx.reload_embeddings().await;
-                        Ok(count)
+                        idx.reload_embeddings()
+                            .await
+                            .map_err(|e| format!("EmbeddingIndex reload failed: {e}"))
                     })
                 }))
                 .await;

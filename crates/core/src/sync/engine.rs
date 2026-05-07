@@ -2088,11 +2088,17 @@ impl SyncEngine {
             // keys come back as `snapshots/{name}` — we want the bare
             // `{name}` for the delete request.
             let Some(name) = obj.key.strip_prefix("snapshots/") else {
-                tracing::warn!(
-                    "purge_personal_log: skipping snapshot key '{}' that doesn't start with 'snapshots/'",
-                    obj.key
-                );
-                continue;
+                // The Lambda's list_snapshot_objects contract is that every
+                // returned key starts with `snapshots/`. A non-`snapshots/`
+                // key here means the contract was violated upstream — fail
+                // loud rather than silently skipping (and possibly leaving
+                // stale snapshots behind on a "purge" call). Mirrors the
+                // defense-in-depth check on `targets[0]` above.
+                return Err(SyncError::Auth(format!(
+                    "purge_personal_log: snapshot key '{}' did not start with 'snapshots/' \
+                     (Lambda list_snapshot_objects contract violation)",
+                    obj.key,
+                )));
             };
             let url = self.auth.presign_snapshot_delete(name).await?;
             self.s3.delete(&url).await?;

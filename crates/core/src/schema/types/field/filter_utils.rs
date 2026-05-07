@@ -160,9 +160,17 @@ pub async fn fetch_atoms_with_key_metadata_async_with_org(
             Ok(None) => {
                 let key_str = key.to_string();
                 if org_hash.is_some() {
+                    // Intentional filter (not a bug-skip): the function-level
+                    // doc comment above explains that org-scoped reads must
+                    // tolerate orphan molecule refs whose pre-tag atoms never
+                    // replayed through the org log, otherwise every
+                    // unfiltered query on a shared schema is unusable. Personal
+                    // reads (the `else` branches below) still error-out, so
+                    // genuine integrity bugs surface there.
                     tracing::warn!(
-                        "Skipping unresolvable atom ref — pre-tag molecule ref leaked \
-                         without atom data (alpha BLOCKER 4b171)"
+                        "Filtering orphan atom ref from org-scoped read — pre-tag \
+                         molecule ref has no atom data, intentionally skipped per \
+                         alpha BLOCKER 4b171 design (see fetch_atoms_with_key_metadata_async_with_org docs)"
                     );
                     continue;
                 }
