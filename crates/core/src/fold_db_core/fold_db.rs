@@ -27,10 +27,15 @@ use super::trigger_runner::{
 use crate::messaging::AsyncMessageBus;
 use crate::progress::ProgressStore as JobStore;
 use crate::progress::ProgressTracker;
-use crate::triggers::clock::SystemClock;
+use crate::triggers::clock::{Clock, SystemClock};
 
 /// The main database coordinator that manages schemas, permissions, and data storage.
-pub struct FoldDB {
+///
+/// Generic over a `Clock` so consumers can swap in `MockClock` to drive the
+/// embedded `TriggerRunner` deterministically in tests. The default
+/// `SystemClock` keeps existing `Arc<FoldDB>` callers (factory, downstream
+/// crates) source-compatible.
+pub struct FoldDB<C: Clock = SystemClock> {
     pub(crate) schema_manager: Arc<SchemaCore>,
     /// Shared database operations with storage abstraction
     pub(crate) db_ops: Arc<DbOperations>,
@@ -51,7 +56,7 @@ pub struct FoldDB {
     /// Trigger runner — the single source of truth for firing views.
     /// Held as `dyn TriggerShutdown` so callers can `clear_dispatcher`
     /// during shutdown to break the Arc cycle with MutationManager.
-    trigger_runner: Arc<TriggerRunner<SystemClock>>,
+    trigger_runner: Arc<TriggerRunner<C>>,
     /// Shutdown notifier for the trigger runner's scheduler loop.
     trigger_shutdown: Arc<tokio::sync::Notify>,
     /// Tracker for pending background tasks
@@ -74,7 +79,7 @@ pub struct FoldDB {
     pub(crate) signer: Arc<crate::security::Ed25519KeyPair>,
 }
 
-impl FoldDB {
+impl<C: Clock> FoldDB<C> {
     /// Retrieves or generates and persists the node identifier.
     pub async fn get_node_id(&self) -> Result<String, crate::storage::StorageError> {
         self.db_ops
@@ -279,7 +284,13 @@ impl FoldDB {
                 .await;
         }
     }
+}
 
+/// Constructors that hardcode the production `SystemClock`. Tests that
+/// need `MockClock` go through
+/// [`super::factory::create_fold_db_with_clock`] (which calls
+/// [`FoldDB::initialize_from_db_ops_with_sled_and_clock`] directly).
+impl FoldDB<SystemClock> {
     /// Creates a new FoldDB instance with the specified storage path.
     ///
     /// This is a convenience path for tests and other in-process callers
@@ -400,6 +411,36 @@ impl FoldDB {
         .await
     }
 
+    /// Backwards-compatible thin wrapper around
+    /// [`FoldDB::initialize_from_db_ops_with_sled_and_clock`] that injects
+    /// the production `SystemClock`. Existing in-process callers (the
+    /// factory, `FoldDB::new`) reach the runner through this entry point;
+    /// tests that need a `MockClock` call `_and_clock` directly via
+    /// [`super::factory::create_fold_db_with_clock`].
+    pub async fn initialize_from_db_ops_with_sled(
+        db_ops: Arc<DbOperations>,
+        db_path: &str,
+        job_store: Option<Arc<dyn JobStore>>,
+        user_id: String,
+        sled_pool: Option<Arc<SledPool>>,
+        encrypting_store: Option<Arc<crate::storage::EncryptingNamespacedStore>>,
+        signer: Arc<crate::security::Ed25519KeyPair>,
+    ) -> Result<Self, StorageError> {
+        Self::initialize_from_db_ops_with_sled_and_clock(
+            db_ops,
+            db_path,
+            job_store,
+            user_id,
+            sled_pool,
+            encrypting_store,
+            signer,
+            Arc::new(SystemClock::new()),
+        )
+        .await
+    }
+}
+
+impl<C: Clock> FoldDB<C> {
     /// Internal initializer that optionally retains the SledPool handle.
     /// The pool is needed by org operations and org sync configuration.
     ///
@@ -409,7 +450,13 @@ impl FoldDB {
     /// `MutationManager`. Production callers (via the factory) must load
     /// this from the node's persistent identity so signatures match the
     /// node's public key — see the module docs on [`FoldDB::new`] for why.
-    pub async fn initialize_from_db_ops_with_sled(
+    ///
+    /// `clock` is the wall-clock service injected into the embedded
+    /// `TriggerRunner`. Production paths pass an `Arc<SystemClock>`; tests
+    /// pass an `Arc<MockClock>` so `MockClock::advance` can drive the
+    /// scheduler deterministically. See [`super::factory::create_fold_db_with_clock`].
+    #[allow(clippy::too_many_arguments)]
+    pub async fn initialize_from_db_ops_with_sled_and_clock(
         db_ops: Arc<DbOperations>,
         _db_path: &str,
         job_store: Option<Arc<dyn JobStore>>,
@@ -417,6 +464,7 @@ impl FoldDB {
         sled_pool: Option<Arc<SledPool>>,
         encrypting_store: Option<Arc<crate::storage::EncryptingNamespacedStore>>,
         signer: Arc<crate::security::Ed25519KeyPair>,
+        clock: Arc<C>,
     ) -> Result<Self, StorageError> {
         // Initialize message bus
         let message_bus = Arc::new(AsyncMessageBus::new());
@@ -491,7 +539,7 @@ impl FoldDB {
             Arc::clone(&schema_manager),
             Arc::clone(&view_orchestrator),
             sled_pool.clone(),
-            Arc::new(SystemClock::new()),
+            clock,
             firing_writer,
             signer.public_key_base64(),
         ));
@@ -683,7 +731,7 @@ impl FoldDB {
 
     /// Get the trigger runner — primarily used by integration tests and
     /// admin endpoints that want to inspect pending/quarantined state.
-    pub fn trigger_runner(&self) -> &Arc<TriggerRunner<SystemClock>> {
+    pub fn trigger_runner(&self) -> &Arc<TriggerRunner<C>> {
         &self.trigger_runner
     }
 
@@ -693,7 +741,7 @@ impl FoldDB {
     }
 }
 
-impl Drop for FoldDB {
+impl<C: Clock> Drop for FoldDB<C> {
     fn drop(&mut self) {
         // Abort the background sync task to prevent tokio panic:
         // "Cannot drop a runtime in a context where blocking is not allowed"
