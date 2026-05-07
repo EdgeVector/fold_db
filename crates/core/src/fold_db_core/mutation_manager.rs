@@ -316,7 +316,7 @@ impl MutationManager {
                 .or_insert(std::time::Duration::ZERO) += phase1_start.elapsed();
 
             // Phase 3: Restore molecules missing from memory
-            self.restore_missing_molecules(&mut schema).await;
+            self.restore_missing_molecules(&mut schema).await?;
 
             // Phase 4: Apply mutations to molecules in memory
             let phase2_start = std::time::Instant::now();
@@ -636,7 +636,12 @@ impl MutationManager {
 
     /// Ensures molecules are loaded from DB for fields that have molecule_uuid
     /// but no molecule in memory (e.g. after server restart or schema reload).
-    async fn restore_missing_molecules(&self, schema: &mut Schema) {
+    ///
+    /// Returns `Err(SchemaError::InvalidData)` when any field's stored
+    /// molecule ref fails to deserialize — fail loud rather than silently
+    /// continuing with a `None` molecule slot, which would make subsequent
+    /// reads return empty results and mask data corruption.
+    async fn restore_missing_molecules(&self, schema: &mut Schema) -> Result<(), SchemaError> {
         let fields_needing_refresh: Vec<String> = schema
             .runtime_fields
             .iter()
@@ -646,9 +651,10 @@ impl MutationManager {
 
         for field_name in fields_needing_refresh {
             if let Some(field) = schema.runtime_fields.get_mut(&field_name) {
-                field.refresh_from_db(&self.db_ops).await;
+                field.refresh_from_db(&self.db_ops).await?;
             }
         }
+        Ok(())
     }
 
     /// Applies atom writes to in-memory molecules, collecting mutation events

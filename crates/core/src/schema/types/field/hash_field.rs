@@ -50,8 +50,11 @@ impl crate::schema::types::field::Field for HashField {
         &mut self.inner
     }
 
-    async fn refresh_from_db(&mut self, db_ops: &crate::db_operations::DbOperations) {
-        refresh_field_from_db(&mut self.inner, &mut self.molecule, db_ops).await;
+    async fn refresh_from_db(
+        &mut self,
+        db_ops: &crate::db_operations::DbOperations,
+    ) -> Result<(), SchemaError> {
+        refresh_field_from_db(&mut self.inner, &mut self.molecule, db_ops).await
     }
 
     fn write_mutation(
@@ -113,7 +116,7 @@ impl crate::schema::types::field::Field for HashField {
         filter: Option<HashRangeFilter>,
         _as_of: Option<chrono::DateTime<chrono::Utc>>,
     ) -> Result<HashMap<KeyValue, FieldValue>, SchemaError> {
-        self.refresh_from_db(db_ops).await;
+        self.refresh_from_db(db_ops).await?;
         let result = self.apply_filter(filter);
         // Attach per-key metadata + per-AtomEntry writer_pubkey from the
         // molecule to each match. The writer_pubkey is the only way Hash

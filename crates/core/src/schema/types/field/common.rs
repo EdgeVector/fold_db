@@ -52,7 +52,16 @@ pub trait Field: Send + Sync {
     fn common_mut(&mut self) -> &mut FieldCommon;
 
     /// Refreshes the field's data from the database using the provided key configuration.
-    async fn refresh_from_db(&mut self, db_ops: &crate::db_operations::DbOperations);
+    ///
+    /// Returns `Err(SchemaError::InvalidData)` when the on-disk molecule ref
+    /// fails to deserialize into the field's molecule type — that is fatal,
+    /// not a "skip and continue" case (a `None` molecule slot makes
+    /// `resolve_value` return empty results, which silently masks data
+    /// corruption). Read misses (no value at the ref key) are still `Ok(())`.
+    async fn refresh_from_db(
+        &mut self,
+        db_ops: &crate::db_operations::DbOperations,
+    ) -> Result<(), SchemaError>;
 
     /// Writes a mutation to the field
     fn write_mutation(&mut self, key_value: &KeyValue, ctx: WriteContext);
@@ -172,8 +181,16 @@ macro_rules! impl_field {
                 &mut self.inner
             }
 
-            async fn refresh_from_db(&mut self, db_ops: &$crate::db_operations::DbOperations) {
+            async fn refresh_from_db(
+                &mut self,
+                db_ops: &$crate::db_operations::DbOperations,
+            ) -> Result<(), $crate::schema::types::SchemaError> {
+                let _ = db_ops;
                 tracing::error!("refresh_from_db not implemented for {}", stringify!($t));
+                Err($crate::schema::types::SchemaError::InvalidField(format!(
+                    "refresh_from_db not implemented for {}",
+                    stringify!($t)
+                )))
             }
 
             fn write_mutation(
