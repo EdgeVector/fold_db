@@ -195,6 +195,11 @@ pub enum SkipReason {
     DirtyClean,
     /// Catch-up tick exceeded the trigger's `max_catch_up_age` budget.
     CatchUpBudget,
+    /// `Scheduled` / `ScheduledIfDirty` cron or timezone failed to parse:
+    /// `next_fire_from_cron` returned `None`. The trigger stays dormant
+    /// until the schema is fixed; one audit row per broken (view, trigger)
+    /// is emitted so the user has a permanent breadcrumb.
+    InvalidCron,
 }
 
 impl SkipReason {
@@ -203,6 +208,7 @@ impl SkipReason {
             SkipReason::SkipIfIdle => skip_reason::SKIP_IF_IDLE,
             SkipReason::DirtyClean => skip_reason::DIRTY_CLEAN,
             SkipReason::CatchUpBudget => skip_reason::CATCH_UP_BUDGET,
+            SkipReason::InvalidCron => skip_reason::INVALID_CRON,
         }
     }
 }
@@ -443,6 +449,14 @@ pub struct TriggerRunner<C: Clock> {
     runtimes: Mutex<HashMap<String, Arc<ViewRuntime>>>,
     scheduler: Mutex<BinaryHeap<Reverse<ScheduledFire>>>,
     scheduler_notify: Arc<Notify>,
+    /// (view_name, trigger_index) pairs that have already had an
+    /// `InvalidCron` audit row written this process lifetime. Re-armed
+    /// every time the cron parses successfully — so a user fixing a
+    /// broken cron via schema update will see a fresh InvalidCron row
+    /// if they break it again later. Without this dedupe,
+    /// `populate_scheduled_from_registry` would emit one row per
+    /// scheduler tick for every broken trigger.
+    invalid_cron_audited: Mutex<std::collections::HashSet<(String, usize)>>,
     /// TH6a — per-view eviction tracker. Keyed by view name. See
     /// `apply_retention_after_write`.
     eviction: Mutex<HashMap<String, ViewEvictionState>>,
@@ -491,6 +505,7 @@ impl<C: Clock> TriggerRunner<C> {
             runtimes: Mutex::new(HashMap::new()),
             scheduler: Mutex::new(BinaryHeap::new()),
             scheduler_notify: Arc::new(Notify::new()),
+            invalid_cron_audited: Mutex::new(std::collections::HashSet::new()),
             eviction: Mutex::new(HashMap::new()),
             eviction_pub_key,
         }
@@ -1144,27 +1159,81 @@ impl<C: Clock> TriggerRunner<C> {
                 _ => continue,
             };
             let Some(next_at) = next_fire_from_cron(cron_expr, tz_str, now_ms) else {
-                // TODO(kanban c95c5): graduate this to a permanent
-                // FiringStatus::Skipped(SkipReason::InvalidCron) audit row
-                // so the user sees in their trigger UI that the schedule is
-                // broken, plus tighten upstream validation in
-                // schema_service::validate_cron at PUT /v1/views register
-                // time. Until then this `error!` is the only signal that a
-                // trigger is silently un-scheduled — a `warn!` was too quiet
-                // for an "your trigger never fires again" failure mode.
                 error!(
                     "trigger '{}:{}': failed to compute next fire from cron='{}' tz='{}' \
-                     — trigger will not fire until cron/timezone is fixed (kanban c95c5)",
+                     — trigger will not fire until cron/timezone is fixed",
                     view_name, idx, cron_expr, tz_str
                 );
+                self.audit_invalid_cron(&view_name, idx, now_ms).await;
                 continue;
             };
+            // Cron parsed: clear any prior InvalidCron audit flag so a
+            // future regression (user re-introduces a broken cron) emits
+            // a fresh audit row instead of being silently de-duped by a
+            // stale process-lifetime entry.
+            self.invalid_cron_audited
+                .lock()
+                .await
+                .remove(&(view_name.clone(), idx));
             let mut heap = self.scheduler.lock().await;
             heap.push(Reverse(ScheduledFire {
                 fire_at_ms: next_at,
                 view_name,
                 trigger_index: idx,
             }));
+        }
+    }
+
+    /// Write a `Skipped(InvalidCron)` audit row for a (view, trigger_index)
+    /// whose cron expression or IANA timezone failed to parse, but only
+    /// the first time we observe the failure. Subsequent calls for the
+    /// same pair are no-ops so the audit log gets one durable breadcrumb
+    /// per broken trigger instead of one per scheduler tick.
+    ///
+    /// `fired_at_ms` is `now_ms`: there's no "scheduled fire time" for a
+    /// trigger that can't compute one. Skip rows already key by
+    /// `(trigger_id, fired_at_ms)`, so using `now_ms` keeps the row
+    /// distinguishable if the dedupe state is somehow lost (e.g. process
+    /// restart followed by re-broken cron).
+    ///
+    /// We do NOT re-arm: a broken cron should stay broken until the
+    /// schema is updated. The `populate_scheduled_from_registry` pass
+    /// keeps re-evaluating the trigger every tick; the dedupe above
+    /// suppresses repeated rows.
+    async fn audit_invalid_cron(self: &Arc<Self>, view_name: &str, idx: usize, now_ms: i64) {
+        {
+            let mut audited = self.invalid_cron_audited.lock().await;
+            if !audited.insert((view_name.to_string(), idx)) {
+                return;
+            }
+        }
+        let trigger_id = format!("{}:{}", view_name, idx);
+        let record = FiringRecord {
+            trigger_id,
+            view_name: view_name.to_string(),
+            fired_at_ms: now_ms,
+            duration_ms: 0,
+            status: FiringStatus::Skipped(SkipReason::InvalidCron),
+            input_row_count: 0,
+            output_row_count: 0,
+            error_message: None,
+            input_snapshot: None,
+            schema_versions: HashMap::new(),
+            snapshot_truncated: false,
+        };
+        if let Err(e) = self.firing_writer.write_firing(record).await {
+            // Drop the dedupe flag so the next tick retries the audit
+            // write. Mirrors `write_skip_firing`'s at-least-once retry
+            // for transient sled errors.
+            self.invalid_cron_audited
+                .lock()
+                .await
+                .remove(&(view_name.to_string(), idx));
+            warn!(
+                "TriggerFiring InvalidCron audit-row write failed for '{}:{}': {} — \
+                 will retry on next tick",
+                view_name, idx, e
+            );
         }
     }
 
@@ -1318,15 +1387,24 @@ impl<C: Clock> TriggerRunner<C> {
         self.dispatch_nonblocking(&fire.view_name, fire.trigger_index, &rt)
             .await;
 
-        // Re-arm the next cron occurrence.
+        // Re-arm the next cron occurrence. If the cron now fails to parse
+        // (e.g. the schema was edited between enqueue and dispatch), emit
+        // an InvalidCron audit row so the trigger going dark surfaces in
+        // the audit log instead of disappearing silently.
         if let Some((cron, tz)) = reschedule_cron {
-            if let Some(next_at) = next_fire_from_cron(&cron, &tz, now_ms) {
-                let mut heap = self.scheduler.lock().await;
-                heap.push(Reverse(ScheduledFire {
-                    fire_at_ms: next_at,
-                    view_name: fire.view_name,
-                    trigger_index: fire.trigger_index,
-                }));
+            match next_fire_from_cron(&cron, &tz, now_ms) {
+                Some(next_at) => {
+                    let mut heap = self.scheduler.lock().await;
+                    heap.push(Reverse(ScheduledFire {
+                        fire_at_ms: next_at,
+                        view_name: fire.view_name,
+                        trigger_index: fire.trigger_index,
+                    }));
+                }
+                None => {
+                    self.audit_invalid_cron(&fire.view_name, fire.trigger_index, now_ms)
+                        .await;
+                }
             }
         }
     }
@@ -1364,13 +1442,23 @@ impl<C: Clock> TriggerRunner<C> {
 
         if write_result.is_ok() {
             if let Some((cron, tz)) = reschedule_cron {
-                if let Some(next_at) = next_fire_from_cron(&cron, &tz, now_ms) {
-                    let mut heap = self.scheduler.lock().await;
-                    heap.push(Reverse(ScheduledFire {
-                        fire_at_ms: next_at,
-                        view_name: fire.view_name.clone(),
-                        trigger_index: fire.trigger_index,
-                    }));
+                match next_fire_from_cron(&cron, &tz, now_ms) {
+                    Some(next_at) => {
+                        let mut heap = self.scheduler.lock().await;
+                        heap.push(Reverse(ScheduledFire {
+                            fire_at_ms: next_at,
+                            view_name: fire.view_name.clone(),
+                            trigger_index: fire.trigger_index,
+                        }));
+                    }
+                    None => {
+                        // Original skip row already landed; the trigger
+                        // is now un-schedulable. Surface that as a
+                        // separate InvalidCron audit row so the user has
+                        // a permanent breadcrumb.
+                        self.audit_invalid_cron(&fire.view_name, fire.trigger_index, now_ms)
+                            .await;
+                    }
                 }
             }
         } else {
@@ -2640,18 +2728,20 @@ mod tests {
     // --- Failure-path coverage (audit round 1, fold_db §3 and §5) ------------
 
     #[tokio::test]
-    async fn scheduled_with_malformed_cron_warns_and_skips_no_fires() {
-        // INVARIANT UNDER TEST (trigger_runner.rs:831-836):
-        // `populate_scheduled_from_registry` warns and skips when
-        // `next_fire_from_cron` returns None — the trigger must NOT be
-        // added to the scheduler heap, must NOT fire, and must NOT
-        // advance into a tight loop.
+    async fn scheduled_with_malformed_cron_emits_one_invalid_cron_audit_row() {
+        // INVARIANT UNDER TEST (kanban c95c5):
+        // `populate_scheduled_from_registry` writes exactly one
+        // `Skipped(InvalidCron)` audit row when `next_fire_from_cron`
+        // returns None, then stays quiet for the rest of the process
+        // lifetime. The trigger must NOT be added to the scheduler
+        // heap, must NOT fire, must NOT burn the quarantine budget,
+        // and must NOT spam the audit log with one row per tick.
         //
-        // Why this matters: a stored view with a broken cron (e.g. a
-        // migration from a buggy schema, or user input that slipped past
-        // validation) should be a noisy-but-inert no-op, not a busy
-        // loop over every scheduler wake-up. This test pins both
-        // properties: zero fires + empty heap across many ticks.
+        // Why a permanent breadcrumb beats a `tracing::warn!`: a
+        // broken cron is an "your trigger never fires again" failure
+        // mode that the operator finds out about days later. The
+        // audit row is queryable from the trigger UI; the warn line
+        // scrolls off the log and is gone.
         let sm = make_schema_manager().await;
         register_view(
             &sm,
@@ -2696,18 +2786,25 @@ mod tests {
             0,
             "malformed cron must never dispatch a fire"
         );
+        let rows = writer.rows.lock().await.clone();
         assert_eq!(
-            writer.call_count.load(Ordering::SeqCst),
-            0,
-            "malformed cron must never attempt an audit-row write"
+            rows.len(),
+            1,
+            "malformed cron must produce exactly one InvalidCron audit row \
+             across many ticks (got {} rows)",
+            rows.len()
         );
-        assert!(
-            writer.rows.lock().await.is_empty(),
-            "malformed cron must never produce an audit row"
+        let row = &rows[0];
+        assert_eq!(row.view_name, "V1");
+        assert_eq!(row.trigger_id, "V1:0");
+        assert_eq!(row.status, FiringStatus::Skipped(SkipReason::InvalidCron));
+        assert_eq!(
+            row.status.skip_reason_str(),
+            Some(skip_reason::INVALID_CRON)
         );
         assert!(
             !runner.test_is_quarantined("V1").await,
-            "malformed cron is a parse/warn-skip condition, NOT a fire \
+            "malformed cron is a parse/skip condition, NOT a fire \
              failure — must not burn the 3-strikes quarantine budget"
         );
     }
@@ -3323,6 +3420,12 @@ mod tests {
         assert_eq!(
             m.fields_and_values.get(trig_fields::SKIP_REASON),
             Some(&serde_json::Value::String("dirty_clean".into()))
+        );
+
+        let m = mk(FiringStatus::Skipped(SkipReason::InvalidCron));
+        assert_eq!(
+            m.fields_and_values.get(trig_fields::SKIP_REASON),
+            Some(&serde_json::Value::String("invalid_cron".into()))
         );
 
         let m = mk(FiringStatus::Success);
