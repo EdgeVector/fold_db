@@ -85,6 +85,13 @@ pub mod skip_reason {
     /// trigger's `max_catch_up_age` allows — dispatch was skipped to
     /// bound fire storms after process downtime.
     pub const CATCH_UP_BUDGET: &str = "catch_up_budget";
+    /// `Scheduled` / `ScheduledIfDirty` cron expression or IANA timezone
+    /// failed to parse, so no next fire time can be computed. The trigger
+    /// stays dormant until the schema is updated with a valid spec.
+    /// Surfaced once per (view, trigger_index) so a broken cron is a
+    /// permanent breadcrumb in the audit log instead of a `tracing`
+    /// warning that scrolls away.
+    pub const INVALID_CRON: &str = "invalid_cron";
 }
 
 /// Build the TriggerFiring schema definition.
