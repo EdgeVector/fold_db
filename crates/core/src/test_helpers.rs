@@ -44,35 +44,34 @@ impl TestSchemaBuilder {
         self
     }
 
-    pub fn field(mut self, name: &str) -> Self {
-        if !self.fields.contains(&name.to_string()) {
-            self.fields.push(name.to_string());
+    fn ensure_field(&mut self, name: &str) {
+        let s = name.to_string();
+        if !self.fields.contains(&s) {
+            self.fields.push(s);
         }
+    }
+
+    pub fn field(mut self, name: &str) -> Self {
+        self.ensure_field(name);
         self
     }
 
     pub fn fields(mut self, names: &[&str]) -> Self {
         for name in names {
-            if !self.fields.contains(&name.to_string()) {
-                self.fields.push(name.to_string());
-            }
+            self.ensure_field(name);
         }
         self
     }
 
     pub fn range_key(mut self, field: &str) -> Self {
         self.range_field = Some(field.to_string());
-        if !self.fields.contains(&field.to_string()) {
-            self.fields.push(field.to_string());
-        }
+        self.ensure_field(field);
         self
     }
 
     pub fn hash_key(mut self, field: &str) -> Self {
         self.hash_field = Some(field.to_string());
-        if !self.fields.contains(&field.to_string()) {
-            self.fields.push(field.to_string());
-        }
+        self.ensure_field(field);
         self
     }
 
