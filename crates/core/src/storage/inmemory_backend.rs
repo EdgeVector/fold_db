@@ -1,4 +1,4 @@
-use super::error::{StorageError, StorageResult};
+use super::error::StorageResult;
 use super::traits::{KvStore, NamespacedStore};
 use async_trait::async_trait;
 use std::collections::HashMap;
@@ -27,43 +27,28 @@ impl Default for InMemoryKvStore {
 #[async_trait]
 impl KvStore for InMemoryKvStore {
     async fn get(&self, key: &[u8]) -> StorageResult<Option<Vec<u8>>> {
-        let data = self
-            .data
-            .read()
-            .map_err(|e| StorageError::BackendError(format!("Lock poisoned: {}", e)))?;
+        let data = self.data.read()?;
         Ok(data.get(key).cloned())
     }
 
     async fn put(&self, key: &[u8], value: Vec<u8>) -> StorageResult<()> {
-        let mut data = self
-            .data
-            .write()
-            .map_err(|e| StorageError::BackendError(format!("Lock poisoned: {}", e)))?;
+        let mut data = self.data.write()?;
         data.insert(key.to_vec(), value);
         Ok(())
     }
 
     async fn delete(&self, key: &[u8]) -> StorageResult<bool> {
-        let mut data = self
-            .data
-            .write()
-            .map_err(|e| StorageError::BackendError(format!("Lock poisoned: {}", e)))?;
+        let mut data = self.data.write()?;
         Ok(data.remove(key).is_some())
     }
 
     async fn exists(&self, key: &[u8]) -> StorageResult<bool> {
-        let data = self
-            .data
-            .read()
-            .map_err(|e| StorageError::BackendError(format!("Lock poisoned: {}", e)))?;
+        let data = self.data.read()?;
         Ok(data.contains_key(key))
     }
 
     async fn scan_prefix(&self, prefix: &[u8]) -> StorageResult<Vec<(Vec<u8>, Vec<u8>)>> {
-        let data = self
-            .data
-            .read()
-            .map_err(|e| StorageError::BackendError(format!("Lock poisoned: {}", e)))?;
+        let data = self.data.read()?;
 
         let results: Vec<_> = data
             .iter()
@@ -75,10 +60,7 @@ impl KvStore for InMemoryKvStore {
     }
 
     async fn batch_put(&self, items: Vec<(Vec<u8>, Vec<u8>)>) -> StorageResult<()> {
-        let mut data = self
-            .data
-            .write()
-            .map_err(|e| StorageError::BackendError(format!("Lock poisoned: {}", e)))?;
+        let mut data = self.data.write()?;
 
         for (key, value) in items {
             data.insert(key, value);
@@ -88,10 +70,7 @@ impl KvStore for InMemoryKvStore {
     }
 
     async fn batch_delete(&self, keys: Vec<Vec<u8>>) -> StorageResult<()> {
-        let mut data = self
-            .data
-            .write()
-            .map_err(|e| StorageError::BackendError(format!("Lock poisoned: {}", e)))?;
+        let mut data = self.data.write()?;
 
         for key in keys {
             data.remove(&key);
@@ -143,10 +122,7 @@ impl Default for InMemoryNamespacedStore {
 #[async_trait]
 impl NamespacedStore for InMemoryNamespacedStore {
     async fn open_namespace(&self, name: &str) -> StorageResult<Arc<dyn KvStore>> {
-        let mut namespaces = self
-            .namespaces
-            .write()
-            .map_err(|e| StorageError::BackendError(format!("Lock poisoned: {}", e)))?;
+        let mut namespaces = self.namespaces.write()?;
 
         let store = namespaces
             .entry(name.to_string())
@@ -157,19 +133,13 @@ impl NamespacedStore for InMemoryNamespacedStore {
     }
 
     async fn list_namespaces(&self) -> StorageResult<Vec<String>> {
-        let namespaces = self
-            .namespaces
-            .read()
-            .map_err(|e| StorageError::BackendError(format!("Lock poisoned: {}", e)))?;
+        let namespaces = self.namespaces.read()?;
 
         Ok(namespaces.keys().cloned().collect())
     }
 
     async fn delete_namespace(&self, name: &str) -> StorageResult<bool> {
-        let mut namespaces = self
-            .namespaces
-            .write()
-            .map_err(|e| StorageError::BackendError(format!("Lock poisoned: {}", e)))?;
+        let mut namespaces = self.namespaces.write()?;
 
         Ok(namespaces.remove(name).is_some())
     }
