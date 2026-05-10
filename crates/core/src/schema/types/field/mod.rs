@@ -9,8 +9,7 @@ pub mod variant;
 
 pub use common::{build_storage_key, Field, FieldCommon, FieldType, WriteContext};
 pub use filter_utils::{
-    apply_hash_filter, apply_hash_range_filter, apply_range_filter, fetch_atoms_for_matches_async,
-    fetch_atoms_for_matches_async_with_org, fetch_atoms_with_key_metadata_async,
+    apply_hash_filter, apply_hash_range_filter, apply_range_filter,
     fetch_atoms_with_key_metadata_async_with_org, FilterApplicator, FilterUtils, HashOperations,
     HashRangeOperations, RangeOperations,
 };
