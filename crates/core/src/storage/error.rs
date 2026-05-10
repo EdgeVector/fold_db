@@ -31,4 +31,16 @@ pub enum StorageError {
     EncryptionError(String),
 }
 
+impl From<sled::Error> for StorageError {
+    fn from(e: sled::Error) -> Self {
+        Self::SledError(e.to_string())
+    }
+}
+
+impl From<tokio::task::JoinError> for StorageError {
+    fn from(e: tokio::task::JoinError) -> Self {
+        Self::BackendError(e.to_string())
+    }
+}
+
 pub type StorageResult<T> = Result<T, StorageError>;

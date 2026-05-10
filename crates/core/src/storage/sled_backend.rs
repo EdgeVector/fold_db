@@ -29,17 +29,10 @@ impl KvStore for SledKvStore {
 
         tokio::task::spawn_blocking(move || {
             let guard = pool.acquire_arc()?;
-            let tree = guard
-                .db()
-                .open_tree(&tree_name)
-                .map_err(|e| StorageError::SledError(e.to_string()))?;
-            tree.get(&key)
-                .map_err(|e| StorageError::SledError(e.to_string()))?
-                .map(|ivec| Ok(ivec.to_vec()))
-                .transpose()
+            let tree = guard.db().open_tree(&tree_name)?;
+            tree.get(&key)?.map(|ivec| Ok(ivec.to_vec())).transpose()
         })
-        .await
-        .map_err(|e| StorageError::BackendError(e.to_string()))?
+        .await?
     }
 
     async fn put(&self, key: &[u8], value: Vec<u8>) -> StorageResult<()> {
@@ -49,18 +42,12 @@ impl KvStore for SledKvStore {
 
         tokio::task::spawn_blocking(move || -> Result<(), StorageError> {
             let guard = pool.acquire_arc()?;
-            let tree = guard
-                .db()
-                .open_tree(&tree_name)
-                .map_err(|e| StorageError::SledError(e.to_string()))?;
-            tree.insert(&key, value)
-                .map_err(|e| StorageError::SledError(e.to_string()))?;
-            tree.flush()
-                .map_err(|e| StorageError::SledError(e.to_string()))?;
+            let tree = guard.db().open_tree(&tree_name)?;
+            tree.insert(&key, value)?;
+            tree.flush()?;
             Ok(())
         })
-        .await
-        .map_err(|e| StorageError::BackendError(e.to_string()))?
+        .await?
     }
 
     async fn delete(&self, key: &[u8]) -> StorageResult<bool> {
@@ -70,18 +57,11 @@ impl KvStore for SledKvStore {
 
         tokio::task::spawn_blocking(move || {
             let guard = pool.acquire_arc()?;
-            let tree = guard
-                .db()
-                .open_tree(&tree_name)
-                .map_err(|e| StorageError::SledError(e.to_string()))?;
-            let existed = tree
-                .remove(&key)
-                .map_err(|e| StorageError::SledError(e.to_string()))?
-                .is_some();
+            let tree = guard.db().open_tree(&tree_name)?;
+            let existed = tree.remove(&key)?.is_some();
             Ok(existed)
         })
-        .await
-        .map_err(|e| StorageError::BackendError(e.to_string()))?
+        .await?
     }
 
     async fn exists(&self, key: &[u8]) -> StorageResult<bool> {
@@ -89,17 +69,12 @@ impl KvStore for SledKvStore {
         let tree_name = self.tree_name.clone();
         let key = key.to_vec();
 
-        tokio::task::spawn_blocking(move || {
+        tokio::task::spawn_blocking(move || -> StorageResult<bool> {
             let guard = pool.acquire_arc()?;
-            let tree = guard
-                .db()
-                .open_tree(&tree_name)
-                .map_err(|e| StorageError::SledError(e.to_string()))?;
-            tree.contains_key(&key)
-                .map_err(|e| StorageError::SledError(e.to_string()))
+            let tree = guard.db().open_tree(&tree_name)?;
+            Ok(tree.contains_key(&key)?)
         })
-        .await
-        .map_err(|e| StorageError::BackendError(e.to_string()))?
+        .await?
     }
 
     async fn scan_prefix(&self, prefix: &[u8]) -> StorageResult<Vec<(Vec<u8>, Vec<u8>)>> {
@@ -109,20 +84,15 @@ impl KvStore for SledKvStore {
 
         tokio::task::spawn_blocking(move || {
             let guard = pool.acquire_arc()?;
-            let tree = guard
-                .db()
-                .open_tree(&tree_name)
-                .map_err(|e| StorageError::SledError(e.to_string()))?;
+            let tree = guard.db().open_tree(&tree_name)?;
             tree.scan_prefix(&prefix)
-                .map(|result| {
-                    result
-                        .map(|(k, v)| (k.to_vec(), v.to_vec()))
-                        .map_err(|e| StorageError::SledError(e.to_string()))
+                .map(|result| -> StorageResult<(Vec<u8>, Vec<u8>)> {
+                    let (k, v) = result?;
+                    Ok((k.to_vec(), v.to_vec()))
                 })
                 .collect()
         })
-        .await
-        .map_err(|e| StorageError::BackendError(e.to_string()))?
+        .await?
     }
 
     async fn batch_put(&self, items: Vec<(Vec<u8>, Vec<u8>)>) -> StorageResult<()> {
@@ -131,22 +101,16 @@ impl KvStore for SledKvStore {
 
         tokio::task::spawn_blocking(move || -> Result<(), StorageError> {
             let guard = pool.acquire_arc()?;
-            let tree = guard
-                .db()
-                .open_tree(&tree_name)
-                .map_err(|e| StorageError::SledError(e.to_string()))?;
+            let tree = guard.db().open_tree(&tree_name)?;
             let mut batch = sled::Batch::default();
             for (key, value) in items {
                 batch.insert(key, value);
             }
-            tree.apply_batch(batch)
-                .map_err(|e| StorageError::SledError(e.to_string()))?;
-            tree.flush()
-                .map_err(|e| StorageError::SledError(e.to_string()))?;
+            tree.apply_batch(batch)?;
+            tree.flush()?;
             Ok(())
         })
-        .await
-        .map_err(|e| StorageError::BackendError(e.to_string()))?
+        .await?
     }
 
     async fn batch_delete(&self, keys: Vec<Vec<u8>>) -> StorageResult<()> {
@@ -155,20 +119,15 @@ impl KvStore for SledKvStore {
 
         tokio::task::spawn_blocking(move || {
             let guard = pool.acquire_arc()?;
-            let tree = guard
-                .db()
-                .open_tree(&tree_name)
-                .map_err(|e| StorageError::SledError(e.to_string()))?;
+            let tree = guard.db().open_tree(&tree_name)?;
             let mut batch = sled::Batch::default();
             for key in keys {
                 batch.remove(key);
             }
-            tree.apply_batch(batch)
-                .map_err(|e| StorageError::SledError(e.to_string()))?;
+            tree.apply_batch(batch)?;
             Ok(())
         })
-        .await
-        .map_err(|e| StorageError::BackendError(e.to_string()))?
+        .await?
     }
 
     async fn flush(&self) -> StorageResult<()> {
@@ -177,16 +136,11 @@ impl KvStore for SledKvStore {
 
         tokio::task::spawn_blocking(move || -> Result<(), StorageError> {
             let guard = pool.acquire_arc()?;
-            let tree = guard
-                .db()
-                .open_tree(&tree_name)
-                .map_err(|e| StorageError::SledError(e.to_string()))?;
-            tree.flush()
-                .map_err(|e| StorageError::SledError(e.to_string()))?;
+            let tree = guard.db().open_tree(&tree_name)?;
+            tree.flush()?;
             Ok(())
         })
-        .await
-        .map_err(|e| StorageError::BackendError(e.to_string()))?
+        .await?
     }
 
     fn backend_name(&self) -> &'static str {
@@ -248,22 +202,17 @@ impl NamespacedStore for SledNamespacedStore {
                 .collect();
             Ok(tree_names)
         })
-        .await
-        .map_err(|e| StorageError::BackendError(e.to_string()))?
+        .await?
     }
 
     async fn delete_namespace(&self, name: &str) -> StorageResult<bool> {
         let pool = Arc::clone(&self.pool);
         let name = name.to_string();
 
-        tokio::task::spawn_blocking(move || {
+        tokio::task::spawn_blocking(move || -> StorageResult<bool> {
             let guard = pool.acquire_arc()?;
-            guard
-                .db()
-                .drop_tree(&name)
-                .map_err(|e| StorageError::SledError(e.to_string()))
+            Ok(guard.db().drop_tree(&name)?)
         })
-        .await
-        .map_err(|e| StorageError::BackendError(e.to_string()))?
+        .await?
     }
 }
