@@ -43,4 +43,10 @@ impl From<tokio::task::JoinError> for StorageError {
     }
 }
 
+impl<T> From<std::sync::PoisonError<T>> for StorageError {
+    fn from(e: std::sync::PoisonError<T>) -> Self {
+        StorageError::BackendError(format!("Lock poisoned: {}", e))
+    }
+}
+
 pub type StorageResult<T> = Result<T, StorageError>;
