@@ -9,6 +9,13 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use utoipa::ToSchema;
 
+fn now_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+}
+
 /// Type of job being tracked
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq)]
 pub enum JobType {
@@ -63,10 +70,7 @@ pub struct Job {
 
 impl Job {
     pub fn new(id: String, job_type: JobType) -> Self {
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
+        let now = now_secs();
 
         Self {
             id,
@@ -98,10 +102,7 @@ impl Job {
         self.progress_percentage = percentage.min(100);
         self.message = message;
         self.status = JobStatus::Running;
-        self.updated_at = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
+        self.updated_at = now_secs();
     }
 
     pub fn complete(&mut self, result: Option<serde_json::Value>) {
@@ -109,10 +110,7 @@ impl Job {
         self.progress_percentage = 100;
         self.message = "Completed".to_string();
         self.result = result;
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
+        let now = now_secs();
         self.updated_at = now;
         self.completed_at = Some(now);
     }
@@ -121,10 +119,7 @@ impl Job {
         self.status = JobStatus::Failed;
         self.error = Some(error.clone());
         self.message = format!("Failed: {}", error);
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
+        let now = now_secs();
         self.updated_at = now;
         self.completed_at = Some(now);
     }
