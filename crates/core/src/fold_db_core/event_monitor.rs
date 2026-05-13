@@ -5,10 +5,10 @@
 //! with a single component that can see all system activity.
 
 use std::sync::{Arc, Mutex};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use tracing::info;
 
+use super::event_statistics::now_secs;
 pub use super::event_statistics::{EventStatistics, MutationStats, QueryStats};
 use crate::messaging::{AsyncMessageBus, Event};
 
@@ -21,10 +21,7 @@ impl EventMonitor {
     /// Create a new EventMonitor that subscribes to all event types
     pub async fn new(message_bus: Arc<AsyncMessageBus>) -> Self {
         let statistics = Arc::new(Mutex::new(EventStatistics {
-            monitoring_start_time: SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_secs(),
+            monitoring_start_time: now_secs(),
             ..Default::default()
         }));
 
@@ -124,11 +121,7 @@ impl EventMonitor {
     /// Log a summary of all activity since monitoring started
     pub fn log_summary(&self) {
         let stats = self.get_statistics();
-        let runtime = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs()
-            - stats.monitoring_start_time;
+        let runtime = now_secs() - stats.monitoring_start_time;
 
         info!("📊 EventMonitor Summary ({}s runtime):", runtime);
         info!("  📝 Field Value Sets: {}", stats.field_value_sets);

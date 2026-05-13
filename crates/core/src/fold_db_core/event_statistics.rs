@@ -4,6 +4,13 @@
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
+pub(super) fn now_secs() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+}
+
 /// Statistics about system activity tracked by the event monitor
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct EventStatistics {
@@ -77,10 +84,7 @@ impl EventStatistics {
             stats.total_execution_time_ms as f64 / stats.executions as f64;
         stats.total_results += result_count;
         stats.avg_result_count = stats.total_results as f64 / stats.executions as f64;
-        stats.last_execution_time = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
+        stats.last_execution_time = now_secs();
     }
 
     pub fn increment_mutation_executions(
@@ -102,9 +106,6 @@ impl EventStatistics {
             stats.total_execution_time_ms as f64 / stats.executions as f64;
         stats.total_fields_affected += fields_affected;
         stats.avg_fields_affected = stats.total_fields_affected as f64 / stats.executions as f64;
-        stats.last_execution_time = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
+        stats.last_execution_time = now_secs();
     }
 }
